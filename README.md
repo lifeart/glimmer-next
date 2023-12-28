@@ -1,4 +1,4 @@
-This is sample `compilable` runtime for `glimmer-vm` experiment.
+This is [sample](https://g-next.netlify.app/) `compilable` runtime for `glimmer-vm` experiment. [![Netlify Status](https://api.netlify.com/api/v1/badges/43af359b-56a7-4607-9e01-04ca3a545470/deploy-status)](https://app.netlify.com/sites/g-next/deploys)
 
 Related issue:
     https://github.com/glimmerjs/glimmer-vm/issues/1540
