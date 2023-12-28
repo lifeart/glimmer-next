@@ -34,11 +34,11 @@ export function destroyElement(
     component.destructors.forEach((fn) => fn());
     if ("nodes" in component) {
       component.nodes.forEach((node) => {
-        runNestedDestructors(node);
+        runDestructors(node);
         node.parentElement!.removeChild(node);
       });
     } else {
-      runNestedDestructors(component.node);
+      runDestructors(component.node);
 
       component.node.parentElement!.removeChild(component.node);
     }
@@ -50,28 +50,39 @@ var $destructors = new WeakMap<Node, Destructors>();
 // @ts-expect-error bla-bla
 window["getDestructors"] = () => $destructors;
 
+function getNode(el: Node): Node {
+  if (el.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
+    return (el as DocumentFragment).lastChild!;
+  } else {
+    return el;
+  }
+}
+
 export function addDestructors(
   destructors: Destructors,
   source: ComponentReturnType | NodeReturnType | HTMLElement | Text | Comment
 ) {
   if (destructors.length) {
+    let node: Node;
     if ("nodes" in source) {
-      $destructors.set(source.nodes[0], destructors);
+      node = getNode(source.nodes[0]);
     } else if ("node" in source) {
-      $destructors.set(source.node, destructors);
+      node = getNode(source.node);
     } else {
-      $destructors.set(source, destructors);
+      node = getNode(source);
     }
+    const oldDestructors = $destructors.get(node) || [];
+    $destructors.set(node, [...oldDestructors, ...destructors]);
   }
 }
 
-export function runNestedDestructors(targetNode: Node) {
+export function runDestructors(targetNode: Node) {
   if ($destructors.has(targetNode)) {
     $destructors.get(targetNode)!.forEach((fn) => fn());
     $destructors.delete(targetNode);
   }
   targetNode.childNodes.forEach((node) => {
-    runNestedDestructors(node);
+    runDestructors(node);
   });
 }
 

@@ -6,7 +6,7 @@ export function createBenchmark() {
   return {
     async render() {
       await measureRender('render', 'renderStart', 'renderEnd', () => {
-        new Application();
+        new Application(document.getElementById('app')!);
       });
 
       performance.measure('load', 'navigationStart', 'renderStart');

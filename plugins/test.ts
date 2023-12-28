@@ -25,6 +25,12 @@ export function transform(source: string, fileName: string) {
               t.stringLiteral("@/utils/dom")
             )
           );
+          path.node.body.unshift(
+            t.importDeclaration(
+              [t.importSpecifier(t.identifier("addDestructors"), t.identifier("addDestructors"))],
+              t.stringLiteral("@/utils/component")
+            )
+          );
         },
         TaggedTemplateExpression(path: any) {
           if (path.node.tag.name === "hbs") {
@@ -250,17 +256,23 @@ export function transform(source: string, fileName: string) {
   const result = `(() => {
     const roots = [${results.join(", ")}];
     const existingDestructors = typeof destructors !== 'undefined' ? destructors : [];
+    const dest = roots.reduce((acc, root) => {
+      return [...acc, ...root.destructors];
+    }, existingDestructors);
+
+    const nodes = roots.reduce((acc, root) => {
+      if ('nodes' in root) {
+        return [...acc, ...root.nodes];
+      } else {
+        return [...acc, root.node];
+      }
+    }, []);
+    
+    addDestructors(dest, nodes[0]);
+    
     return {
-      nodes: roots.reduce((acc, root) => {
-        if ('nodes' in root) {
-          return [...acc, ...root.nodes];
-        } else {
-          return [...acc, root.node];
-        }
-      }, []),
-      destructors: roots.reduce((acc, root) => {
-        return [...acc, ...root.destructors];
-      }, existingDestructors),
+      nodes,
+      destructors: [],
       index: 0,
     }
   })()`;

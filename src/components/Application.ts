@@ -1,10 +1,11 @@
 import type { Item } from "@/utils/data";
 import { buildData, swapRows, updateData } from "@/utils/data";
 import { cell } from "@/utils/reactive";
-import { renderComponent, type ComponentReturnType } from "@/utils/component";
+import { renderComponent, runDestructors } from "@/utils/component";
 import { App } from "./AppLayout";
 export class Application {
   itemsCell = cell<Item[]>([], "items");
+  rootNode!: HTMLElement;
   get items() {
     return this.itemsCell.value;
   }
@@ -12,9 +13,15 @@ export class Application {
     this.itemsCell.value = value;
   }
   selectedCell = cell(0, "selectedCell");
-  constructor() {
+  destroy() {
+    runDestructors(this.rootNode);
+    this.rootNode.innerHTML = "";
+    this.rootNode = null!;
+  }
+  constructor(rootNode: HTMLElement) {
     this.removeItem = this.removeItem.bind(this);
-    renderComponent(App({ app: this }), document.getElementById('app')!);
+    this.rootNode = rootNode;
+    renderComponent(App({ app: this }), this.rootNode);
   }
   removeItem(item: Item) {
     this.items = this.items.filter((i) => i.id !== item.id);
