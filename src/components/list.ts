@@ -1,6 +1,13 @@
-import { ComponentReturnType, renderComponent } from '@/utils/component';
-import { Cell } from '@/utils/reactive';
-import { bindUpdatingOpcode } from '@/utils/vm';
+import { ComponentReturnType } from "@/utils/component";
+import { Cell } from "@/utils/reactive";
+import { bindUpdatingOpcode } from "@/utils/vm";
+
+function renderItem(item: ComponentReturnType, marker: Node) {
+  const parent = marker.parentNode;
+  item.nodes.forEach((node) => {
+    parent?.insertBefore(node, marker);
+  });
+}
 
 /*
   This is a list manager, it's used to render and sync a list of items.
@@ -10,31 +17,49 @@ import { bindUpdatingOpcode } from '@/utils/vm';
 */
 
 export class ListComponent<T extends object> {
-  parent: HTMLElement | DocumentFragment;
   keyMap: Map<string, ComponentReturnType> = new Map();
   nodes: Node[] = [];
   destructors: Array<() => void> = [];
   index = 0;
   ItemComponent: (item: T) => ComponentReturnType;
-  constructor({ tag, ItemComponent }: { tag: Cell<T[]>, ItemComponent: (item: T) => ComponentReturnType }, outlet: HTMLElement) {
+  bottomMarker!: Node;
+  constructor(
+    {
+      tag,
+      ItemComponent,
+    }: { tag: Cell<T[]>; ItemComponent: (item: T) => ComponentReturnType },
+    outlet: HTMLElement | DocumentFragment
+  ) {
     this.ItemComponent = ItemComponent;
     const mainNode = outlet;
-    this.nodes = [mainNode];
-    this.parent = mainNode;
+    this.nodes = [];
+    this.bottomMarker = document.createComment("list bottom marker");
+    mainNode.appendChild(this.bottomMarker);
     bindUpdatingOpcode(tag, () => {
       this.syncList(tag.value);
     });
-    // outlet.appendChild(mainNode);
   }
   keyForItem(item: T) {
-    return String(item['id']);
+    return String(item["id"]);
+  }
+  getTargetNode(amountOfKeys: number) {
+    if (amountOfKeys > 0) {
+      return this.bottomMarker;
+    } else {
+      const fragment = document.createDocumentFragment();
+      const marker = document.createComment("list fragment marker");
+      fragment.appendChild(marker);
+      return marker;
+    }
   }
   syncList(items: T[]) {
     const existingKeys = new Set(this.keyMap.keys());
     const updatingKeys = new Set(items.map((item) => this.keyForItem(item)));
-    const keysToRemove = [...existingKeys].filter((key) => !updatingKeys.has(key));
+    const keysToRemove = [...existingKeys].filter(
+      (key) => !updatingKeys.has(key)
+    );
     const amountOfKeys = existingKeys.size;
-    let targetNode = amountOfKeys > 0 ? this.parent : document.createDocumentFragment();
+    let targetNode = this.getTargetNode(amountOfKeys);
     const rowsToMove: Array<[ComponentReturnType, number]> = [];
     let seenKeys = 0;
 
@@ -48,16 +73,22 @@ export class ListComponent<T extends object> {
       });
     }
 
+    const amountOfExistingKeys = amountOfKeys - keysToRemove.length;
+
     items.forEach((item, index) => {
-      if (seenKeys === amountOfKeys && !(targetNode instanceof DocumentFragment)) {
+      // @todo - fix here
+      if (
+        seenKeys === amountOfExistingKeys &&
+        targetNode === this.bottomMarker
+      ) {
         // optimization for appending items case
-        targetNode = document.createDocumentFragment();
+        targetNode = this.getTargetNode(0);
       }
       const key = this.keyForItem(item);
       const maybeRow = this.keyMap.get(key);
       if (!maybeRow) {
         const row = this.ItemComponent(item);
-        renderComponent(row, targetNode);
+        renderItem(row, targetNode);
         row.index = index;
         this.keyMap.set(key, row);
       } else {
@@ -72,19 +103,23 @@ export class ListComponent<T extends object> {
       const nextItem = items[index + 1];
       if (nextItem === undefined) {
         row.index = index;
-        row.nodes.forEach((node) => this.parent.appendChild(node));
+        renderItem(row, this.bottomMarker);
       } else {
         const nextKey = this.keyForItem(nextItem);
         const nextRow = this.keyMap.get(nextKey);
         const firstNode = row.nodes[0];
         if (nextRow && firstNode) {
-          nextRow.nodes.forEach((node) => this.parent.insertBefore(firstNode, node));
+          nextRow.nodes.forEach((node) =>
+            firstNode.parentNode!.insertBefore(firstNode, node)
+          );
         }
         row.index = index;
       }
     });
-    if (targetNode instanceof DocumentFragment) {
-      this.parent.appendChild(targetNode);
+    if (targetNode !== this.bottomMarker) {
+      const parent = targetNode.parentNode!;
+      parent.removeChild(targetNode);
+      this.bottomMarker.parentNode!.insertBefore(parent, this.bottomMarker);
     }
     return this;
   }
@@ -98,4 +133,3 @@ export class ListComponent<T extends object> {
     return row.index;
   }
 }
-

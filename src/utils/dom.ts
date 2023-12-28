@@ -1,4 +1,8 @@
-import { addEventListener, type ComponentReturnType, type Destructors } from "@/utils/component";
+import {
+  addEventListener,
+  type ComponentReturnType,
+  type Destructors,
+} from "@/utils/component";
 import { Cell, MergedCell } from "@/utils/reactive";
 import { bindUpdatingOpcode } from "@/utils/vm";
 import { ListComponent } from "@/components/list";
@@ -8,7 +12,12 @@ import type { Item } from "@/utils/data";
 type Props = {
   attributes: [
     string,
-    MergedCell | Cell | string | ((element: HTMLElement, attribute: string) => void)
+    (
+      | MergedCell
+      | Cell
+      | string
+      | ((element: HTMLElement, attribute: string) => void)
+    )
   ][];
   events: [string, EventListener][];
 };
@@ -22,7 +31,14 @@ type NodeReturnType = {
 function _DOM(
   tag: string,
   props: Props,
-  ...children: (NodeReturnType | ComponentReturnType | string | Cell | MergedCell | Function)[]
+  ...children: (
+    | NodeReturnType
+    | ComponentReturnType
+    | string
+    | Cell
+    | MergedCell
+    | Function
+  )[]
 ): NodeReturnType {
   const element = document.createElement(tag);
   const destructors: Destructors = [];
@@ -39,23 +55,23 @@ function _DOM(
         destructors.push(destructor);
       }
     } else if (value instanceof Cell || value instanceof MergedCell) {
-        const destructor = bindUpdatingOpcode(value, (value) => {
-            element.setAttribute(key, String(value));
-        });
-        destructors.push(destructor);
+      const destructor = bindUpdatingOpcode(value, (value) => {
+        element.setAttribute(key, String(value));
+      });
+      destructors.push(destructor);
     } else {
       element.setAttribute(key, value);
     }
   });
   children.forEach((child) => {
     if (child === null) {
-        return;
+      return;
     }
     if (typeof child === "object" && "nodes" in child) {
-        child.nodes.forEach((node) => {
-            element.appendChild(node);
-        });
-        destructors.push(...child.destructors);
+      child.nodes.forEach((node) => {
+        element.appendChild(node);
+      });
+      destructors.push(...child.destructors);
     } else if (typeof child === "object" && "node" in child) {
       element.appendChild(child.node);
       destructors.push(...child.destructors);
@@ -97,7 +113,7 @@ function each<T extends Record<string, unknown>>(
   items: Cell<T[]> | MergedCell,
   fn: (item: T) => ComponentReturnType
 ) {
-  const outlet = document.createElement("div");
+  const outlet = document.createDocumentFragment();
   const List = new ListComponent(
     {
       tag: items as Cell<T[]>,
