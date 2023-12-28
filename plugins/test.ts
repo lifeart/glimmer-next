@@ -1,0 +1,196 @@
+// https://astexplorer.net/#/gist/c2f0f7e4bf505471c94027c580af8329/c67119639ba9e8fd61a141e8e2f4cbb6f3a31de9
+
+import { preprocess, traverse, ASTv1 } from "@glimmer/syntax";
+import { transformSync } from "@babel/core";
+import type Babel from "@babel/core";
+
+export function transform(source: string, fileName: string) {
+  const program: Array<HBSNode | HBSExpression> = [];
+  const seenNodes = new Set();
+
+  const rawTxt: string = source;
+
+  let hbsToProcess = "";
+
+  function babelPlugin(babel: { types: typeof Babel.types }) {
+    const { types: t } = babel;
+
+    return {
+      name: "ast-transform", // not required
+      visitor: {
+        Program(path: any) {
+          path.node.body.unshift(
+            t.importDeclaration(
+              [t.importSpecifier(t.identifier("DOM"), t.identifier("DOM"))],
+              t.stringLiteral("@/utils/dom")
+            )
+          );
+        },
+        TaggedTemplateExpression(path: any) {
+          if (path.node.tag.name === "hbs") {
+            hbsToProcess = path.node.quasi.quasis[0].value.raw;
+            path.replaceWith(t.identifier("$placeholder"));
+          }
+        },
+      },
+    };
+  }
+
+  const babelResult = transformSync(rawTxt, {
+    plugins: [babelPlugin],
+    filename: fileName,
+    presets: ['@babel/preset-typescript']
+  });
+
+  const txt = babelResult?.code ?? "";
+
+  function ToJSType(node: ASTv1.Node): any {
+    seenNodes.add(node);
+    if (node.type === "TextNode") {
+      if (node.chars.trim().length === 0) {
+        return null;
+      }
+      return node.chars;
+    } else if (node.type === "ElementNode") {
+      return ElementToNode(node);
+    } else if (node.type === "PathExpression") {
+      return `$:${node.original}`;
+    } else if (node.type === "MustacheStatement") {
+      return ToJSType(node.path);
+    } else if (node.type === "BlockStatement") {
+      if (!node.params.length) {
+        return null;
+      }
+      if (node.params[0].type === "SubExpression") {
+        return null;
+      }
+      const childElement = node.program.body.find(
+        (e) => e.type === "ElementNode"
+      );
+      if (!childElement) {
+        return null;
+      }
+      return [
+        "@each",
+        node.params[0].original,
+        node.program.blockParams[0],
+        ToJSType(childElement),
+      ];
+    }
+  }
+
+  function ElementToNode(element: ASTv1.ElementNode): HBSNode {
+    const node = {
+      tag: element.tag,
+      attributes: element.attributes.map((attr) => {
+        return [attr.name, ToJSType(attr.value)];
+      }),
+      children: element.children
+        .map((el) => ToJSType(el))
+        .filter((el) => el !== null),
+    };
+    return node as unknown as HBSNode;
+  }
+
+  const ast = preprocess(hbsToProcess);
+
+  traverse(ast, {
+    ElementNode(node) {
+      if (seenNodes.has(node)) {
+        return;
+      }
+      seenNodes.add(node);
+      program.push(ElementToNode(node));
+    },
+  });
+
+  type HBSExpression = [string, string, string, HBSNode];
+
+  type HBSNode = {
+    tag: string;
+    attributes: [string, string][];
+    children: (string | HBSNode | HBSExpression)[];
+  };
+
+  const input: Array<HBSNode | HBSExpression> = program;
+
+  function serializeAttribute(key: string, value: string): string {
+    if (value.startsWith("$:")) {
+      return `['${key}', ${value.replace("$:", "")}]`;
+    }
+    return `['${key}', '${value}']`;
+  }
+  function serializeChildren(
+    children: Array<string | HBSNode | HBSExpression>
+  ) {
+    if (children.length === 0) {
+      return "null";
+    }
+    return `${children
+      .map((child) => {
+        if (typeof child === "string") {
+          if (child.startsWith("$:")) {
+            return `${child.replace("$:", "")}`;
+          }
+          return `'${child}'`;
+        }
+        return serializeNode(child);
+      })
+      .join(", ")}`;
+  }
+
+  function serializeNode(node: HBSNode | HBSExpression): string | undefined {
+    if (Array.isArray(node)) {
+      // control node (each)
+      const [, arrayName, , child] = node;
+      return `DOM.each(${arrayName}, (item) => {
+        return ${serializeNode(child)}
+      })`;
+    }
+    if (node.tag.toLowerCase() !== node.tag) {
+      // it's component function
+      return `${node.tag}({
+        ${node.attributes
+          .map((attr) => {
+            return `${attr[0].replace("@", "")}: ${attr[1].replace("$:", "")}`;
+          })
+          .join(", ")}
+      })`;
+    }
+    return `DOM('${node.tag}', {
+      attributes: [${node.attributes
+        .map((attr) => {
+          return serializeAttribute(attr[0], attr[1]);
+        })
+        .join(", ")}]
+    }, ${serializeChildren(node.children)} )`;
+  }
+
+  const results = input.reduce((acc, node) => {
+    const serializedNode = serializeNode(node);
+    if (typeof serializedNode === "string") {
+      acc.push(serializedNode);
+      return acc;
+    }
+    return acc;
+  }, [] as string[]);
+
+  const result = `(() => {
+    const roots = [${results.join(", ")}];
+    return {
+      nodes: roots.reduce((acc, root) => {
+        if ('nodes' in root) {
+          return [...acc, ...root.nodes];
+        } else {
+          return [...acc, root.node];
+        }
+      }, []),
+      destructors: roots.reduce((acc, root) => {
+        return [...acc, ...root.destructors];
+      }, []),
+      index: 0,
+    }
+  })()`;
+
+  return txt?.replace("$placeholder", result);
+}

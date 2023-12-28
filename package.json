@@ -1,0 +1,23 @@
+{
+  "name": "glimmer-next",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "t": "ts-node --esm ./plugins/test.ts"
+  },
+  "devDependencies": {
+    "@types/babel__core": "^7.20.5",
+    "typescript": "^5.2.2",
+    "vite": "^5.0.8"
+  },
+  "dependencies": {
+    "@babel/core": "^7.23.6",
+    "@babel/preset-typescript": "^7.23.3",
+    "@glimmer/syntax": "^0.87.1",
+    "ts-node": "^10.9.2"
+  }
+}
