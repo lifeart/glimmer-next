@@ -8,7 +8,7 @@ import type { Item } from "@/utils/data";
 type Props = {
   attributes: [
     string,
-    string | ((element: HTMLElement, attribute: string) => void)
+    MergedCell | Cell | string | ((element: HTMLElement, attribute: string) => void)
   ][];
   events: [string, EventListener][];
 };
@@ -38,6 +38,11 @@ function _DOM(
       if (typeof destructor === "function") {
         destructors.push(destructor);
       }
+    } else if (value instanceof Cell || value instanceof MergedCell) {
+        const destructor = bindUpdatingOpcode(value, (value) => {
+            element.setAttribute(key, String(value));
+        });
+        destructors.push(destructor);
     } else {
       element.setAttribute(key, value);
     }
@@ -54,7 +59,7 @@ function _DOM(
     } else if (typeof child === "object" && "node" in child) {
       element.appendChild(child.node);
       destructors.push(...child.destructors);
-    } else if (typeof child === "string") {
+    } else if (typeof child === "string" || typeof child === "number") {
       const text = document.createTextNode(child);
       element.appendChild(text);
     } else if (child instanceof Cell || child instanceof MergedCell) {

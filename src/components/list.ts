@@ -1,6 +1,6 @@
-import type { Application } from '@/components/Application';
-import { RowComponent } from '@/components/RowComponent';
-import type { Item } from '@/utils/data';
+import { ComponentReturnType, renderComponent } from '@/utils/component';
+import { Cell } from '@/utils/reactive';
+import { bindUpdatingOpcode } from '@/utils/vm';
 
 /*
   This is a list manager, it's used to render and sync a list of items.
@@ -9,31 +9,33 @@ import type { Item } from '@/utils/data';
   Based on Glimmer-VM list update logic.
 */
 
-export class ListComponent {
+export class ListComponent<T extends object> {
   parent: HTMLElement;
-  app: Application;
-  keyMap: Map<string, ReturnType<typeof RowComponent>> = new Map();
+  keyMap: Map<string, ComponentReturnType> = new Map();
   nodes: Node[] = [];
   destructors: Array<() => void> = [];
   index = 0;
-  constructor({ app, items, itemComponent }: { app: Application; items: Item[], itemComponent: any }, outlet: HTMLElement) {
+  ItemComponent: (item: T) => ComponentReturnType;
+  constructor({ tag, ItemComponent }: { tag: Cell<T[]>, ItemComponent: (item: T) => ComponentReturnType }, outlet: HTMLElement) {
     const table = createTable();
+    this.ItemComponent = ItemComponent;
     this.nodes = [table];
-    this.app = app;
     this.parent = table.childNodes[0] as HTMLElement;
-    this.syncList(items);
+    bindUpdatingOpcode(tag, () => {
+      this.syncList(tag.value);
+    });
     outlet.appendChild(table);
   }
-  keyForItem(item: Item) {
-    return String(item.id);
+  keyForItem(item: T) {
+    return String(item['id']);
   }
-  syncList(items: Item[]) {
+  syncList(items: T[]) {
     const existingKeys = new Set(this.keyMap.keys());
     const updatingKeys = new Set(items.map((item) => this.keyForItem(item)));
     const keysToRemove = [...existingKeys].filter((key) => !updatingKeys.has(key));
     const amountOfKeys = existingKeys.size;
     let targetNode = amountOfKeys > 0 ? this.parent : document.createDocumentFragment();
-    const rowsToMove: Array<[ReturnType<typeof RowComponent>, number]> = [];
+    const rowsToMove: Array<[ComponentReturnType, number]> = [];
     let seenKeys = 0;
 
     // iterate over existing keys and remove them
@@ -54,7 +56,8 @@ export class ListComponent {
       const key = this.keyForItem(item);
       const maybeRow = this.keyMap.get(key);
       if (!maybeRow) {
-        const row = RowComponent({ item, app: this.app }, targetNode);
+        const row = this.ItemComponent(item);
+        renderComponent(row, targetNode);
         row.index = index;
         this.keyMap.set(key, row);
       } else {

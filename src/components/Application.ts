@@ -3,9 +3,9 @@ import { buildData, swapRows, updateData } from "@/utils/data";
 import { ListComponent } from "./list";
 import { Cell } from "@/utils/reactive";
 import { renderComponent, type ComponentReturnType } from "@/utils/component";
-import { bindUpdatingOpcode } from "@/utils/vm";
 import { Header } from "./Header";
 import { RemoveIcon } from "./RemoveIcon";
+import { Row } from "./Row";
 export class Application {
   _items = new Cell<Item[]>([], "items");
   get items() {
@@ -14,7 +14,7 @@ export class Application {
   set items(value: Item[]) {
     this._items.update(value);
   }
-  list: ListComponent;
+  list: ListComponent<Item>;
   children: ComponentReturnType[] = [];
   selectedCell = new Cell(0, "selectedCell");
   constructor() {
@@ -35,17 +35,20 @@ export class Application {
     renderComponent(header, container);
   
     this.items = [];
-    this.list = new ListComponent({ app: this, items: this.items }, container);
+    const ItemComponent = (item: Item) => {
+      return Row({ 
+        item, 
+        selectedCell: this.selectedCell, 
+        onRemove: () => this.removeItem(item) 
+      });
+    }
+    this.list = new ListComponent<Item>({ tag: this._items, ItemComponent }, container);
 
     /* benchmark icon preload span start */
     renderComponent(RemoveIcon(), container);
   
     document.body.appendChild(container);
     /* benchmark icon preload span end */
-
-    bindUpdatingOpcode(this._items, () => {
-      this.list.syncList(this.items);
-    });
 
     this.children.push(this.list);
   }

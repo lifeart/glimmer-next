@@ -1,4 +1,4 @@
-import { MergedCell, Cell, opsForTag, type AnyCell, type tagOp } from './reactive';
+import { MergedCell, Cell, opsForTag, type AnyCell, type tagOp, setIsRendering, isRendering } from './reactive';
 
 export function maybeUpdatingAttributeOpcode<T extends HTMLElement>(
   destructors: Array<() => void>,
@@ -38,7 +38,13 @@ export function maybeUpdatingPropertyOpcode<T extends Node>(
 export function bindUpdatingOpcode(tag: AnyCell, op: tagOp) {
   const ops = opsForTag.get(tag) || [];
   // apply the op to the current value
-  op(tag.value);
+  if (isRendering()) {
+    op(tag.value);
+  } else {
+    setIsRendering(true);
+    op(tag.value);
+    setIsRendering(false);
+  }
   ops.push(op);
   opsForTag.set(tag, ops);
   return () => {

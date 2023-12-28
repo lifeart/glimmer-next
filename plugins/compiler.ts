@@ -15,7 +15,9 @@ export function compiler(): Plugin {
       if (id.endsWith(".ts")) {
         const source = code;
         const result = transform(source, file);
-        console.log(result);
+        if (file.includes('Row')) {
+          console.log(result);
+        }
         return result;
       }
       return result;
