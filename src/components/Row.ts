@@ -6,7 +6,7 @@ import { Cell, cellFor, formula } from "@/utils/reactive";
 export function Row({item, selectedCell, onRemove}: {
     item: Item;
     selectedCell: Cell<number>;
-    onRemove: () => void;
+    onRemove: (item: Item) => void;
 }) {
 
     const id = item.id;
@@ -24,6 +24,10 @@ export function Row({item, selectedCell, onRemove}: {
         return  id === selectedCell.value ? 'danger' : '';
     });
 
+    const onClickRemove = () => {
+        onRemove(item);
+    }
+
     scope({ RemoveIcon, labelCell, onClick, onRemove, className });
 
     return hbs`
@@ -34,7 +38,7 @@ export function Row({item, selectedCell, onRemove}: {
             <a {{on "click" onClick}}  data-test-select="true">{{labelCell}}</a>
         </td>
         <td class="col-md-1">
-            <a {{on "click" onRemove}} data-test-remove="true">
+            <a {{on "click" onClickRemove}} data-test-remove="true">
                 <RemoveIcon />
             </a>
         </td>

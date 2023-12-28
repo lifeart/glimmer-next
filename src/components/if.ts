@@ -1,6 +1,6 @@
-import { targetFor, type ComponentRenderTarget } from '@/utils/component';
-import type { Cell } from '@/utils/reactive';
-import { bindUpdatingOpcode } from '@/utils/vm';
+import { targetFor, type ComponentRenderTarget } from "@/utils/component";
+import type { Cell } from "@/utils/reactive";
+import { bindUpdatingOpcode } from "@/utils/vm";
 
 export function ifCondition(
   cell: Cell<boolean>,
@@ -8,7 +8,7 @@ export function ifCondition(
   trueBranch: HTMLElement | null,
   falseBranch: HTMLElement | null
 ) {
-  const placeholder = document.createComment('placeholder');
+  const placeholder = document.createComment("placeholder");
   const target = targetFor(outlet);
   target.appendChild(placeholder);
   return bindUpdatingOpcode(cell, (value) => {

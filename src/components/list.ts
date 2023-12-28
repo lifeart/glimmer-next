@@ -10,21 +10,21 @@ import { bindUpdatingOpcode } from '@/utils/vm';
 */
 
 export class ListComponent<T extends object> {
-  parent: HTMLElement;
+  parent: HTMLElement | DocumentFragment;
   keyMap: Map<string, ComponentReturnType> = new Map();
   nodes: Node[] = [];
   destructors: Array<() => void> = [];
   index = 0;
   ItemComponent: (item: T) => ComponentReturnType;
   constructor({ tag, ItemComponent }: { tag: Cell<T[]>, ItemComponent: (item: T) => ComponentReturnType }, outlet: HTMLElement) {
-    const table = createTable();
     this.ItemComponent = ItemComponent;
-    this.nodes = [table];
-    this.parent = table.childNodes[0] as HTMLElement;
+    const mainNode = outlet;
+    this.nodes = [mainNode];
+    this.parent = mainNode;
     bindUpdatingOpcode(tag, () => {
       this.syncList(tag.value);
     });
-    outlet.appendChild(table);
+    // outlet.appendChild(mainNode);
   }
   keyForItem(item: T) {
     return String(item['id']);
@@ -99,11 +99,3 @@ export class ListComponent<T extends object> {
   }
 }
 
-function createTable() {
-  const table = document.createElement('table');
-  const tbody = document.createElement('tbody');
-  table.className = 'table table-hover table-striped test-data';
-  tbody.setAttribute('id', 'tbody');
-  table.appendChild(tbody);
-  return table;
-}

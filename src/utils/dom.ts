@@ -100,15 +100,11 @@ function each<T extends Record<string, unknown>>(
   const outlet = document.createElement("div");
   const List = new ListComponent(
     {
-      app: new Application(),
-      items: items.value as Item[],
-      itemComponent: fn,
+      tag: items as Cell<T[]>,
+      ItemComponent: fn,
     },
     outlet
   );
-  bindUpdatingOpcode(items, (value) => {
-    List.syncList(value as Item[]);
-  });
 
   return {
     node: outlet,
