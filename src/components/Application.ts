@@ -11,12 +11,10 @@ export class Application {
   set items(value: Item[]) {
     this.itemsCell.value = value;
   }
-  children: ComponentReturnType[] = [];
   selectedCell = cell(0, "selectedCell");
   constructor() {
     this.removeItem = this.removeItem.bind(this);
-    const app = App({ app: this });
-    renderComponent(app, document.getElementById('app')!);
+    renderComponent(App({ app: this }), document.getElementById('app')!);
   }
   removeItem(item: Item) {
     this.items = this.items.filter((i) => i.id !== item.id);
