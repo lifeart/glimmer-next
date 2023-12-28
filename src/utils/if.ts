@@ -7,6 +7,7 @@ import {
 } from "@/utils/component";
 import type { Cell, MergedCell } from "@/utils/reactive";
 import { bindUpdatingOpcode } from "@/utils/vm";
+import { addDestructors } from "./component";
 
 type GenericReturnType =
   | ComponentReturnType
@@ -31,24 +32,22 @@ export function ifCondition(
       destroyElement(prevComponent);
     }
   };
-  return [
-    runDestructors,
-    bindUpdatingOpcode(cell, (value) => {
-      if (prevComponent) {
-        destroyElement(prevComponent);
-      }
-      if (value === true) {
-        prevComponent = trueBranch();
-      } else {
-        prevComponent = falseBranch();
-      }
-      renderElement(
-        placeholder.parentElement || target,
-        prevComponent,
-        placeholder
-      );
-    }),
-  ];
+
+  addDestructors([runDestructors, bindUpdatingOpcode(cell, (value) => {
+    if (prevComponent) {
+      destroyElement(prevComponent);
+    }
+    if (value === true) {
+      prevComponent = trueBranch();
+    } else {
+      prevComponent = falseBranch();
+    }
+    renderElement(
+      placeholder.parentElement || target,
+      prevComponent,
+      placeholder
+    );
+  })], placeholder);
 }
 
 function renderElement(

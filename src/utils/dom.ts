@@ -8,6 +8,7 @@ import { Cell, MergedCell } from "@/utils/reactive";
 import { bindUpdatingOpcode } from "@/utils/vm";
 import { ListComponent } from "@/utils/list";
 import { ifCondition } from "@/utils/if";
+import { addDestructors } from "./component";
 
 type Props = {
   attributes: [
@@ -65,20 +66,23 @@ function _DOM(
       child.nodes.forEach((node) => {
         element.appendChild(node);
       });
-      destructors.push(...child.destructors);
+      addDestructors(child.destructors, child);
     } else if (typeof child === "object" && "node" in child) {
       element.appendChild(child.node);
-      destructors.push(...child.destructors);
+      addDestructors(child.destructors, child);
     } else if (typeof child === "string" || typeof child === "number") {
       const text = document.createTextNode(child);
       element.appendChild(text);
     } else if (child instanceof Cell || child instanceof MergedCell) {
       const text = document.createTextNode("");
       element.appendChild(text);
-      destructors.push(
-        bindUpdatingOpcode(child, (value) => {
-          text.textContent = String(value ?? "");
-        })
+      addDestructors(
+        [
+          bindUpdatingOpcode(child, (value) => {
+            text.textContent = String(value ?? "");
+          }),
+        ],
+        text
       );
     } else if (child instanceof Function) {
       // looks like a component
@@ -90,13 +94,14 @@ function _DOM(
       } else {
         element.appendChild(componentProps.node);
       }
-      destructors.push(...componentProps.destructors);
+      addDestructors(componentProps.destructors, componentProps);
     }
   });
 
+  addDestructors(destructors, element);
   return {
     node: element,
-    destructors,
+    destructors: [],
     index: 0,
   };
 }
@@ -119,15 +124,15 @@ function ifCond(
   falseBranch: BranchCb
 ) {
   const outlet = document.createDocumentFragment();
-  const component = ifCondition(cell, outlet, trueBranch, falseBranch);
+  ifCondition(cell, outlet, trueBranch, falseBranch);
   return {
     node: outlet,
-    destructors: component,
+    destructors: [],
     index: 0,
   };
 }
 
-function each<T extends {id: number}>(
+function each<T extends { id: number }>(
   items: Cell<T[]> | MergedCell,
   fn: (item: T) => ComponentReturnType
 ) {
