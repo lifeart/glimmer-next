@@ -86,15 +86,19 @@ function _DOM(
       );
     } else if (child instanceof Function) {
       // looks like a component
-      const componentProps: ComponentReturnType | NodeReturnType = child();
-      if ("nodes" in componentProps) {
+      const componentProps: ComponentReturnType | NodeReturnType | string | number = child();
+      if (typeof componentProps !== 'object') {
+        const text = document.createTextNode(String(componentProps));
+        element.appendChild(text);
+      } else if ("nodes" in componentProps) {
         componentProps.nodes.forEach((node) => {
           element.appendChild(node);
         });
+        addDestructors(componentProps.destructors, componentProps);
       } else {
         element.appendChild(componentProps.node);
+        addDestructors(componentProps.destructors, componentProps);
       }
-      addDestructors(componentProps.destructors, componentProps);
     }
   });
 

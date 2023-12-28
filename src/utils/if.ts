@@ -5,7 +5,7 @@ import {
   NodeReturnType,
   destroyElement,
 } from "@/utils/component";
-import type { Cell, MergedCell } from "@/utils/reactive";
+import { formula, type Cell, type MergedCell } from "@/utils/reactive";
 import { bindUpdatingOpcode } from "@/utils/vm";
 import { addDestructors } from "./component";
 
@@ -32,6 +32,12 @@ export function ifCondition(
       destroyElement(prevComponent);
     }
   };
+
+  if (typeof cell === "function") { 
+    cell = formula(cell);
+  } else if (typeof cell === 'boolean') {
+    cell = formula(() => cell);
+  }
 
   addDestructors([runDestructors, bindUpdatingOpcode(cell, (value) => {
     if (prevComponent) {
