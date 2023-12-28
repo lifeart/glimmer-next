@@ -1,9 +1,10 @@
 import {
   ComponentReturnType,
   NodeReturnType,
+  addDestructors,
   destroyElement,
 } from "@/utils/component";
-import { Cell } from "@/utils/reactive";
+import { Cell, MergedCell } from "@/utils/reactive";
 import { bindUpdatingOpcode } from "@/utils/vm";
 
 function renderItem(
@@ -84,13 +85,13 @@ type GenericReturnType =
   | ComponentReturnType[]
   | NodeReturnType[];
 
-export class ListComponent<T extends { id: number}> {
+export class ListComponent<T extends { id: number }> {
   keyMap: Map<string, GenericReturnType> = new Map();
   nodes: Node[] = [];
   destructors: Array<() => void> = [];
   index = 0;
   ItemComponent: (item: T) => GenericReturnType;
-  bottomMarker!: Node;
+  bottomMarker!: Comment;
   constructor(
     {
       tag,
@@ -103,9 +104,20 @@ export class ListComponent<T extends { id: number}> {
     this.nodes = [];
     this.bottomMarker = document.createComment("list bottom marker");
     mainNode.appendChild(this.bottomMarker);
-    bindUpdatingOpcode(tag, () => {
-      this.syncList(tag.value);
-    });
+
+    // @ts-expect-error never ever
+    if (!(tag instanceof Cell) && !(tag instanceof MergedCell)) {
+      console.warn("iterator for @each should be a cell");
+    }
+
+    addDestructors(
+      [
+        bindUpdatingOpcode(tag, () => {
+          this.syncList(tag.value);
+        }),
+      ],
+      this.bottomMarker
+    );
   }
   keyForItem(item: T & { id: number }) {
     return String(item["id"]);
