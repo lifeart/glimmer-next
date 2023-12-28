@@ -8,16 +8,18 @@ import {
 import type { Cell, MergedCell } from "@/utils/reactive";
 import { bindUpdatingOpcode } from "@/utils/vm";
 
+type GenericReturnType = ComponentReturnType | NodeReturnType | ComponentReturnType[] | NodeReturnType[] | null | null[];
+
 export function ifCondition(
   cell: Cell<boolean> | MergedCell,
   outlet: ComponentRenderTarget,
-  trueBranch: () => ComponentReturnType | NodeReturnType,
-  falseBranch: () => ComponentReturnType | NodeReturnType
+  trueBranch: () => GenericReturnType,
+  falseBranch: () => GenericReturnType
 ) {
   const placeholder = document.createComment("if-placeholder");
   const target = targetFor(outlet);
   target.appendChild(placeholder);
-  let prevComponent: ComponentReturnType | NodeReturnType | null = null;
+  let prevComponent: GenericReturnType = null;
   const runDestructors = () => {
     if (prevComponent) {
       destroyElement(prevComponent);
@@ -32,20 +34,29 @@ export function ifCondition(
     } else {
       prevComponent = falseBranch();
     }
-    renderElement(target, prevComponent, placeholder);
+    renderElement(placeholder.parentElement || target, prevComponent, placeholder);
   })];
 }
 
 function renderElement(
   target: Node,
-  el: ComponentReturnType | NodeReturnType,
+  el: GenericReturnType,
   placeholder: Comment
 ) {
-  if ("nodes" in el) {
-    el.nodes.forEach((node) => {
-      target.insertBefore(node, placeholder);
-    });
+  if (!Array.isArray(el)) {
+    if (el === null) {
+      return;
+    }
+    if ("nodes" in el) {
+      el.nodes.forEach((node) => {
+        target.insertBefore(node, placeholder);
+      });
+    } else {
+      target.insertBefore(el.node, placeholder);
+    }
   } else {
-    target.insertBefore(el.node, placeholder);
+    el.forEach((item) => {
+      renderElement(target, item, placeholder);
+    });
   }
 }

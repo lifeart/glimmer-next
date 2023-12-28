@@ -103,6 +103,13 @@ function _DOM(
 
 _DOM.each = each;
 _DOM.if = ifCond;
+_DOM.text = function(text: string) {
+    return {
+        node: document.createTextNode(text),
+        destructors: [],
+        index: 0,
+    };
+}
 
 type BranchCb = () => ComponentReturnType | NodeReturnType;
 

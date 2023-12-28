@@ -1,5 +1,6 @@
 import { hbs, scope } from "@/utils/template";
 import { ButtonWrapper } from "./ButtonWrapper";
+import { Smile } from "./Smile";
 
 type Cb = () => void;
 type HeaderArgs = {
@@ -18,12 +19,12 @@ export function Header({
   swaprows,
   runlots,
 }: HeaderArgs) {
-  scope({ ButtonWrapper, run, add, update, clear, swaprows, runlots });
+  scope({ ButtonWrapper, run, add, update, clear, swaprows, runlots, Smile });
   return hbs`
     <div class="jumbotron">
         <div class="row">
             <div class="col-md-6">
-                <h1>GlimmerCore</h1>
+                <h1>GlimmerC<Smile/>re</h1>
             </div>
             <div class="col-md-6">
                 <div class="row">

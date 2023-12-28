@@ -11,14 +11,23 @@ export function renderComponent(
   return component;
 }
 
-export function destroyElement(component: ComponentReturnType | NodeReturnType  ) {
-  component.destructors.forEach((fn) => fn());
-  if ('nodes' in component) {
-    component.nodes.forEach((node) => {
-      node.parentElement!.removeChild(node);
+export function destroyElement(component: ComponentReturnType | NodeReturnType | ComponentReturnType[] | NodeReturnType[] | null | null[]  ) {
+  if (Array.isArray(component)) {
+    component.forEach((component) => {
+      destroyElement(component);
     });
   } else {
-    component.node.parentElement!.removeChild(component.node);
+    if (component === null) {
+      return;
+    }
+    component.destructors.forEach((fn) => fn());
+    if ('nodes' in component) {
+      component.nodes.forEach((node) => {
+        node.parentElement!.removeChild(node);
+      });
+    } else {
+      component.node.parentElement!.removeChild(component.node);
+    }
   }
 }
 

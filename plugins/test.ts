@@ -66,29 +66,44 @@ export function transform(source: string, fileName: string) {
       if (node.params[0].type === "SubExpression") {
         return null;
       }
-      const childElement = node.program.body.find(
-        (e) => e.type === "ElementNode"
-      );
-      if (!childElement) {
+      const childElements = node.program.body.filter((node) => {
+        return node.type === "ElementNode" || node.type === "TextNode";
+      });
+      const elseChildElements = node.inverse?.body.filter((node) => {
+        return node.type === "ElementNode" || node.type === "TextNode";
+      });
+      if (!childElements.length) {
         return null;
       }
+      if (node.path.type !== 'PathExpression') {
+        return null;
+      }
+      const name = node.path.original;
+
       return [
-        "@each",
+        `@${name}`,
         node.params[0].original,
-        node.program.blockParams[0],
-        ToJSType(childElement),
+        node.program.blockParams[0] ?? null,
+        childElements?.map((el) => ToJSType(el)) ?? null,
+        elseChildElements?.length ? elseChildElements.map((el) => ToJSType(el)) : null,
       ];
     }
   }
 
   function escapeString(str: string) {
-    if (str.startsWith("'")) {
-      return str;
-    } else if (str.startsWith('"')) {
-      return str;
+    const lines = str.split("\n");
+    if (lines.length === 1) {
+      if (str.startsWith("'")) {
+        return str;
+      } else if (str.startsWith('"')) {
+        return str;
+      } else {
+        return `"${str}"`;
+      }
     } else {
-      return `"${str}"`;
+      return `\`${str}\``;
     }
+    
   }
 
   function ElementToNode(element: ASTv1.ElementNode): HBSNode {
@@ -119,6 +134,13 @@ export function transform(source: string, fileName: string) {
   const ast = preprocess(hbsToProcess);
 
   traverse(ast, {
+    BlockStatement(node) {
+      if (seenNodes.has(node)) {
+        return;
+      }
+      seenNodes.add(node);
+      program.push(ToJSType(node));
+    },
     ElementNode(node) {
       if (seenNodes.has(node)) {
         return;
@@ -128,7 +150,7 @@ export function transform(source: string, fileName: string) {
     },
   });
 
-  type HBSExpression = [string, string, string, HBSNode];
+  type HBSExpression = [string, string, string | null, HBSNode[], HBSNode[] | null];
 
   type HBSNode = {
     tag: string;
@@ -164,15 +186,26 @@ export function transform(source: string, fileName: string) {
       .join(", ")}`;
   }
 
-  function serializeNode(node: HBSNode | HBSExpression): string | undefined {
+  function serializeNode(node: string | null | HBSNode | HBSExpression): string | undefined | null {
+    if (node === null) {
+      return null;
+    }
     if (Array.isArray(node)) {
       // control node (each)
-      const [, arrayName, , child] = node;
-      return `DOM.each(${arrayName}, (item) => {
-        return ${serializeNode(child)}
-      })`;
-    }
-    if (node.tag.toLowerCase() !== node.tag) {
+      const [key, arrayName, , childs, inverses] = node;
+
+      if (key === "@each") {
+        return `DOM.each(${arrayName}, (item) => {
+          return [${childs.map((child) => serializeNode(child)).filter((el) => el).join(", ")}];
+        })`;
+      } else if (key === '@if') {
+        return `DOM.if(${arrayName}, () => {
+          return [${childs.map((child) => serializeNode(child)).filter((el) => el).join(", ")}];
+        }, () => {
+          return [${inverses?.map((child) => serializeNode(child)).filter((el) => el).join(", ") ?? "null"}];
+        })`;
+      }
+    } else if (typeof node === 'object' && node.tag && node.tag.toLowerCase() !== node.tag) {
       // it's component function
       return `${node.tag}({
         ${node.attributes
@@ -184,19 +217,25 @@ export function transform(source: string, fileName: string) {
           })
           .join(", ")}
       })`;
+    } else if (typeof node === 'object' && node.tag) {
+      return `DOM('${node.tag}', {
+        events: [${node.events
+          .map((attr) => {
+            return serializeAttribute(attr[0], attr[1]);
+          })
+          .join(", ")}],
+        attributes: [${node.attributes
+          .map((attr) => {
+            return serializeAttribute(attr[0], attr[1]);
+          })
+          .join(", ")}]
+      }, ${serializeChildren(node.children)} )`;
+    } else {
+      if (typeof node === "string") {
+        return `DOM.text(\`${node}\`)`;
+      }
+      throw new Error("Unknown node type: " + JSON.stringify(node, null, 2));
     }
-    return `DOM('${node.tag}', {
-      events: [${node.events
-        .map((attr) => {
-          return serializeAttribute(attr[0], attr[1]);
-        })
-        .join(", ")}],
-      attributes: [${node.attributes
-        .map((attr) => {
-          return serializeAttribute(attr[0], attr[1]);
-        })
-        .join(", ")}]
-    }, ${serializeChildren(node.children)} )`;
   }
 
   const results = input.reduce((acc, node) => {

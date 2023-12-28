@@ -1,12 +1,64 @@
-import { ComponentReturnType } from "@/utils/component";
+import { ComponentReturnType, NodeReturnType, destroyElement } from "@/utils/component";
 import { Cell } from "@/utils/reactive";
 import { bindUpdatingOpcode } from "@/utils/vm";
 
-function renderItem(item: ComponentReturnType, marker: Node) {
-  const parent = marker.parentNode;
-  item.nodes.forEach((node) => {
-    parent?.insertBefore(node, marker);
-  });
+function renderItem(item: ComponentReturnType | NodeReturnType | ComponentReturnType[] | NodeReturnType[], marker: Node) {
+  if (Array.isArray(item)) {
+    item.forEach((item) => {
+      renderItem(item, marker);
+    });
+  } else {
+    const parent = marker.parentNode;
+    if ('node' in item) {
+      parent?.insertBefore(item.node, marker);
+    } else {
+      item.nodes.forEach((node) => {
+        parent?.insertBefore(node, marker);
+      });
+    }
+  }
+}
+
+function setIndex(item: GenericReturnType, index: number) {
+  if (Array.isArray(item)) {
+    item.forEach((item) => {
+      item.index = index;
+    });
+  } else {
+    item.index = index;
+  }
+}
+function getIndex(item: GenericReturnType) {
+  if (Array.isArray(item)) {
+    if (!item[0]) {
+      debugger;
+    }
+    return item[0].index;
+  } else {
+    return item.index;
+  }
+}
+function getRootNodes(item: GenericReturnType): Node[] {
+  if (Array.isArray(item)) {
+    return item.reduce((acc: Node[], item: ComponentReturnType | NodeReturnType) => {
+      return acc.concat(getRootNodes(item));
+    }, [] as Node[]);
+  } else if ('nodes' in item) {
+    return item.nodes;
+  } else {
+    return [item.node];
+  }
+}
+function getFirstNode(item: GenericReturnType) {
+  if (Array.isArray(item)) {
+    return getFirstNode(item[0]);
+  } else {
+    if ('nodes' in item) {
+      return item.nodes[0];
+    } else {
+      return item.node;
+    }
+  }
 }
 
 /*
@@ -15,13 +67,14 @@ function renderItem(item: ComponentReturnType, marker: Node) {
 
   Based on Glimmer-VM list update logic.
 */
+type GenericReturnType = ComponentReturnType | NodeReturnType | ComponentReturnType[] | NodeReturnType[];
 
 export class ListComponent<T extends object> {
-  keyMap: Map<string, ComponentReturnType> = new Map();
+  keyMap: Map<string, GenericReturnType> = new Map();
   nodes: Node[] = [];
   destructors: Array<() => void> = [];
   index = 0;
-  ItemComponent: (item: T) => ComponentReturnType;
+  ItemComponent: (item: T) => GenericReturnType;
   bottomMarker!: Node;
   constructor(
     {
@@ -36,7 +89,11 @@ export class ListComponent<T extends object> {
     this.bottomMarker = document.createComment("list bottom marker");
     mainNode.appendChild(this.bottomMarker);
     bindUpdatingOpcode(tag, () => {
-      this.syncList(tag.value);
+      try {
+        this.syncList(tag.value);
+      } catch (e) {
+        console.error(e.stack);
+      }
     });
   }
   keyForItem(item: T) {
@@ -60,15 +117,23 @@ export class ListComponent<T extends object> {
     );
     const amountOfKeys = existingKeys.size;
     let targetNode = this.getTargetNode(amountOfKeys);
-    const rowsToMove: Array<[ComponentReturnType, number]> = [];
+    const rowsToMove: Array<[GenericReturnType, number]> = [];
     let seenKeys = 0;
 
     // iterate over existing keys and remove them
     const removedIndexes = keysToRemove.map((key) => this.destroyListItem(key));
     for (const value of this.keyMap.values()) {
       removedIndexes.forEach((index) => {
-        if (value.index > index) {
-          value.index--;
+        if (Array.isArray(value)) {
+          value.forEach((item) => {
+            if (item.index > index) {
+              item.index--;
+            }
+          });
+        } else {
+          if (value.index > index) {
+            value.index--;
+          }
         }
       });
     }
@@ -88,12 +153,20 @@ export class ListComponent<T extends object> {
       const maybeRow = this.keyMap.get(key);
       if (!maybeRow) {
         const row = this.ItemComponent(item);
-        renderItem(row, targetNode);
-        row.index = index;
+        if (Array.isArray(row)) {
+          row.forEach((item) => {
+            renderItem(item, targetNode);
+            item.index = index;
+          });
+        } else {
+          renderItem(row, targetNode);
+          row.index = index;
+        }
+    
         this.keyMap.set(key, row);
       } else {
         seenKeys++;
-        if (maybeRow.index !== index) {
+        if (getIndex(maybeRow) !== index) {
           rowsToMove.push([maybeRow, index]);
         }
       }
@@ -102,18 +175,18 @@ export class ListComponent<T extends object> {
     rowsToMove.forEach(([row, index]) => {
       const nextItem = items[index + 1];
       if (nextItem === undefined) {
-        row.index = index;
+        setIndex(row, index);
         renderItem(row, this.bottomMarker);
       } else {
         const nextKey = this.keyForItem(nextItem);
         const nextRow = this.keyMap.get(nextKey);
-        const firstNode = row.nodes[0];
+        const firstNode = getFirstNode(row);
         if (nextRow && firstNode) {
-          nextRow.nodes.forEach((node) =>
+          getRootNodes(nextRow).forEach((node) =>
             firstNode.parentNode!.insertBefore(firstNode, node)
           );
         }
-        row.index = index;
+        setIndex(row, index);
       }
     });
     if (targetNode !== this.bottomMarker) {
@@ -125,11 +198,8 @@ export class ListComponent<T extends object> {
   }
   destroyListItem(key: string) {
     const row = this.keyMap.get(key)!;
-    row.destructors.forEach((fn) => fn());
+    destroyElement(row);
     this.keyMap.delete(key);
-    row.nodes.forEach((node) => {
-      node.parentElement?.removeChild(node);
-    });
-    return row.index;
+    return getIndex(row);
   }
 }
