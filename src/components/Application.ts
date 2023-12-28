@@ -16,7 +16,7 @@ export class Application {
   constructor() {
     this.removeItem = this.removeItem.bind(this);
     const app = App({ app: this });
-    renderComponent(app, document.body);
+    renderComponent(app, document.getElementById('app')!);
   }
   removeItem(item: Item) {
     this.items = this.items.filter((i) => i.id !== item.id);

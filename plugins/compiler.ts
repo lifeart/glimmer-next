@@ -7,7 +7,7 @@ export function compiler(): Plugin {
     enforce: "pre",
     name: "glimmer-next",
     transform(code: string, file: string) {
-      if (!file.includes("glimmer-next/src/") || !code.includes("hbs")) {
+      if (!code.includes("@/utils/template")) {
         return;
       }
       let result: string | undefined = undefined;

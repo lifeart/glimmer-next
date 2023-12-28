@@ -84,7 +84,7 @@ type GenericReturnType =
   | ComponentReturnType[]
   | NodeReturnType[];
 
-export class ListComponent<T extends object> {
+export class ListComponent<T extends { id: number}> {
   keyMap: Map<string, GenericReturnType> = new Map();
   nodes: Node[] = [];
   destructors: Array<() => void> = [];
@@ -107,8 +107,8 @@ export class ListComponent<T extends object> {
       this.syncList(tag.value);
     });
   }
-  keyForItem(item: T) {
-    return String(item as unknown as {id: number}["id"]);
+  keyForItem(item: T & { id: number }) {
+    return String(item["id"]);
   }
   getTargetNode(amountOfKeys: number) {
     if (amountOfKeys > 0) {

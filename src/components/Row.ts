@@ -17,7 +17,7 @@ export function Row({
 
   const onClick = () => {
     if (selectedCell.value === id) {
-      return (selectedCell.value = 0);
+      selectedCell.value = 0;
     } else {
       selectedCell.value = id;
     }
