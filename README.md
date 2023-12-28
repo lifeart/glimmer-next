@@ -60,3 +60,17 @@ export function Row({item, selectedCell, onRemove}: {
 }
 
 ```
+
+### Notes
+
+* every component is a function, it's running only once
+* modifiers except `on` are not supported
+* helpers composition is not supported
+
+
+### Reactive primitives
+
+* `Cell<T>` - reactive primitive, for mutable state. We could update cel calling `cell.update(value)`, to get cell value we could use `cell.value`.
+* `formula(fn: () => unknown)` - reactive primitive, for derived state.
+
+`formula` could be used to create derived state from `Cell`'s. It's autotrack dependencies and update when any of them changed.
