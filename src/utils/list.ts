@@ -108,6 +108,9 @@ export class ListComponent<T extends { id: number }> {
     // @ts-expect-error never ever
     if (!(tag instanceof Cell) && !(tag instanceof MergedCell)) {
       console.warn("iterator for @each should be a cell");
+      if (Array.isArray(tag)) {
+        tag = new Cell(tag);
+      }
     }
 
     addDestructors(
