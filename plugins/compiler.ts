@@ -15,9 +15,9 @@ export function compiler(): Plugin {
       if (id.endsWith(".ts")) {
         const source = code;
         const result = transform(source, file);
-        if (file.includes('Smile')) {
-          console.log(result);
-        }
+        // if (file.includes('Smile')) {
+        //   console.log(result);
+        // }
         return result;
       }
       return result;

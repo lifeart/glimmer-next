@@ -127,7 +127,7 @@ function ifCond(
   };
 }
 
-function each<T extends Record<string, unknown>>(
+function each<T extends {id: number}>(
   items: Cell<T[]> | MergedCell,
   fn: (item: T) => ComponentReturnType
 ) {
