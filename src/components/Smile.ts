@@ -1,8 +1,8 @@
-import { Cell } from "@/utils/reactive";
+import { cell } from "@/utils/reactive";
 import { hbs, scope } from "@/utils/template";
 
 export function Smile() {
-  const isVisible = new Cell(true, "isVisible");
+  const isVisible = cell(true, "isVisible");
 
   setInterval(() => {
     isVisible.update(!isVisible.value);

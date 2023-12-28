@@ -1,18 +1,18 @@
 import type { Item } from "@/utils/data";
 import { buildData, swapRows, updateData } from "@/utils/data";
-import { Cell } from "@/utils/reactive";
+import { cell } from "@/utils/reactive";
 import { renderComponent, type ComponentReturnType } from "@/utils/component";
-import { App } from "./App";
+import { App } from "./AppLayout";
 export class Application {
-  _items = new Cell<Item[]>([], "items");
+  itemsCell = cell<Item[]>([], "items");
   get items() {
-    return this._items.value;
+    return this.itemsCell.value;
   }
   set items(value: Item[]) {
-    this._items.update(value);
+    this.itemsCell.value = value;
   }
   children: ComponentReturnType[] = [];
-  selectedCell = new Cell(0, "selectedCell");
+  selectedCell = cell(0, "selectedCell");
   constructor() {
     this.removeItem = this.removeItem.bind(this);
     const app = App({ app: this });
@@ -21,13 +21,13 @@ export class Application {
   removeItem(item: Item) {
     this.items = this.items.filter((i) => i.id !== item.id);
   }
-  create_1_000_Items() {
+  create_1_000itemsCell() {
     this.items = buildData(1000);
   }
-  append_1_000_Items() {
+  append_1_000itemsCell() {
     this.items = [...this.items, ...buildData(1000)];
   }
-  create_5_000_Items() {
+  create_5_000itemsCell() {
     this.items = buildData(5000);
   }
   swapRows() {

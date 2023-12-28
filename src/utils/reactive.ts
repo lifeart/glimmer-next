@@ -35,7 +35,6 @@ export function setIsRendering(value: boolean) {
 function tracker() {
   return new Set<Cell>();
 }
-
 // "data" cell, it's value can be updated, and it's used to create derived cells
 export class Cell<T extends unknown = unknown> {
   _value!: T;
@@ -49,6 +48,9 @@ export class Cell<T extends unknown = unknown> {
       currentTracker.add(this);
     }
     return this._value;
+  }
+  set value(value: T) {
+    this.update(value);
   }
   update(value: T) {
     this._value = value;
@@ -141,4 +143,8 @@ export function cellFor<T extends object, K extends keyof T>(obj: T, key: K): Ce
 
 export function formula(fn: () => unknown, debugName?: string) {
   return new MergedCell(fn, `formula:${debugName ?? 'unknown'}`);
+}
+
+export function cell<T>(value: T, debugName?: string) {
+  return new Cell(value, debugName);
 }

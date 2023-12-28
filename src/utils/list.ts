@@ -1,15 +1,26 @@
-import { ComponentReturnType, NodeReturnType, destroyElement } from "@/utils/component";
+import {
+  ComponentReturnType,
+  NodeReturnType,
+  destroyElement,
+} from "@/utils/component";
 import { Cell } from "@/utils/reactive";
 import { bindUpdatingOpcode } from "@/utils/vm";
 
-function renderItem(item: ComponentReturnType | NodeReturnType | ComponentReturnType[] | NodeReturnType[], marker: Node) {
+function renderItem(
+  item:
+    | ComponentReturnType
+    | NodeReturnType
+    | ComponentReturnType[]
+    | NodeReturnType[],
+  marker: Node
+) {
   if (Array.isArray(item)) {
     item.forEach((item) => {
       renderItem(item, marker);
     });
   } else {
     const parent = marker.parentNode;
-    if ('node' in item) {
+    if ("node" in item) {
       parent?.insertBefore(item.node, marker);
     } else {
       item.nodes.forEach((node) => {
@@ -30,9 +41,6 @@ function setIndex(item: GenericReturnType, index: number) {
 }
 function getIndex(item: GenericReturnType) {
   if (Array.isArray(item)) {
-    if (!item[0]) {
-      debugger;
-    }
     return item[0].index;
   } else {
     return item.index;
@@ -40,10 +48,13 @@ function getIndex(item: GenericReturnType) {
 }
 function getRootNodes(item: GenericReturnType): Node[] {
   if (Array.isArray(item)) {
-    return item.reduce((acc: Node[], item: ComponentReturnType | NodeReturnType) => {
-      return acc.concat(getRootNodes(item));
-    }, [] as Node[]);
-  } else if ('nodes' in item) {
+    return item.reduce(
+      (acc: Node[], item: ComponentReturnType | NodeReturnType) => {
+        return acc.concat(getRootNodes(item));
+      },
+      [] as Node[]
+    );
+  } else if ("nodes" in item) {
     return item.nodes;
   } else {
     return [item.node];
@@ -53,7 +64,7 @@ function getFirstNode(item: GenericReturnType) {
   if (Array.isArray(item)) {
     return getFirstNode(item[0]);
   } else {
-    if ('nodes' in item) {
+    if ("nodes" in item) {
       return item.nodes[0];
     } else {
       return item.node;
@@ -67,7 +78,11 @@ function getFirstNode(item: GenericReturnType) {
 
   Based on Glimmer-VM list update logic.
 */
-type GenericReturnType = ComponentReturnType | NodeReturnType | ComponentReturnType[] | NodeReturnType[];
+type GenericReturnType =
+  | ComponentReturnType
+  | NodeReturnType
+  | ComponentReturnType[]
+  | NodeReturnType[];
 
 export class ListComponent<T extends object> {
   keyMap: Map<string, GenericReturnType> = new Map();
@@ -162,7 +177,7 @@ export class ListComponent<T extends object> {
           renderItem(row, targetNode);
           row.index = index;
         }
-    
+
         this.keyMap.set(key, row);
       } else {
         seenKeys++;
@@ -198,8 +213,8 @@ export class ListComponent<T extends object> {
   }
   destroyListItem(key: string) {
     const row = this.keyMap.get(key)!;
-    destroyElement(row);
     this.keyMap.delete(key);
+    destroyElement(row);
     return getIndex(row);
   }
 }

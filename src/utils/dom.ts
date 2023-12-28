@@ -6,8 +6,8 @@ import {
 } from "@/utils/component";
 import { Cell, MergedCell } from "@/utils/reactive";
 import { bindUpdatingOpcode } from "@/utils/vm";
-import { ListComponent } from "@/components/list";
-import { ifCondition } from "@/components/if";
+import { ListComponent } from "@/utils/list";
+import { ifCondition } from "@/utils/if";
 
 type Props = {
   attributes: [
@@ -103,24 +103,28 @@ function _DOM(
 
 _DOM.each = each;
 _DOM.if = ifCond;
-_DOM.text = function(text: string) {
-    return {
-        node: document.createTextNode(text),
-        destructors: [],
-        index: 0,
-    };
-}
+_DOM.text = function (text: string) {
+  return {
+    node: document.createTextNode(text),
+    destructors: [],
+    index: 0,
+  };
+};
 
 type BranchCb = () => ComponentReturnType | NodeReturnType;
 
-function ifCond(cell: Cell<boolean>, trueBranch: BranchCb, falseBranch: BranchCb) {
-    const outlet = document.createDocumentFragment();
-    const component = ifCondition(cell, outlet, trueBranch, falseBranch);
-    return {
-        node: outlet,
-        destructors: component,
-        index: 0,
-    }
+function ifCond(
+  cell: Cell<boolean>,
+  trueBranch: BranchCb,
+  falseBranch: BranchCb
+) {
+  const outlet = document.createDocumentFragment();
+  const component = ifCondition(cell, outlet, trueBranch, falseBranch);
+  return {
+    node: outlet,
+    destructors: component,
+    index: 0,
+  };
 }
 
 function each<T extends Record<string, unknown>>(

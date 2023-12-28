@@ -4,12 +4,12 @@ import { Header } from "./Header";
 import { Row } from "./Row";
 export function App({ app }: { app: Application }) {
   const actions = {
-    run: () => app.create_1_000_Items(),
-    add: () => app.append_1_000_Items(),
+    run: () => app.create_1_000itemsCell(),
+    add: () => app.append_1_000itemsCell(),
     update: () => app.updateEvery_10th_row(),
     clear: () => app.clear(),
     swaprows: () => app.swapRows(),
-    runlots: () => app.create_5_000_Items(),
+    runlots: () => app.create_5_000itemsCell(),
   };
 
   scope({ app, actions, Row, Header });
@@ -26,7 +26,7 @@ export function App({ app }: { app: Application }) {
             />
             <table class="table table-hover table-striped test-data">
                 <tbody id="tbody">
-                    {{#each app._items as |item|}}
+                    {{#each app.itemsCell as |item|}}
                         <Row 
                             @item={{item}} 
                             @selectedCell={{app.selectedCell}} 

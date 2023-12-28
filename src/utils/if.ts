@@ -8,7 +8,13 @@ import {
 import type { Cell, MergedCell } from "@/utils/reactive";
 import { bindUpdatingOpcode } from "@/utils/vm";
 
-type GenericReturnType = ComponentReturnType | NodeReturnType | ComponentReturnType[] | NodeReturnType[] | null | null[];
+type GenericReturnType =
+  | ComponentReturnType
+  | NodeReturnType
+  | ComponentReturnType[]
+  | NodeReturnType[]
+  | null
+  | null[];
 
 export function ifCondition(
   cell: Cell<boolean> | MergedCell,
@@ -24,18 +30,25 @@ export function ifCondition(
     if (prevComponent) {
       destroyElement(prevComponent);
     }
-  }
-  return [runDestructors, bindUpdatingOpcode(cell, (value) => {
-    if (prevComponent) {
-      destroyElement(prevComponent);
-    }
-    if (value === true) {
-      prevComponent = trueBranch();
-    } else {
-      prevComponent = falseBranch();
-    }
-    renderElement(placeholder.parentElement || target, prevComponent, placeholder);
-  })];
+  };
+  return [
+    runDestructors,
+    bindUpdatingOpcode(cell, (value) => {
+      if (prevComponent) {
+        destroyElement(prevComponent);
+      }
+      if (value === true) {
+        prevComponent = trueBranch();
+      } else {
+        prevComponent = falseBranch();
+      }
+      renderElement(
+        placeholder.parentElement || target,
+        prevComponent,
+        placeholder
+      );
+    }),
+  ];
 }
 
 function renderElement(
