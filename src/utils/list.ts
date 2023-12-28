@@ -104,15 +104,11 @@ export class ListComponent<T extends object> {
     this.bottomMarker = document.createComment("list bottom marker");
     mainNode.appendChild(this.bottomMarker);
     bindUpdatingOpcode(tag, () => {
-      try {
-        this.syncList(tag.value);
-      } catch (e) {
-        console.error(e.stack);
-      }
+      this.syncList(tag.value);
     });
   }
   keyForItem(item: T) {
-    return String(item["id"]);
+    return String(item as unknown as {id: number}["id"]);
   }
   getTargetNode(amountOfKeys: number) {
     if (amountOfKeys > 0) {
