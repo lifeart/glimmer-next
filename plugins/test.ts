@@ -1,5 +1,5 @@
 // https://astexplorer.net/#/gist/c2f0f7e4bf505471c94027c580af8329/c67119639ba9e8fd61a141e8e2f4cbb6f3a31de9
-
+// https://astexplorer.net/#/gist/4e3b4c288e176bb7ce657f9dea95f052/8dcabe8144c7dc337d21e8c771413db30ca5d397
 import { preprocess, traverse, ASTv1 } from "@glimmer/syntax";
 import { transformSync } from "@babel/core";
 import type Babel from "@babel/core";
@@ -39,14 +39,16 @@ export function transform(source: string, fileName: string) {
   const babelResult = transformSync(rawTxt, {
     plugins: [babelPlugin],
     filename: fileName,
-    presets: ['@babel/preset-typescript']
+    presets: ["@babel/preset-typescript"],
   });
 
   const txt = babelResult?.code ?? "";
 
   function ToJSType(node: ASTv1.Node): any {
     seenNodes.add(node);
-    if (node.type === "TextNode") {
+    if (node.type === "StringLiteral") {
+      return node.value;
+    } else if (node.type === "TextNode") {
       if (node.chars.trim().length === 0) {
         return null;
       }
@@ -79,12 +81,34 @@ export function transform(source: string, fileName: string) {
     }
   }
 
+  function escapeString(str: string) {
+    if (str.startsWith("'")) {
+      return str;
+    } else if (str.startsWith('"')) {
+      return str;
+    } else {
+      return `"${str}"`;
+    }
+  }
+
   function ElementToNode(element: ASTv1.ElementNode): HBSNode {
     const node = {
       tag: element.tag,
       attributes: element.attributes.map((attr) => {
-        return [attr.name, ToJSType(attr.value)];
+        const rawValue = ToJSType(attr.value);
+        // const value = rawValue.startsWith("$:") ? rawValue : escapeString(rawValue);
+        return [attr.name, rawValue];
       }),
+      events: element.modifiers
+        .map((mod) => {
+          const firstParam = mod.params[0];
+          if (firstParam.type === "StringLiteral") {
+            return [ToJSType(firstParam), ToJSType(mod.params[1])];
+          } else {
+            return null;
+          }
+        })
+        .filter((el) => el !== null),
       children: element.children
         .map((el) => ToJSType(el))
         .filter((el) => el !== null),
@@ -109,6 +133,7 @@ export function transform(source: string, fileName: string) {
   type HBSNode = {
     tag: string;
     attributes: [string, string][];
+    events: [string, string][];
     children: (string | HBSNode | HBSExpression)[];
   };
 
@@ -118,7 +143,7 @@ export function transform(source: string, fileName: string) {
     if (value.startsWith("$:")) {
       return `['${key}', ${value.replace("$:", "")}]`;
     }
-    return `['${key}', '${value}']`;
+    return `['${key}', ${escapeString(value)}]`;
   }
   function serializeChildren(
     children: Array<string | HBSNode | HBSExpression>
@@ -152,12 +177,20 @@ export function transform(source: string, fileName: string) {
       return `${node.tag}({
         ${node.attributes
           .map((attr) => {
-            return `${attr[0].replace("@", "")}: ${attr[1].replace("$:", "")}`;
+            const isScopeValue = attr[1].startsWith("$:");
+            return `${attr[0].replace("@", "")}: ${
+              isScopeValue ? attr[1].replace("$:", "") : escapeString(attr[1])
+            }`;
           })
           .join(", ")}
       })`;
     }
     return `DOM('${node.tag}', {
+      events: [${node.events
+        .map((attr) => {
+          return serializeAttribute(attr[0], attr[1]);
+        })
+        .join(", ")}],
       attributes: [${node.attributes
         .map((attr) => {
           return serializeAttribute(attr[0], attr[1]);

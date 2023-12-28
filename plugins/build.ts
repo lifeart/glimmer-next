@@ -1,4 +1,4 @@
-import { DOM } from '@/utils/dom';
+import { DOM } from "@/utils/dom";
 import { Cell } from "@/utils/reactive";
 
 const id = new Cell("id", "id");

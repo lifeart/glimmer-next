@@ -3,11 +3,12 @@ export type ComponentRenderTarget = HTMLElement | DocumentFragment | ComponentRe
 export function renderComponent(
   component: ComponentReturnType,
   target: ComponentRenderTarget
-): void {
+): ComponentReturnType {
   const targetElement = targetFor(target);
   component.nodes.forEach((node) => {
     targetElement.appendChild(node);
   });
+  return component;
 }
 
 export function targetFor(outlet: ComponentRenderTarget): HTMLElement | DocumentFragment {

@@ -6,3 +6,6 @@ export function hbs(tpl: TemplateStringsArray) {
         tpl,
     }
 }
+export function scope(items: Record<string, unknown>): void {
+   // TODO: implement
+}

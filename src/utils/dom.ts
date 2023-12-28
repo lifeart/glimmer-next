@@ -1,4 +1,4 @@
-import type { ComponentReturnType, Destructors } from "@/utils/component";
+import { addEventListener, type ComponentReturnType, type Destructors } from "@/utils/component";
 import { Cell, MergedCell } from "@/utils/reactive";
 import { bindUpdatingOpcode } from "@/utils/vm";
 import { ListComponent } from "@/components/list";
@@ -10,6 +10,7 @@ type Props = {
     string,
     string | ((element: HTMLElement, attribute: string) => void)
   ][];
+  events: [string, EventListener][];
 };
 
 type NodeReturnType = {
@@ -21,11 +22,16 @@ type NodeReturnType = {
 function _DOM(
   tag: string,
   props: Props,
-  ...children: (NodeReturnType | string | Cell | MergedCell | Function)[]
+  ...children: (NodeReturnType | ComponentReturnType | string | Cell | MergedCell | Function)[]
 ): NodeReturnType {
   const element = document.createElement(tag);
   const destructors: Destructors = [];
   const attributes = props.attributes || [];
+  const events = props.events || [];
+  events.forEach(([eventName, fn]) => {
+    const destructor = addEventListener(element, eventName, fn);
+    destructors.push(destructor);
+  });
   attributes.forEach(([key, value]) => {
     if (value instanceof Function) {
       const destructor = value(element, key);
@@ -37,7 +43,15 @@ function _DOM(
     }
   });
   children.forEach((child) => {
-    if (typeof child === "object" && "node" in child) {
+    if (child === null) {
+        return;
+    }
+    if (typeof child === "object" && "nodes" in child) {
+        child.nodes.forEach((node) => {
+            element.appendChild(node);
+        });
+        destructors.push(...child.destructors);
+    } else if (typeof child === "object" && "node" in child) {
       element.appendChild(child.node);
       destructors.push(...child.destructors);
     } else if (typeof child === "string") {
