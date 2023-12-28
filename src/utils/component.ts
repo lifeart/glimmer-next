@@ -11,6 +11,17 @@ export function renderComponent(
   return component;
 }
 
+export function destroyElement(component: ComponentReturnType | NodeReturnType  ) {
+  component.destructors.forEach((fn) => fn());
+  if ('nodes' in component) {
+    component.nodes.forEach((node) => {
+      node.parentElement!.removeChild(node);
+    });
+  } else {
+    component.node.parentElement!.removeChild(component.node);
+  }
+}
+
 export function targetFor(outlet: ComponentRenderTarget): HTMLElement | DocumentFragment {
   if (outlet instanceof HTMLElement || outlet instanceof DocumentFragment) {
     return outlet;
@@ -23,6 +34,11 @@ export type DestructorFn = () => void;
 export type Destructors = Array<DestructorFn>;
 export type ComponentReturnType = {
   nodes: Node[];
+  destructors: Destructors;
+  index: number;
+};
+export type NodeReturnType = {
+  node: Node;
   destructors: Destructors;
   index: number;
 };

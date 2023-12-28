@@ -1,13 +1,13 @@
 import {
   addEventListener,
+  NodeReturnType,
   type ComponentReturnType,
   type Destructors,
 } from "@/utils/component";
 import { Cell, MergedCell } from "@/utils/reactive";
 import { bindUpdatingOpcode } from "@/utils/vm";
 import { ListComponent } from "@/components/list";
-import { Application } from "@/components/Application";
-import type { Item } from "@/utils/data";
+import { ifCondition } from "@/components/if";
 
 type Props = {
   attributes: [
@@ -20,12 +20,6 @@ type Props = {
     )
   ][];
   events: [string, EventListener][];
-};
-
-type NodeReturnType = {
-  node: Node;
-  destructors: Destructors;
-  index: number;
 };
 
 function _DOM(
@@ -108,6 +102,19 @@ function _DOM(
 }
 
 _DOM.each = each;
+_DOM.if = ifCond;
+
+type BranchCb = () => ComponentReturnType | NodeReturnType;
+
+function ifCond(cell: Cell<boolean>, trueBranch: BranchCb, falseBranch: BranchCb) {
+    const outlet = document.createDocumentFragment();
+    const component = ifCondition(cell, outlet, trueBranch, falseBranch);
+    return {
+        node: outlet,
+        destructors: component,
+        index: 0,
+    }
+}
 
 function each<T extends Record<string, unknown>>(
   items: Cell<T[]> | MergedCell,
