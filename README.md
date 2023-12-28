@@ -74,3 +74,5 @@ export function Row({item, selectedCell, onRemove}: {
 * `formula(fn: () => unknown)` - reactive primitive, for derived state.
 
 `formula` could be used to create derived state from `Cell`'s. It's autotrack dependencies and update when any of them changed.
+
+`scope` function is used to suspend `ts` error about unused variables. It's not required for runtime, but required for `ts` compilation.
