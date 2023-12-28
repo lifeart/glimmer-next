@@ -127,9 +127,16 @@ export function executeTag(tag: Cell | MergedCell) {
   }
 }
 
+const cellsMap = new WeakMap<object, Record<string, Cell<unknown>>>();
 // this is function to create a reactive cell from an object property
 export function cellFor<T extends object, K extends keyof T>(obj: T, key: K): Cell<T[K]> {
+  const refs = cellsMap.get(obj) || {};
+  if (key in refs) {
+    return refs[key as unknown as string] as Cell<T[K]>;
+  }
   const cellValue = new Cell<T[K]>(obj[key], `${obj.constructor.name}.${String(key)}`);
+  refs[key as unknown as string] = cellValue;
+  cellsMap.set(obj, refs);
   Object.defineProperty(obj, key, {
     get() {
       return cellValue.value;
