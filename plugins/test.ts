@@ -249,6 +249,7 @@ export function transform(source: string, fileName: string) {
 
   const result = `(() => {
     const roots = [${results.join(", ")}];
+    const existingDestructors = typeof destructors !== 'undefined' ? destructors : [];
     return {
       nodes: roots.reduce((acc, root) => {
         if ('nodes' in root) {
@@ -259,7 +260,7 @@ export function transform(source: string, fileName: string) {
       }, []),
       destructors: roots.reduce((acc, root) => {
         return [...acc, ...root.destructors];
-      }, []),
+      }, existingDestructors),
       index: 0,
     }
   })()`;
