@@ -15,35 +15,37 @@ import { RemoveIcon } from "./RemoveIcon";
 import { Item } from "@/utils/data";
 import { Cell, cellFor, formula } from "@/utils/reactive";
 
-export function Row({item, selectedCell, onRemove}: {
-    item: Item;
-    selectedCell: Cell<number>;
-    onRemove: (item: Item) => void;
+export function Row({
+  item,
+  selectedCell,
+  onRemove,
+}: {
+  item: Item;
+  selectedCell: Cell<number>;
+  onRemove: (item: Item) => void;
 }) {
+  const id = item.id;
+  const labelCell = cellFor(item, "label");
 
-    const id = item.id;
-    const labelCell = cellFor(item, 'label');
-    
-    const onClick = () => {
-        if (selectedCell.value === id) {
-            return selectedCell.update(0);
-        } else {
-            selectedCell.update(id);
-        }
+  const onClick = () => {
+    if (selectedCell.value === id) {
+      return (selectedCell.value = 0);
+    } else {
+      selectedCell.value = id;
     }
+  };
 
-    const className = formula(() => {
-        return  id === selectedCell.value ? 'danger' : '';
-    });
+  const className = formula(() => {
+    return id === selectedCell.value ? "danger" : "";
+  });
 
-    const onClickRemove = () => {
-        onRemove(item);
-    }
+  const onClickRemove = () => {
+    onRemove(item);
+  };
 
-    scope({ RemoveIcon, labelCell, onClick, onRemove, className });
+  scope({ RemoveIcon, labelCell, onClick, className, onClickRemove });
 
-    return hbs`
-    
+  return hbs`
     <tr class={{className}}>
         <td class="col-md-1">{{id}}</td>
         <td class="col-md-4">
@@ -56,9 +58,8 @@ export function Row({item, selectedCell, onRemove}: {
         </td>
         <td class="col-md-6"></td>
     </tr>
-    `;
+  `;
 }
-
 ```
 
 ### Notes

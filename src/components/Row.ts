@@ -34,7 +34,6 @@ export function Row({
   scope({ RemoveIcon, labelCell, onClick, className, onClickRemove });
 
   return hbs`
-    
     <tr class={{className}}>
         <td class="col-md-1">{{id}}</td>
         <td class="col-md-4">
@@ -47,5 +46,5 @@ export function Row({
         </td>
         <td class="col-md-6"></td>
     </tr>
-    `;
+  `;
 }
