@@ -70,9 +70,24 @@ export function Row({item, selectedCell, onRemove}: {
 
 ### Reactive primitives
 
-* `Cell<T>` - reactive primitive, for mutable state. We could update cel calling `cell.update(value)`, to get cell value we could use `cell.value`.
+* `cell<T>(value)` - reactive primitive, for mutable state. We could update cel calling `cell.update(value)`, to get cell value we could use `cell.value`.
 * `formula(fn: () => unknown)` - reactive primitive, for derived state.
 
 `formula` could be used to create derived state from `Cell`'s. It's autotrack dependencies and update when any of them changed.
 
 `scope` function is used to suspend `ts` error about unused variables. It's not required for runtime, but required for `ts` compilation.
+
+`destructors` supported, but not straighforward. We need to call crate const array, named `destructors` and send it to scope.
+```ts
+import { hbs, scope } from "@/utils/template";
+
+export function Icon() {
+   const destructors = [() => {
+         console.log('destructor');
+   }];
+
+   scope({ destructors });
+
+   return hbs`<i class="glyphicon glyphicon-remove"></i>`;
+}
+```
