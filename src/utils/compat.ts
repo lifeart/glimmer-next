@@ -28,7 +28,12 @@ export function emitDomClickEvent(selector: ButtonSelectors) {
 
 export function waitForIdle() {
   return new Promise((resolve) => {
-    requestIdleCallback(resolve);
+    if (typeof requestIdleCallback === 'undefined') {
+      setTimeout(resolve, 50);
+      return;
+    } else {
+      requestIdleCallback(resolve);
+    }
   });
 }
 
