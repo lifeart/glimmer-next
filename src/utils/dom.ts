@@ -50,20 +50,21 @@ function _DOM(
         destructors.push(destructor);
       }
     } else if (value instanceof Cell || value instanceof MergedCell) {
-      let oldValue = '';
-      const destructor = bindUpdatingOpcode(value, (value) => {
-        const valueString = String(value ?? '');
-        if (oldValue === valueString) {
-          return;
-        }
-        if (key === 'class') {
-          element.className = valueString;
-        } else {
-          element.setAttribute(key, valueString);
-        }
-        oldValue = valueString;
-      });
-      destructors.push(destructor);
+      if (key === "class") {
+        destructors.push(
+          bindUpdatingOpcode(value, (value) => {
+            const valueString = String(value ?? "");
+            element.className = valueString;
+          })
+        );
+      } else {
+        destructors.push(
+          bindUpdatingOpcode(value, (value) => {
+            const valueString = String(value ?? "");
+            element.setAttribute(key, valueString);
+          })
+        );
+      }
     } else {
       element.setAttribute(key, value);
     }
@@ -96,8 +97,12 @@ function _DOM(
       );
     } else if (child instanceof Function) {
       // looks like a component
-      const componentProps: ComponentReturnType | NodeReturnType | string | number = child();
-      if (typeof componentProps !== 'object') {
+      const componentProps:
+        | ComponentReturnType
+        | NodeReturnType
+        | string
+        | number = child();
+      if (typeof componentProps !== "object") {
         const text = document.createTextNode(String(componentProps));
         element.appendChild(text);
       } else if ("nodes" in componentProps) {
