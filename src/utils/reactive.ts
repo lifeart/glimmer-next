@@ -42,6 +42,7 @@ export class Cell<T extends unknown = unknown> {
   constructor(value: T, debugName?: string) {
     this._value = value;
     this._debugName = debugName;
+    opsForTag.set(this, []);
   }
   get value() {
     if (currentTracker !== null) {
@@ -84,6 +85,7 @@ export class MergedCell {
   constructor(fn: () => unknown, debugName?: string) {
     this.fn = fn;
     this._debugName = debugName;
+    opsForTag.set(this, []);
   }
   get value() {
     if (this.isConst) {

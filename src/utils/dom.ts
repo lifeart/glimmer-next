@@ -1,5 +1,6 @@
 import {
   addEventListener,
+  addDestructors,
   NodeReturnType,
   type ComponentReturnType,
   type Destructors,
@@ -8,7 +9,6 @@ import { Cell, MergedCell } from "@/utils/reactive";
 import { bindUpdatingOpcode } from "@/utils/vm";
 import { ListComponent } from "@/utils/list";
 import { ifCondition } from "@/utils/if";
-import { addDestructors } from "./component";
 
 type Props = {
   attributes: [
@@ -40,8 +40,7 @@ function _DOM(
   const attributes = props.attributes || [];
   const events = props.events || [];
   events.forEach(([eventName, fn]) => {
-    const destructor = addEventListener(element, eventName, fn);
-    destructors.push(destructor);
+    destructors.push(addEventListener(element, eventName, fn));
   });
   attributes.forEach(([key, value]) => {
     if (value instanceof Function) {
