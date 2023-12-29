@@ -1,4 +1,4 @@
-import { opsForTag, type AnyCell, type tagOp, setIsRendering, isRendering } from './reactive';
+import { opsForTag, type AnyCell, type tagOp, asyncOpcodes, setIsRendering, isRendering } from './reactive';
 
 // this function creates opcode for a tag, it's called when we need to update DOM for a specific tag
 export function bindUpdatingOpcode(tag: AnyCell, op: tagOp) {
@@ -6,10 +6,18 @@ export function bindUpdatingOpcode(tag: AnyCell, op: tagOp) {
   const ops = opsForTag.get(tag)!;
   // apply the op to the current value
   if (isRendering()) {
-    op(tag.value);
+    const value = op(tag.value) as unknown as void | Promise<void>;
+    if (value instanceof Promise) {
+      console.info(`Adding Async Updating Opcode for ${tag._debugName}`);
+      asyncOpcodes.add(op);
+    }
   } else {
     setIsRendering(true);
-    op(tag.value);
+    const value = op(tag.value)  as unknown as void | Promise<void>;
+    if (value instanceof Promise) {
+      console.info(`Adding Async Updating Opcode for ${tag._debugName}`);
+      asyncOpcodes.add(op);
+    }
     setIsRendering(false);
   }
   ops.push(op);

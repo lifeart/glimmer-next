@@ -27,14 +27,40 @@ export function Row({
     return id === selectedCell.value ? "danger" : "";
   });
 
+  let isClicked = false;
+
   const onClickRemove = () => {
+    isClicked = true;
     onRemove(item);
   };
 
-  scope({ RemoveIcon, labelCell, onClick, className, onClickRemove });
+  const modifier = (element: HTMLDivElement) => {
+    return async () => {
+      if (!isClicked) {
+        return;
+      }
+      // animate element to sqieeze it using animation api
+      // fix element position related to it's current coordinates
+      const rect = element.getBoundingClientRect();
+      element.style.position = "fixed";
+      element.style.top = `${rect.top}px`;
+      element.style.left = `${rect.left}px`;
+      element.style.width = `${rect.width}px`;
+      element.style.height = `${rect.height}px`;
+      element.style.backgroundColor = "blue";
+
+      
+
+      element.style.transition = "all 1s ease";
+      element.style.transform = "scale(0)";
+      await new Promise((resolve) => setTimeout(resolve, 1000));      
+    }
+  }
+
+  scope({ RemoveIcon, labelCell, modifier, onClick, className, onClickRemove });
 
   return hbs`
-    <tr class={{className}}>
+    <tr class={{className}} {{modifier}}>
         <td class="col-md-1">{{id}}</td>
         <td class="col-md-4">
             <a {{on "click" onClick}}  data-test-select="true">{{labelCell}}</a>

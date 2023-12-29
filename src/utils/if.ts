@@ -22,9 +22,9 @@ export function ifCondition(
   const target = targetFor(outlet);
   target.appendChild(placeholder);
   let prevComponent: GenericReturnType = null;
-  const runDestructors = () => {
+  const runDestructors = async () => {
     if (prevComponent) {
-      destroyElement(prevComponent);
+      await destroyElement(prevComponent);
     }
   };
 
@@ -34,9 +34,9 @@ export function ifCondition(
     cell = formula(() => cell);
   }
 
-  addDestructors([runDestructors, bindUpdatingOpcode(cell, (value) => {
+  addDestructors([runDestructors, bindUpdatingOpcode(cell, async (value) => {
     if (prevComponent) {
-      destroyElement(prevComponent);
+      await destroyElement(prevComponent);
     }
     if (value === true) {
       prevComponent = trueBranch();

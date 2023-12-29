@@ -6,6 +6,7 @@
 
 import { scheduleRevalidate } from '@/utils/runtime';
 
+export const asyncOpcodes = new WeakSet<tagOp>();
 // List of DOM operations for each tag
 export const opsForTag: WeakMap<Cell | MergedCell, Array<tagOp>> = new WeakMap();
 // REVISION replacement, we use a set of tags to revalidate
@@ -113,33 +114,26 @@ export class MergedCell {
 export type tagOp = (...values: unknown[]) => void;
 
 // this is runtime function, it's called when we need to update DOM for a specific tag
-export function executeTag(tag: Cell | MergedCell) {
+export async function executeTag(tag: Cell | MergedCell) {
+  let opcode: null | tagOp  = null;
   try {
     // we always have ops for a tag
     const ops = opsForTag.get(tag)!;
     const value = tag.value;
-    ops.forEach((op) => {
-      try {
-        op(value);
-      } catch (e: any) {
-        console.error({
-          message: 'Error executing tag operation',
-          error: e,
-          tag,
-          op: op.toString(),
-        });
-        // we remove the op from the list, so it won't be called again
-        const index = ops.indexOf(op);
-        if (index > -1) {
-          ops.splice(index, 1);
-        }
+    for (const op of ops) {
+      opcode = op;
+      if (asyncOpcodes.has(op)) {
+        await op(value);
+      } else {
+        op(value)
       }
-    });
+    }
   } catch (e: any) {
     console.error({
       message: 'Error executing tag',
       error: e,
       tag,
+      opcode: opcode?.toString(),
     });
   }
 }
