@@ -18,7 +18,7 @@ export function Smile() {
 
     setTimeout(() => {
       element.style.opacity = "1";
-    });
+    }, 100);
 
     return async () => {
       element.style.opacity = "0";
