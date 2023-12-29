@@ -65,7 +65,14 @@ export function Row({
 ### Notes
 
 * every component is a function, it's running only once
-* modifiers except `on` are not supported
+* modifiers API: 
+```js
+function modifier(element: Element, ...args: Args) {
+    return () => {
+        // destructor
+    }
+}
+```
 * helpers composition is not supported
 
 
