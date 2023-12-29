@@ -23,7 +23,8 @@ export function ifCondition(
   trueBranch: () => GenericReturnType,
   falseBranch: () => GenericReturnType
 ) {
-  const placeholder = document.createComment("if-placeholder");
+  // "if-placeholder"
+  const placeholder = document.createComment('');
   const target = targetFor(outlet);
   target.appendChild(placeholder);
   let prevComponent: GenericReturnType = null;

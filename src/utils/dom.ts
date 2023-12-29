@@ -23,6 +23,9 @@ type Props = {
   events: [string, EventListener][];
 };
 
+function $text(str: string) {
+  return document.createTextNode(str);
+}
 function _DOM(
   tag: string,
   props: Props,
@@ -81,10 +84,10 @@ function _DOM(
       element.appendChild(child.node);
       addDestructors(child.destructors, child);
     } else if (typeof child === "string" || typeof child === "number") {
-      const text = document.createTextNode(child);
+      const text = $text(child);
       element.appendChild(text);
     } else if (child instanceof Cell || child instanceof MergedCell) {
-      const text = document.createTextNode("");
+      const text = $text("");
       addDestructors(
         [
           bindUpdatingOpcode(child, (value) => {
@@ -102,7 +105,7 @@ function _DOM(
         | string
         | number = child();
       if (typeof componentProps !== "object") {
-        const text = document.createTextNode(String(componentProps));
+        const text = $text(String(componentProps));
         element.appendChild(text);
       } else if ("nodes" in componentProps) {
         componentProps.nodes.forEach((node) => {
@@ -128,7 +131,7 @@ _DOM.each = each;
 _DOM.if = ifCond;
 _DOM.text = function (text: string) {
   return {
-    node: document.createTextNode(text),
+    node: $text(text),
     destructors: [],
     index: 0,
   };

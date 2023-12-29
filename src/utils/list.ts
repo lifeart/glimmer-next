@@ -102,7 +102,8 @@ export class ListComponent<T extends { id: number }> {
     this.ItemComponent = ItemComponent;
     const mainNode = outlet;
     this.nodes = [];
-    this.bottomMarker = document.createComment("list bottom marker");
+    // "list bottom marker"
+    this.bottomMarker = document.createComment('');
     mainNode.appendChild(this.bottomMarker);
 
     // @ts-expect-error never ever
@@ -130,7 +131,8 @@ export class ListComponent<T extends { id: number }> {
       return this.bottomMarker;
     } else {
       const fragment = document.createDocumentFragment();
-      const marker = document.createComment("list fragment marker");
+      // list fragment marker
+      const marker = document.createComment("");
       fragment.appendChild(marker);
       return marker;
     }
