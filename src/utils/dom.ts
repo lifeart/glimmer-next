@@ -85,7 +85,6 @@ function _DOM(
       element.appendChild(text);
     } else if (child instanceof Cell || child instanceof MergedCell) {
       const text = document.createTextNode("");
-      element.appendChild(text);
       addDestructors(
         [
           bindUpdatingOpcode(child, (value) => {
@@ -94,6 +93,7 @@ function _DOM(
         ],
         text
       );
+      element.appendChild(text);
     } else if (child instanceof Function) {
       // looks like a component
       const componentProps:
