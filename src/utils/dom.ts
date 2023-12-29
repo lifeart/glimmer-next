@@ -185,3 +185,30 @@ function maybeReactiveAttr(value: Cell | MergedCell | string) {
 _DOM.maybeReactiveAttr = maybeReactiveAttr;
 
 export const DOM = _DOM;
+
+export function finalizeComponent(
+  roots: Array<ComponentReturnType | NodeReturnType>,
+  existingDestructors: Destructors
+) {
+  const dest = roots.reduce((acc, root) => {
+    return [...acc, ...root.destructors];
+  }, existingDestructors);
+  const nodes: Array<
+    HTMLElement | ComponentReturnType | NodeReturnType | Text | Comment
+  > = [];
+  roots.forEach((root) => {
+    if ("nodes" in root) {
+      nodes.push(
+        ...(root.nodes as unknown as Array<HTMLElement | Text | Comment>)
+      );
+    } else {
+      nodes.push(root.node as unknown as HTMLElement | Text | Comment);
+    }
+  });
+  addDestructors(dest, nodes[0]);
+  return {
+    nodes,
+    destructors: [],
+    index: 0,
+  };
+}

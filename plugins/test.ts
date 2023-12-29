@@ -18,17 +18,21 @@ export function transform(source: string, fileName: string) {
     return {
       name: "ast-transform", // not required
       visitor: {
+        CallExpression(path: any) {
+          if (path.node.callee && path.node.callee.type === 'Identifier') {
+            if (path.node.callee.name === 'scope') {
+                path.remove();
+              }
+          }
+        },
         Program(path: any) {
           path.node.body.unshift(
             t.importDeclaration(
-              [t.importSpecifier(t.identifier("DOM"), t.identifier("DOM"))],
+              [
+                t.importSpecifier(t.identifier("DOM"), t.identifier("DOM")),
+                t.importSpecifier(t.identifier("finalizeComponent"), t.identifier("finalizeComponent"))
+              ],
               t.stringLiteral("@/utils/dom")
-            )
-          );
-          path.node.body.unshift(
-            t.importDeclaration(
-              [t.importSpecifier(t.identifier("addDestructors"), t.identifier("addDestructors"))],
-              t.stringLiteral("@/utils/component")
             )
           );
         },
@@ -256,25 +260,7 @@ export function transform(source: string, fileName: string) {
   const result = `(() => {
     const roots = [${results.join(", ")}];
     const existingDestructors = typeof destructors !== 'undefined' ? destructors : [];
-    const dest = roots.reduce((acc, root) => {
-      return [...acc, ...root.destructors];
-    }, existingDestructors);
-
-    const nodes = roots.reduce((acc, root) => {
-      if ('nodes' in root) {
-        return [...acc, ...root.nodes];
-      } else {
-        return [...acc, root.node];
-      }
-    }, []);
-    
-    addDestructors(dest, nodes[0]);
-    
-    return {
-      nodes,
-      destructors: [],
-      index: 0,
-    }
+    return finalizeComponent(roots, existingDestructors);
   })()`;
 
   return txt?.replace("$placeholder", result);
