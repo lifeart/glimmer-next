@@ -73,8 +73,13 @@ function modifier(element: Element, ...args: Args) {
     }
 }
 ```
-* helpers composition is not supported
-
+* helpers API:
+```js
+function helper(...args: Args): string | boolean | number | null {
+  // helper logic
+  return 3 + 2;
+}
+```
 
 ### Reactive primitives
 
