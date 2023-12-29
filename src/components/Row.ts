@@ -71,7 +71,7 @@ export function Row({
   scope({ RemoveIcon, labelCell, modifier, onClick, className, onClickRemove });
 
   return hbs`
-    <tr class={{className}}>
+    <tr class={{className}} {{modifier}}>
         <td class="col-md-1">{{id}}</td>
         <td class="col-md-4">
             <a {{on "click" onClick}}  data-test-select="true">{{labelCell}}</a>
