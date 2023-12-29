@@ -53,6 +53,8 @@ export function ifCondition(
             await destroyElement(prevCmp);
           }
           if (localRunNumber !== runNumber) {
+            // @todo: run -re-inicialization logic here,
+            // because it may broke form overall syncLogic delay.
             throwedError = new Error(`
           Woops, error in ifCondition, managed by ${cell._debugName}: 
             Run number mismatch, looks like some modifier is removed longer than re-rendering takes. 
