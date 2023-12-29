@@ -170,20 +170,6 @@ function each<T extends { id: number }>(
   };
 }
 
-function maybeReactiveAttr(value: Cell | MergedCell | string) {
-  return (element: HTMLElement, attribute: string) => {
-    if (value instanceof Cell || value instanceof MergedCell) {
-      return bindUpdatingOpcode(value, (value) => {
-        element.setAttribute(attribute, String(value));
-      });
-    } else {
-      element.setAttribute(attribute, value);
-    }
-  };
-}
-
-_DOM.maybeReactiveAttr = maybeReactiveAttr;
-
 export const DOM = _DOM;
 
 export function finalizeComponent(
