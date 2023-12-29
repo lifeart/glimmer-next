@@ -1,4 +1,4 @@
-   /* http://meyerweb.com/eric/tools/css/reset/
+/* http://meyerweb.com/eric/tools/css/reset/
    v2.0 | 20110126
    License: none (public domain)
 */
@@ -162,4 +162,14 @@ table {
 }
 tr.danger td {
   background-color: #faa;
+}
+
+/* Disable double-click to zoom on links, input fields
+   and buttons to improve responsiveness */
+a,
+input,
+button,
+tr,
+td {
+  touch-action: manipulation;
 }

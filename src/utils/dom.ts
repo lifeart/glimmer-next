@@ -50,8 +50,18 @@ function _DOM(
         destructors.push(destructor);
       }
     } else if (value instanceof Cell || value instanceof MergedCell) {
+      let oldValue = '';
       const destructor = bindUpdatingOpcode(value, (value) => {
-        element.setAttribute(key, String(value));
+        const valueString = String(value ?? '');
+        if (oldValue === valueString) {
+          return;
+        }
+        if (key === 'class') {
+          element.className = valueString;
+        } else {
+          element.setAttribute(key, valueString);
+        }
+        oldValue = valueString;
       });
       destructors.push(destructor);
     } else {
