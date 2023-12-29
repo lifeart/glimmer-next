@@ -29,8 +29,10 @@ export function Row({
 
   let isClicked = false;
 
-  const onClickRemove = () => {
-    isClicked = true;
+  const onClickRemove = (e: Event) => {
+    if (e.isTrusted) {
+      isClicked = true;
+    }
     onRemove(item);
   };
 
@@ -40,7 +42,7 @@ export function Row({
         return;
       }
       const rect = element.getBoundingClientRect();
-      element.style.position = "fixed";
+      element.style.position = "absolute";
       element.style.top = `${rect.top}px`;
       element.style.left = `${rect.left}px`;
       element.style.width = `${rect.width}px`;
@@ -48,7 +50,7 @@ export function Row({
       element.style.backgroundColor = "blue";
       element.style.transition = "all 1s ease";
       element.style.transform = "scale(0)";
-      await new Promise((resolve) => setTimeout(resolve, 1000));      
+      await new Promise((resolve) => setTimeout(resolve, 1000)); 
     }
   }
 

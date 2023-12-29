@@ -8,14 +8,14 @@ export function bindUpdatingOpcode(tag: AnyCell, op: tagOp) {
   if (isRendering()) {
     const value = op(tag.value) as unknown as void | Promise<void>;
     if (value instanceof Promise) {
-      console.info(`Adding Async Updating Opcode for ${tag._debugName}`);
+      // console.info(`Adding Async Updating Opcode for ${tag._debugName}`);
       asyncOpcodes.add(op);
     }
   } else {
     setIsRendering(true);
     const value = op(tag.value)  as unknown as void | Promise<void>;
     if (value instanceof Promise) {
-      console.info(`Adding Async Updating Opcode for ${tag._debugName}`);
+      // console.info(`Adding Async Updating Opcode for ${tag._debugName}`);
       asyncOpcodes.add(op);
     }
     setIsRendering(false);
