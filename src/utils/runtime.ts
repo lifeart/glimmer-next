@@ -33,13 +33,15 @@ export function syncDom() {
   setIsRendering(true);
   tagsToRevalidate.forEach((tag) => {
     executeTag(tag);
-    relatedTags.get(tag)?.forEach((tag) => {
+    // we always have related tags
+    relatedTags.get(tag)!.forEach((tag) => {
       sharedTags.add(tag);
     });
   });
+  tagsToRevalidate.clear();
   sharedTags.forEach((tag) => {
     executeTag(tag);
   });
-  tagsToRevalidate.clear();
+  sharedTags.clear();
   setIsRendering(false);
 }

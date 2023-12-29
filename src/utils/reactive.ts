@@ -43,6 +43,7 @@ export class Cell<T extends unknown = unknown> {
     this._value = value;
     this._debugName = debugName;
     opsForTag.set(this, []);
+    relatedTags.set(this, new Set());
   }
   get value() {
     if (currentTracker !== null) {
@@ -70,9 +71,8 @@ export function listDependentCells(cells: Array<AnyCell>, cell: MergedCell) {
 
 function bindAllCellsToTag(cells: Set<Cell>, tag: MergedCell) {
   cells.forEach((cell) => {
-    const tags = relatedTags.get(cell) || new Set();
-    tags.add(tag);
-    relatedTags.set(cell, tags);
+    // we have related tags created in the constructor
+    relatedTags.get(cell)!.add(tag);
   });
   // console.info(listDependentCells(Array.from(cells), tag));
 }
