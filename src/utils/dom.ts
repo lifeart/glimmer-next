@@ -5,6 +5,7 @@ import {
   type ComponentReturnType,
   type Destructors,
   DestructorFn,
+  Slots,
 } from "@/utils/component";
 import { Cell, MergedCell, formula } from "@/utils/reactive";
 import { bindUpdatingOpcode } from "@/utils/vm";
@@ -131,6 +132,7 @@ function _DOM(
 
 _DOM.each = each;
 _DOM.if = ifCond;
+_DOM.slot = slot;
 
 type Fn = () => unknown;
 function def(node: Node, destructors: Destructors = []) {
@@ -139,6 +141,51 @@ function def(node: Node, destructors: Destructors = []) {
     destructors,
     index: 0,
   };
+}
+
+function mergeComponents(
+  components: Array<ComponentReturnType | NodeReturnType | Node>
+) {
+  const nodes: Array<Node> = [];
+  const destructors: Destructors = [];
+  components.forEach((component) => {
+    if ('destructors' in component) {
+      if ("nodes" in component) {
+        nodes.push(...component.nodes);
+      } else if ('node' in component) {
+        nodes.push(component.node);
+      }
+      destructors.push(...component.destructors);
+    } else {
+      nodes.push(component);
+    }
+  });
+  return {
+    nodes,
+    destructors,
+    index: 0,
+  };
+}
+
+function slot(name: string, params: () => unknown[], $slot: Slots) {
+  const elements = $slot[name](...params());
+  return mergeComponents(elements.map((el) => {
+    if (typeof el === 'string' || typeof el === 'number') {
+      return $text(String(el));
+    } else {
+      return el;
+    }
+  }));
+}
+
+function withSlots(
+  component: ComponentReturnType,
+  slots: Record<string, () => Array<ComponentReturnType|NodeReturnType>>
+) {
+  Object.keys(slots).forEach((slotName) => {
+    component.slots[slotName] = slots[slotName];
+  });
+  return component;
 }
 
 function cellToText(cell: Cell | MergedCell) {
@@ -150,6 +197,8 @@ function cellToText(cell: Cell | MergedCell) {
   ], textNode)
   return textNode;
 }
+
+_DOM.withSlots = withSlots;
 _DOM.text = function (text: string | Cell | MergedCell | Fn): NodeReturnType {
   if (typeof text === "string") {
     return def($text(text));
@@ -199,7 +248,8 @@ export const DOM = _DOM;
 
 export function finalizeComponent(
   roots: Array<ComponentReturnType | NodeReturnType>,
-  existingDestructors: Destructors
+  existingDestructors: Destructors,
+  slots: Slots
 ) {
   const dest = roots.reduce((acc, root) => {
     return [...acc, ...root.destructors];
@@ -220,6 +270,7 @@ export function finalizeComponent(
   return {
     nodes,
     destructors: [],
+    slots,
     index: 0,
   };
 }

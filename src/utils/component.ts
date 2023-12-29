@@ -3,6 +3,37 @@ export type ComponentRenderTarget =
   | DocumentFragment
   | ComponentReturnType;
 
+export type GenericReturnType =
+  | ComponentReturnType
+  | NodeReturnType
+  | Array<ComponentReturnType | NodeReturnType>
+  | null
+  | null[];
+
+export function renderElement(
+    target: Node,
+    el: GenericReturnType,
+    placeholder: Comment
+  ) {
+    if (!Array.isArray(el)) {
+      if (el === null) {
+        return;
+      }
+      if ("nodes" in el) {
+        el.nodes.forEach((node) => {
+          target.insertBefore(node, placeholder);
+        });
+      } else {
+        target.insertBefore(el.node, placeholder);
+      }
+    } else {
+      el.forEach((item) => {
+        renderElement(target, item, placeholder);
+      });
+    }
+  }
+  
+
 export function renderComponent(
   component: ComponentReturnType,
   target: ComponentRenderTarget
@@ -18,8 +49,7 @@ export function destroyElement(
   component:
     | ComponentReturnType
     | NodeReturnType
-    | ComponentReturnType[]
-    | NodeReturnType[]
+    | Array<ComponentReturnType | NodeReturnType>
     | null
     | null[]
 ) {
@@ -97,11 +127,13 @@ export function targetFor(
 }
 
 export type DestructorFn = () => void;
+export type Slots = Record<string, (...params: unknown[]) => Array<ComponentReturnType|NodeReturnType|Comment|string|number>>;
 export type Destructors = Array<DestructorFn>;
 export type ComponentReturnType = {
   nodes: Node[];
   destructors: Destructors;
   index: number;
+  slots: Slots;
 };
 export type NodeReturnType = {
   node: Node;

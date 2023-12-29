@@ -65,6 +65,7 @@ export function Row({
 ### Notes
 
 * every component is a function, it's running only once
+* only default slot is supported for now (`{{yield}}`)
 * modifiers API: 
 ```js
 function modifier(element: Element, ...args: Args) {

@@ -1,21 +1,15 @@
 import {
   targetFor,
   type ComponentRenderTarget,
-  ComponentReturnType,
-  NodeReturnType,
   destroyElement,
+  GenericReturnType,
+  renderElement,
 } from "@/utils/component";
 import { formula, type Cell, type MergedCell } from "@/utils/reactive";
 import { bindUpdatingOpcode } from "@/utils/vm";
 import { addDestructors } from "./component";
 
-type GenericReturnType =
-  | ComponentReturnType
-  | NodeReturnType
-  | ComponentReturnType[]
-  | NodeReturnType[]
-  | null
-  | null[];
+
 
 export function ifCondition(
   cell: Cell<boolean> | MergedCell,
@@ -57,25 +51,3 @@ export function ifCondition(
   })], placeholder);
 }
 
-function renderElement(
-  target: Node,
-  el: GenericReturnType,
-  placeholder: Comment
-) {
-  if (!Array.isArray(el)) {
-    if (el === null) {
-      return;
-    }
-    if ("nodes" in el) {
-      el.nodes.forEach((node) => {
-        target.insertBefore(node, placeholder);
-      });
-    } else {
-      target.insertBefore(el.node, placeholder);
-    }
-  } else {
-    el.forEach((item) => {
-      renderElement(target, item, placeholder);
-    });
-  }
-}

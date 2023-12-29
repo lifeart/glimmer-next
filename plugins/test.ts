@@ -81,6 +81,12 @@ export function transform(source: string, fileName: string) {
     } else if (node.type === "PathExpression") {      
       return `$:${node.original}`;
     } else if (node.type === "MustacheStatement") {
+      if (node.path.type !== 'PathExpression') {
+        return null;
+      }
+      if (node.path.original === 'yield') {
+        return `$:() => DOM.slot('default', () => [${node.params.map(p => ToJSType(p)).join(',')}], $slots)`;
+      }
       if (node.params.length === 0) {
         return ToJSType(node.path);
       } else {
@@ -141,6 +147,8 @@ export function transform(source: string, fileName: string) {
   function ElementToNode(element: ASTv1.ElementNode): HBSNode {
     const node = {
       tag: element.tag,
+      selfClosing: element.selfClosing,
+      blockParams: element.blockParams,
       attributes: element.attributes.map((attr) => {
         const rawValue = ToJSType(attr.value);
         // const value = rawValue.startsWith("$:") ? rawValue : escapeString(rawValue);
@@ -194,6 +202,8 @@ export function transform(source: string, fileName: string) {
   type HBSNode = {
     tag: string;
     attributes: [string, string][];
+    selfClosing: boolean;
+    blockParams: string[];
     events: [string, string][];
     children: (string | HBSNode | HBSExpression)[];
   };
@@ -218,7 +228,7 @@ export function transform(source: string, fileName: string) {
           if (child.startsWith("$:")) {
             return `${child.replace("$:", "")}`;
           }
-          return `'${child}'`;
+          return `DOM.text('${child}')`;
         }
         return serializeNode(child);
       })
@@ -246,16 +256,31 @@ export function transform(source: string, fileName: string) {
       }
     } else if (typeof node === 'object' && node.tag && node.tag.toLowerCase() !== node.tag) {
       // it's component function
-      return `${node.tag}({
-        ${node.attributes
-          .map((attr) => {
-            const isScopeValue = attr[1].startsWith("$:");
-            return `${attr[0].replace("@", "")}: ${
-              isScopeValue ? attr[1].replace("$:", "") : escapeString(attr[1])
-            }`;
-          })
-          .join(", ")}
-      })`;
+      if (node.selfClosing) {
+        return `${node.tag}({
+          ${node.attributes
+            .map((attr) => {
+              const isScopeValue = attr[1].startsWith("$:");
+              return `${attr[0].replace("@", "")}: ${
+                isScopeValue ? attr[1].replace("$:", "") : escapeString(attr[1])
+              }`;
+            })
+            .join(", ")}
+        })`;
+      } else {
+        let slotChildren = serializeChildren(node.children);
+        return `DOM.withSlots(${node.tag}({
+          ${node.attributes
+            .map((attr) => {
+              const isScopeValue = attr[1].startsWith("$:");
+              return `${attr[0].replace("@", "")}: ${
+                isScopeValue ? attr[1].replace("$:", "") : escapeString(attr[1])
+              }`;
+            })
+            .join(", ")}
+        }), { default: (${node.blockParams.join(',')}) => ${slotChildren !== 'null' ? `[${slotChildren}]` : '[]'} })`;
+      }
+      
     } else if (typeof node === 'object' && node.tag) {
       return `DOM('${node.tag}', {
         events: [${node.events
@@ -291,9 +316,10 @@ export function transform(source: string, fileName: string) {
   }, [] as string[]);
 
   const result = `(() => {
+    const $slots = {};
     const roots = [${results.join(", ")}];
     const existingDestructors = typeof destructors !== 'undefined' ? destructors : [];
-    return finalizeComponent(roots, existingDestructors);
+    return finalizeComponent(roots, existingDestructors, $slots);
   })()`;
 
   return txt?.replace("$placeholder", result).split('$:').join('');
