@@ -139,7 +139,10 @@ export async function executeTag(tag: Cell | MergedCell) {
       opcode: opcode?.toString(),
     });
     if (opcode) {
-      ops.splice(ops.indexOf(opcode), 1);
+      let index = ops.indexOf(opcode);
+      if (index > -1) {
+        ops.splice(index, 1);
+      }
     }
   }
 }

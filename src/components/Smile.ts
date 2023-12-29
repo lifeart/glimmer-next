@@ -8,7 +8,9 @@ export function Smile() {
     isVisible.update(!isVisible.value);
   }, 1000);
 
-  const destructors = [() => clearInterval(interval)];
+  const destructors = [() => {
+    clearInterval(interval);
+  }];
 
   const fadeOut = (element: HTMLSpanElement) => {
     element.style.opacity = "0.1";
@@ -26,5 +28,7 @@ export function Smile() {
 
   scope({ isVisible, destructors, fadeOut });
 
+  // @todo - fix case when destructors binded to node may change, likely we need to create a new comment node, and keep it stable;
+  // upd: fixed, need to add tests for it
   return hbs`{{#if isVisible}}<span {{fadeOut}}>😀</span>{{else}}<span {{fadeOut}}>😉</span>{{/if}}`;
 }

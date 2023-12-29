@@ -4,6 +4,7 @@ import {
   destroyElement,
   GenericReturnType,
   renderElement,
+  runDestructors,
 } from "@/utils/component";
 import { formula, type Cell, type MergedCell } from "@/utils/reactive";
 import { bindUpdatingOpcode } from "@/utils/vm";
@@ -13,18 +14,22 @@ export function ifCondition(
   cell: Cell<boolean> | MergedCell,
   outlet: ComponentRenderTarget,
   trueBranch: () => GenericReturnType,
-  falseBranch: () => GenericReturnType
+  falseBranch: () => GenericReturnType,
+  existingPlaceholder?: Comment
 ) {
   // "if-placeholder"
-  const placeholder = document.createComment("");
+  const placeholder = existingPlaceholder || document.createComment("");
   const target = targetFor(outlet);
-  target.appendChild(placeholder);
+  if (!placeholder.isConnected) {
+    target.appendChild(placeholder);
+  }
   let prevComponent: GenericReturnType = null;
   let isDestructorRunning = false;
-  const runDestructors = async () => {
+  const runExistingDestructors = async () => {
     isDestructorRunning = true;
     if (prevComponent) {
       await destroyElement(prevComponent);
+      prevComponent = null;
     }
   };
 
@@ -38,9 +43,28 @@ export function ifCondition(
 
   addDestructors(
     [
-      runDestructors,
+      runExistingDestructors,
       bindUpdatingOpcode(cell, (value) => {
         if (throwedError) {
+          Promise.resolve().then(() => {
+            const newPlaceholder = document.createComment("");
+            placeholder.parentElement?.insertBefore(
+              newPlaceholder,
+              placeholder
+            );
+            Promise.all(runDestructors(placeholder)).then(async () => {
+              if (prevComponent) {
+                throw new Error(`Component should be destroyed`);
+              }
+              ifCondition(
+                cell,
+                outlet,
+                trueBranch,
+                falseBranch,
+                newPlaceholder
+              );
+            });
+          });
           throw throwedError;
         }
         runNumber++;
