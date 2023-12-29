@@ -6,12 +6,15 @@ import {
   type Destructors,
   DestructorFn,
 } from "@/utils/component";
-import { Cell, MergedCell } from "@/utils/reactive";
+import { Cell, MergedCell, formula } from "@/utils/reactive";
 import { bindUpdatingOpcode } from "@/utils/vm";
 import { ListComponent } from "@/utils/list";
 import { ifCondition } from "@/utils/if";
 
-type ModifierFn = (element: HTMLElement, ...args: unknown[]) => void | DestructorFn;
+type ModifierFn = (
+  element: HTMLElement,
+  ...args: unknown[]
+) => void | DestructorFn;
 
 type Props = {
   attributes: [
@@ -23,7 +26,7 @@ type Props = {
       | ((element: HTMLElement, attribute: string) => void)
     )
   ][];
-  events: [string, EventListener | ModifierFn ][];
+  events: [string, EventListener | ModifierFn][];
 };
 
 function $text(str: string) {
@@ -46,13 +49,15 @@ function _DOM(
   const attributes = props.attributes || [];
   const events = props.events || [];
   events.forEach(([eventName, fn]) => {
-    if (eventName === 'onCreated') {
+    if (eventName === "onCreated") {
       const destructor = (fn as ModifierFn)(element);
       if (typeof destructor === "function") {
         destructors.push(destructor);
       }
     } else {
-      destructors.push(addEventListener(element, eventName, fn as EventListener));
+      destructors.push(
+        addEventListener(element, eventName, fn as EventListener)
+      );
     }
   });
   attributes.forEach(([key, value]) => {
@@ -97,16 +102,7 @@ function _DOM(
       const text = $text(child);
       element.appendChild(text);
     } else if (child instanceof Cell || child instanceof MergedCell) {
-      const text = $text("");
-      addDestructors(
-        [
-          bindUpdatingOpcode(child, (value) => {
-            text.textContent = String(value ?? "");
-          }),
-        ],
-        text
-      );
-      element.appendChild(text);
+      element.appendChild(cellToText(child));
     } else if (child instanceof Function) {
       // looks like a component
       const componentProps:
@@ -130,21 +126,45 @@ function _DOM(
   });
 
   addDestructors(destructors, element);
-  return {
-    node: element,
-    destructors: [],
-    index: 0,
-  };
+  return def(element, destructors);
 }
 
 _DOM.each = each;
 _DOM.if = ifCond;
-_DOM.text = function (text: string) {
+
+type Fn = () => unknown;
+function def(node: Node, destructors: Destructors = []) {
   return {
-    node: $text(text),
-    destructors: [],
+    node,
+    destructors,
     index: 0,
   };
+}
+
+function cellToText(cell: Cell | MergedCell) {
+  const textNode = $text("");
+  addDestructors([
+    bindUpdatingOpcode(cell, (value) => {
+      textNode.textContent = String(value ?? "");
+    }),
+  ], textNode)
+  return textNode;
+}
+_DOM.text = function (text: string | Cell | MergedCell | Fn): NodeReturnType {
+  if (typeof text === "string") {
+    return def($text(text));
+  } else if (text instanceof Cell || text instanceof MergedCell) {
+    return def(cellToText(text));
+  } else if (text instanceof Function) {
+    const maybeFormula = formula(text);
+    if (maybeFormula.isConst) {
+      return def($text(String(maybeFormula.value)));
+    } else {
+      return DOM.text(maybeFormula);
+    }
+  } else {
+    throw new Error("invalid text");
+  }
 };
 
 type BranchCb = () => ComponentReturnType | NodeReturnType;
@@ -156,11 +176,7 @@ function ifCond(
 ) {
   const outlet = document.createDocumentFragment();
   ifCondition(cell, outlet, trueBranch, falseBranch);
-  return {
-    node: outlet,
-    destructors: [],
-    index: 0,
-  };
+  return def(outlet);
 }
 
 function each<T extends { id: number }>(
@@ -176,11 +192,7 @@ function each<T extends { id: number }>(
     outlet
   );
 
-  return {
-    node: outlet,
-    destructors: List.destructors,
-    index: 0,
-  };
+  return def(outlet, List.destructors);
 }
 
 export const DOM = _DOM;

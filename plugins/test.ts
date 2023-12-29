@@ -84,7 +84,7 @@ export function transform(source: string, fileName: string) {
       if (node.params.length === 0) {
         return ToJSType(node.path);
       } else {
-        return `${ToJSType(node.path)}(${node.params.map(p => ToJSType(p)).map((el) => {
+        return `$:() => ${ToJSType(node.path)}(${node.params.map(p => ToJSType(p)).map((el) => {
           if (typeof el !== 'string') {
             return String(el);
           }
