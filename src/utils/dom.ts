@@ -4,11 +4,14 @@ import {
   NodeReturnType,
   type ComponentReturnType,
   type Destructors,
+  DestructorFn,
 } from "@/utils/component";
 import { Cell, MergedCell } from "@/utils/reactive";
 import { bindUpdatingOpcode } from "@/utils/vm";
 import { ListComponent } from "@/utils/list";
 import { ifCondition } from "@/utils/if";
+
+type ModifierFn = (element: HTMLElement, ...args: unknown[]) => void | DestructorFn;
 
 type Props = {
   attributes: [
@@ -20,7 +23,7 @@ type Props = {
       | ((element: HTMLElement, attribute: string) => void)
     )
   ][];
-  events: [string, EventListener][];
+  events: [string, EventListener | ModifierFn ][];
 };
 
 function $text(str: string) {
@@ -43,7 +46,14 @@ function _DOM(
   const attributes = props.attributes || [];
   const events = props.events || [];
   events.forEach(([eventName, fn]) => {
-    destructors.push(addEventListener(element, eventName, fn));
+    if (eventName === 'onCreated') {
+      const destructor = (fn as ModifierFn)(element);
+      if (typeof destructor === "function") {
+        destructors.push(destructor);
+      }
+    } else {
+      destructors.push(addEventListener(element, eventName, fn as EventListener));
+    }
   });
   attributes.forEach(([key, value]) => {
     if (value instanceof Function) {

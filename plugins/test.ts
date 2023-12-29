@@ -56,7 +56,20 @@ export function transform(source: string, fileName: string) {
 
   function ToJSType(node: ASTv1.Node): any {
     seenNodes.add(node);
-    if (node.type === "StringLiteral") {
+    if (node.type === 'UndefinedLiteral') {
+      return undefined;
+    } else if (node.type === 'NullLiteral') {
+      return null;
+    } else if (node.type === 'BooleanLiteral') {
+      return node.value;
+    } else if (node.type === 'SubExpression') {
+      if (node.path.type !== 'PathExpression') {
+        return null;
+      }
+      return `${node.path.original}(${node.params.map(p => ToJSType(p)).join(',')})`
+    } else if (node.type === 'NumberLiteral') {
+      return node.value;
+    } if (node.type === "StringLiteral") {
       return node.value;
     } else if (node.type === "TextNode") {
       if (node.chars.trim().length === 0) {
@@ -126,11 +139,18 @@ export function transform(source: string, fileName: string) {
       }),
       events: element.modifiers
         .map((mod) => {
-          const firstParam = mod.params[0];
-          if (firstParam.type === "StringLiteral") {
-            return [ToJSType(firstParam), ToJSType(mod.params[1])];
-          } else {
+          if (mod.path.type !== 'PathExpression') {
             return null;
+          }
+          if (mod.path.original === 'on') { 
+            const firstParam = mod.params[0];
+            if (firstParam.type === "StringLiteral") {
+              return [ToJSType(firstParam), ToJSType(mod.params[1])];
+            } else {
+              return null;
+            }
+          } else {
+            return ['onCreated', `$:(node) => { return ${mod.path.original}(node, [${mod.params.map(p => ToJSType(p)).join(',')}]) }`]
           }
         })
         .filter((el) => el !== null),
@@ -263,5 +283,5 @@ export function transform(source: string, fileName: string) {
     return finalizeComponent(roots, existingDestructors);
   })()`;
 
-  return txt?.replace("$placeholder", result);
+  return txt?.replace("$placeholder", result).split('$:').join('');
 }
