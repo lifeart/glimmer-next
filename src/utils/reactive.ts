@@ -115,17 +115,32 @@ export type tagOp = (...values: unknown[]) => void;
 // this is runtime function, it's called when we need to update DOM for a specific tag
 export function executeTag(tag: Cell | MergedCell) {
   try {
-    const ops = opsForTag.get(tag) || [];
+    // we always have ops for a tag
+    const ops = opsForTag.get(tag)!;
     const value = tag.value;
     ops.forEach((op) => {
       try {
         op(value);
       } catch (e: any) {
-        console.error(`Error executing tag op: ${e.toString()}`);
+        console.error({
+          message: 'Error executing tag operation',
+          error: e,
+          tag,
+          op: op.toString(),
+        });
+        // we remove the op from the list, so it won't be called again
+        const index = ops.indexOf(op);
+        if (index > -1) {
+          ops.splice(index, 1);
+        }
       }
     });
   } catch (e: any) {
-    console.error(`Error executing tag: ${e.toString()}`);
+    console.error({
+      message: 'Error executing tag',
+      error: e,
+      tag,
+    });
   }
 }
 
