@@ -4,7 +4,7 @@ import {
   tagsToRevalidate,
   executeTag,
   relatedTags,
-} from '@/utils/reactive';
+} from "@/utils/reactive";
 
 let revalidateScheduled = false;
 type voidFn = () => void;
@@ -27,7 +27,6 @@ export function scheduleRevalidate() {
     });
   }
 }
-
 export async function syncDom() {
   const sharedTags = new Set<MergedCell>();
   setIsRendering(true);

@@ -49,9 +49,9 @@ export function Row({
         element.style.width = `${rect.width}px`;
         element.style.height = `${rect.height}px`;
         element.style.backgroundColor = "blue";
-        element.style.transition = "all 0.4s ease";
+        element.style.transition = "all 1.4s ease";
         element.style.transform = "scale(0)";
-        await new Promise((resolve) => setTimeout(resolve, 400)); 
+        await new Promise((resolve) => setTimeout(resolve, 1400)); 
       } else {
         const rect = element.getBoundingClientRect();
         element.style.position = "absolute";
@@ -60,9 +60,9 @@ export function Row({
         element.style.width = `${rect.width}px`;
         element.style.height = `${rect.height}px`;
         element.style.backgroundColor = "blue";
-        element.style.transition = "all 0.4s ease";
+        element.style.transition = "all 1.4s ease";
         element.style.transform = "translateX(100%)";
-        await new Promise((resolve) => setTimeout(resolve, 400));
+        await new Promise((resolve) => setTimeout(resolve, 1400));
       }
       
     }

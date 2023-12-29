@@ -10,7 +10,21 @@ export function Smile() {
 
   const destructors = [() => clearInterval(interval)];
 
-  scope({ isVisible, destructors });
+  const fadeOut = (element: HTMLSpanElement) => {
+    element.style.opacity = "0.1";
+    element.style.transition = "opacity 0.2s linear";
 
-  return hbs`{{#if isVisible}}😀{{else}}😉{{/if}}`;
+    setTimeout(() => {
+      element.style.opacity = "1";
+    });
+
+    return async () => {
+      element.style.opacity = "0";
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    };
+  };
+
+  scope({ isVisible, destructors, fadeOut });
+
+  return hbs`{{#if isVisible}}<span {{fadeOut}}>😀</span>{{else}}<span {{fadeOut}}>😉</span>{{/if}}`;
 }

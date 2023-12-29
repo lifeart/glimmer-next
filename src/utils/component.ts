@@ -104,6 +104,14 @@ export function addDestructors(
     }
     const oldDestructors = $destructors.get(node) || [];
     $destructors.set(node, [...oldDestructors, ...destructors]);
+    return () => {
+      // remove added destructors
+      const oldDestructors = $destructors.get(node) || [];
+      $destructors.set(
+        node,
+        oldDestructors.filter((fn) => !destructors.includes(fn))
+      );
+    };
   }
 }
 
