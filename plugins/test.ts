@@ -78,10 +78,19 @@ export function transform(source: string, fileName: string) {
       return node.chars;
     } else if (node.type === "ElementNode") {
       return ElementToNode(node);
-    } else if (node.type === "PathExpression") {
+    } else if (node.type === "PathExpression") {      
       return `$:${node.original}`;
     } else if (node.type === "MustacheStatement") {
-      return ToJSType(node.path);
+      if (node.params.length === 0) {
+        return ToJSType(node.path);
+      } else {
+        return `${ToJSType(node.path)}(${node.params.map(p => ToJSType(p)).map((el) => {
+          if (typeof el !== 'string') {
+            return String(el);
+          }
+          return el.startsWith("$:") ? el.replace("$:", "") : escapeString(el);
+        }).join(',')})`;
+      }
     } else if (node.type === "BlockStatement") {
       if (!node.params.length) {
         return null;
@@ -90,10 +99,10 @@ export function transform(source: string, fileName: string) {
         return null;
       }
       const childElements = node.program.body.filter((node) => {
-        return node.type === "ElementNode" || node.type === "TextNode";
+        return node.type === "ElementNode" || node.type === "TextNode" || node.type === "MustacheStatement";
       });
       const elseChildElements = node.inverse?.body.filter((node) => {
-        return node.type === "ElementNode" || node.type === "TextNode";
+        return node.type === "ElementNode" || node.type === "TextNode" || node.type === "MustacheStatement";
       });
       if (!childElements.length) {
         return null;
@@ -262,7 +271,11 @@ export function transform(source: string, fileName: string) {
       }, ${serializeChildren(node.children)} )`;
     } else {
       if (typeof node === "string") {
-        return `DOM.text(\`${node}\`)`;
+        if (node.startsWith("$:")) {
+          return `DOM.text(`+node.replace("$:", "")+`)`;
+        } else {
+          return `DOM.text(\`${node}\`)`;
+        }
       }
       throw new Error("Unknown node type: " + JSON.stringify(node, null, 2));
     }
