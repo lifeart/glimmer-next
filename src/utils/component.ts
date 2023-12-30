@@ -66,12 +66,21 @@ export async function destroyElement(
         runDestructors(node, destructors);
       });
       await Promise.all(destructors);
-      component.nodes.forEach((node) => {
-        node.parentElement!.removeChild(node);
-      });
+      try {
+        component.nodes.forEach((node) => {
+          node.parentElement!.removeChild(node);
+        });
+      } catch(e) {
+        console.warn(`Woops, looks like node we trying to destroy no more in DOM`);
+      }
+   
     } else {
       await Promise.all(runDestructors(component.node));
-      component.node.parentElement!.removeChild(component.node);
+      try {
+        component.node.parentElement!.removeChild(component.node);
+      } catch(e) {
+        console.warn(`Woops, looks like node we trying to destroy no more in DOM`);
+      }
     }
   }
 }
