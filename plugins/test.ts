@@ -27,6 +27,22 @@ export function transform(source: string, fileName: string) {
     const ast = preprocess(content);
     const program: (typeof programs)[number] = [];
     traverse(ast, {
+      MustacheStatement(node) {
+        if (seenNodes.has(node)) {
+          return;
+        }
+        seenNodes.add(node);
+        program.push(ToJSType(node));
+      },
+      TextNode(node) {
+        if (seenNodes.has(node)) {
+          return;
+        }
+        seenNodes.add(node);
+        if (node.chars.trim().length !== 0) {
+          program.push(ToJSType(node));
+        }
+      },
       BlockStatement(node) {
         if (seenNodes.has(node)) {
           return;
