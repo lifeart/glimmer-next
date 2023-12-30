@@ -33,9 +33,11 @@ export async function syncDom() {
   for (const tag of tagsToRevalidate) {
     await executeTag(tag);
     // we always have related tags
-    relatedTags.get(tag)!.forEach((tag) => {
+    const subTags = relatedTags.get(tag)!;
+    subTags.forEach((tag) => {
       sharedTags.add(tag);
     });
+    subTags.clear();
   }
   tagsToRevalidate.clear();
   for (const tag of sharedTags) {
