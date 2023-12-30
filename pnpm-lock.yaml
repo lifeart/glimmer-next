@@ -10,6 +10,9 @@ dependencies:
   '@glimmer/syntax':
     specifier: ^0.87.1
     version: 0.87.1
+  content-tag:
+    specifier: ^1.2.2
+    version: 1.2.2
   ts-node:
     specifier: ^10.9.2
     version: 10.9.2(@types/node@20.10.5)(typescript@5.2.2)
@@ -845,6 +848,10 @@ packages:
 
   /color-name@1.1.3:
     resolution: {integrity: sha512-72fSenhMw2HZMTVHeCA9KCmpEIbzWiQsjN+BHcBbS9vr1mtt+vJjPdksIBNUmKAW8TFUDPJK5SUU3QhE9NEXDw==}
+    dev: false
+
+  /content-tag@1.2.2:
+    resolution: {integrity: sha512-9guqKIx2H+78N17otBpl8yLZbQGL5q1vBO/jDb3gF2JjixtcVpC62jDUNxjVMNoaZ09oxRX84ZOD6VX02qkVvg==}
     dev: false
 
   /convert-source-map@2.0.0:

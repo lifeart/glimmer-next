@@ -1,12 +1,16 @@
 import { type Plugin } from "vite";
-
+import { Preprocessor } from 'content-tag';
 import { transform } from "./test";
+const p = new Preprocessor();
 
 export function compiler(): Plugin {
   return {
     enforce: "pre",
     name: "glimmer-next",
     transform(code: string, file: string) {
+      if (file.endsWith('.gts')) {
+        return transform(p.process(code, file), file);
+      }
       if (!code.includes("@/utils/template")) {
         return;
       }
