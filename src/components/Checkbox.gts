@@ -5,6 +5,9 @@ export class Checkbox extends Component {
     console.log("change", e);
   };
   <template>
-    <input type="checkbox" checked={{@isChecked}} onchange={{this.onChange}} />
+    <input 
+        type="checkbox" 
+        checked={{@isChecked}} 
+        {{on "change" this.onChange}} />
   </template>
 }
