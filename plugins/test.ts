@@ -94,7 +94,7 @@ export function transform(source: string, fileName: string) {
           if (typeof el !== 'string') {
             return String(el);
           }
-          return el.startsWith("$:") ? el.replace("$:", "") : escapeString(el);
+          return el.startsWith("$:") ? el.replace("$:", "").replace("@", "this.args.") : escapeString(el);
         }).join(',')})`;
       }
     } else if (node.type === "BlockStatement") {
@@ -131,7 +131,9 @@ export function transform(source: string, fileName: string) {
   function escapeString(str: string) {
     const lines = str.split("\n");
     if (lines.length === 1) {
-      if (str.startsWith("'")) {
+      if (str.startsWith('@')) {
+        return str.replace('@', 'this.args.');
+      } else if (str.startsWith("'")) {
         return str;
       } else if (str.startsWith('"')) {
         return str;
@@ -212,7 +214,7 @@ export function transform(source: string, fileName: string) {
 
   function serializeAttribute(key: string, value: string): string {
     if (value.startsWith("$:")) {
-      return `['${key}', ${value.replace("$:", "")}]`;
+      return `['${key}', ${value.replace("$:", "").replace("@", "this.args.")}]`;
     }
     return `['${key}', ${escapeString(value)}]`;
   }
@@ -226,7 +228,7 @@ export function transform(source: string, fileName: string) {
       .map((child) => {
         if (typeof child === "string") {
           if (child.startsWith("$:")) {
-            return `${child.replace("$:", "")}`;
+            return `${child.replace("$:", "").replace("@", "this.args.")}`;
           }
           return `DOM.text('${child}')`;
         }
@@ -257,28 +259,28 @@ export function transform(source: string, fileName: string) {
     } else if (typeof node === 'object' && node.tag && node.tag.toLowerCase() !== node.tag) {
       // it's component function
       if (node.selfClosing) {
-        return `${node.tag}({
+        return `DOM.c(new ${node.tag}({
           ${node.attributes
             .map((attr) => {
               const isScopeValue = attr[1].startsWith("$:");
               return `${attr[0].replace("@", "")}: ${
-                isScopeValue ? attr[1].replace("$:", "") : escapeString(attr[1])
+                isScopeValue ? attr[1].replace("$:", "").replace("@", "this.args.") : escapeString(attr[1])
               }`;
             })
             .join(", ")}
-        })`;
+        }))`;
       } else {
         let slotChildren = serializeChildren(node.children);
-        return `DOM.withSlots(${node.tag}({
+        return `DOM.withSlots(DOM.c(new ${node.tag}({
           ${node.attributes
             .map((attr) => {
               const isScopeValue = attr[1].startsWith("$:");
               return `${attr[0].replace("@", "")}: ${
-                isScopeValue ? attr[1].replace("$:", "") : escapeString(attr[1])
+                isScopeValue ? attr[1].replace("$:", "").replace("@", "this.args.") : escapeString(attr[1])
               }`;
             })
             .join(", ")}
-        }), { default: (${node.blockParams.join(',')}) => ${slotChildren !== 'null' ? `[${slotChildren}]` : '[]'} })`;
+        }), { default: (${node.blockParams.join(',')}) => ${slotChildren !== 'null' ? `[${slotChildren}]` : '[]'} }))`;
       }
       
     } else if (typeof node === 'object' && node.tag) {
@@ -297,7 +299,7 @@ export function transform(source: string, fileName: string) {
     } else {
       if (typeof node === "string") {
         if (node.startsWith("$:")) {
-          return `DOM.text(`+node.replace("$:", "")+`)`;
+          return `DOM.text(`+node.replace("$:", "").replace("@", "this.args.")+`)`;
         } else {
           return `DOM.text(\`${node}\`)`;
         }
@@ -315,7 +317,13 @@ export function transform(source: string, fileName: string) {
     return acc;
   }, [] as string[]);
 
-  const result = `(() => {
+  const isClass = txt?.includes("template = ") ?? false;
+
+  const result = isClass ? `() => {
+    const $slots = {};
+    const roots = [${results.join(", ")}];
+    return finalizeComponent(roots, this.destructors, $slots);
+  }` :`(() => {
     const $slots = {};
     const roots = [${results.join(", ")}];
     const existingDestructors = typeof destructors !== 'undefined' ? destructors : [];

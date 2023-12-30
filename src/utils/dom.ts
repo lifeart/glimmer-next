@@ -6,6 +6,7 @@ import {
   type Destructors,
   DestructorFn,
   Slots,
+  Component,
 } from "@/utils/component";
 import { Cell, MergedCell, formula } from "@/utils/reactive";
 import { bindUpdatingOpcode } from "@/utils/vm";
@@ -142,6 +143,12 @@ function _DOM(
 _DOM.each = each;
 _DOM.if = ifCond;
 _DOM.slot = slot;
+_DOM.c = function(comp: ComponentReturnType | Component) {
+  if ('template' in comp) {
+    return (comp.template as unknown as () => ComponentReturnType)();
+  }
+  return comp;
+}
 
 type Fn = () => unknown;
 function def(node: Node, destructors: Destructors = []) {

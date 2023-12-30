@@ -45,6 +45,19 @@ export function renderComponent(
   return component;
 }
 
+export type Props = Record<string, unknown>;
+export class Component<T extends Props = Record<string, unknown>> implements ComponentReturnType {
+  args!: T;
+  destructors: Destructors = [];
+  nodes!: Node[];
+  index!: number;
+  slots!: Slots;
+  constructor(props: T) {
+    this.args = props;
+  }
+  template!: ComponentReturnType;
+}
+
 export async function destroyElement(
   component:
     | ComponentReturnType
