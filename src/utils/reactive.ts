@@ -138,12 +138,14 @@ export async function executeTag(tag: Cell | MergedCell) {
       }
     }
   } catch (e: any) {
-    console.error({
-      message: "Error executing tag",
-      error: e,
-      tag,
-      opcode: opcode?.toString(),
-    });
+    if (import.meta.env.DEV) {
+      console.error({
+        message: "Error executing tag",
+        error: e,
+        tag,
+        opcode: opcode?.toString(),
+      });
+    }
     if (opcode) {
       let index = ops.indexOf(opcode);
       if (index > -1) {

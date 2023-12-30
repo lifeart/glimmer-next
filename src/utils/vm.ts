@@ -1,18 +1,34 @@
 import { opsForTag, type AnyCell, type tagOp, asyncOpcodes, setIsRendering, isRendering, formula } from './reactive';
 
+type maybeDestructor = undefined | (() => void);
+type maybePromise = undefined | Promise<void>;
+
+function runEffectDestructor(destructor: maybeDestructor) {
+  if (destructor !== undefined) {
+    const result = destructor() as unknown as maybePromise;
+    if (import.meta.env.DEV) {
+      if (result && result instanceof Promise) {
+        throw new Error(`Effect destructor can't be a promise: ${destructor.toString()}`);
+      }
+    }
+  }
+}
 
 export function effect(cb: () => void): () => void {
   const sourceTag = formula(cb); // we have binded tracking chain for tag
-  let destructor: undefined | (() => void);
+  let destructor: maybeDestructor;
   let isDestroyCalled = false;
   const tag = formula(() => {
-    if (destructor !== undefined) {
-      destructor();
-    }
+    runEffectDestructor(destructor);
     destructor = undefined;
     return sourceTag.value;
   });
   const destroyOpcode = bindUpdatingOpcode(tag, (value: unknown) => {
+    if (import.meta.env.DEV) {
+      if (value instanceof Promise) {
+        throw new Error(`Effect can't be a promise: ${cb.toString()}`);
+      }
+    }
     if (typeof value === 'function') {
       destructor = value as unknown as () => void;
     }
@@ -23,9 +39,7 @@ export function effect(cb: () => void): () => void {
       return;
     }
     isDestroyCalled = true;
-    if (destructor !== undefined) {
-      destructor();
-    }
+    runEffectDestructor(destructor);
     // remove sourceTag and tag from tracking chain
     sourceTag.destroy();
     tag.destroy();
