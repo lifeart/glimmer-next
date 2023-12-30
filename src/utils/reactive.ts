@@ -85,17 +85,23 @@ function bindAllCellsToTag(cells: Set<Cell>, tag: MergedCell) {
 export class MergedCell {
   fn: () => unknown;
   isConst = false;
+  isDestroyed = false;
   _debugName?: string | undefined;
   constructor(fn: () => unknown, debugName?: string) {
     this.fn = fn;
     this._debugName = debugName;
     opsForTag.set(this, []);
   }
+  destroy() {
+    this.isDestroyed = true;
+    opsForTag.set(this, []);
+  }
   get value() {
-    if (this.isConst) {
+    if (this.isDestroyed) {
+      return;
+    } else if (this.isConst) {
       return this.fn();
-    }
-    if (null === currentTracker && _isRendering) {
+    } else if (null === currentTracker && _isRendering) {
       currentTracker = tracker();
       try {
         return this.fn();

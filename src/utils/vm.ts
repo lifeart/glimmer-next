@@ -1,4 +1,37 @@
-import { opsForTag, type AnyCell, type tagOp, asyncOpcodes, setIsRendering, isRendering } from './reactive';
+import { opsForTag, type AnyCell, type tagOp, asyncOpcodes, setIsRendering, isRendering, formula } from './reactive';
+
+
+export function effect(cb: () => void): () => void {
+  const sourceTag = formula(cb); // we have binded tracking chain for tag
+  let destructor: undefined | (() => void);
+  let isDestroyCalled = false;
+  const tag = formula(() => {
+    if (destructor !== undefined) {
+      destructor();
+    }
+    destructor = undefined;
+    return sourceTag.value;
+  });
+  const destroyOpcode = bindUpdatingOpcode(tag, (value: unknown) => {
+    if (typeof value === 'function') {
+      destructor = value as unknown as () => void;
+    }
+    // tag is computed here;
+  });
+  return () => {
+    if (isDestroyCalled) {
+      return;
+    }
+    isDestroyCalled = true;
+    if (destructor !== undefined) {
+      destructor();
+    }
+    // remove sourceTag and tag from tracking chain
+    sourceTag.destroy();
+    tag.destroy();
+    destroyOpcode();
+  };
+}
 
 // this function creates opcode for a tag, it's called when we need to update DOM for a specific tag
 export function bindUpdatingOpcode(tag: AnyCell, op: tagOp) {
