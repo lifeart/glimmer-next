@@ -27,14 +27,51 @@ export function Row({
     return id === selectedCell.value ? "danger" : "";
   });
 
-  const onClickRemove = () => {
+  let isClicked = false;
+
+  const onClickRemove = (e: Event) => {
+    if (e.isTrusted) {
+      isClicked = true;
+    }
     onRemove(item);
   };
 
-  scope({ RemoveIcon, labelCell, onClick, className, onClickRemove });
+  const modifier = (element: HTMLDivElement) => {
+    return async () => {
+      if (!isClicked) {
+        return;
+      }
+      if (Math.random() > 0.5) {
+        const rect = element.getBoundingClientRect();
+        element.style.position = "absolute";
+        element.style.top = `${rect.top}px`;
+        element.style.left = `${rect.left}px`;
+        element.style.width = `${rect.width}px`;
+        element.style.height = `${rect.height}px`;
+        element.style.backgroundColor = "blue";
+        element.style.transition = "all 1.4s ease";
+        element.style.transform = "scale(0)";
+        await new Promise((resolve) => setTimeout(resolve, 1400)); 
+      } else {
+        const rect = element.getBoundingClientRect();
+        element.style.position = "absolute";
+        element.style.top = `${rect.top}px`;
+        element.style.left = `${rect.left}px`;
+        element.style.width = `${rect.width}px`;
+        element.style.height = `${rect.height}px`;
+        element.style.backgroundColor = "blue";
+        element.style.transition = "all 1.4s ease";
+        element.style.transform = "translateX(100%)";
+        await new Promise((resolve) => setTimeout(resolve, 1400));
+      }
+      
+    }
+  }
+
+  scope({ RemoveIcon, labelCell, modifier, onClick, className, onClickRemove });
 
   return hbs`
-    <tr class={{className}}>
+    <tr class={{className}} {{modifier}}>
         <td class="col-md-1">{{id}}</td>
         <td class="col-md-4">
             <a {{on "click" onClick}}  data-test-select="true">{{labelCell}}</a>

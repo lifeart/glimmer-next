@@ -13,8 +13,8 @@ export class Application {
     this.itemsCell.value = value;
   }
   selectedCell = cell(0, "selectedCell");
-  destroy() {
-    runDestructors(this.rootNode);
+  async destroy() {
+    await Promise.all(runDestructors(this.rootNode));
     this.rootNode.innerHTML = "";
     this.rootNode = null!;
   }

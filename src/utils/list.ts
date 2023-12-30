@@ -116,8 +116,8 @@ export class ListComponent<T extends { id: number }> {
 
     addDestructors(
       [
-        bindUpdatingOpcode(tag, () => {
-          this.syncList(tag.value);
+        bindUpdatingOpcode(tag, async () => {
+          await this.syncList(tag.value);
         }),
       ],
       this.bottomMarker
@@ -137,7 +137,7 @@ export class ListComponent<T extends { id: number }> {
       return marker;
     }
   }
-  syncList(items: T[]) {
+  async syncList(items: T[]) {
     const existingKeys = new Set(this.keyMap.keys());
     const updatingKeys = new Set(items.map((item) => this.keyForItem(item)));
     const keysToRemove = [...existingKeys].filter(
@@ -149,7 +149,16 @@ export class ListComponent<T extends { id: number }> {
     let seenKeys = 0;
 
     // iterate over existing keys and remove them
-    const removedIndexes = keysToRemove.map((key) => this.destroyListItem(key));
+    const removedIndexes = keysToRemove.map((key) => this.getListItemIndex(key));
+    const removePromise = Promise.all(keysToRemove.map((key) => this.destroyListItem(key)));
+    const rmDist = addDestructors([
+      async () => {
+        await removePromise;
+      }
+    ], this.bottomMarker);
+    removePromise.then(() => {
+      rmDist?.();
+    });
     for (const value of this.keyMap.values()) {
       removedIndexes.forEach((index) => {
         if (Array.isArray(value)) {
@@ -224,10 +233,13 @@ export class ListComponent<T extends { id: number }> {
     }
     return this;
   }
-  destroyListItem(key: string) {
+  getListItemIndex(key: string) {
+    const row = this.keyMap.get(key)!;
+    return getIndex(row);
+  }
+  async destroyListItem(key: string) {
     const row = this.keyMap.get(key)!;
     this.keyMap.delete(key);
-    destroyElement(row);
-    return getIndex(row);
+    await destroyElement(row);
   }
 }

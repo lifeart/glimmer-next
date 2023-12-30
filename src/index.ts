@@ -13,6 +13,8 @@ export default async function render() {
 
   // starting app
 
+  console.time('render');
+
   await waitForIdle();
 
   const app = await benchmark.render();
@@ -139,6 +141,7 @@ export default async function render() {
     emitDomClickEvent(ButtonSelectors.Clear);
   });
 
+  console.timeEnd('render');
   // finishing bench
   enforcePaintEvent();
 }

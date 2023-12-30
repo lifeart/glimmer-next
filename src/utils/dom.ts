@@ -75,6 +75,13 @@ function _DOM(
             element.className = valueString;
           })
         );
+      } else if (key === 'value') {
+        destructors.push(
+          bindUpdatingOpcode(value, (value) => {
+            // @ts-expect-error never ever
+            element[key] = value;
+          })
+        );
       } else {
         destructors.push(
           bindUpdatingOpcode(value, (value) => {
@@ -149,10 +156,10 @@ function mergeComponents(
   const nodes: Array<Node> = [];
   const destructors: Destructors = [];
   components.forEach((component) => {
-    if ('destructors' in component) {
+    if ("destructors" in component) {
       if ("nodes" in component) {
         nodes.push(...component.nodes);
-      } else if ('node' in component) {
+      } else if ("node" in component) {
         nodes.push(component.node);
       }
       destructors.push(...component.destructors);
@@ -169,18 +176,20 @@ function mergeComponents(
 
 function slot(name: string, params: () => unknown[], $slot: Slots) {
   const elements = $slot[name](...params());
-  return mergeComponents(elements.map((el) => {
-    if (typeof el === 'string' || typeof el === 'number') {
-      return $text(String(el));
-    } else {
-      return el;
-    }
-  }));
+  return mergeComponents(
+    elements.map((el) => {
+      if (typeof el === "string" || typeof el === "number") {
+        return $text(String(el));
+      } else {
+        return el;
+      }
+    })
+  );
 }
 
 function withSlots(
   component: ComponentReturnType,
-  slots: Record<string, () => Array<ComponentReturnType|NodeReturnType>>
+  slots: Record<string, () => Array<ComponentReturnType | NodeReturnType>>
 ) {
   Object.keys(slots).forEach((slotName) => {
     component.slots[slotName] = slots[slotName];
@@ -190,11 +199,14 @@ function withSlots(
 
 function cellToText(cell: Cell | MergedCell) {
   const textNode = $text("");
-  addDestructors([
-    bindUpdatingOpcode(cell, (value) => {
-      textNode.textContent = String(value ?? "");
-    }),
-  ], textNode)
+  addDestructors(
+    [
+      bindUpdatingOpcode(cell, (value) => {
+        textNode.textContent = String(value ?? "");
+      }),
+    ],
+    textNode
+  );
   return textNode;
 }
 
@@ -254,9 +266,11 @@ export function finalizeComponent(
   const dest = roots.reduce((acc, root) => {
     return [...acc, ...root.destructors];
   }, existingDestructors);
+  // tag-for-destructors
+  const tagForDestructors = dest.length ? document.createComment("") : null;
   const nodes: Array<
     HTMLElement | ComponentReturnType | NodeReturnType | Text | Comment
-  > = [];
+  > = tagForDestructors ? [tagForDestructors] : [];
   roots.forEach((root) => {
     if ("nodes" in root) {
       nodes.push(
@@ -266,7 +280,9 @@ export function finalizeComponent(
       nodes.push(root.node as unknown as HTMLElement | Text | Comment);
     }
   });
-  addDestructors(dest, nodes[0]);
+  if (tagForDestructors) {
+    addDestructors(dest, tagForDestructors!);
+  }
   return {
     nodes,
     destructors: [],

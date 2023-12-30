@@ -4,7 +4,7 @@ import {
   tagsToRevalidate,
   executeTag,
   relatedTags,
-} from '@/utils/reactive';
+} from "@/utils/reactive";
 
 let revalidateScheduled = false;
 type voidFn = () => void;
@@ -17,8 +17,8 @@ export function setResolveRender(value: () => void) {
 export function scheduleRevalidate() {
   if (!revalidateScheduled) {
     revalidateScheduled = true;
-    Promise.resolve().then(() => {
-      syncDom();
+    Promise.resolve().then(async () => {
+      await syncDom();
       if (resolveRender !== undefined) {
         resolveRender();
         resolveRender = undefined;
@@ -27,21 +27,22 @@ export function scheduleRevalidate() {
     });
   }
 }
-
-export function syncDom() {
+export async function syncDom() {
   const sharedTags = new Set<MergedCell>();
   setIsRendering(true);
-  tagsToRevalidate.forEach((tag) => {
-    executeTag(tag);
+  for (const tag of tagsToRevalidate) {
+    await executeTag(tag);
     // we always have related tags
-    relatedTags.get(tag)!.forEach((tag) => {
+    const subTags = relatedTags.get(tag)!;
+    subTags.forEach((tag) => {
       sharedTags.add(tag);
     });
-  });
+    subTags.clear();
+  }
   tagsToRevalidate.clear();
-  sharedTags.forEach((tag) => {
-    executeTag(tag);
-  });
+  for (const tag of sharedTags) {
+    await executeTag(tag);
+  }
   sharedTags.clear();
   setIsRendering(false);
 }

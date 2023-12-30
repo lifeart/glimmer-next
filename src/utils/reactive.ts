@@ -4,10 +4,14 @@
   We explicitly update DOM only when it's needed and only if tags are changed.
 */
 
-import { scheduleRevalidate } from '@/utils/runtime';
+import { scheduleRevalidate } from "@/utils/runtime";
 
+export const asyncOpcodes = new WeakSet<tagOp>();
 // List of DOM operations for each tag
-export const opsForTag: WeakMap<Cell | MergedCell, Array<tagOp>> = new WeakMap();
+export const opsForTag: WeakMap<
+  Cell | MergedCell,
+  Array<tagOp>
+> = new WeakMap();
 // REVISION replacement, we use a set of tags to revalidate
 export const tagsToRevalidate: Set<Cell> = new Set();
 // List of derived tags for each cell
@@ -62,11 +66,11 @@ export class Cell<T extends unknown = unknown> {
 }
 
 export function listDependentCells(cells: Array<AnyCell>, cell: MergedCell) {
-  const msg = [cell._debugName, 'depends on:'];
+  const msg = [cell._debugName, "depends on:"];
   cells.forEach((cell) => {
     msg.push(cell._debugName);
   });
-  return msg.join(' ');
+  return msg.join(" ");
 }
 
 function bindAllCellsToTag(cells: Set<Cell>, tag: MergedCell) {
@@ -81,17 +85,23 @@ function bindAllCellsToTag(cells: Set<Cell>, tag: MergedCell) {
 export class MergedCell {
   fn: () => unknown;
   isConst = false;
+  isDestroyed = false;
   _debugName?: string | undefined;
   constructor(fn: () => unknown, debugName?: string) {
     this.fn = fn;
     this._debugName = debugName;
     opsForTag.set(this, []);
   }
+  destroy() {
+    this.isDestroyed = true;
+    opsForTag.set(this, []);
+  }
   get value() {
-    if (this.isConst) {
+    if (this.isDestroyed) {
+      return;
+    } else if (this.isConst) {
       return this.fn();
-    }
-    if (null === currentTracker && _isRendering) {
+    } else if (null === currentTracker && _isRendering) {
       currentTracker = tracker();
       try {
         return this.fn();
@@ -110,48 +120,55 @@ export class MergedCell {
 }
 
 // this function is called when we need to update DOM, values represented by tags are changed
-export type tagOp = (...values: unknown[]) => void;
+export type tagOp = (...values: unknown[]) => Promise<void> | void;
 
 // this is runtime function, it's called when we need to update DOM for a specific tag
-export function executeTag(tag: Cell | MergedCell) {
+export async function executeTag(tag: Cell | MergedCell) {
+  let opcode: null | tagOp = null;
+  // we always have ops for a tag
+  const ops = opsForTag.get(tag)!;
   try {
-    // we always have ops for a tag
-    const ops = opsForTag.get(tag)!;
     const value = tag.value;
-    ops.forEach((op) => {
-      try {
+    for (const op of ops) {
+      opcode = op;
+      if (asyncOpcodes.has(op)) {
+        await op(value);
+      } else {
         op(value);
-      } catch (e: any) {
-        console.error({
-          message: 'Error executing tag operation',
-          error: e,
-          tag,
-          op: op.toString(),
-        });
-        // we remove the op from the list, so it won't be called again
-        const index = ops.indexOf(op);
-        if (index > -1) {
-          ops.splice(index, 1);
-        }
       }
-    });
+    }
   } catch (e: any) {
-    console.error({
-      message: 'Error executing tag',
-      error: e,
-      tag,
-    });
+    if (import.meta.env.DEV) {
+      console.error({
+        message: "Error executing tag",
+        error: e,
+        tag,
+        opcode: opcode?.toString(),
+      });
+    }
+    if (opcode) {
+      let index = ops.indexOf(opcode);
+      if (index > -1) {
+        ops.splice(index, 1);
+      }
+    }
   }
 }
 
 const cellsMap = new WeakMap<object, Record<string, Cell<unknown>>>();
 // this is function to create a reactive cell from an object property
-export function cellFor<T extends object, K extends keyof T>(obj: T, key: K): Cell<T[K]> {
+export function cellFor<T extends object, K extends keyof T>(
+  obj: T,
+  key: K
+): Cell<T[K]> {
   const refs = cellsMap.get(obj) || {};
   if (key in refs) {
     return refs[key as unknown as string] as Cell<T[K]>;
   }
-  const cellValue = new Cell<T[K]>(obj[key], `${obj.constructor.name}.${String(key)}`);
+  const cellValue = new Cell<T[K]>(
+    obj[key],
+    `${obj.constructor.name}.${String(key)}`
+  );
   refs[key as unknown as string] = cellValue;
   cellsMap.set(obj, refs);
   Object.defineProperty(obj, key, {
@@ -166,7 +183,7 @@ export function cellFor<T extends object, K extends keyof T>(obj: T, key: K): Ce
 }
 
 export function formula(fn: () => unknown, debugName?: string) {
-  return new MergedCell(fn, `formula:${debugName ?? 'unknown'}`);
+  return new MergedCell(fn, `formula:${debugName ?? "unknown"}`);
 }
 
 export function cell<T>(value: T, debugName?: string) {

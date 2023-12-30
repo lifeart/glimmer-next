@@ -45,7 +45,7 @@ export function renderComponent(
   return component;
 }
 
-export function destroyElement(
+export async function destroyElement(
   component:
     | ComponentReturnType
     | NodeReturnType
@@ -54,23 +54,33 @@ export function destroyElement(
     | null[]
 ) {
   if (Array.isArray(component)) {
-    component.forEach((component) => {
-      destroyElement(component);
-    });
+    await Promise.all(component.map((component) => destroyElement(component)));
   } else {
     if (component === null) {
       return;
     }
-    component.destructors.forEach((fn) => fn());
+    await Promise.all(component.destructors.map((fn) => fn()));
     if ("nodes" in component) {
+      const destructors: Array<Promise<void>> = [];
       component.nodes.forEach((node) => {
-        runDestructors(node);
-        node.parentElement!.removeChild(node);
+        runDestructors(node, destructors);
       });
+      await Promise.all(destructors);
+      try {
+        component.nodes.forEach((node) => {
+          node.parentElement!.removeChild(node);
+        });
+      } catch(e) {
+        console.warn(`Woops, looks like node we trying to destroy no more in DOM`);
+      }
+   
     } else {
-      runDestructors(component.node);
-
-      component.node.parentElement!.removeChild(component.node);
+      await Promise.all(runDestructors(component.node));
+      try {
+        component.node.parentElement!.removeChild(component.node);
+      } catch(e) {
+        console.warn(`Woops, looks like node we trying to destroy no more in DOM`);
+      }
     }
   }
 }
@@ -103,17 +113,31 @@ export function addDestructors(
     }
     const oldDestructors = $destructors.get(node) || [];
     $destructors.set(node, [...oldDestructors, ...destructors]);
+    return () => {
+      // remove added destructors
+      const oldDestructors = $destructors.get(node) || [];
+      $destructors.set(
+        node,
+        oldDestructors.filter((fn) => !destructors.includes(fn))
+      );
+    };
   }
 }
 
-export function runDestructors(targetNode: Node) {
+export function runDestructors(targetNode: Node, promises: Array<Promise<void>> = []): Array<Promise<void>> {
   if ($destructors.has(targetNode)) {
-    $destructors.get(targetNode)!.forEach((fn) => fn());
+    $destructors.get(targetNode)!.forEach((fn) => {
+      const result = fn();
+      if (result instanceof Promise) {
+        promises.push(result);
+      }
+    });
     $destructors.delete(targetNode);
   }
   targetNode.childNodes.forEach((node) => {
-    runDestructors(node);
+    runDestructors(node, promises);
   });
+  return promises;
 }
 
 export function targetFor(
@@ -126,7 +150,7 @@ export function targetFor(
   }
 }
 
-export type DestructorFn = () => void;
+export type DestructorFn = () => void | Promise<void>;
 export type Slots = Record<string, (...params: unknown[]) => Array<ComponentReturnType|NodeReturnType|Comment|string|number>>;
 export type Destructors = Array<DestructorFn>;
 export type ComponentReturnType = {
