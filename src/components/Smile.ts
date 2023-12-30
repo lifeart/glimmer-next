@@ -21,7 +21,7 @@ export function Smile() {
   });
 
   setTimeout(() => {
-    console.log('destroying effect');
+    console.log('destroying effect before component is destroyed:');
     destroyEffect();
   }, 5000);
 
@@ -43,7 +43,7 @@ export function Smile() {
     };
   };
 
-  scope({ isVisible, destructors, fadeOut, tracker });
+  scope({ isVisible, destructors, fadeOut });
 
   // @todo - fix case when destructors binded to node may change, likely we need to create a new comment node, and keep it stable;
   // upd: fixed, need to add tests for it
