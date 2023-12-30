@@ -219,9 +219,10 @@ export class ListComponent<T extends { id: number }> {
         const nextRow = this.keyMap.get(nextKey);
         const firstNode = getFirstNode(row);
         if (nextRow && firstNode) {
-          getRootNodes(nextRow).forEach((node) =>
-            firstNode.parentNode!.insertBefore(firstNode, node)
-          );
+          const parent = firstNode.parentNode!;
+          getRootNodes(nextRow).forEach((node) => {
+            parent.insertBefore(node, firstNode);
+          });
         }
         setIndex(row, index);
       }
