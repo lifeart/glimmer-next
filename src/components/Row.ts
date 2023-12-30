@@ -41,10 +41,11 @@ export function Row({
       if (!isClicked) {
         return;
       }
+      const scrollTop  = document.documentElement.scrollTop;
       if (Math.random() > 0.5) {
         const rect = element.getBoundingClientRect();
         element.style.position = "absolute";
-        element.style.top = `${rect.top}px`;
+        element.style.top = `${rect.top + scrollTop}px`;
         element.style.left = `${rect.left}px`;
         element.style.width = `${rect.width}px`;
         element.style.height = `${rect.height}px`;
@@ -55,7 +56,7 @@ export function Row({
       } else {
         const rect = element.getBoundingClientRect();
         element.style.position = "absolute";
-        element.style.top = `${rect.top}px`;
+        element.style.top = `${rect.top + scrollTop}px`;
         element.style.left = `${rect.left}px`;
         element.style.width = `${rect.width}px`;
         element.style.height = `${rect.height}px`;
