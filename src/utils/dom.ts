@@ -93,7 +93,12 @@ function _DOM(
         );
       }
     } else {
-      element.setAttribute(key, value);
+      if (key === 'checked') {
+        // @ts-expect-error never ever
+        element[key] = value;
+      } else {
+        element.setAttribute(key, value);
+      }
     }
   });
   children.forEach((child) => {

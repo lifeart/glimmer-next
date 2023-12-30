@@ -9,7 +9,12 @@ export function compiler(): Plugin {
     name: "glimmer-next",
     transform(code: string, file: string) {
       if (file.endsWith('.gts')) {
-        return transform(p.process(code, file), file);
+        const intermediate = p.process(code, file).split('static{').join('$static() {');
+        if (file.includes('Checkbox')) {
+          console.log(intermediate);
+        }
+        
+        return transform(intermediate, file);
       }
       if (!code.includes("@/utils/template")) {
         return;

@@ -18,6 +18,21 @@ export function transform(source: string, fileName: string) {
     return {
       name: "ast-transform", // not required
       visitor: {
+        ClassMethod(path: any) {
+          if (path.node.key.name === "$static") {
+            path.replaceWith(
+              t.classProperty(
+                t.identifier("template"),
+                // hbs literal
+                t.taggedTemplateExpression(
+                  t.identifier("hbs"),
+                  path.node.body.body[0].expression.arguments[0]
+                )
+              )
+            );
+          }
+
+        },
         CallExpression(path: any) {
           if (path.node.callee && path.node.callee.type === "Identifier") {
             if (path.node.callee.name === "scope") {
@@ -104,6 +119,9 @@ export function transform(source: string, fileName: string) {
       return `$:${node.original}`;
     } else if (node.type === "MustacheStatement") {
       if (node.path.type !== "PathExpression") {
+        if (node.path.type === 'BooleanLiteral') {
+          return node.path.value;
+        }
         return null;
       }
       if (node.path.original === "yield") {
@@ -294,6 +312,7 @@ export function transform(source: string, fileName: string) {
     if (node === null) {
       return null;
     }
+
     if (Array.isArray(node)) {
       // control node (each)
       const [key, arrayName, , childs, inverses] = node;
@@ -330,6 +349,11 @@ export function transform(source: string, fileName: string) {
         return `DOM.c(new ${node.tag}({
           ${node.attributes
             .map((attr) => {
+              if (attr[1] === null) {
+                return `${attr[0].replace("@", "")}: null`;
+              } else if (typeof attr[1] === 'boolean') {
+                return `${attr[0].replace("@", "")}: ${attr[1]}`;
+              }
               const isScopeValue = attr[1].startsWith("$:");
               return `${attr[0].replace("@", "")}: ${
                 isScopeValue
@@ -400,8 +424,7 @@ export function transform(source: string, fileName: string) {
   let result = "";
 
   if (isTemplateTag) {
-    result = `function (args) {
-      this.args = args;
+    result = `function () {
       const $slots = {};
       const roots = [${results.join(", ")}];
       return finalizeComponent(roots, [], $slots);
