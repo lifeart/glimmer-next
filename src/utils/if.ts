@@ -48,11 +48,19 @@ export function ifCondition(
         if (throwedError) {
           Promise.resolve().then(() => {
             const newPlaceholder = document.createComment("");
+            if (!placeholder.isConnected) {
+              // placeholder is disconnected, it means whole `if` is removed from DOM, no need to recover;
+              return;
+            }
             placeholder.parentElement?.insertBefore(
               newPlaceholder,
               placeholder
             );
             Promise.all(runDestructors(placeholder)).then(async () => {
+              if (!newPlaceholder.isConnected) {
+                // placeholder is disconnected, it means whole `if` is removed from DOM, no need to recover;
+                return;
+              }
               if (prevComponent) {
                 throw new Error(`Component should be destroyed`);
               }
