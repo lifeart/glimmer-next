@@ -75,6 +75,13 @@ function _DOM(
             element.className = valueString;
           })
         );
+      } else if (key === 'value') {
+        destructors.push(
+          bindUpdatingOpcode(value, (value) => {
+            // @ts-expect-error never ever
+            element[key] = value;
+          })
+        );
       } else {
         destructors.push(
           bindUpdatingOpcode(value, (value) => {

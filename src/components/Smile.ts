@@ -1,4 +1,4 @@
-import { cell } from "@/utils/reactive";
+import { cell, formula } from "@/utils/reactive";
 import { hbs, scope } from "@/utils/template";
 import { effect } from "@/utils/vm";
 
@@ -25,10 +25,6 @@ export function Smile() {
     destroyEffect();
   }, 5000);
 
-  const destructors = [() => {
-    clearInterval(interval);
-  }, destroyEffect];
-
   const fadeOut = (element: HTMLSpanElement) => {
     element.style.opacity = "0.1";
     element.style.transition = "opacity 0.2s linear";
@@ -43,7 +39,25 @@ export function Smile() {
     };
   };
 
-  scope({ isVisible, destructors, fadeOut });
+  const time = cell(Date.now(), 'time');
+
+  const timeInterval = setInterval(() => {
+    time.value = Date.now();
+  }, 1000);
+
+  const currentTime = formula(() => {
+    return new Date(time.value).toLocaleString();
+  })
+
+  const destructors = [() => {
+    clearInterval(interval);
+    clearInterval(timeInterval);
+  }, destroyEffect];
+
+  scope({ isVisible, destructors, fadeOut, currentTime });
+
+
+
 
   // @todo - fix case when destructors binded to node may change, likely we need to create a new comment node, and keep it stable;
   // upd: fixed, need to add tests for it
