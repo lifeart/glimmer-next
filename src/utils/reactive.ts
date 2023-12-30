@@ -114,7 +114,7 @@ export class MergedCell {
 }
 
 // this function is called when we need to update DOM, values represented by tags are changed
-export type tagOp = (...values: unknown[]) => void;
+export type tagOp = (...values: unknown[]) => Promise<void> | void;
 
 // this is runtime function, it's called when we need to update DOM for a specific tag
 export async function executeTag(tag: Cell | MergedCell) {
