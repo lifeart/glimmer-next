@@ -18,9 +18,7 @@ export type HBSNode = {
 export function escapeString(str: string) {
   const lines = str.split("\n");
   if (lines.length === 1) {
-    if (str.startsWith("@")) {
-      return str.replace("@", "this.args.");
-    } else if (str.startsWith("'")) {
+    if (str.startsWith("'")) {
       return str;
     } else if (str.startsWith('"')) {
       return str;
@@ -32,9 +30,17 @@ export function escapeString(str: string) {
   }
 }
 
+function isPath(str: string) {
+  return str.startsWith("$:");
+}
+
+function serializePath(p: string): string {
+  return p.replace("$:", "").replace("@", "this.args.");
+}
+
 export function serializeAttribute(key: string, value: string): string {
-  if (value.startsWith("$:")) {
-    return `['${key}', ${value.replace("$:", "").replace("@", "this.args.")}]`;
+  if (isPath(value)) {
+    return `['${key}', ${serializePath(value)}]`;
   }
   return `['${key}', ${escapeString(value)}]`;
 }
@@ -48,14 +54,40 @@ export function serializeChildren(
   return `${children
     .map((child) => {
       if (typeof child === "string") {
-        if (child.startsWith("$:")) {
-          return `${child.replace("$:", "").replace("@", "this.args.")}`;
+        if (isPath(child)) {
+          return `${serializePath(child)}`;
         }
         return `DOM.text('${child}')`;
       }
       return serializeNode(child);
     })
     .join(", ")}`;
+}
+
+function toChildArray(childs: HBSNode[] | null): string {
+  if (!childs) {
+    return "[null]";
+  }
+  return `[${childs
+    .map((child) => serializeNode(child))
+    .filter((el) => el)
+    .join(", ")}]`;
+}
+
+function toPropName(name: string) {
+  return name.replace("@", "");
+}
+
+function serializeProp(attr: [string, string | null]): string {
+  if (attr[1] === null) {
+    return `${toPropName(attr[0])}: null`;
+  } else if (typeof attr[1] === "boolean") {
+    return `${toPropName(attr[0])}: ${attr[1]}`;
+  }
+  const isScopeValue = isPath(attr[1]);
+  return `${toPropName(attr[0])}: ${
+    isScopeValue ? serializePath(attr[1]) : escapeString(attr[1])
+  }`;
 }
 
 export function serializeNode(
@@ -67,28 +99,17 @@ export function serializeNode(
 
   if (Array.isArray(node)) {
     // control node (each)
-    const [key, arrayName, , childs, inverses] = node;
+    const [key, arrayName, paramName, childs, inverses] = node;
 
     if (key === "@each") {
-      return `DOM.each(${arrayName}, (item) => {
-        return [${childs
-          .map((child) => serializeNode(child))
-          .filter((el) => el)
-          .join(", ")}];
+      return `DOM.each(${arrayName}, (${paramName}) => {
+        return ${toChildArray(childs)};
       })`;
     } else if (key === "@if") {
       return `DOM.if(${arrayName}, () => {
-        return [${childs
-          .map((child) => serializeNode(child))
-          .filter((el) => el)
-          .join(", ")}];
+        return ${toChildArray(childs)};
       }, () => {
-        return [${
-          inverses
-            ?.map((child) => serializeNode(child))
-            .filter((el) => el)
-            .join(", ") ?? "null"
-        }];
+        return ${toChildArray(inverses)};
       })`;
     }
   } else if (
@@ -101,17 +122,7 @@ export function serializeNode(
       return `DOM.c(new ${node.tag}({
         ${node.attributes
           .map((attr) => {
-            if (attr[1] === null) {
-              return `${attr[0].replace("@", "")}: null`;
-            } else if (typeof attr[1] === "boolean") {
-              return `${attr[0].replace("@", "")}: ${attr[1]}`;
-            }
-            const isScopeValue = attr[1].startsWith("$:");
-            return `${attr[0].replace("@", "")}: ${
-              isScopeValue
-                ? attr[1].replace("$:", "").replace("@", "this.args.")
-                : escapeString(attr[1])
-            }`;
+            return serializeProp(attr);
           })
           .join(", ")}
       }))`;
@@ -120,12 +131,7 @@ export function serializeNode(
       return `DOM.withSlots(DOM.c(new ${node.tag}({
         ${node.attributes
           .map((attr) => {
-            const isScopeValue = attr[1].startsWith("$:");
-            return `${attr[0].replace("@", "")}: ${
-              isScopeValue
-                ? attr[1].replace("$:", "").replace("@", "this.args.")
-                : escapeString(attr[1])
-            }`;
+            return serializeProp(attr);
           })
           .join(", ")}
       }), { default: (${node.blockParams.join(",")}) => ${
@@ -147,10 +153,8 @@ export function serializeNode(
     }, ${serializeChildren(node.children)} )`;
   } else {
     if (typeof node === "string") {
-      if (node.startsWith("$:")) {
-        return (
-          `DOM.text(` + node.replace("$:", "").replace("@", "this.args.") + `)`
-        );
+      if (isPath(node)) {
+        return `DOM.text(` + serializePath(node) + `)`;
       } else {
         return `DOM.text(\`${node}\`)`;
       }

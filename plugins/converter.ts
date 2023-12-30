@@ -1,5 +1,5 @@
 import type { ASTv1 } from "@glimmer/syntax";
-import { HBSNode } from "./utils";
+import { HBSNode, escapeString } from "./utils";
 
 export function convert(seenNodes: Set<ASTv1.Node>) {
   function ToJSType(node: ASTv1.Node): any {
