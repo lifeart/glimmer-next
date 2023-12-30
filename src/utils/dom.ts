@@ -62,6 +62,7 @@ function _DOM(
     }
   });
   attributes.forEach(([key, value]) => {
+    // @todo = extract this code to composable function, we need to run `function to check is it reactive, and re-enter with autocreated cell if needed`;
     if (value instanceof Function) {
       const destructor = value(element, key);
       if (typeof destructor === "function") {
@@ -95,6 +96,7 @@ function _DOM(
     }
   });
   children.forEach((child) => {
+    // @todo = extract this code to composable function
     if (child === null) {
       return;
     }
@@ -219,7 +221,11 @@ _DOM.text = function (text: string | Cell | MergedCell | Fn): NodeReturnType {
   } else if (text instanceof Function) {
     const maybeFormula = formula(text);
     if (maybeFormula.isConst) {
-      return def($text(String(maybeFormula.value)));
+      try {
+        return def($text(String(maybeFormula.value)));
+      } finally {
+        maybeFormula.destroy();
+      }
     } else {
       return DOM.text(maybeFormula);
     }

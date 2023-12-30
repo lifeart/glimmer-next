@@ -1,6 +1,7 @@
 import { hbs, scope } from "@/utils/template";
 import { ButtonWrapper } from "./ButtonWrapper";
 import { Smile } from "./Smile";
+import { Clock } from "./Clock";
 
 type Cb = () => void;
 type HeaderArgs = {
@@ -19,12 +20,12 @@ export function Header({
   swaprows,
   runlots,
 }: HeaderArgs) {
-  scope({ ButtonWrapper, run, add, update, clear, swaprows, runlots, Smile });
+  scope({ ButtonWrapper, run, add, Clock, update, clear, swaprows, runlots, Smile });
   return hbs`
     <div class="jumbotron">
         <div class="row">
             <div class="col-md-6">
-                <h1>GlimmerC<a href="https://github.com/lifeart/glimmer-next" target="_blank"><Smile/></a>re</h1>
+                <h1>GlimmerC<a href="https://github.com/lifeart/glimmer-next" target="_blank"><Smile/></a>re <Clock /></h1>
             </div>
             <div class="col-md-6">
                 <div class="row">
