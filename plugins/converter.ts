@@ -1,19 +1,25 @@
 import type { ASTv1 } from "@glimmer/syntax";
-import { HBSNode, escapeString, isPath, resolvedChildren, serializePath } from "./utils";
-
-
+import {
+  HBSNode,
+  escapeString,
+  isPath,
+  resolvedChildren,
+  serializePath,
+} from "./utils";
 
 export function convert(seenNodes: Set<ASTv1.Node>) {
   function ToJSType(node: ASTv1.Node, wrap = true): any {
     seenNodes.add(node);
-    if (node.type === 'ConcatStatement') {
-      return `$:() => [${node.parts.map((p) => {
-        if (p.type === 'TextNode') {
-          return escapeString(p.chars);
-        }
-        let value = ToJSType(p, false);
-        return value;
-      }).join(',')}].join('')`;
+    if (node.type === "ConcatStatement") {
+      return `$:() => [${node.parts
+        .map((p) => {
+          if (p.type === "TextNode") {
+            return escapeString(p.chars);
+          }
+          let value = ToJSType(p, false);
+          return value;
+        })
+        .join(",")}].join('')`;
     } else if (node.type === "UndefinedLiteral") {
       return undefined;
     } else if (node.type === "NullLiteral") {
@@ -43,11 +49,14 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
       return `$:${node.original}`;
     } else if (node.type === "MustacheStatement") {
       if (node.path.type !== "PathExpression") {
-        if (node.path.type === "BooleanLiteral" || node.path.type === "UndefinedLiteral" || node.path.type === "NullLiteral") {
+        if (
+          node.path.type === "BooleanLiteral" ||
+          node.path.type === "UndefinedLiteral" ||
+          node.path.type === "NullLiteral"
+        ) {
           return node.path.value;
         } else if (node.path.type === "SubExpression") {
-          
-          return `${wrap ? `$:() => ` : ''}${ToJSType(node.path)}`;
+          return `${wrap ? `$:() => ` : ""}${ToJSType(node.path)}`;
         }
         return null;
       }
@@ -59,15 +68,13 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
       if (node.params.length === 0) {
         return ToJSType(node.path);
       } else {
-        return `${wrap ? `$:() => ` : ''}${ToJSType(node.path)}(${node.params
+        return `${wrap ? `$:() => ` : ""}${ToJSType(node.path)}(${node.params
           .map((p) => ToJSType(p))
           .map((el) => {
             if (typeof el !== "string") {
               return String(el);
             }
-            return isPath(el)
-              ? serializePath(el)
-              : escapeString(el);
+            return isPath(el) ? serializePath(el) : escapeString(el);
           })
           .join(",")})`;
       }
@@ -75,11 +82,10 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
       if (!node.params.length) {
         return null;
       }
-      if (node.params[0].type === "SubExpression") {
-        return null;
-      }
       const childElements = resolvedChildren(node.program.body);
-      const elseChildElements = node.inverse?.body ? resolvedChildren(node.inverse.body) : undefined;
+      const elseChildElements = node.inverse?.body
+        ? resolvedChildren(node.inverse.body)
+        : undefined;
       if (!childElements.length) {
         return null;
       }
@@ -90,7 +96,7 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
 
       return [
         `@${name}`,
-        node.params[0].original,
+        ToJSType(node.params[0], false),
         node.program.blockParams[0] ?? null,
         childElements?.map((el) => ToJSType(el)) ?? null,
         elseChildElements?.length
@@ -110,7 +116,11 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
     if (firstChild.type === "TextNode") {
       return true;
     }
-    if (firstChild.type === "ElementNode" && !firstChild.tag.startsWith(':') && firstChild.tag.toLowerCase() === firstChild.tag) {
+    if (
+      firstChild.type === "ElementNode" &&
+      !firstChild.tag.startsWith(":") &&
+      firstChild.tag.toLowerCase() === firstChild.tag
+    ) {
       return true;
     }
     return false;
@@ -135,9 +145,13 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
           if (mod.path.original === "on") {
             const firstParam = mod.params[0];
             if (firstParam.type === "StringLiteral") {
-              return [ToJSType(firstParam), `$:($e, $n) => ${ToJSType(mod.params[1])}($e, $n, ${mod.params.slice(2)
-                .map((p) => ToJSType(p))
-                .join(",")})`];
+              return [
+                ToJSType(firstParam),
+                `$:($e, $n) => ${ToJSType(mod.params[1])}($e, $n, ${mod.params
+                  .slice(2)
+                  .map((p) => ToJSType(p))
+                  .join(",")})`,
+              ];
             } else {
               return null;
             }

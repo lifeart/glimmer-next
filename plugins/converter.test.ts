@@ -69,7 +69,9 @@ describe("convert function builder", () => {
   });
   describe("ElementNode", () => {
     test("converts a simple element", () => {
-      expect($t<ASTv1.ElementNode>(`<div></div>`)).toEqual($node({ tag: "div" }));
+      expect($t<ASTv1.ElementNode>(`<div></div>`)).toEqual(
+        $node({ tag: "div" })
+      );
     });
     test("converts a simple element with string attribute", () => {
       expect($t<ASTv1.ElementNode>(`<div class="foo"></div>`)).toEqual(
@@ -80,10 +82,14 @@ describe("convert function builder", () => {
       );
     });
     test("converts a simple element with concat string attribute", () => {
-      expect($t<ASTv1.ElementNode>(`<div class="{{foo}} bar {{boo baks}}"></div>`)).toEqual(
+      expect(
+        $t<ASTv1.ElementNode>(`<div class="{{foo}} bar {{boo baks}}"></div>`)
+      ).toEqual(
         $node({
           tag: "div",
-          attributes: [["class", "$:() => [$:foo,\" bar \",$:boo(baks)].join('')"]],
+          attributes: [
+            ["class", "$:() => [$:foo,\" bar \",$:boo(baks)].join('')"],
+          ],
         })
       );
     });
@@ -112,64 +118,88 @@ describe("convert function builder", () => {
       );
     });
     test("converts a simple element with `on` modifier", () => {
-        // @todo - likely need to return proper closure here (arrow function)
-        expect($t<ASTv1.ElementNode>(`<div {{on "click" foo}}></div>`)).toEqual(
-            $node({
-                tag: "div",
-                events: [["click", '$:($e, $n) => $:foo($e, $n, )']],
-            })
-        );
+      // @todo - likely need to return proper closure here (arrow function)
+      expect($t<ASTv1.ElementNode>(`<div {{on "click" foo}}></div>`)).toEqual(
+        $node({
+          tag: "div",
+          events: [["click", "$:($e, $n) => $:foo($e, $n, )"]],
+        })
+      );
     });
     test("converts a simple element with `on` modifier, with composed args", () => {
-        // @todo - likely need to return proper closure here (arrow function)
-        expect($t<ASTv1.ElementNode>(`<div {{on "click" (foo bar baz)}}></div>`)).toEqual(
-            $node({
-                tag: "div",
-                events: [["click", '$:($e, $n) => $:foo($:bar,$:baz)($e, $n, )']],
-            })
-        );
+      // @todo - likely need to return proper closure here (arrow function)
+      expect(
+        $t<ASTv1.ElementNode>(`<div {{on "click" (foo bar baz)}}></div>`)
+      ).toEqual(
+        $node({
+          tag: "div",
+          events: [["click", "$:($e, $n) => $:foo($:bar,$:baz)($e, $n, )"]],
+        })
+      );
     });
-    test('support custom modifiers', () => {
-        expect($t<ASTv1.ElementNode>(`<div {{foo-bar}}></div>`)).toEqual(
-            $node({
-                tag: "div",
-                events: [["onCreated", '$:($n) => $:foo-bar($n, )']],
-            })
-        );
+    test("support custom modifiers", () => {
+      expect($t<ASTv1.ElementNode>(`<div {{foo-bar}}></div>`)).toEqual(
+        $node({
+          tag: "div",
+          events: [["onCreated", "$:($n) => $:foo-bar($n, )"]],
+        })
+      );
     });
   });
+  describe("if condition", () => {
+    test("only true part", () => {
+      expect($t<ASTv1.BlockStatement>(`{{#if foo}}123{{/if}}`)).toEqual([
+        "@if",
+        "$:foo",
+        null,
+        ["123"],
+        null,
+      ]);
+    });
+
+    test("both parts", () => {
+      expect(
+        $t<ASTv1.BlockStatement>(`{{#if foo}}123{{else}}456{{/if}}`)
+      ).toEqual(["@if", "$:foo", null, ["123"], ["456"]]);
+    });
+
+    test("helper in condition", () => {
+      expect(
+        $t<ASTv1.BlockStatement>(`{{#if (foo bar)}}123{{else}}456{{/if}}`)
+      ).toEqual(["@if", "$:foo($:bar)", null, ["123"], ["456"]]);
+    });
+  });
+
   describe("stableChildDetection", () => {
-    test('detects stable child', () => {
-        expect($t<ASTv1.ElementNode>(`<div>foo</div>`)).toEqual(
-            $node({
-                tag: "div",
-                hasStableChild: true,
-                children: ["foo"],
-            })
-        );
-        expect($t<ASTv1.ElementNode>(`<div><p></p></div>`)).toEqual(
-            $node({
-                tag: "div",
-                hasStableChild: true,
-                children: [$node({ tag: "p" })],
-            })
-        );
-        expect($t<ASTv1.ElementNode>(`<div><:slot></:slot></div>`)).toEqual(
-            $node({
-                tag: "div",
-                hasStableChild: false,
-                children: [$node({ tag: ":slot" })],
-            })
-        );
-        expect($t<ASTv1.ElementNode>(`<div>{{#if foo}}123{{/if}}</div>`)).toEqual(
-            $node({
-                tag: "div",
-                hasStableChild: false,
-                children: [
-                    ["@if", "foo", null, ["123"], null]
-                ],
-            })
-        );
+    test("detects stable child", () => {
+      expect($t<ASTv1.ElementNode>(`<div>foo</div>`)).toEqual(
+        $node({
+          tag: "div",
+          hasStableChild: true,
+          children: ["foo"],
+        })
+      );
+      expect($t<ASTv1.ElementNode>(`<div><p></p></div>`)).toEqual(
+        $node({
+          tag: "div",
+          hasStableChild: true,
+          children: [$node({ tag: "p" })],
+        })
+      );
+      expect($t<ASTv1.ElementNode>(`<div><:slot></:slot></div>`)).toEqual(
+        $node({
+          tag: "div",
+          hasStableChild: false,
+          children: [$node({ tag: ":slot" })],
+        })
+      );
+      expect($t<ASTv1.ElementNode>(`<div>{{#if foo}}123{{/if}}</div>`)).toEqual(
+        $node({
+          tag: "div",
+          hasStableChild: false,
+          children: [["@if", "$:foo", null, ["123"], null]],
+        })
+      );
     });
   });
 });
