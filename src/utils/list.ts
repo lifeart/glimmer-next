@@ -91,11 +91,7 @@ export class ListComponent<T extends { id: number }> {
     );
   }
   setupKeyForItem() {
-    if (this.key === '@index') {
-      this.keyForItem = (_: T, index: number) => {
-        return String(index);
-      };
-    } else if (this.key === '@identity') {
+    if (this.key === '@identity') {
       let cnt = 0;
       const map: WeakMap<T, string> = new WeakMap();
       this.keyForItem = ((item: T) => {
@@ -117,7 +113,7 @@ export class ListComponent<T extends { id: number }> {
     }
   }
   // @ts-expect-error non-string return type
-  keyForItem(item: T, index: number): string {
+  keyForItem(item: T): string {
     if (import.meta.env.DEV) {
       throw new Error(`Key for item not implemented, ${JSON.stringify(item)}`);
     }
@@ -135,7 +131,7 @@ export class ListComponent<T extends { id: number }> {
   }
   async syncList(items: T[]) {
     const existingKeys = new Set(this.keyMap.keys());
-    const updatingKeys = new Set(items.map((item, index) => this.keyForItem(item, index)));
+    const updatingKeys = new Set(items.map((item) => this.keyForItem(item)));
     const keysToRemove = [...existingKeys].filter(
       (key) => !updatingKeys.has(key)
     );
@@ -189,7 +185,7 @@ export class ListComponent<T extends { id: number }> {
         // optimization for appending items case
         targetNode = this.getTargetNode(0);
       }
-      const key = this.keyForItem(item, index);
+      const key = this.keyForItem(item);
       const maybeRow = this.keyMap.get(key);
       if (!maybeRow) {
         const row = this.ItemComponent(item, index);
@@ -218,7 +214,7 @@ export class ListComponent<T extends { id: number }> {
         setIndex(row, index);
         renderElement(this.bottomMarker.parentNode!, row, this.bottomMarker);
       } else {
-        const nextKey = this.keyForItem(nextItem, index);
+        const nextKey = this.keyForItem(nextItem);
         const nextRow = this.keyMap.get(nextKey);
         const firstNode = getFirstNode(row);
         if (nextRow && firstNode) {

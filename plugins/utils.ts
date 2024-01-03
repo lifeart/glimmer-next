@@ -121,12 +121,17 @@ export function serializeNode(
     const paramNames = node.blockParams;
     const childs = node.children;
     const inverses = node.inverse;
-    const eachKey = node.key;
+    let eachKey = node.key;
+
+    if (eachKey === '@index') {
+      console.warn('@index identity not supported');
+      eachKey = '@identity';
+    }
 
     if (key === "@each") {
       return `DOM.each(${arrayName}, (${paramNames.join(",")}) => {
         return ${toChildArray(childs)};
-      }, ${eachKey})`;
+      }, ${eachKey ? escapeString(eachKey) : null})`;
     } else if (key === "@if") {
       return `DOM.if(${arrayName}, () => {
         return ${toChildArray(childs)};
