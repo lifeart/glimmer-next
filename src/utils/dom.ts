@@ -94,6 +94,54 @@ function $attr(
     element.setAttribute(key, value as string);
   }
 }
+
+function addChild(
+  element: HTMLElement,
+  child:
+    | NodeReturnType
+    | ComponentReturnType
+    | string
+    | Cell
+    | MergedCell
+    | Function
+) {
+  if (child === null) {
+    return;
+  }
+  if (typeof child === "object" && "nodes" in child) {
+    child.nodes.forEach((node) => {
+      element.appendChild(node);
+    });
+    addDestructors(child.destructors, child);
+  } else if (typeof child === "object" && "node" in child) {
+    element.appendChild(child.node);
+    addDestructors(child.destructors, child);
+  } else if (typeof child === "string" || typeof child === "number") {
+    const text = $text(child);
+    element.appendChild(text);
+  } else if (child instanceof Cell || child instanceof MergedCell) {
+    element.appendChild(cellToText(child));
+  } else if (child instanceof Function) {
+    // looks like a component
+    const componentProps:
+      | ComponentReturnType
+      | NodeReturnType
+      | string
+      | number = child();
+    if (typeof componentProps !== "object") {
+      const text = $text(String(componentProps));
+      element.appendChild(text);
+    } else if ("nodes" in componentProps) {
+      componentProps.nodes.forEach((node) => {
+        element.appendChild(node);
+      });
+      addDestructors(componentProps.destructors, componentProps);
+    } else {
+      element.appendChild(componentProps.node);
+      addDestructors(componentProps.destructors, componentProps);
+    }
+  }
+}
 function _DOM(
   tag: string,
   props: Props,
@@ -130,59 +178,19 @@ function _DOM(
     $prop(element, key, value, destructors);
   });
   children.forEach((child) => {
-    // @todo = extract this code to composable function
-    if (child === null) {
-      return;
-    }
-    if (typeof child === "object" && "nodes" in child) {
-      child.nodes.forEach((node) => {
-        element.appendChild(node);
-      });
-      addDestructors(child.destructors, child);
-    } else if (typeof child === "object" && "node" in child) {
-      element.appendChild(child.node);
-      addDestructors(child.destructors, child);
-    } else if (typeof child === "string" || typeof child === "number") {
-      const text = $text(child);
-      element.appendChild(text);
-    } else if (child instanceof Cell || child instanceof MergedCell) {
-      element.appendChild(cellToText(child));
-    } else if (child instanceof Function) {
-      // looks like a component
-      const componentProps:
-        | ComponentReturnType
-        | NodeReturnType
-        | string
-        | number = child();
-      if (typeof componentProps !== "object") {
-        const text = $text(String(componentProps));
-        element.appendChild(text);
-      } else if ("nodes" in componentProps) {
-        componentProps.nodes.forEach((node) => {
-          element.appendChild(node);
-        });
-        addDestructors(componentProps.destructors, componentProps);
-      } else {
-        element.appendChild(componentProps.node);
-        addDestructors(componentProps.destructors, componentProps);
-      }
-    }
+    addChild(element, child);
   });
 
   addDestructors(destructors, element);
   return def(element, destructors);
 }
 
-_DOM.each = each;
-_DOM.if = ifCond;
-_DOM.slot = slot;
-_DOM.c = function (comp: ComponentReturnType | Component) {
+function component(comp: ComponentReturnType | Component) {
   if ("template" in comp) {
     return (comp.template as unknown as () => ComponentReturnType)();
   }
   return comp;
-};
-
+}
 type Fn = () => unknown;
 function def(node: Node, destructors: Destructors = []) {
   return {
@@ -251,9 +259,7 @@ function cellToText(cell: Cell | MergedCell) {
   );
   return textNode;
 }
-
-_DOM.withSlots = withSlots;
-_DOM.text = function (text: string | Cell | MergedCell | Fn): NodeReturnType {
+function text(text: string | Cell | MergedCell | Fn): NodeReturnType {
   if (typeof text === "string") {
     return def($text(text));
   } else if (text instanceof Cell || text instanceof MergedCell) {
@@ -272,7 +278,7 @@ _DOM.text = function (text: string | Cell | MergedCell | Fn): NodeReturnType {
   } else {
     throw new Error("invalid text");
   }
-};
+}
 
 type BranchCb = () => ComponentReturnType | NodeReturnType;
 
@@ -303,6 +309,13 @@ function each<T extends { id: number }>(
 
   return def(outlet, List.destructors);
 }
+
+_DOM.each = each;
+_DOM.if = ifCond;
+_DOM.slot = slot;
+_DOM.c = component;
+_DOM.withSlots = withSlots;
+_DOM.text = text;
 
 export const DOM = _DOM;
 
