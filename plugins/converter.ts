@@ -125,10 +125,11 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
           }
           if (mod.path.original === "on") {
             const firstParam = mod.params[0];
+            const tailParams = mod.params.slice(2);
             if (firstParam.type === "StringLiteral") {
-              return [ToJSType(firstParam), `$:($e, $n) => ${ToJSType(mod.params[1])}($e, $n, ${mod.params.slice(2)
+              return tailParams.length ? [ToJSType(firstParam), `$:($e, $n) => ${ToJSType(mod.params[1])}($e, $n, ${mod.params.slice(2)
                 .map((p) => ToJSType(p))
-                .join(",")})`];
+                .join(",")})`] : [ToJSType(firstParam), ToJSType(mod.params[1])];
             } else {
               return null;
             }
