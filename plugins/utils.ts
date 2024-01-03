@@ -56,7 +56,12 @@ export function resolvedChildren(els: ASTv1.Node[]) {
   });
 }
 
-export function serializeAttribute(key: string, value: string): string {
+export function serializeAttribute(key: string, value: string | number | boolean): string {
+  if (typeof value === 'boolean') {
+    return `['${key}', ${String(value)}]`;
+  } else if (typeof value === 'number') {
+    return `['${key}', ${value}]`;
+  }
   if (isPath(value)) {
     return `['${key}', ${serializePath(value)}]`;
   }
@@ -96,10 +101,12 @@ function toPropName(name: string) {
   return name.replace("@", "");
 }
 
-function serializeProp(attr: [string, string | null]): string {
+function serializeProp(attr: [string, string | null | number | boolean]): string {
   if (attr[1] === null) {
     return `${toPropName(attr[0])}: null`;
   } else if (typeof attr[1] === "boolean") {
+    return `${toPropName(attr[0])}: ${attr[1]}`;
+  } else if (typeof attr[1] === 'number') {
     return `${toPropName(attr[0])}: ${attr[1]}`;
   }
   const isScopeValue = isPath(attr[1]);
