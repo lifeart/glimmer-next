@@ -2,8 +2,8 @@ import { expect, test, describe } from "vitest";
 import { preprocess } from "@glimmer/syntax";
 
 import { convert } from "./converter";
-import type { ASTv1 } from "@glimmer/syntax";
-import { HBSNode } from "./utils";
+import { ASTv1 } from "@glimmer/syntax";
+import { HBSExpression, HBSNode } from "./utils";
 
 function $t<T extends ASTv1.Node>(tpl: string): T {
   const seenNodes: Set<ASTv1.Node> = new Set();
@@ -148,10 +148,10 @@ describe("convert function builder", () => {
   });
   describe("if condition", () => {
     test("only true part", () => {
-      expect($t<ASTv1.BlockStatement>(`{{#if foo}}123{{/if}}`)).toEqual([
+      expect($t<ASTv1.BlockStatement>(`{{#if foo}}123{{/if}}`)).toEqual<HBSExpression>([
         "@if",
         "$:foo",
-        null,
+        [],
         ["123"],
         null,
       ]);
@@ -160,16 +160,26 @@ describe("convert function builder", () => {
     test("both parts", () => {
       expect(
         $t<ASTv1.BlockStatement>(`{{#if foo}}123{{else}}456{{/if}}`)
-      ).toEqual(["@if", "$:foo", null, ["123"], ["456"]]);
+      ).toEqual<HBSExpression>(["@if", "$:foo", [], ["123"], ["456"]]);
     });
 
     test("helper in condition", () => {
       expect(
         $t<ASTv1.BlockStatement>(`{{#if (foo bar)}}123{{else}}456{{/if}}`)
-      ).toEqual(["@if", "$:foo($:bar)", null, ["123"], ["456"]]);
+      ).toEqual<HBSExpression>(["@if", "$:foo($:bar)", [], ["123"], ["456"]]);
     });
   });
-
+  describe('each condition', () => {
+    test('it works', () => {
+      expect($t<ASTv1.BlockStatement>(`{{#each foo as |bar index|}}123{{/each}}`)).toEqual<HBSExpression>([
+        '@each',
+        '$:foo',
+        ['bar', 'index'],
+        ['123'],
+        null
+      ]);
+    })
+  });
   describe("stableChildDetection", () => {
     test("detects stable child", () => {
       expect($t<ASTv1.ElementNode>(`<div>foo</div>`)).toEqual(
@@ -197,7 +207,7 @@ describe("convert function builder", () => {
         $node({
           tag: "div",
           hasStableChild: false,
-          children: [["@if", "$:foo", null, ["123"], null]],
+          children: [["@if", "$:foo", [], ["123"], null]],
         })
       );
     });

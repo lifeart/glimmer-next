@@ -97,7 +97,7 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
       return [
         `@${name}`,
         ToJSType(node.params[0], false),
-        node.program.blockParams[0] ?? null,
+        node.program.blockParams,
         childElements?.map((el) => ToJSType(el)) ?? null,
         elseChildElements?.length
           ? elseChildElements.map((el) => ToJSType(el))

@@ -53,13 +53,13 @@ export class ListComponent<T extends { id: number }> {
   nodes: Node[] = [];
   destructors: Array<() => void> = [];
   index = 0;
-  ItemComponent: (item: T) => GenericReturnType;
+  ItemComponent: (item: T, index?: number) => GenericReturnType;
   bottomMarker!: Comment;
   constructor(
     {
       tag,
       ItemComponent,
-    }: { tag: Cell<T[]>; ItemComponent: (item: T) => ComponentReturnType },
+    }: { tag: Cell<T[]>; ItemComponent: (item: T, index?: number) => ComponentReturnType },
     outlet: HTMLElement | DocumentFragment
   ) {
     this.ItemComponent = ItemComponent;
@@ -159,7 +159,7 @@ export class ListComponent<T extends { id: number }> {
       const key = this.keyForItem(item);
       const maybeRow = this.keyMap.get(key);
       if (!maybeRow) {
-        const row = this.ItemComponent(item);
+        const row = this.ItemComponent(item, index);
         if (Array.isArray(row)) {
           row.forEach((item) => {
             renderElement(targetNode.parentNode!, item, targetNode);

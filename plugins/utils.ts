@@ -3,9 +3,9 @@ import type { ASTv1 } from "@glimmer/syntax";
 export type HBSExpression = [
   string,
   string,
-  string | null,
+  string[],
   Array<HBSNode|string>,
-  HBSNode[] | null
+  Array<HBSNode|string> | null
 ];
 
 export type HBSNode = {
@@ -111,10 +111,10 @@ export function serializeNode(
 
   if (Array.isArray(node)) {
     // control node (each)
-    const [key, arrayName, paramName, childs, inverses] = node;
+    const [key, arrayName, paramNames, childs, inverses] = node;
 
     if (key === "@each") {
-      return `DOM.each(${arrayName}, (${paramName}) => {
+      return `DOM.each(${arrayName}, (${paramNames.join(',')}) => {
         return ${toChildArray(childs)};
       })`;
     } else if (key === "@if") {
