@@ -6,6 +6,11 @@ import { HBSExpression, HBSNode, serializeNode } from "./utils";
 import { processTemplate } from "./babel";
 import { convert } from "./converter";
 
+
+function isNodeStable(node: string) {
+  return node.trim().startsWith("DOM(") || node.trim().startsWith("DOM.text(") || !node.trim().includes('DOM');
+}
+
 export function transform(source: string, fileName: string) {
   const programs: Array<HBSNode | HBSExpression>[] = [];
   const seenNodes: Set<ASTv1.Node> = new Set();
@@ -82,20 +87,20 @@ export function transform(source: string, fileName: string) {
       result = `function () {
       const $slots = {};
       const roots = [${results.join(", ")}];
-      return finalizeComponent(roots, [], $slots);
+      return finalizeComponent(roots, [], $slots, ${String(isNodeStable(results[0]))});
     }`;
     } else {
       result = isClass
         ? `() => {
       const $slots = {};
       const roots = [${results.join(", ")}];
-      return finalizeComponent(roots, this.destructors, $slots);
+      return finalizeComponent(roots, this.destructors, $slots, ${String(isNodeStable(results[0]))});
     }`
         : `(() => {
       const $slots = {};
       const roots = [${results.join(", ")}];
       const existingDestructors = typeof destructors !== 'undefined' ? destructors : [];
-      return finalizeComponent(roots, existingDestructors, $slots);
+      return finalizeComponent(roots, existingDestructors, $slots, ${String(isNodeStable(results[0]))});
     })()`;
     }
 

@@ -3,33 +3,10 @@ import {
   NodeReturnType,
   addDestructors,
   destroyElement,
+  renderElement,
 } from "@/utils/component";
 import { Cell, MergedCell } from "@/utils/reactive";
 import { bindUpdatingOpcode } from "@/utils/vm";
-
-function renderItem(
-  item:
-    | ComponentReturnType
-    | NodeReturnType
-    | ComponentReturnType[]
-    | NodeReturnType[],
-  marker: Node
-) {
-  if (Array.isArray(item)) {
-    item.forEach((item) => {
-      renderItem(item, marker);
-    });
-  } else {
-    const parent = marker.parentNode;
-    if ("node" in item) {
-      parent?.insertBefore(item.node, marker);
-    } else {
-      item.nodes.forEach((node) => {
-        parent?.insertBefore(node, marker);
-      });
-    }
-  }
-}
 
 function setIndex(item: GenericReturnType, index: number) {
   if (Array.isArray(item)) {
@@ -45,20 +22,6 @@ function getIndex(item: GenericReturnType) {
     return item[0].index;
   } else {
     return item.index;
-  }
-}
-function getRootNodes(item: GenericReturnType): Node[] {
-  if (Array.isArray(item)) {
-    return item.reduce(
-      (acc: Node[], item: ComponentReturnType | NodeReturnType) => {
-        return acc.concat(getRootNodes(item));
-      },
-      [] as Node[]
-    );
-  } else if ("nodes" in item) {
-    return item.nodes;
-  } else {
-    return [item.node];
   }
 }
 function getFirstNode(item: GenericReturnType) {
@@ -103,7 +66,7 @@ export class ListComponent<T extends { id: number }> {
     const mainNode = outlet;
     this.nodes = [];
     // "list bottom marker"
-    this.bottomMarker = document.createComment('');
+    this.bottomMarker = document.createComment("");
     mainNode.appendChild(this.bottomMarker);
 
     // @ts-expect-error never ever
@@ -149,13 +112,20 @@ export class ListComponent<T extends { id: number }> {
     let seenKeys = 0;
 
     // iterate over existing keys and remove them
-    const removedIndexes = keysToRemove.map((key) => this.getListItemIndex(key));
-    const removePromise = Promise.all(keysToRemove.map((key) => this.destroyListItem(key)));
-    const rmDist = addDestructors([
-      async () => {
-        await removePromise;
-      }
-    ], this.bottomMarker);
+    const removedIndexes = keysToRemove.map((key) =>
+      this.getListItemIndex(key)
+    );
+    const removePromise = Promise.all(
+      keysToRemove.map((key) => this.destroyListItem(key))
+    );
+    const rmDist = addDestructors(
+      [
+        async () => {
+          await removePromise;
+        },
+      ],
+      this.bottomMarker
+    );
     removePromise.then(() => {
       rmDist?.();
     });
@@ -192,11 +162,11 @@ export class ListComponent<T extends { id: number }> {
         const row = this.ItemComponent(item);
         if (Array.isArray(row)) {
           row.forEach((item) => {
-            renderItem(item, targetNode);
+            renderElement(targetNode.parentNode!, item, targetNode);
             item.index = index;
           });
         } else {
-          renderItem(row, targetNode);
+          renderElement(targetNode.parentNode!, row, targetNode);
           row.index = index;
         }
 
@@ -213,16 +183,14 @@ export class ListComponent<T extends { id: number }> {
       const nextItem = items[index + 1];
       if (nextItem === undefined) {
         setIndex(row, index);
-        renderItem(row, this.bottomMarker);
+        renderElement(this.bottomMarker.parentNode!, row, this.bottomMarker);
       } else {
         const nextKey = this.keyForItem(nextItem);
         const nextRow = this.keyMap.get(nextKey);
         const firstNode = getFirstNode(row);
         if (nextRow && firstNode) {
           const parent = firstNode.parentNode!;
-          getRootNodes(nextRow).forEach((node) => {
-            parent.insertBefore(node, firstNode);
-          });
+          renderElement(parent, nextRow, firstNode);
         }
         setIndex(row, index);
       }

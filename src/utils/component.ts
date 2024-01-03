@@ -13,7 +13,7 @@ export type GenericReturnType =
 export function renderElement(
     target: Node,
     el: GenericReturnType,
-    placeholder: Comment
+    placeholder: Comment | Node
   ) {
     if (!Array.isArray(el)) {
       if (el === null) {

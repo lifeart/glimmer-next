@@ -37,6 +37,8 @@ export function ifCondition(
     cell = formula(cell);
   } else if (typeof cell === "boolean") {
     cell = formula(() => cell);
+  } else if (typeof cell === 'number') {
+    cell = formula(() => cell);
   }
   let runNumber = 0;
   let throwedError: Error | null = null;

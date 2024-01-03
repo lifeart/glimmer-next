@@ -279,16 +279,15 @@ export const DOM = _DOM;
 export function finalizeComponent(
   roots: Array<ComponentReturnType | NodeReturnType>,
   existingDestructors: Destructors,
-  slots: Slots
+  slots: Slots,
+  isStable: boolean
 ) {
   const dest = roots.reduce((acc, root) => {
     return [...acc, ...root.destructors];
   }, existingDestructors);
-  // tag-for-destructors
-  const tagForDestructors = dest.length ? document.createComment("") : null;
   const nodes: Array<
     HTMLElement | ComponentReturnType | NodeReturnType | Text | Comment
-  > = tagForDestructors ? [tagForDestructors] : [];
+  > = [];
   roots.forEach((root) => {
     if ("nodes" in root) {
       nodes.push(
@@ -298,8 +297,11 @@ export function finalizeComponent(
       nodes.push(root.node as unknown as HTMLElement | Text | Comment);
     }
   });
-  if (tagForDestructors) {
-    addDestructors(dest, tagForDestructors!);
+  if (!isStable && dest.length) {
+    nodes.unshift(document.createComment(""));
+  }
+  if (dest.length) {
+    addDestructors(dest, nodes[0]);
   }
   return {
     nodes,
