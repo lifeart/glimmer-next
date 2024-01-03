@@ -3,8 +3,6 @@ import {
   addDestructors,
   NodeReturnType,
   type ComponentReturnType,
-  type Destructors,
-  DestructorFn,
   Slots,
   Component,
 } from "@/utils/component";
@@ -12,6 +10,11 @@ import { Cell, MergedCell, formula } from "@/utils/reactive";
 import { bindUpdatingOpcode } from "@/utils/vm";
 import { ListComponent } from "@/utils/list";
 import { ifCondition } from "@/utils/if";
+import {
+  DestructorFn,
+  Destructors,
+  executeDestructors,
+} from "./destroyable";
 
 type ModifierFn = (
   element: HTMLElement,
@@ -74,7 +77,7 @@ function $attr(
   element: HTMLElement,
   key: string,
   value: unknown,
-  destructors: DestructorFn[]
+  destructors: Destructors
 ) {
   if (value instanceof Function) {
     $attr(
@@ -112,10 +115,8 @@ function addChild(
     child.nodes.forEach((node) => {
       element.appendChild(node);
     });
-    addDestructors(child.destructors, child);
   } else if (typeof child === "object" && "node" in child) {
     element.appendChild(child.node);
-    addDestructors(child.destructors, child);
   } else if (typeof child === "string" || typeof child === "number") {
     const text = $text(child);
     element.appendChild(text);
@@ -135,10 +136,8 @@ function addChild(
       componentProps.nodes.forEach((node) => {
         element.appendChild(node);
       });
-      addDestructors(componentProps.destructors, componentProps);
     } else {
       element.appendChild(componentProps.node);
-      addDestructors(componentProps.destructors, componentProps);
     }
   }
 }
@@ -182,7 +181,7 @@ function _DOM(
   });
 
   addDestructors(destructors, element);
-  return def(element, destructors);
+  return def(element);
 }
 
 function component(comp: ComponentReturnType | Component) {
@@ -192,10 +191,9 @@ function component(comp: ComponentReturnType | Component) {
   return comp;
 }
 type Fn = () => unknown;
-function def(node: Node, destructors: Destructors = []) {
+function def(node: Node) {
   return {
     node,
-    destructors,
     index: 0,
   };
 }
@@ -204,22 +202,19 @@ function mergeComponents(
   components: Array<ComponentReturnType | NodeReturnType | Node>
 ) {
   const nodes: Array<Node> = [];
-  const destructors: Destructors = [];
   components.forEach((component) => {
-    if ("destructors" in component) {
+    if ("index" in component) {
       if ("nodes" in component) {
         nodes.push(...component.nodes);
       } else if ("node" in component) {
         nodes.push(component.node);
       }
-      destructors.push(...component.destructors);
     } else {
       nodes.push(component);
     }
   });
   return {
     nodes,
-    destructors,
     index: 0,
   };
 }
@@ -298,7 +293,7 @@ function each<T extends { id: number }>(
   key: string | null = null
 ) {
   const outlet = document.createDocumentFragment();
-  const List = new ListComponent(
+  new ListComponent(
     {
       tag: items as Cell<T[]>,
       ItemComponent: fn,
@@ -306,8 +301,7 @@ function each<T extends { id: number }>(
     },
     outlet
   );
-
-  return def(outlet, List.destructors);
+  return def(outlet);
 }
 
 _DOM.each = each;
@@ -319,15 +313,12 @@ _DOM.text = text;
 
 export const DOM = _DOM;
 
-export function finalizeComponent(
+export function $fin(
   roots: Array<ComponentReturnType | NodeReturnType>,
-  existingDestructors: Destructors,
   slots: Slots,
-  isStable: boolean
+  isStable: boolean,
+  ctx: unknown
 ) {
-  const dest = roots.reduce((acc, root) => {
-    return [...acc, ...root.destructors];
-  }, existingDestructors);
   const nodes: Array<
     HTMLElement | ComponentReturnType | NodeReturnType | Text | Comment
   > = [];
@@ -343,12 +334,16 @@ export function finalizeComponent(
   if (!isStable) {
     nodes.unshift(document.createComment(""));
   }
-  if (dest.length) {
-    addDestructors(dest, nodes[0]);
-  }
+  addDestructors(
+    [
+      () => {
+        executeDestructors(ctx as unknown as object);
+      },
+    ],
+    nodes[0]
+  );
   return {
     nodes,
-    destructors: [],
     slots,
     index: 0,
   };

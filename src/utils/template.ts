@@ -1,7 +1,6 @@
 export function hbs(tpl: TemplateStringsArray) {
     return {
         nodes: [],
-        destructors: [],
         slots: {},
         index: 0,
         tpl,

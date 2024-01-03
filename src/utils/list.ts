@@ -50,7 +50,6 @@ type GenericReturnType =
 export class ListComponent<T extends { id: number }> {
   keyMap: Map<string, GenericReturnType> = new Map();
   nodes: Node[] = [];
-  destructors: Array<() => void> = [];
   index = 0;
   ItemComponent: (item: T, index?: number) => GenericReturnType;
   bottomMarker!: Comment;

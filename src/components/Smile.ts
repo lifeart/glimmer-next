@@ -1,8 +1,9 @@
+import { registerDestructor } from "@/utils/destroyable";
 import { cell } from "@/utils/reactive";
 import { hbs, scope } from "@/utils/template";
 import { effect } from "@/utils/vm";
 
-export function Smile() {
+export function Smile(this: object) {
   const isVisible = cell(true, "isVisible");
 
   const interval = setInterval(() => {
@@ -39,18 +40,12 @@ export function Smile() {
     };
   };
 
-
-
-  const destructors = [() => {
+  registerDestructor(this, () => {
     clearInterval(interval);
-  }, destroyEffect];
+  });
 
-  scope({ isVisible, destructors, fadeOut });
+  scope({ isVisible, fadeOut });
 
-
-
-
-  // @todo - fix case when destructors binded to node may change, likely we need to create a new comment node, and keep it stable;
   // upd: fixed, need to add tests for it
   return hbs`{{#if isVisible}}<span {{fadeOut}}>😀</span>{{else}}<span {{fadeOut}}>😉</span>{{/if}}`;
 }

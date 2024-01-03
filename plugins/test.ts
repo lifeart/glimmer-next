@@ -6,9 +6,12 @@ import { HBSControlExpression, HBSNode, serializeNode } from "./utils";
 import { processTemplate } from "./babel";
 import { convert } from "./converter";
 
-
 function isNodeStable(node: string) {
-  return node.trim().startsWith("DOM(") || node.trim().startsWith("DOM.text(") || !node.trim().includes('DOM');
+  return (
+    node.trim().startsWith("DOM(") ||
+    node.trim().startsWith("DOM.text(") ||
+    !node.trim().includes("DOM")
+  );
 }
 
 export function transform(source: string, fileName: string) {
@@ -87,20 +90,19 @@ export function transform(source: string, fileName: string) {
       result = `function () {
       const $slots = {};
       const roots = [${results.join(", ")}];
-      return finalizeComponent(roots, [], $slots, ${String(isNodeStable(results[0]))});
+      return $fin(roots, $slots, ${String(isNodeStable(results[0]))}, this);
     }`;
     } else {
       result = isClass
         ? `() => {
       const $slots = {};
       const roots = [${results.join(", ")}];
-      return finalizeComponent(roots, this.destructors, $slots, ${String(isNodeStable(results[0]))});
+      return $fin(roots, $slots, ${String(isNodeStable(results[0]))}, this);
     }`
         : `(() => {
       const $slots = {};
       const roots = [${results.join(", ")}];
-      const existingDestructors = typeof destructors !== 'undefined' ? destructors : [];
-      return finalizeComponent(roots, existingDestructors, $slots, ${String(isNodeStable(results[0]))});
+      return $fin(roots, $slots, ${String(isNodeStable(results[0]))}, this);
     })()`;
     }
 

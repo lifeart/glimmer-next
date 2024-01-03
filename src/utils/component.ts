@@ -1,3 +1,5 @@
+import { Destructors } from "./destroyable";
+
 export type ComponentRenderTarget =
   | HTMLElement
   | DocumentFragment
@@ -69,7 +71,6 @@ export class Component<T extends Props = Record<string, unknown>>
   implements ComponentReturnType
 {
   args!: T;
-  destructors: Destructors = [];
   nodes!: Node[];
   index!: number;
   slots!: Slots;
@@ -93,7 +94,6 @@ export async function destroyElement(
     if (component === null) {
       return;
     }
-    await Promise.all(component.destructors.map((fn) => fn()));
     if ("nodes" in component) {
       const destructors: Array<Promise<void>> = [];
       component.nodes.forEach((node) => {
@@ -158,26 +158,27 @@ export function addDestructors(
   destructors: Destructors,
   source: ComponentReturnType | NodeReturnType | HTMLElement | Text | Comment
 ) {
-  if (destructors.length) {
-    let node: Node;
-    if ("nodes" in source) {
-      node = getNode(source.nodes[0]);
-    } else if ("node" in source) {
-      node = getNode(source.node);
-    } else {
-      node = getNode(source);
-    }
-    const oldDestructors = $destructors.get(node) || [];
-    $destructors.set(node, [...oldDestructors, ...destructors]);
-    return () => {
-      // remove added destructors
-      const oldDestructors = $destructors.get(node) || [];
-      $destructors.set(
-        node,
-        oldDestructors.filter((fn) => !destructors.includes(fn))
-      );
-    };
+  if (destructors.length === 0) {
+    return
   }
+  let node: Node;
+  if ("nodes" in source) {
+    node = getNode(source.nodes[0]);
+  } else if ("node" in source) {
+    node = getNode(source.node);
+  } else {
+    node = getNode(source);
+  }
+  const oldDestructors = $destructors.get(node) || [];
+  $destructors.set(node, [...oldDestructors, ...destructors]);
+  return () => {
+    // remove added destructors
+    const oldDestructors = $destructors.get(node) || [];
+    $destructors.set(
+      node,
+      oldDestructors.filter((fn) => !destructors.includes(fn))
+    );
+  };
 }
 
 export function runDestructors(
@@ -209,23 +210,20 @@ export function targetFor(
   }
 }
 
-export type DestructorFn = () => void | Promise<void>;
+
 export type Slots = Record<
   string,
   (
     ...params: unknown[]
   ) => Array<ComponentReturnType | NodeReturnType | Comment | string | number>
 >;
-export type Destructors = Array<DestructorFn>;
 export type ComponentReturnType = {
   nodes: Node[];
-  destructors: Destructors;
   index: number;
   slots: Slots;
 };
 export type NodeReturnType = {
   node: Node;
-  destructors: Destructors;
   index: number;
 };
 

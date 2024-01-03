@@ -1,3 +1,4 @@
+import { registerDestructor } from "@/utils/destroyable";
 import { cell, formula } from "@/utils/reactive";
 import { hbs, scope } from "@/utils/template";
 
@@ -12,13 +13,12 @@ export function Clock() {
     return new Date(time.value).toLocaleTimeString();
   });
 
-  const destructors = [
-    () => {
-      clearInterval(timeInterval);
-    },
-  ];
+  // @ts-expect-error this is not typed
+  registerDestructor(this, () => {
+    clearInterval(timeInterval);
+  });
 
-  scope({ destructors, current });
+  scope({ current });
 
   return hbs`<span>{{current}}</span>`;
 }

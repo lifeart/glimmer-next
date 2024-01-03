@@ -50,8 +50,8 @@ export function processTemplate(hbsToProcess: string[]) {
               [
                 t.importSpecifier(t.identifier("DOM"), t.identifier("DOM")),
                 t.importSpecifier(
-                  t.identifier("finalizeComponent"),
-                  t.identifier("finalizeComponent")
+                  t.identifier("$fin"),
+                  t.identifier("$fin")
                 ),
               ],
               t.stringLiteral("@/utils/dom")

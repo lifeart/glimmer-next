@@ -91,16 +91,16 @@ function helper(...args: Args): string | boolean | number | null {
 
 `scope` function is used to suspend `ts` error about unused variables. It's not required for runtime, but required for `ts` compilation.
 
-`destructors` supported, but not straighforward. We need to call crate const array, named `destructors` and send it to scope.
+`destructors` supported.
 ```ts
 import { hbs, scope } from "@/utils/template";
+import { registerDestructor } from "@/utils/destroyable";
+
 
 export function Icon() {
-   const destructors = [() => {
-         console.log('destructor');
-   }];
-
-   scope({ destructors });
+   registerDestructor(this, () => {
+      console.log('destructor');
+   });
 
    return hbs`<i class="glyphicon glyphicon-remove"></i>`;
 }
