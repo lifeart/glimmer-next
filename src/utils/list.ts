@@ -67,7 +67,8 @@ export class ListComponent<T extends { id: number }> {
     this.ItemComponent = ItemComponent;
     const mainNode = outlet;
     this.nodes = [];
-    this.key = key ?? 'id';
+    this.key = key ?? '@identity';
+    this.setupKeyForItem();
     // "list bottom marker"
     this.bottomMarker = document.createComment("");
     mainNode.appendChild(this.bottomMarker);
@@ -89,9 +90,37 @@ export class ListComponent<T extends { id: number }> {
       this.bottomMarker
     );
   }
-  keyForItem(item: T & { id: number }) {
-    // @ts-expect-error key doesn't exist
-    return String(item[this.key]);
+  setupKeyForItem() {
+    if (this.key === '@index') {
+      this.keyForItem = (_: T, index: number) => {
+        return String(index);
+      };
+    } else if (this.key === '@identity') {
+      let cnt = 0;
+      const map: WeakMap<T, string> = new WeakMap();
+      this.keyForItem = ((item: T) => {
+        const key = map.get(item) 
+        if (typeof key === 'string') {
+          return key;
+        } else {
+          cnt++;
+          let value = String(cnt);
+          map.set(item, value);
+          return value;
+        }
+      })
+    } else {
+      this.keyForItem = (item: T) => {
+        // @ts-expect-error unknown key
+        return String(item[this.key]);
+      }
+    }
+  }
+  // @ts-expect-error non-string return type
+  keyForItem(item: T, index: number): string {
+    if (import.meta.env.DEV) {
+      throw new Error(`Key for item not implemented, ${JSON.stringify(item)}`);
+    }
   }
   getTargetNode(amountOfKeys: number) {
     if (amountOfKeys > 0) {
@@ -106,7 +135,7 @@ export class ListComponent<T extends { id: number }> {
   }
   async syncList(items: T[]) {
     const existingKeys = new Set(this.keyMap.keys());
-    const updatingKeys = new Set(items.map((item) => this.keyForItem(item)));
+    const updatingKeys = new Set(items.map((item, index) => this.keyForItem(item, index)));
     const keysToRemove = [...existingKeys].filter(
       (key) => !updatingKeys.has(key)
     );
@@ -160,7 +189,7 @@ export class ListComponent<T extends { id: number }> {
         // optimization for appending items case
         targetNode = this.getTargetNode(0);
       }
-      const key = this.keyForItem(item);
+      const key = this.keyForItem(item, index);
       const maybeRow = this.keyMap.get(key);
       if (!maybeRow) {
         const row = this.ItemComponent(item, index);
@@ -189,7 +218,7 @@ export class ListComponent<T extends { id: number }> {
         setIndex(row, index);
         renderElement(this.bottomMarker.parentNode!, row, this.bottomMarker);
       } else {
-        const nextKey = this.keyForItem(nextItem);
+        const nextKey = this.keyForItem(nextItem, index);
         const nextRow = this.keyMap.get(nextKey);
         const firstNode = getFirstNode(row);
         if (nextRow && firstNode) {
