@@ -14,7 +14,7 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
       if (node.path.type !== "PathExpression") {
         return null;
       }
-      return `${node.path.original}(${node.params
+      return `$:${node.path.original}(${node.params
         .map((p) => ToJSType(p))
         .join(",")})`;
     } else if (node.type === "NumberLiteral") {
@@ -33,8 +33,10 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
       return `$:${node.original}`;
     } else if (node.type === "MustacheStatement") {
       if (node.path.type !== "PathExpression") {
-        if (node.path.type === "BooleanLiteral") {
+        if (node.path.type === "BooleanLiteral" || node.path.type === "UndefinedLiteral" || node.path.type === "NullLiteral") {
           return node.path.value;
+        } else if (node.path.type === "SubExpression") {
+          return `$:() => ${ToJSType(node.path)}`;
         }
         return null;
       }
@@ -69,15 +71,15 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
         return (
           node.type === "ElementNode" ||
           node.type === "TextNode" ||
-          node.type === "MustacheStatement"
-        );
+          node.type === "MustacheStatement" ||
+          node.type === "BlockStatement");
       });
       const elseChildElements = node.inverse?.body.filter((node) => {
         return (
           node.type === "ElementNode" ||
           node.type === "TextNode" ||
-          node.type === "MustacheStatement"
-        );
+          node.type === "MustacheStatement" ||
+          node.type === "BlockStatement");
       });
       if (!childElements.length) {
         return null;
@@ -117,16 +119,18 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
           if (mod.path.original === "on") {
             const firstParam = mod.params[0];
             if (firstParam.type === "StringLiteral") {
-              return [ToJSType(firstParam), ToJSType(mod.params[1])];
+              return [ToJSType(firstParam), `$:($e, $n) => ${ToJSType(mod.params[1])}($e, $n, ${mod.params.slice(2)
+                .map((p) => ToJSType(p))
+                .join(",")})`];
             } else {
               return null;
             }
           } else {
             return [
               "onCreated",
-              `$:(node) => { return ${mod.path.original}(node, [${mod.params
+              `$:($n) => $:${mod.path.original}($n, ${mod.params
                 .map((p) => ToJSType(p))
-                .join(",")}]) }`,
+                .join(",")})`,
             ];
           }
         })
