@@ -10,29 +10,47 @@ export type GenericReturnType =
   | null
   | null[];
 
-export function renderElement(
-    target: Node,
-    el: GenericReturnType,
-    placeholder: Comment | Node
-  ) {
-    if (!Array.isArray(el)) {
-      if (el === null) {
-        return;
-      }
-      if ("nodes" in el) {
-        el.nodes.forEach((node) => {
-          target.insertBefore(node, placeholder);
-        });
-      } else {
-        target.insertBefore(el.node, placeholder);
-      }
+  // this is workaround for `if` case, where we don't have stable root, and to remove it properly we need to look into last rendered part
+export const relatedRoots: WeakMap<DocumentFragment, GenericReturnType> =
+  new WeakMap();
+
+function renderNode(parent: Node, target: Node, placeholder: Node | Comment) {
+  if (target.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
+    if (target.childNodes.length) {
+      parent.insertBefore(target, placeholder);
     } else {
-      el.forEach((item) => {
-        renderElement(target, item, placeholder);
-      });
+      const roots = relatedRoots.get(target as DocumentFragment);
+      if (roots !== undefined) {
+        renderElement(parent, roots, placeholder);
+      }
     }
+  } else {
+    parent.insertBefore(target, placeholder);
   }
-  
+}
+
+export function renderElement(
+  target: Node,
+  el: GenericReturnType,
+  placeholder: Comment | Node
+) {
+  if (!Array.isArray(el)) {
+    if (el === null) {
+      return;
+    }
+    if ("nodes" in el) {
+      el.nodes.forEach((node) => {
+        renderNode(target, node, placeholder);
+      });
+    } else {
+      renderNode(target, el.node, placeholder);
+    }
+  } else {
+    el.forEach((item) => {
+      renderElement(target, item, placeholder);
+    });
+  }
+}
 
 export function renderComponent(
   component: ComponentReturnType,
@@ -46,7 +64,10 @@ export function renderComponent(
 }
 
 export type Props = Record<string, unknown>;
-export class Component<T extends Props = Record<string, unknown>> implements ComponentReturnType {
+
+export class Component<T extends Props = Record<string, unknown>>
+  implements ComponentReturnType
+{
   args!: T;
   destructors: Destructors = [];
   nodes!: Node[];
@@ -81,18 +102,41 @@ export async function destroyElement(
       await Promise.all(destructors);
       try {
         component.nodes.forEach((node) => {
-          node.parentElement!.removeChild(node);
+          if (node.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
+            const roots = relatedRoots.get(node as DocumentFragment) ?? [];
+            destroyElement(roots);
+            relatedRoots.delete(node as DocumentFragment);
+            return;
+          }
+          const parent = node.parentElement;
+          if (parent !== null) {
+            parent.removeChild(node);
+          } else {
+            throw new Error(`Node is not in DOM`);
+          }
         });
-      } catch(e) {
-        console.warn(`Woops, looks like node we trying to destroy no more in DOM`);
+      } catch (e) {
+        console.warn(
+          `Woops, looks like node we trying to destroy no more in DOM`,
+          e
+        );
       }
-   
     } else {
       await Promise.all(runDestructors(component.node));
+      if (component.node.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
+        const roots =
+          relatedRoots.get(component.node as DocumentFragment) ?? [];
+        destroyElement(roots);
+        relatedRoots.delete(component.node as DocumentFragment);
+        return;
+      }
       try {
         component.node.parentElement!.removeChild(component.node);
-      } catch(e) {
-        console.warn(`Woops, looks like node we trying to destroy no more in DOM`);
+      } catch (e) {
+        console.warn(
+          `Woops, looks like node we trying to destroy no more in DOM`,
+          e
+        );
       }
     }
   }
@@ -136,7 +180,10 @@ export function addDestructors(
   }
 }
 
-export function runDestructors(targetNode: Node, promises: Array<Promise<void>> = []): Array<Promise<void>> {
+export function runDestructors(
+  targetNode: Node,
+  promises: Array<Promise<void>> = []
+): Array<Promise<void>> {
   if ($destructors.has(targetNode)) {
     $destructors.get(targetNode)!.forEach((fn) => {
       const result = fn();
@@ -163,7 +210,12 @@ export function targetFor(
 }
 
 export type DestructorFn = () => void | Promise<void>;
-export type Slots = Record<string, (...params: unknown[]) => Array<ComponentReturnType|NodeReturnType|Comment|string|number>>;
+export type Slots = Record<
+  string,
+  (
+    ...params: unknown[]
+  ) => Array<ComponentReturnType | NodeReturnType | Comment | string | number>
+>;
 export type Destructors = Array<DestructorFn>;
 export type ComponentReturnType = {
   nodes: Node[];

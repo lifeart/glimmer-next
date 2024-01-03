@@ -340,7 +340,7 @@ export function finalizeComponent(
       nodes.push(root.node as unknown as HTMLElement | Text | Comment);
     }
   });
-  if (!isStable && dest.length) {
+  if (!isStable) {
     nodes.unshift(document.createComment(""));
   }
   if (dest.length) {

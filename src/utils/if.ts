@@ -1,8 +1,7 @@
 import {
-  targetFor,
-  type ComponentRenderTarget,
   destroyElement,
   GenericReturnType,
+  relatedRoots,
   renderElement,
   runDestructors,
 } from "@/utils/component";
@@ -12,14 +11,14 @@ import { addDestructors } from "./component";
 
 export function ifCondition(
   cell: Cell<boolean> | MergedCell,
-  outlet: ComponentRenderTarget,
+  outlet: DocumentFragment,
   trueBranch: () => GenericReturnType,
   falseBranch: () => GenericReturnType,
   existingPlaceholder?: Comment
 ) {
   // "if-placeholder"
   const placeholder = existingPlaceholder || document.createComment("");
-  const target = targetFor(outlet);
+  const target = outlet;
   if (!placeholder.isConnected) {
     target.appendChild(placeholder);
   }
@@ -78,9 +77,23 @@ export function ifCondition(
           throw throwedError;
         }
         runNumber++;
+        if (runNumber === 1) {
+          let nextBranch = value ? trueBranch : falseBranch;
+          prevComponent = nextBranch();
+          relatedRoots.set(outlet, prevComponent);
+          renderElement(
+            placeholder.parentElement || target,
+            prevComponent,
+            placeholder
+          );
+          return;
+        }
         (async () => {
+          if (runNumber === 1 || isDestructorRunning) {
+            return;
+          }
           let localRunNumber = runNumber;
-          let nextBranch = value === true ? trueBranch : falseBranch;
+          let nextBranch = value ? trueBranch : falseBranch;
           if (prevComponent) {
             let prevCmp = prevComponent;
             prevComponent = null;
@@ -101,6 +114,7 @@ export function ifCondition(
             return;
           }
           prevComponent = nextBranch();
+          relatedRoots.set(outlet, prevComponent);
           renderElement(
             placeholder.parentElement || target,
             prevComponent,

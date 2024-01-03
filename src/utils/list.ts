@@ -45,8 +45,7 @@ function getFirstNode(item: GenericReturnType) {
 type GenericReturnType =
   | ComponentReturnType
   | NodeReturnType
-  | ComponentReturnType[]
-  | NodeReturnType[];
+  | Array<ComponentReturnType | NodeReturnType>;
 
 export class ListComponent<T extends { id: number }> {
   keyMap: Map<string, GenericReturnType> = new Map();
@@ -55,19 +54,25 @@ export class ListComponent<T extends { id: number }> {
   index = 0;
   ItemComponent: (item: T, index?: number) => GenericReturnType;
   bottomMarker!: Comment;
-  key: string = 'id';
+  key: string = "@identity";
   constructor(
     {
       tag,
       key,
       ItemComponent,
-    }: { tag: Cell<T[]>; key: string | null, ItemComponent: (item: T, index?: number) => ComponentReturnType },
+    }: {
+      tag: Cell<T[]>;
+      key: string | null;
+      ItemComponent: (item: T, index?: number) => ComponentReturnType;
+    },
     outlet: HTMLElement | DocumentFragment
   ) {
     this.ItemComponent = ItemComponent;
     const mainNode = outlet;
     this.nodes = [];
-    this.key = key ?? '@identity';
+    if (key) {
+      this.key = key;
+    }
     this.setupKeyForItem();
     // "list bottom marker"
     this.bottomMarker = document.createComment("");
@@ -91,12 +96,12 @@ export class ListComponent<T extends { id: number }> {
     );
   }
   setupKeyForItem() {
-    if (this.key === '@identity') {
+    if (this.key === "@identity") {
       let cnt = 0;
       const map: WeakMap<T, string> = new WeakMap();
-      this.keyForItem = ((item: T) => {
-        const key = map.get(item) 
-        if (typeof key === 'string') {
+      this.keyForItem = (item: T) => {
+        const key = map.get(item);
+        if (typeof key === "string") {
           return key;
         } else {
           cnt++;
@@ -104,12 +109,12 @@ export class ListComponent<T extends { id: number }> {
           map.set(item, value);
           return value;
         }
-      })
+      };
     } else {
       this.keyForItem = (item: T) => {
         // @ts-expect-error unknown key
         return String(item[this.key]);
-      }
+      };
     }
   }
   // @ts-expect-error non-string return type
