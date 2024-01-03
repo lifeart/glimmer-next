@@ -68,7 +68,7 @@ export function serializeChildren(
         if (isPath(child)) {
           return `${serializePath(child)}`;
         }
-        return `DOM.text('${child.trim()}')`;
+        return `DOM.text('${child}')`;
       }
       return serializeNode(child);
     })
@@ -207,7 +207,7 @@ export function serializeNode(
       if (isPath(node)) {
         return `DOM.text(` + serializePath(node) + `)`;
       } else {
-        return `DOM.text(\`${node.trim()}\`)`;
+        return `DOM.text(\`${node}\`)`;
       }
     }
     throw new Error("Unknown node type: " + JSON.stringify(node, null, 2));

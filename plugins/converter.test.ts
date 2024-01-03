@@ -47,6 +47,12 @@ describe("convert function builder", () => {
     test("converts a simple string", () => {
       expect($t<ASTv1.TextNode>(`"Hello World"`)).toEqual(`"Hello World"`);
     });
+    test("non empty text nodes not trimmed", () => {
+      expect($t<ASTv1.TextNode>(` foo`)).toEqual(` foo`);
+    });
+    test("non empty text nodes trimmed", () => {
+      expect($t<ASTv1.TextNode>(` `)).toEqual(null);
+    });
   });
   describe("MustacheStatement", () => {
     test("converts a args-less path", () => {
@@ -94,6 +100,14 @@ describe("convert function builder", () => {
         $node({
           tag: "div",
           properties: [["className", "foo"]],
+        })
+      );
+    });
+    test("converts a simple element with string child", () => {
+      expect($t<ASTv1.ElementNode>(`<div> sd</div>`)).toEqual(
+        $node({
+          tag: "div",
+          children: [" sd"],
         })
       );
     });
