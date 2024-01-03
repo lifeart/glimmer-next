@@ -188,7 +188,7 @@ export function runDestructors(
   if ($destructors.has(targetNode)) {
     $destructors.get(targetNode)!.forEach((fn) => {
       const result = fn();
-      if (result instanceof Promise) {
+      if (result !== undefined && 'then' in result) {
         promises.push(result);
       }
     });

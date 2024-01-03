@@ -54,14 +54,14 @@ export function bindUpdatingOpcode(tag: AnyCell, op: tagOp) {
   // apply the op to the current value
   if (isRendering()) {
     const value = op(tag.value) as unknown as void | Promise<void>;
-    if (value instanceof Promise) {
+    if (value !== undefined) {
       // console.info(`Adding Async Updating Opcode for ${tag._debugName}`);
       asyncOpcodes.add(op);
     }
   } else {
     setIsRendering(true);
     const value = op(tag.value)  as unknown as void | Promise<void>;
-    if (value instanceof Promise) {
+    if (value !== undefined) {
       // console.info(`Adding Async Updating Opcode for ${tag._debugName}`);
       asyncOpcodes.add(op);
     }

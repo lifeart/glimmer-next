@@ -232,7 +232,6 @@ export class ListComponent<T extends { id: number }> {
       parent.removeChild(targetNode);
       this.bottomMarker.parentNode!.insertBefore(parent, this.bottomMarker);
     }
-    return this;
   }
   getListItemIndex(key: string) {
     const row = this.keyMap.get(key)!;
