@@ -34,6 +34,7 @@ function $node(partial: Partial<HBSNode>): HBSNode {
     events: partial.events ?? [],
     children: partial.children ?? [],
     attributes: partial.attributes ?? [],
+    properties:  partial.properties ?? [],
     blockParams: partial.blockParams ?? [],
     selfClosing: partial.selfClosing ?? false,
     hasStableChild: partial.hasStableChild ?? true,
@@ -92,7 +93,7 @@ describe("convert function builder", () => {
       expect($t<ASTv1.ElementNode>(`<div class="foo"></div>`)).toEqual(
         $node({
           tag: "div",
-          attributes: [["class", "foo"]],
+          properties: [["className", "foo"]],
         })
       );
     });
@@ -102,8 +103,8 @@ describe("convert function builder", () => {
       ).toEqual(
         $node({
           tag: "div",
-          attributes: [
-            ["class", "$:() => [$:foo,\" bar \",$:boo(baks)].join('')"],
+          properties: [
+            ["className", "$:() => [$:foo,\" bar \",$:boo(baks)].join('')"],
           ],
         })
       );
@@ -112,7 +113,7 @@ describe("convert function builder", () => {
       expect($t<ASTv1.ElementNode>(`<div class={{foo}}></div>`)).toEqual(
         $node({
           tag: "div",
-          attributes: [["class", "$:foo"]],
+          properties: [["className", "$:foo"]],
         })
       );
     });
@@ -120,7 +121,7 @@ describe("convert function builder", () => {
       expect($t<ASTv1.ElementNode>(`<div class={{foo "bar"}}></div>`)).toEqual(
         $node({
           tag: "div",
-          attributes: [["class", '$:() => $:foo("bar")']],
+          properties: [["className", '$:() => $:foo("bar")']],
         })
       );
     });
@@ -128,7 +129,7 @@ describe("convert function builder", () => {
       expect($t<ASTv1.ElementNode>(`<div class={{foo bar}}></div>`)).toEqual(
         $node({
           tag: "div",
-          attributes: [["class", "$:() => $:foo(bar)"]],
+          properties: [["className", "$:() => $:foo(bar)"]],
         })
       );
     });

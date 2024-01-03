@@ -15,6 +15,7 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
       return `$:() => [${node.parts
         .map((p) => {
           if (p.type === "TextNode") {
+            seenNodes.add(p);
             return escapeString(p.chars);
           }
           let value = ToJSType(p, false);
@@ -130,16 +131,57 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
     return false;
   }
 
+  const propertyKeys = ['class', 
+    // boolean attributes (https://meiert.com/en/blog/boolean-attributes-of-html/)
+    'checked', 
+    'readonly', 
+    'autoplay',
+    'allowfullscreen',
+    'async',
+    'autofocus',
+    'autoplay',
+    'controls',
+    'default',
+    'defer',
+    'disabled',
+    'formnovalidate',
+    'inert',
+    'ismap',
+    'itemscope',
+    'loop',
+    'multiple',
+    'muted',
+    'nomodule',
+    'novalidate',
+    'open',
+    'playsinline',
+    'required',
+    'reversed',
+    'selected'
+  ];
+  const propsToCast = {
+    'class': 'className'
+  };
+
+  function isAttribute(name: string) {
+    return !propertyKeys.includes(name);
+  }
+
   function ElementToNode(element: ASTv1.ElementNode): HBSNode {
     const node = {
       tag: element.tag,
       selfClosing: element.selfClosing,
       blockParams: element.blockParams,
       hasStableChild: hasStableChild(element),
-      attributes: element.attributes.map((attr) => {
+      attributes: element.attributes.filter(el => isAttribute(el.name)).map((attr) => {
         const rawValue = ToJSType(attr.value);
         // const value = rawValue.startsWith("$:") ? rawValue : escapeString(rawValue);
         return [attr.name, rawValue];
+      }),
+      properties: element.attributes.filter(el => !isAttribute(el.name)).map((attr) => {
+        const rawValue = ToJSType(attr.value);
+        // const value = rawValue.startsWith("$:") ? rawValue : escapeString(rawValue);
+        return [propsToCast[attr.name as keyof typeof propsToCast] || attr.name, rawValue];
       }),
       events: element.modifiers
         .map((mod) => {

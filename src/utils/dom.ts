@@ -19,6 +19,15 @@ type ModifierFn = (
 ) => void | DestructorFn;
 
 type Props = {
+  properties: [
+    string,
+    (
+      | MergedCell
+      | Cell
+      | string
+      | ((element: HTMLElement, attribute: string) => void)
+    )
+  ][];
   attributes: [
     string,
     (
@@ -33,6 +42,57 @@ type Props = {
 
 function $text(str: string) {
   return document.createTextNode(str);
+}
+
+function $prop(
+  element: HTMLElement,
+  key: string,
+  value: unknown,
+  destructors: DestructorFn[]
+) {
+  if (value instanceof Function) {
+    $attr(
+      element,
+      key,
+      formula(value as unknown as () => unknown, `${element.tagName}.${key}`),
+      destructors
+    );
+  } else if (value instanceof Cell || value instanceof MergedCell) {
+    destructors.push(
+      bindUpdatingOpcode(value, (value) => {
+        // @ts-expect-error types casting
+        element[key] = value;
+      })
+    );
+  } else {
+    // @ts-expect-error never ever
+    element[key] = value;
+  }
+}
+
+function $attr(
+  element: HTMLElement,
+  key: string,
+  value: unknown,
+  destructors: DestructorFn[]
+) {
+  if (value instanceof Function) {
+    $attr(
+      element,
+      key,
+      formula(value as unknown as () => unknown, `${element.tagName}.${key}`),
+      destructors
+    );
+  } else if (value instanceof Cell || value instanceof MergedCell) {
+    destructors.push(
+      bindUpdatingOpcode(value, (value) => {
+        // @ts-expect-error type casting
+        element.setAttribute(key, value);
+      })
+    );
+  } else {
+    element.setAttribute(key, value as string);
+  }
 }
 function _DOM(
   tag: string,
@@ -49,6 +109,7 @@ function _DOM(
   const element = document.createElement(tag);
   const destructors: Destructors = [];
   const attributes = props.attributes || [];
+  const properties = props.properties || [];
   const events = props.events || [];
   events.forEach(([eventName, fn]) => {
     if (eventName === "onCreated") {
@@ -63,43 +124,10 @@ function _DOM(
     }
   });
   attributes.forEach(([key, value]) => {
-    // @todo = extract this code to composable function, we need to run `function to check is it reactive, and re-enter with autocreated cell if needed`;
-    if (value instanceof Function) {
-      const destructor = value(element, key);
-      if (typeof destructor === "function") {
-        destructors.push(destructor);
-      }
-    } else if (value instanceof Cell || value instanceof MergedCell) {
-      if (key === "class") {
-        destructors.push(
-          bindUpdatingOpcode(value, (value) => {
-            const valueString = String(value ?? "");
-            element.className = valueString;
-          })
-        );
-      } else if (key === 'value') {
-        destructors.push(
-          bindUpdatingOpcode(value, (value) => {
-            // @ts-expect-error never ever
-            element[key] = value;
-          })
-        );
-      } else {
-        destructors.push(
-          bindUpdatingOpcode(value, (value) => {
-            const valueString = String(value ?? "");
-            element.setAttribute(key, valueString);
-          })
-        );
-      }
-    } else {
-      if (key === 'checked') {
-        // @ts-expect-error never ever
-        element[key] = value;
-      } else {
-        element.setAttribute(key, value);
-      }
-    }
+    $attr(element, key, value, destructors);
+  });
+  properties.forEach(([key, value]) => {
+    $prop(element, key, value, destructors);
   });
   children.forEach((child) => {
     // @todo = extract this code to composable function
@@ -148,12 +176,12 @@ function _DOM(
 _DOM.each = each;
 _DOM.if = ifCond;
 _DOM.slot = slot;
-_DOM.c = function(comp: ComponentReturnType | Component) {
-  if ('template' in comp) {
+_DOM.c = function (comp: ComponentReturnType | Component) {
+  if ("template" in comp) {
     return (comp.template as unknown as () => ComponentReturnType)();
   }
   return comp;
-}
+};
 
 type Fn = () => unknown;
 function def(node: Node, destructors: Destructors = []) {

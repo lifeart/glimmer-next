@@ -13,6 +13,7 @@ export type HBSControlExpression = {
 export type HBSNode = {
   tag: string;
   attributes: [string, string][];
+  properties: [string, string][];
   selfClosing: boolean;
   hasStableChild: boolean;
   blockParams: string[];
@@ -172,6 +173,11 @@ export function serializeNode(
           return serializeAttribute(attr[0], attr[1]);
         })
         .join(", ")}],
+      properties: [${node.properties
+        .map((attr) => {
+          return serializeAttribute(attr[0], attr[1]);
+        })
+        .join(", ")}], 
       attributes: [${node.attributes
         .map((attr) => {
           return serializeAttribute(attr[0], attr[1]);

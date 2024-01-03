@@ -42,6 +42,9 @@ function tracker() {
 // "data" cell, it's value can be updated, and it's used to create derived cells
 export class Cell<T extends unknown = unknown> {
   _value!: T;
+  [Symbol.toPrimitive]() {
+    return this.value;
+  }
   _debugName?: string | undefined;
   constructor(value: T, debugName?: string) {
     this._value = value;
@@ -86,6 +89,9 @@ export class MergedCell {
   fn: () => unknown;
   isConst = false;
   isDestroyed = false;
+  [Symbol.toPrimitive]() {
+    return this.value;
+  }
   _debugName?: string | undefined;
   constructor(fn: () => unknown, debugName?: string) {
     this.fn = fn;
