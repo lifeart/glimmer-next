@@ -12,8 +12,8 @@ export type HBSControlExpression = {
 
 export type HBSNode = {
   tag: string;
-  attributes: [string, string][];
-  properties: [string, string][];
+  attributes: [string, string | number | boolean][];
+  properties: [string, string | number | boolean][];
   selfClosing: boolean;
   hasStableChild: boolean;
   blockParams: string[];

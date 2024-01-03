@@ -34,7 +34,7 @@ function $node(partial: Partial<HBSNode>): HBSNode {
     events: partial.events ?? [],
     children: partial.children ?? [],
     attributes: partial.attributes ?? [],
-    properties:  partial.properties ?? [],
+    properties: partial.properties ?? [],
     blockParams: partial.blockParams ?? [],
     selfClosing: partial.selfClosing ?? false,
     hasStableChild: partial.hasStableChild ?? true,
@@ -191,7 +191,7 @@ describe("convert function builder", () => {
         $t<ASTv1.BlockStatement>(`{{#if (foo bar)}}123{{else}}456{{/if}}`)
       ).toEqual<HBSControlExpression>(
         $control({
-          type: 'if',
+          type: "if",
           condition: "$:foo($:bar)",
           children: ["123"],
           inverse: ["456"],
@@ -261,6 +261,17 @@ describe("convert function builder", () => {
               children: ["123"],
             }),
           ],
+        })
+      );
+    });
+  });
+
+  describe("components", () => {
+    test("it forwarding props", () => {
+      expect($t<ASTv1.ElementNode>(`<DIV @name={{1}}></DIV>`)).toEqual(
+        $node({
+          tag: "DIV",
+          attributes: [["@name", 1]],
         })
       );
     });

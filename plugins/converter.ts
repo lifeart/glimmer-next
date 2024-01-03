@@ -54,6 +54,7 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
         if (
           node.path.type === "BooleanLiteral" ||
           node.path.type === "UndefinedLiteral" ||
+          node.path.type === "NumberLiteral" ||
           node.path.type === "NullLiteral"
         ) {
           return node.path.value;
@@ -131,36 +132,37 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
     return false;
   }
 
-  const propertyKeys = ['class', 
+  const propertyKeys = [
+    "class",
     // boolean attributes (https://meiert.com/en/blog/boolean-attributes-of-html/)
-    'checked', 
-    'readonly', 
-    'autoplay',
-    'allowfullscreen',
-    'async',
-    'autofocus',
-    'autoplay',
-    'controls',
-    'default',
-    'defer',
-    'disabled',
-    'formnovalidate',
-    'inert',
-    'ismap',
-    'itemscope',
-    'loop',
-    'multiple',
-    'muted',
-    'nomodule',
-    'novalidate',
-    'open',
-    'playsinline',
-    'required',
-    'reversed',
-    'selected'
+    "checked",
+    "readonly",
+    "autoplay",
+    "allowfullscreen",
+    "async",
+    "autofocus",
+    "autoplay",
+    "controls",
+    "default",
+    "defer",
+    "disabled",
+    "formnovalidate",
+    "inert",
+    "ismap",
+    "itemscope",
+    "loop",
+    "multiple",
+    "muted",
+    "nomodule",
+    "novalidate",
+    "open",
+    "playsinline",
+    "required",
+    "reversed",
+    "selected",
   ];
   const propsToCast = {
-    'class': 'className'
+    class: "className",
   };
 
   function isAttribute(name: string) {
@@ -173,16 +175,23 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
       selfClosing: element.selfClosing,
       blockParams: element.blockParams,
       hasStableChild: hasStableChild(element),
-      attributes: element.attributes.filter(el => isAttribute(el.name)).map((attr) => {
-        const rawValue = ToJSType(attr.value);
-        // const value = rawValue.startsWith("$:") ? rawValue : escapeString(rawValue);
-        return [attr.name, rawValue];
-      }),
-      properties: element.attributes.filter(el => !isAttribute(el.name)).map((attr) => {
-        const rawValue = ToJSType(attr.value);
-        // const value = rawValue.startsWith("$:") ? rawValue : escapeString(rawValue);
-        return [propsToCast[attr.name as keyof typeof propsToCast] || attr.name, rawValue];
-      }),
+      attributes: element.attributes
+        .filter((el) => isAttribute(el.name))
+        .map((attr) => {
+          const rawValue = ToJSType(attr.value);
+          // const value = rawValue.startsWith("$:") ? rawValue : escapeString(rawValue);
+          return [attr.name, rawValue];
+        }),
+      properties: element.attributes
+        .filter((el) => !isAttribute(el.name))
+        .map((attr) => {
+          const rawValue = ToJSType(attr.value);
+          // const value = rawValue.startsWith("$:") ? rawValue : escapeString(rawValue);
+          return [
+            propsToCast[attr.name as keyof typeof propsToCast] || attr.name,
+            rawValue,
+          ];
+        }),
       events: element.modifiers
         .map((mod) => {
           if (mod.path.type !== "PathExpression") {
