@@ -1,5 +1,7 @@
 import type { ASTv1 } from "@glimmer/syntax";
-import { HBSNode, escapeString, isPath, serializePath } from "./utils";
+import { HBSNode, escapeString, isPath, resolvedChildren, serializePath } from "./utils";
+
+
 
 export function convert(seenNodes: Set<ASTv1.Node>) {
   function ToJSType(node: ASTv1.Node): any {
@@ -67,20 +69,8 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
       if (node.params[0].type === "SubExpression") {
         return null;
       }
-      const childElements = node.program.body.filter((node) => {
-        return (
-          node.type === "ElementNode" ||
-          node.type === "TextNode" ||
-          node.type === "MustacheStatement" ||
-          node.type === "BlockStatement");
-      });
-      const elseChildElements = node.inverse?.body.filter((node) => {
-        return (
-          node.type === "ElementNode" ||
-          node.type === "TextNode" ||
-          node.type === "MustacheStatement" ||
-          node.type === "BlockStatement");
-      });
+      const childElements = resolvedChildren(node.program.body);
+      const elseChildElements = node.inverse?.body ? resolvedChildren(node.inverse.body) : undefined;
       if (!childElements.length) {
         return null;
       }
@@ -99,12 +89,6 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
           : null,
       ];
     }
-  }
-
-  function resolvedChildren(els: ASTv1.Node[]) {
-    return els.filter((el) => {
-      return el.type !== "TextNode" || el.chars.trim().length !== 0;
-    });
   }
 
   function hasStableChild(node: ASTv1.ElementNode): boolean {

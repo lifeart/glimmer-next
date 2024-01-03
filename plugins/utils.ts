@@ -1,3 +1,5 @@
+import type { ASTv1 } from "@glimmer/syntax";
+
 export type HBSExpression = [
   string,
   string,
@@ -37,6 +39,15 @@ export function isPath(str: string) {
 
 export function serializePath(p: string): string {
   return p.replace("$:", "").replace("@", "this.args.");
+}
+
+export function resolvedChildren(els: ASTv1.Node[]) {
+  return els.filter((el) => {
+    if (el.type === 'CommentStatement' || el.type === 'MustacheCommentStatement') {
+      return false;
+    }
+    return el.type !== "TextNode" || el.chars.trim().length !== 0;
+  });
 }
 
 export function serializeAttribute(key: string, value: string): string {
