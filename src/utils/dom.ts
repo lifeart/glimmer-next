@@ -6,7 +6,7 @@ import {
   Slots,
   Component,
 } from "@/utils/component";
-import { Cell, MergedCell, formula } from "@/utils/reactive";
+import { AnyCell, Cell, MergedCell, formula, tags } from "@/utils/reactive";
 import { bindUpdatingOpcode } from "@/utils/vm";
 import { ListComponent } from "@/utils/list";
 import { ifCondition } from "@/utils/if";
@@ -53,16 +53,16 @@ function $prop(
   value: unknown,
   destructors: DestructorFn[]
 ) {
-  if (value instanceof Function) {
+  if (typeof value === 'function') {
     $attr(
       element,
       key,
       formula(value as unknown as () => unknown, `${element.tagName}.${key}`),
       destructors
     );
-  } else if (value instanceof Cell || value instanceof MergedCell) {
+  } else if (tags.has(value as AnyCell)) {
     destructors.push(
-      bindUpdatingOpcode(value, (value) => {
+      bindUpdatingOpcode(value as AnyCell, (value) => {
         // @ts-expect-error types casting
         element[key] = value;
       })
@@ -79,16 +79,16 @@ function $attr(
   value: unknown,
   destructors: Destructors
 ) {
-  if (value instanceof Function) {
+  if (typeof value === 'function') {
     $attr(
       element,
       key,
       formula(value as unknown as () => unknown, `${element.tagName}.${key}`),
       destructors
     );
-  } else if (value instanceof Cell || value instanceof MergedCell) {
+  } else if (tags.has(value as AnyCell)) {
     destructors.push(
-      bindUpdatingOpcode(value, (value) => {
+      bindUpdatingOpcode(value as AnyCell, (value) => {
         // @ts-expect-error type casting
         element.setAttribute(key, value);
       })
@@ -120,9 +120,9 @@ function addChild(
   } else if (typeof child === "string" || typeof child === "number") {
     const text = $text(child);
     element.appendChild(text);
-  } else if (child instanceof Cell || child instanceof MergedCell) {
-    element.appendChild(cellToText(child));
-  } else if (child instanceof Function) {
+  } else if (tags.has(child as AnyCell)) {
+    element.appendChild(cellToText(child as AnyCell));
+  } else if (typeof child === 'function') {
     // looks like a component
     const componentProps:
       | ComponentReturnType
@@ -257,9 +257,9 @@ function cellToText(cell: Cell | MergedCell) {
 function text(text: string | Cell | MergedCell | Fn): NodeReturnType {
   if (typeof text === "string") {
     return def($text(text));
-  } else if (text instanceof Cell || text instanceof MergedCell) {
-    return def(cellToText(text));
-  } else if (text instanceof Function) {
+  } else if (tags.has(text as AnyCell)) {
+    return def(cellToText(text as AnyCell));
+  } else if (typeof text === 'function') {
     const maybeFormula = formula(text);
     if (maybeFormula.isConst) {
       try {

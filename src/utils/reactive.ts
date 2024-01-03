@@ -17,6 +17,7 @@ export const tagsToRevalidate: Set<Cell> = new Set();
 // List of derived tags for each cell
 export const relatedTags: WeakMap<Cell, Set<MergedCell>> = new WeakMap();
 
+export const tags: WeakSet<Cell | MergedCell> = new WeakSet();
 // console.info({
 //   opsForTag,
 //   tagsToRevalidate,
@@ -50,6 +51,7 @@ export class Cell<T extends unknown = unknown> {
     this._value = value;
     this._debugName = debugName;
     opsForTag.set(this, []);
+    tags.add(this);
     relatedTags.set(this, new Set());
   }
   get value() {
@@ -97,6 +99,7 @@ export class MergedCell {
     this.fn = fn;
     this._debugName = debugName;
     opsForTag.set(this, []);
+    tags.add(this);
   }
   destroy() {
     this.isDestroyed = true;

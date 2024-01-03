@@ -5,7 +5,7 @@ import {
   destroyElement,
   renderElement,
 } from "@/utils/component";
-import { Cell, MergedCell } from "@/utils/reactive";
+import { Cell, MergedCell, tags } from "@/utils/reactive";
 import { bindUpdatingOpcode } from "@/utils/vm";
 
 function setIndex(item: GenericReturnType, index: number) {
@@ -77,8 +77,7 @@ export class ListComponent<T extends { id: number }> {
     this.bottomMarker = document.createComment("");
     mainNode.appendChild(this.bottomMarker);
 
-    // @ts-expect-error never ever
-    if (!(tag instanceof Cell) && !(tag instanceof MergedCell)) {
+    if (!tags.has(tag)) {
       console.warn("iterator for @each should be a cell");
       if (Array.isArray(tag)) {
         tag = new Cell(tag);
