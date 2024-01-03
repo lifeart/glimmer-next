@@ -79,6 +79,14 @@ describe("convert function builder", () => {
         })
       );
     });
+    test("converts a simple element with concat string attribute", () => {
+      expect($t<ASTv1.ElementNode>(`<div class="{{foo}} bar {{boo baks}}"></div>`)).toEqual(
+        $node({
+          tag: "div",
+          attributes: [["class", "$:() => [$:foo,\" bar \",$:boo(baks)].join('')"]],
+        })
+      );
+    });
     test("converts a simple element with path attribute", () => {
       expect($t<ASTv1.ElementNode>(`<div class={{foo}}></div>`)).toEqual(
         $node({

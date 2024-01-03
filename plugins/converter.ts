@@ -4,9 +4,17 @@ import { HBSNode, escapeString, isPath, resolvedChildren, serializePath } from "
 
 
 export function convert(seenNodes: Set<ASTv1.Node>) {
-  function ToJSType(node: ASTv1.Node): any {
+  function ToJSType(node: ASTv1.Node, wrap = true): any {
     seenNodes.add(node);
-    if (node.type === "UndefinedLiteral") {
+    if (node.type === 'ConcatStatement') {
+      return `$:() => [${node.parts.map((p) => {
+        if (p.type === 'TextNode') {
+          return escapeString(p.chars);
+        }
+        let value = ToJSType(p, false);
+        return value;
+      }).join(',')}].join('')`;
+    } else if (node.type === "UndefinedLiteral") {
       return undefined;
     } else if (node.type === "NullLiteral") {
       return null;
@@ -38,7 +46,8 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
         if (node.path.type === "BooleanLiteral" || node.path.type === "UndefinedLiteral" || node.path.type === "NullLiteral") {
           return node.path.value;
         } else if (node.path.type === "SubExpression") {
-          return `$:() => ${ToJSType(node.path)}`;
+          
+          return `${wrap ? `$:() => ` : ''}${ToJSType(node.path)}`;
         }
         return null;
       }
@@ -50,7 +59,7 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
       if (node.params.length === 0) {
         return ToJSType(node.path);
       } else {
-        return `$:() => ${ToJSType(node.path)}(${node.params
+        return `${wrap ? `$:() => ` : ''}${ToJSType(node.path)}(${node.params
           .map((p) => ToJSType(p))
           .map((el) => {
             if (typeof el !== "string") {
@@ -125,11 +134,10 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
           }
           if (mod.path.original === "on") {
             const firstParam = mod.params[0];
-            const tailParams = mod.params.slice(2);
             if (firstParam.type === "StringLiteral") {
-              return tailParams.length ? [ToJSType(firstParam), `$:($e, $n) => ${ToJSType(mod.params[1])}($e, $n, ${mod.params.slice(2)
+              return [ToJSType(firstParam), `$:($e, $n) => ${ToJSType(mod.params[1])}($e, $n, ${mod.params.slice(2)
                 .map((p) => ToJSType(p))
-                .join(",")})`] : [ToJSType(firstParam), ToJSType(mod.params[1])];
+                .join(",")})`];
             } else {
               return null;
             }
