@@ -55,16 +55,19 @@ export class ListComponent<T extends { id: number }> {
   index = 0;
   ItemComponent: (item: T, index?: number) => GenericReturnType;
   bottomMarker!: Comment;
+  key: string = 'id';
   constructor(
     {
       tag,
+      key,
       ItemComponent,
-    }: { tag: Cell<T[]>; ItemComponent: (item: T, index?: number) => ComponentReturnType },
+    }: { tag: Cell<T[]>; key: string | null, ItemComponent: (item: T, index?: number) => ComponentReturnType },
     outlet: HTMLElement | DocumentFragment
   ) {
     this.ItemComponent = ItemComponent;
     const mainNode = outlet;
     this.nodes = [];
+    this.key = key ?? 'id';
     // "list bottom marker"
     this.bottomMarker = document.createComment("");
     mainNode.appendChild(this.bottomMarker);
@@ -87,7 +90,8 @@ export class ListComponent<T extends { id: number }> {
     );
   }
   keyForItem(item: T & { id: number }) {
-    return String(item["id"]);
+    // @ts-expect-error key doesn't exist
+    return String(item[this.key]);
   }
   getTargetNode(amountOfKeys: number) {
     if (amountOfKeys > 0) {

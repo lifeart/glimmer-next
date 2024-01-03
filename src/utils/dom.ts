@@ -260,13 +260,15 @@ function ifCond(
 
 function each<T extends { id: number }>(
   items: Cell<T[]> | MergedCell,
-  fn: (item: T) => ComponentReturnType
+  fn: (item: T) => ComponentReturnType,
+  key: string | null = null
 ) {
   const outlet = document.createDocumentFragment();
   const List = new ListComponent(
     {
       tag: items as Cell<T[]>,
       ItemComponent: fn,
+      key,
     },
     outlet
   );

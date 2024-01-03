@@ -121,11 +121,12 @@ export function serializeNode(
     const paramNames = node.blockParams;
     const childs = node.children;
     const inverses = node.inverse;
+    const eachKey = node.key;
 
     if (key === "@each") {
       return `DOM.each(${arrayName}, (${paramNames.join(",")}) => {
         return ${toChildArray(childs)};
-      })`;
+      }, ${eachKey})`;
     } else if (key === "@if") {
       return `DOM.if(${arrayName}, () => {
         return ${toChildArray(childs)};

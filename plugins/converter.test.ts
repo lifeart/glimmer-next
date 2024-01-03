@@ -190,6 +190,7 @@ describe("convert function builder", () => {
         $t<ASTv1.BlockStatement>(`{{#if (foo bar)}}123{{else}}456{{/if}}`)
       ).toEqual<HBSControlExpression>(
         $control({
+          type: 'if',
           condition: "$:foo($:bar)",
           children: ["123"],
           inverse: ["456"],
@@ -207,6 +208,21 @@ describe("convert function builder", () => {
           condition: "$:foo",
           blockParams: ["bar", "index"],
           children: ["123"],
+        })
+      );
+    });
+    test("it could provide keys", () => {
+      expect(
+        $t<ASTv1.BlockStatement>(
+          `{{#each foo key="id" as |bar index|}}123{{/each}}`
+        )
+      ).toEqual<HBSControlExpression>(
+        $control({
+          type: "each",
+          condition: "$:foo",
+          blockParams: ["bar", "index"],
+          children: ["123"],
+          key: "id",
         })
       );
     });
