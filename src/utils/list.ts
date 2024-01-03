@@ -5,7 +5,7 @@ import {
   destroyElement,
   renderElement,
 } from "@/utils/component";
-import { Cell, MergedCell, tags } from "@/utils/reactive";
+import { Cell, tags } from "@/utils/reactive";
 import { bindUpdatingOpcode } from "@/utils/vm";
 
 function setIndex(item: GenericReturnType, index: number) {
