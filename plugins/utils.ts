@@ -2,7 +2,7 @@ export type HBSExpression = [
   string,
   string,
   string | null,
-  HBSNode[],
+  Array<HBSNode|string>,
   HBSNode[] | null
 ];
 
@@ -10,6 +10,7 @@ export type HBSNode = {
   tag: string;
   attributes: [string, string][];
   selfClosing: boolean;
+  hasStableChild: boolean;
   blockParams: string[];
   events: [string, string][];
   children: (string | HBSNode | HBSExpression)[];
@@ -64,7 +65,7 @@ export function serializeChildren(
     .join(", ")}`;
 }
 
-function toChildArray(childs: HBSNode[] | null): string {
+function toChildArray(childs: Array<HBSNode|string> | null): string {
   if (!childs) {
     return "[null]";
   }

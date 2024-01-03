@@ -21,6 +21,7 @@ function $node(partial: Partial<HBSNode>): HBSNode {
     attributes: partial.attributes ?? [],
     blockParams: partial.blockParams ?? [],
     selfClosing: partial.selfClosing ?? false,
+    hasStableChild: partial.hasStableChild ?? true,
     tag: partial.tag ?? "",
   };
 }
@@ -68,14 +69,7 @@ describe("convert function builder", () => {
   });
   describe("ElementNode", () => {
     test("converts a simple element", () => {
-      expect($t<ASTv1.ElementNode>(`<div></div>`)).toEqual({
-        events: [],
-        children: [],
-        selfClosing: false,
-        tag: "div",
-        attributes: [],
-        blockParams: [],
-      });
+      expect($t<ASTv1.ElementNode>(`<div></div>`)).toEqual($node({ tag: "div" }));
     });
     test("converts a simple element with string attribute", () => {
       expect($t<ASTv1.ElementNode>(`<div class="foo"></div>`)).toEqual(
@@ -132,6 +126,40 @@ describe("convert function builder", () => {
             $node({
                 tag: "div",
                 events: [["onCreated", '$:($n) => $:foo-bar($n, )']],
+            })
+        );
+    });
+  });
+  describe("stableChildDetection", () => {
+    test('detects stable child', () => {
+        expect($t<ASTv1.ElementNode>(`<div>foo</div>`)).toEqual(
+            $node({
+                tag: "div",
+                hasStableChild: true,
+                children: ["foo"],
+            })
+        );
+        expect($t<ASTv1.ElementNode>(`<div><p></p></div>`)).toEqual(
+            $node({
+                tag: "div",
+                hasStableChild: true,
+                children: [$node({ tag: "p" })],
+            })
+        );
+        expect($t<ASTv1.ElementNode>(`<div><:slot></:slot></div>`)).toEqual(
+            $node({
+                tag: "div",
+                hasStableChild: false,
+                children: [$node({ tag: ":slot" })],
+            })
+        );
+        expect($t<ASTv1.ElementNode>(`<div>{{#if foo}}123{{/if}}</div>`)).toEqual(
+            $node({
+                tag: "div",
+                hasStableChild: false,
+                children: [
+                    ["@if", "foo", null, ["123"], null]
+                ],
             })
         );
     });

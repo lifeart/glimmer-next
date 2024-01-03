@@ -101,11 +101,34 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
     }
   }
 
+  function resolvedChildren(els: ASTv1.Node[]) {
+    return els.filter((el) => {
+      return el.type !== "TextNode" || el.chars.trim().length !== 0;
+    });
+  }
+
+  function hasStableChild(node: ASTv1.ElementNode): boolean {
+    const childrenWithoutEmptyTextNodes = resolvedChildren(node.children);
+    if (childrenWithoutEmptyTextNodes.length === 0) {
+      return true;
+    }
+    // getting first child, and if it's TextElement or just Element node, assume it's stable
+    const firstChild = childrenWithoutEmptyTextNodes[0];
+    if (firstChild.type === "TextNode") {
+      return true;
+    }
+    if (firstChild.type === "ElementNode" && !firstChild.tag.startsWith(':') && firstChild.tag.toLowerCase() === firstChild.tag) {
+      return true;
+    }
+    return false;
+  }
+
   function ElementToNode(element: ASTv1.ElementNode): HBSNode {
     const node = {
       tag: element.tag,
       selfClosing: element.selfClosing,
       blockParams: element.blockParams,
+      hasStableChild: hasStableChild(element),
       attributes: element.attributes.map((attr) => {
         const rawValue = ToJSType(attr.value);
         // const value = rawValue.startsWith("$:") ? rawValue : escapeString(rawValue);
@@ -135,7 +158,7 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
           }
         })
         .filter((el) => el !== null),
-      children: element.children
+      children: resolvedChildren(element.children)
         .map((el) => ToJSType(el))
         .filter((el) => el !== null),
     };
