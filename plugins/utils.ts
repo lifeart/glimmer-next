@@ -1,12 +1,14 @@
 import type { ASTv1 } from "@glimmer/syntax";
 
-export type HBSExpression = [
-  string,
-  string,
-  string[],
-  Array<HBSNode|string>,
-  Array<HBSNode|string> | null
-];
+export type HBSControlExpression = {
+  type: "each" | "if";
+  isControl: true;
+  condition: string;
+  blockParams: string[];
+  children: Array<HBSNode | string>;
+  inverse: Array<HBSNode | string> | null;
+  key: string | null;
+};
 
 export type HBSNode = {
   tag: string;
@@ -15,7 +17,7 @@ export type HBSNode = {
   hasStableChild: boolean;
   blockParams: string[];
   events: [string, string][];
-  children: (string | HBSNode | HBSExpression)[];
+  children: (string | HBSNode | HBSControlExpression)[];
 };
 
 export function escapeString(str: string) {
@@ -43,7 +45,10 @@ export function serializePath(p: string): string {
 
 export function resolvedChildren(els: ASTv1.Node[]) {
   return els.filter((el) => {
-    if (el.type === 'CommentStatement' || el.type === 'MustacheCommentStatement') {
+    if (
+      el.type === "CommentStatement" ||
+      el.type === "MustacheCommentStatement"
+    ) {
       return false;
     }
     return el.type !== "TextNode" || el.chars.trim().length !== 0;
@@ -58,7 +63,7 @@ export function serializeAttribute(key: string, value: string): string {
 }
 
 export function serializeChildren(
-  children: Array<string | HBSNode | HBSExpression>
+  children: Array<string | HBSNode | HBSControlExpression>
 ) {
   if (children.length === 0) {
     return "null";
@@ -76,7 +81,7 @@ export function serializeChildren(
     .join(", ")}`;
 }
 
-function toChildArray(childs: Array<HBSNode|string> | null): string {
+function toChildArray(childs: Array<HBSNode | string> | null): string {
   if (!childs) {
     return "[null]";
   }
@@ -103,18 +108,22 @@ function serializeProp(attr: [string, string | null]): string {
 }
 
 export function serializeNode(
-  node: string | null | HBSNode | HBSExpression
+  node: string | null | HBSNode | HBSControlExpression
 ): string | undefined | null {
   if (node === null) {
     return null;
   }
 
-  if (Array.isArray(node)) {
+  if (typeof node === "object" && "isControl" in node) {
     // control node (each)
-    const [key, arrayName, paramNames, childs, inverses] = node;
+    const key = `@${node.type}`;
+    const arrayName = node.condition;
+    const paramNames = node.blockParams;
+    const childs = node.children;
+    const inverses = node.inverse;
 
     if (key === "@each") {
-      return `DOM.each(${arrayName}, (${paramNames.join(',')}) => {
+      return `DOM.each(${arrayName}, (${paramNames.join(",")}) => {
         return ${toChildArray(childs)};
       })`;
     } else if (key === "@if") {

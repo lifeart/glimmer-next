@@ -1,5 +1,6 @@
 import type { ASTv1 } from "@glimmer/syntax";
 import {
+  HBSControlExpression,
   HBSNode,
   escapeString,
   isPath,
@@ -93,16 +94,19 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
         return null;
       }
       const name = node.path.original;
+      const keyPair = node.hash.pairs.find((p) => p.key === "key");
 
-      return [
-        `@${name}`,
-        ToJSType(node.params[0], false),
-        node.program.blockParams,
-        childElements?.map((el) => ToJSType(el)) ?? null,
-        elseChildElements?.length
+      return {
+        type: name,
+        isControl: true,
+        condition: ToJSType(node.params[0]),
+        blockParams: node.program.blockParams,
+        children: childElements?.map((el) => ToJSType(el)) ?? null,
+        inverse: elseChildElements?.length
           ? elseChildElements.map((el) => ToJSType(el))
           : null,
-      ];
+        key: keyPair ? ToJSType(keyPair.value) : null,
+      } as HBSControlExpression;
     }
   }
 

@@ -2,7 +2,7 @@
 // https://astexplorer.net/#/gist/4e3b4c288e176bb7ce657f9dea95f052/8dcabe8144c7dc337d21e8c771413db30ca5d397
 import { preprocess, traverse, ASTv1 } from "@glimmer/syntax";
 import { transformSync } from "@babel/core";
-import { HBSExpression, HBSNode, serializeNode } from "./utils";
+import { HBSControlExpression, HBSNode, serializeNode } from "./utils";
 import { processTemplate } from "./babel";
 import { convert } from "./converter";
 
@@ -12,7 +12,7 @@ function isNodeStable(node: string) {
 }
 
 export function transform(source: string, fileName: string) {
-  const programs: Array<HBSNode | HBSExpression>[] = [];
+  const programs: Array<HBSNode | HBSControlExpression>[] = [];
   const seenNodes: Set<ASTv1.Node> = new Set();
   const rawTxt: string = source;
   const hbsToProcess: string[] = [];
@@ -67,7 +67,7 @@ export function transform(source: string, fileName: string) {
   });
 
   programs.forEach((program) => {
-    const input: Array<HBSNode | HBSExpression> = program;
+    const input: Array<HBSNode | HBSControlExpression> = program;
 
     const results = input.reduce((acc, node) => {
       const serializedNode = serializeNode(node);

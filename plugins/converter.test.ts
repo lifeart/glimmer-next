@@ -3,7 +3,7 @@ import { preprocess } from "@glimmer/syntax";
 
 import { convert } from "./converter";
 import { ASTv1 } from "@glimmer/syntax";
-import { HBSExpression, HBSNode } from "./utils";
+import { HBSControlExpression, HBSNode } from "./utils";
 
 function $t<T extends ASTv1.Node>(tpl: string): T {
   const seenNodes: Set<ASTv1.Node> = new Set();
@@ -11,6 +11,21 @@ function $t<T extends ASTv1.Node>(tpl: string): T {
   const ast = preprocess(tpl);
   const node = ast.body[0] as T;
   return ToJSType(node);
+}
+
+function $control(
+  partial: Partial<HBSControlExpression>
+): HBSControlExpression {
+  return {
+    type: "if",
+    isControl: true,
+    condition: "",
+    blockParams: [],
+    children: [],
+    inverse: null,
+    key: null,
+    ...partial,
+  };
 }
 
 function $node(partial: Partial<HBSNode>): HBSNode {
@@ -148,37 +163,53 @@ describe("convert function builder", () => {
   });
   describe("if condition", () => {
     test("only true part", () => {
-      expect($t<ASTv1.BlockStatement>(`{{#if foo}}123{{/if}}`)).toEqual<HBSExpression>([
-        "@if",
-        "$:foo",
-        [],
-        ["123"],
-        null,
-      ]);
+      expect(
+        $t<ASTv1.BlockStatement>(`{{#if foo}}123{{/if}}`)
+      ).toEqual<HBSControlExpression>(
+        $control({
+          condition: "$:foo",
+          children: ["123"],
+        })
+      );
     });
 
     test("both parts", () => {
       expect(
         $t<ASTv1.BlockStatement>(`{{#if foo}}123{{else}}456{{/if}}`)
-      ).toEqual<HBSExpression>(["@if", "$:foo", [], ["123"], ["456"]]);
+      ).toEqual<HBSControlExpression>(
+        $control({
+          condition: "$:foo",
+          children: ["123"],
+          inverse: ["456"],
+        })
+      );
     });
 
     test("helper in condition", () => {
       expect(
         $t<ASTv1.BlockStatement>(`{{#if (foo bar)}}123{{else}}456{{/if}}`)
-      ).toEqual<HBSExpression>(["@if", "$:foo($:bar)", [], ["123"], ["456"]]);
+      ).toEqual<HBSControlExpression>(
+        $control({
+          condition: "$:foo($:bar)",
+          children: ["123"],
+          inverse: ["456"],
+        })
+      );
     });
   });
-  describe('each condition', () => {
-    test('it works', () => {
-      expect($t<ASTv1.BlockStatement>(`{{#each foo as |bar index|}}123{{/each}}`)).toEqual<HBSExpression>([
-        '@each',
-        '$:foo',
-        ['bar', 'index'],
-        ['123'],
-        null
-      ]);
-    })
+  describe("each condition", () => {
+    test("it works", () => {
+      expect(
+        $t<ASTv1.BlockStatement>(`{{#each foo as |bar index|}}123{{/each}}`)
+      ).toEqual<HBSControlExpression>(
+        $control({
+          type: "each",
+          condition: "$:foo",
+          blockParams: ["bar", "index"],
+          children: ["123"],
+        })
+      );
+    });
   });
   describe("stableChildDetection", () => {
     test("detects stable child", () => {
@@ -207,7 +238,12 @@ describe("convert function builder", () => {
         $node({
           tag: "div",
           hasStableChild: false,
-          children: [["@if", "$:foo", [], ["123"], null]],
+          children: [
+            $control({
+              condition: "$:foo",
+              children: ["123"],
+            }),
+          ],
         })
       );
     });
