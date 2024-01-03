@@ -100,7 +100,6 @@ export async function destroyElement(
 
 var $destructors = new WeakMap<Node, Destructors>();
 
-// @ts-expect-error bla-bla
 window["getDestructors"] = () => $destructors;
 
 function getNode(el: Node): Node {

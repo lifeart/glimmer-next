@@ -3,8 +3,6 @@ import { ButtonWrapper } from "./ButtonWrapper";
 import { Smile } from "./Smile";
 import { Clock } from "./Clock";
 import { Input } from "./Input";
-import Textarea from './Textarea.gts';
-import { Checkbox } from "./Checkbox.gts";
 
 type Cb = () => void;
 type HeaderArgs = {
@@ -23,12 +21,10 @@ export function Header({
   swaprows,
   runlots,
 }: HeaderArgs) {
-  scope({ ButtonWrapper, Textarea, run, add, Clock, update, clear, Input, Checkbox, swaprows, runlots, Smile });
+  scope({ ButtonWrapper, run, add, Clock, update, clear, Input, swaprows, runlots, Smile });
   return hbs`
     <div class="jumbotron">
         <div class="row">
-            <Textarea />
-            <Checkbox @isChecked={{false}} />
             <div class="col-md-6">
                 <h1>GlimmerC<a href="https://github.com/lifeart/glimmer-next" target="_blank"><Smile/></a>re <Clock /></h1>
             </div>
