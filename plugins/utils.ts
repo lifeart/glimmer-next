@@ -31,11 +31,11 @@ export function escapeString(str: string) {
   }
 }
 
-function isPath(str: string) {
+export function isPath(str: string) {
   return str.startsWith("$:");
 }
 
-function serializePath(p: string): string {
+export function serializePath(p: string): string {
   return p.replace("$:", "").replace("@", "this.args.");
 }
 

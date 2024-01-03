@@ -1,5 +1,5 @@
 import type { ASTv1 } from "@glimmer/syntax";
-import { HBSNode, escapeString } from "./utils";
+import { HBSNode, escapeString, isPath, serializePath } from "./utils";
 
 export function convert(seenNodes: Set<ASTv1.Node>) {
   function ToJSType(node: ASTv1.Node): any {
@@ -54,8 +54,8 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
             if (typeof el !== "string") {
               return String(el);
             }
-            return el.startsWith("$:")
-              ? el.replace("$:", "").replace("@", "this.args.")
+            return isPath(el)
+              ? serializePath(el)
               : escapeString(el);
           })
           .join(",")})`;
