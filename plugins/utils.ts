@@ -12,8 +12,8 @@ export type HBSControlExpression = {
 
 export type HBSNode = {
   tag: string;
-  attributes: [string, string | number | boolean][];
-  properties: [string, string | number | boolean][];
+  attributes: [string, null | undefined | string | number | boolean][];
+  properties: [string, null | undefined | string | number | boolean][];
   selfClosing: boolean;
   hasStableChild: boolean;
   blockParams: string[];
@@ -56,18 +56,6 @@ export function resolvedChildren(els: ASTv1.Node[]) {
   });
 }
 
-export function serializeAttribute(key: string, value: string | number | boolean): string {
-  if (typeof value === 'boolean') {
-    return `['${key}', ${String(value)}]`;
-  } else if (typeof value === 'number') {
-    return `['${key}', ${value}]`;
-  }
-  if (isPath(value)) {
-    return `['${key}', ${serializePath(value)}]`;
-  }
-  return `['${key}', ${escapeString(value)}]`;
-}
-
 export function serializeChildren(
   children: Array<string | HBSNode | HBSControlExpression>
 ) {
@@ -101,13 +89,36 @@ function toPropName(name: string) {
   return name.replace("@", "");
 }
 
-function serializeProp(attr: [string, string | null | number | boolean]): string {
+export function serializeAttribute(
+  key: string,
+  value: null | undefined | string | number | boolean
+): string {
+  if (typeof value === "boolean") {
+    return `['${key}', ${String(value)}]`;
+  } else if (typeof value === "number") {
+    return `['${key}', ${value}]`;
+  } else if (value === null) {
+    return `['${key}', null]`;
+  } else if (typeof value === "undefined") {
+    return `['${key}', undefined]`;
+  }
+  if (isPath(value)) {
+    return `['${key}', ${serializePath(value)}]`;
+  }
+  return `['${key}', ${escapeString(value)}]`;
+}
+
+function serializeProp(
+  attr: [string, string | undefined | null | number | boolean]
+): string {
   if (attr[1] === null) {
     return `${toPropName(attr[0])}: null`;
   } else if (typeof attr[1] === "boolean") {
     return `${toPropName(attr[0])}: ${attr[1]}`;
-  } else if (typeof attr[1] === 'number') {
+  } else if (typeof attr[1] === "number") {
     return `${toPropName(attr[0])}: ${attr[1]}`;
+  } else if (typeof attr[1] === "undefined") {
+    return `${toPropName(attr[0])}: undefined`;
   }
   const isScopeValue = isPath(attr[1]);
   return `${toPropName(attr[0])}: ${
@@ -131,9 +142,9 @@ export function serializeNode(
     const inverses = node.inverse;
     let eachKey = node.key;
 
-    if (eachKey === '@index') {
-      console.warn('@index identity not supported');
-      eachKey = '@identity';
+    if (eachKey === "@index") {
+      console.warn("@index identity not supported");
+      eachKey = "@identity";
     }
 
     if (key === "@each") {
