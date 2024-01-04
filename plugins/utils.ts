@@ -200,6 +200,7 @@ export function serializeNode(
         )}}`;
 
     if (node.selfClosing) {
+      // @todo - we could pass `hasStableChild` ans hasBlock / hasBlockParams to the DOM helper
       return `DOM.c(new ${node.tag}(${toObject(args)}, ${secondArg}))`;
     } else {
       const slots: HBSNode[] = node.children.filter((child) => {
@@ -223,6 +224,8 @@ export function serializeNode(
       });
       const fn = `new ${node.tag}(${toObject(node.attributes)}, ${secondArg})`;
       const slotsObj = `{${serializedSlots.join(',')}}`;
+      // @todo - we could pass `hasStableChild` ans hasBlock / hasBlockParams to the DOM helper
+      // including `has-block` helper
       return `DOM.withSlots(DOM.c(${fn}), ${slotsObj})`;
     }
   } else if (typeof node === "object" && node.tag) {
