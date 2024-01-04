@@ -9,7 +9,7 @@ Related PR:
 
 ### Component sample
 
-```gts
+```gjs
 import { RemoveIcon } from "./RemoveIcon.gts";
 import type { Item } from "@/utils/data";
 import { Cell, cellFor, formula } from "@/utils/reactive";
