@@ -1,5 +1,9 @@
 # gNext [![Netlify Status](https://api.netlify.com/api/v1/badges/43af359b-56a7-4607-9e01-04ca3a545470/deploy-status)](https://app.netlify.com/sites/g-next/deploys)
 
+<img align="right" width="95" height="95"
+     alt="Philosopher’s stone, logo of PostCSS"
+     src="./public/logo.png">
+
 `gNext` is a cutting-edge, compilable runtime environment designed as `glimmer-vm` experiment, showcasing the power and flexibility of modern web component development. This runtime is a live example of how Glimmer-VM can be used in real-world applications, providing developers with a practical and interactive experience. Explore our [sample](https://g-next.netlify.app/) at netlify.
 
 
