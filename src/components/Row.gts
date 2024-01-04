@@ -1,6 +1,6 @@
 import { RemoveIcon } from "./RemoveIcon.gts";
 import type { Item } from "@/utils/data";
-import { Cell, cellFor, formula } from "@/utils/reactive";
+import { type Cell, cellFor } from "@/utils/reactive";
 import { Component } from '@/utils/component';
 import type { ModifierReturn } from '@glint/template/-private/integration';
 
@@ -29,9 +29,9 @@ export class Row extends Component<RowArgs> {
   get isSelected() {
     return this.selected === this.id;
   }
-  className = formula(() => {
+  className = () => {
     return this.isSelected ? "danger" : "";
-  }, 'row.className');
+  };
   onClick = () => {
     this.selected = this.isSelected ? 0 : this.id;
   };

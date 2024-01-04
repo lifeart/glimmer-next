@@ -47,10 +47,10 @@ function $prop(
   destructors: DestructorFn[]
 ) {
   if (typeof value === "function") {
-    $attr(
+    $prop(
       element,
       key,
-      formula(value as unknown as () => unknown, `${element.tagName}.${key}`),
+      formula(value,`${element.tagName}.${key}`),
       destructors
     );
   } else if (value !== null && (value as AnyCell)[isTag]) {

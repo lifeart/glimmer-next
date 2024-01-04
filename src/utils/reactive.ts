@@ -111,7 +111,7 @@ function bindAllCellsToTag(cells: Set<Cell>, tag: MergedCell) {
 
 // "derived" cell, it's value is calculated from other cells, and it's value can't be updated
 export class MergedCell {
-  fn: () => unknown;
+  fn: Fn | Function;
   declare toHTML: () => string;
   isConst = false;
   isDestroyed = false;
@@ -121,7 +121,7 @@ export class MergedCell {
   _debugName?: string | undefined;
   relatedCells: Set<Cell> | null = null;
   [isTag] = true;
-  constructor(fn: () => unknown, debugName?: string) {
+  constructor(fn: Fn | Function, debugName?: string) {
     this.fn = fn;
     if (import.meta.env.DEV) {
       this._debugName = debugName;
@@ -224,7 +224,9 @@ export function cellFor<T extends object, K extends keyof T>(
   return cellValue;
 }
 
-export function formula(fn: () => unknown, debugName?: string) {
+type Fn = () => unknown;
+
+export function formula(fn: Function | Fn, debugName?: string) {
   return new MergedCell(fn, `formula:${debugName ?? "unknown"}`);
 }
 
