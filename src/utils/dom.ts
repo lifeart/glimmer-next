@@ -70,9 +70,6 @@ function $attr(
   value: unknown,
   destructors: Destructors
 ) {
-  if (key === "...attributes") {
-    return;
-  }
   if (typeof value === "function") {
     $attr(
       element,
@@ -149,9 +146,7 @@ function _DOM(
 ): NodeReturnType {
   const element = document.createElement(tag);
   const destructors: Destructors = [];
-  const hasSplatAttrs =
-    props.attributes.find((el) => el[0] === "...attributes") &&
-    typeof props.fw !== undefined;
+  const hasSplatAttrs = 'fw' in props;
   const attributes = hasSplatAttrs
     ? [...props.fw!.attrs, ...props.attributes]
     : props.attributes;

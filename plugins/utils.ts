@@ -167,6 +167,9 @@ export function serializeNode(
     const hasSplatAttrs = node.attributes.find((attr) => {
       return attr[0] === "...attributes";
     });
+    node.attributes = node.attributes.filter((attr) => {
+      return attr[0] !== "...attributes";
+    });
     const args = node.attributes.filter((attr) => {
       return attr[0].startsWith('@');
     });
@@ -187,6 +190,9 @@ export function serializeNode(
   } else if (typeof node === "object" && node.tag) {
     const hasSplatAttrs = node.attributes.find((attr) => {
       return attr[0] === "...attributes";
+    });
+    node.attributes = node.attributes.filter((attr) => {
+      return attr[0] !== "...attributes";
     });
     return `DOM('${node.tag}', {
       events: ${toArray(node.events)},
