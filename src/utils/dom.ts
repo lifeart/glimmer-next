@@ -318,7 +318,7 @@ function ifCond(
 
 function each<T extends { id: number }>(
   items: Cell<T[]> | MergedCell,
-  fn: (item: T) => ComponentReturnType,
+  fn: (item: T) => Array<ComponentReturnType | NodeReturnType>,
   key: string | null = null
 ) {
   const outlet = document.createDocumentFragment();
