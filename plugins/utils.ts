@@ -41,8 +41,12 @@ export function isPath(str: string) {
   return str.startsWith("$:");
 }
 
-export function serializePath(p: string): string {
-  return p.replace("$:", "").replace("@", "this.args.");
+export function serializePath(p: string, wrap = true): string {
+  const isFunction = p.startsWith('$:(');
+  if (isFunction || wrap === false) {
+    return p.replace("$:", "").replace("@", "this.args.");
+  }
+  return `() => ${p.replace("$:", "").replace("@", "this.args.")}`;
 }
 
 export function resolvedChildren(els: ASTv1.Node[]) {
@@ -123,7 +127,7 @@ function serializeProp(
   }
   const isScopeValue = isPath(attr[1]);
   return `${toPropName(attr[0])}: ${
-    isScopeValue ? serializePath(attr[1]) : escapeString(attr[1])
+    isScopeValue ? serializePath(attr[1], false) : escapeString(attr[1])
   }`;
 }
 

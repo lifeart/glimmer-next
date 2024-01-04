@@ -118,6 +118,9 @@ function addChild(
       | NodeReturnType
       | string
       | number = child();
+    if (componentProps !== null && (componentProps as unknown as AnyCell)[isTag]) {
+      return addChild(element, componentProps as unknown as AnyCell);
+    }
     if (typeof componentProps !== "object") {
       const text = api.text(String(componentProps));
       api.append(element, text);
