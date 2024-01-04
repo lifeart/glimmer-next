@@ -126,11 +126,17 @@ function serializeProp(
   }`;
 }
 
-function toObject(args: [string, string | number | boolean | null | undefined][]) {
+function toObject(
+  args: [string, string | number | boolean | null | undefined][]
+) {
   return `{${args.map((attr) => serializeProp(attr)).join(", ")}}`;
 }
-function toArray(args: [string, string | number | boolean | null | undefined][]) {
-  return `[${args.map((attr) => serializeAttribute(attr[0], attr[1])).join(", ")}]`;
+function toArray(
+  args: [string, string | number | boolean | null | undefined][]
+) {
+  return `[${args
+    .map((attr) => serializeAttribute(attr[0], attr[1]))
+    .join(", ")}]`;
 }
 
 export function serializeNode(
@@ -155,9 +161,15 @@ export function serializeNode(
     }
 
     if (key === "@each") {
-      return `DOM.each(${arrayName}, (${paramNames.join(",")}) => ${toChildArray(childs)}, ${eachKey ? escapeString(eachKey) : null})`;
+      return `DOM.each(${arrayName}, (${paramNames.join(
+        ","
+      )}) => ${toChildArray(childs)}, ${
+        eachKey ? escapeString(eachKey) : null
+      })`;
     } else if (key === "@if") {
-      return `DOM.if(${arrayName}, () => ${toChildArray(childs)}, () => ${toChildArray(inverses)} )`;
+      return `DOM.if(${arrayName}, () => ${toChildArray(
+        childs
+      )}, () => ${toChildArray(inverses)} )`;
     }
   } else if (
     typeof node === "object" &&
@@ -171,19 +183,29 @@ export function serializeNode(
       return attr[0] !== "...attributes";
     });
     const args = node.attributes.filter((attr) => {
-      return attr[0].startsWith('@');
+      return attr[0].startsWith("@");
     });
     const attrs = node.attributes.filter((attr) => {
-      return !attr[0].startsWith('@');
+      return !attr[0].startsWith("@");
     });
     const props = node.properties;
-    const secondArg = hasSplatAttrs ?  `{attrs: [...$fw.attrs, ...${toArray(attrs)}], props: [...$fw.props, ...${toArray(props)}], events: [...$fw.events,...${toArray(node.events)}]}` : `{attrs: ${toArray(attrs)}, props: ${toArray(props)}, events: ${toArray(node.events)}}`;
+    const secondArg = hasSplatAttrs
+      ? `{attrs: [...$fw.attrs, ...${toArray(
+          attrs
+        )}], props: [...$fw.props, ...${toArray(
+          props
+        )}], events: [...$fw.events,...${toArray(node.events)}]}`
+      : `{attrs: ${toArray(attrs)}, props: ${toArray(props)}, events: ${toArray(
+          node.events
+        )}}`;
 
     if (node.selfClosing) {
       return `DOM.c(new ${node.tag}(${toObject(args)}, ${secondArg}))`;
     } else {
       let slotChildren = serializeChildren(node.children);
-      return `DOM.withSlots(DOM.c(new ${node.tag}(${toObject(node.attributes)}, ${secondArg}), { default: (${node.blockParams.join(",")}) => ${
+      return `DOM.withSlots(DOM.c(new ${node.tag}(${toObject(
+        node.attributes
+      )}, ${secondArg}), { default: (${node.blockParams.join(",")}) => ${
         slotChildren !== "null" ? `[${slotChildren}]` : "[]"
       } }))`;
     }

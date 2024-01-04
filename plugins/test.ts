@@ -23,7 +23,7 @@ export function transform(source: string, fileName: string) {
 
   const babelResult = transformSync(rawTxt, {
     plugins: [processTemplate(hbsToProcess)],
-    filename: fileName.replace('.gts', '.ts').replace('.gjs', '.js'),
+    filename: fileName.replace(".gts", ".ts").replace(".gjs", ".js"),
     presets: ["@babel/preset-typescript"],
   });
 
@@ -82,7 +82,8 @@ export function transform(source: string, fileName: string) {
     }, [] as string[]);
 
     const isClass = txt?.includes("template = ") ?? false;
-    const isTemplateTag = fileName.endsWith(".gts");
+    const isTemplateTag =
+      fileName.endsWith(".gts") || fileName.endsWith(".gjs");
 
     let result = "";
 
