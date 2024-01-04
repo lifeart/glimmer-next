@@ -82,12 +82,20 @@ function $attr(
   } else if (tags.has(value as AnyCell)) {
     destructors.push(
       bindUpdatingOpcode(value as AnyCell, (value) => {
-        // @ts-expect-error type casting
-        element.setAttribute(key, value);
+        if (value === null) {
+          element.setAttribute(key, "");
+        } else {
+          // @ts-expect-error type casting
+          element.setAttribute(key, value);
+        }
       })
     );
   } else {
-    element.setAttribute(key, value as string);
+    if (value === null) {
+      element.setAttribute(key, "");
+    } else {
+      element.setAttribute(key, value as string);
+    }
   }
 }
 
@@ -265,7 +273,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots) {
           elements.map((el) => {
             if (typeof el === "string" || typeof el === "number") {
               return $text(String(el));
-            } else if (typeof el === 'function') {
+            } else if (typeof el === "function") {
               // here likely el is as slot constructor
               // @ts-expect-error function signature
               return el();
@@ -294,7 +302,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots) {
     elements.map((el) => {
       if (typeof el === "string" || typeof el === "number") {
         return $text(String(el));
-      } else if (typeof el === 'function') {
+      } else if (typeof el === "function") {
         // here likely el is as slot constructor
         // @ts-expect-error function signature
         return el();
