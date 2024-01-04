@@ -24,7 +24,7 @@ export function transform(source: string, fileName: string) {
   const babelResult = transformSync(rawTxt, {
     plugins: [processTemplate(hbsToProcess)],
     filename: fileName.replace(".gts", ".ts").replace(".gjs", ".js"),
-    presets: ["@babel/preset-typescript"],
+    presets: [["@babel/preset-typescript", { allExtensions: true, onlyRemoveTypeImports: true }]],
   });
 
   const txt = babelResult?.code ?? "";

@@ -1,4 +1,5 @@
 import { Destructors } from "./destroyable";
+import type { TemplateContext, Context, Invoke, ComponentReturn, InvokeDirect, NamedArgs } from '@glint/template/-private/integration';
 
 export type ComponentRenderTarget =
   | HTMLElement
@@ -67,15 +68,18 @@ export function renderComponent(
 
 export type Props = Record<string, unknown>;
 
-export class Component<T extends Props = Record<string, unknown>>
+type Get<T, K, Otherwise = {}> = K extends keyof T ? Exclude<T[K], undefined> : Otherwise;
+export class Component<T extends Props = any>
   implements ComponentReturnType
 {
-  args!: T;
+  args!: Get<T, 'Args'>;
+  declare [Context]: TemplateContext<this, Get<T, 'Args'>, Get<T, 'Blocks'>, Get<T, 'Element', null>>;
+  declare [Invoke]: (args: Get<T, 'Args'>) => ComponentReturn<Get<T, 'Blocks'>, Get<T, 'Element', null>>;
   nodes!: Node[];
   index!: number;
   slots!: Slots;
   $fw: unknown;
-  constructor(props: T, fw: unknown) {
+  constructor(props: Get<T, 'Args'>, fw?: unknown) {
     this.args = props;
     this.$fw = fw;
   }

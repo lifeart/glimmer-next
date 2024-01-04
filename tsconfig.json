@@ -24,7 +24,15 @@
       "@/components/*": ["./src/components/*"],
       "@/utils/*": ["./src/utils/*"],
     },
-    "types": ["vite/client", "./types"] 
+    "types": ["vite/client", "./types"],
   },
-  "include": ["src", "plugins"]
+  "include": ["src", "plugins"],
+  "glint": {
+    "environment": {
+      "glimmerx": {},
+      "ember-template-imports": {
+        "additionalGlobals": ["on"]
+      }
+    }     
+  }
 }

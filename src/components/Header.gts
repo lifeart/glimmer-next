@@ -1,10 +1,10 @@
-import { hbs, scope } from "@/utils/template";
-import { ButtonWrapper } from "./ButtonWrapper";
+import { Component } from '@/utils/component';
+import { ButtonWrapper } from "./ButtonWrapper.gts";
 import { Smile } from "./Smile";
 import { Clock } from "./Clock";
-import { Input } from "./Input";
 
 type Cb = () => void;
+
 type HeaderArgs = {
   run: Cb;
   add: Cb;
@@ -13,16 +13,10 @@ type HeaderArgs = {
   swaprows: Cb;
   runlots: Cb;
 };
-export function Header({
-  run,
-  add,
-  update,
-  clear,
-  swaprows,
-  runlots,
-}: HeaderArgs) {
-  scope({ ButtonWrapper, run, add, Clock, update, clear, Input, swaprows, runlots, Smile });
-  return hbs`
+export class Header extends Component<{
+  Args: HeaderArgs;
+}> {
+  <template>
     <div class="jumbotron">
         <div class="row">
             <div class="col-md-6">
@@ -33,36 +27,36 @@ export function Header({
                     <ButtonWrapper 
                       class="btn-primary btn-block" 
                       type="button" 
-                      @onClick={{run}}
+                      @onClick={{@run}}
                       id="run">Create 1 000 items</ButtonWrapper>
                     <ButtonWrapper 
                       class="btn-primary btn-block" 
                       type="button" 
-                      @onClick={{runlots}}
+                      @onClick={{@runlots}}
                       id="runlots">Create 5 000 items</ButtonWrapper>
                     <ButtonWrapper 
                       class="btn-primary btn-block" 
                       type="button" 
-                      @onClick={{add}} 
+                      @onClick={{@add}} 
                       id="add">Append 1 000 rows</ButtonWrapper>
                     <ButtonWrapper 
                       class="btn-primary btn-block" 
                       type="button" 
-                      @onClick={{update}} 
+                      @onClick={{@update}} 
                       id="update">Update every 10th row</ButtonWrapper>
                     <ButtonWrapper 
                       class="btn-primary btn-block" 
                       type="button" 
-                      @onClick={{clear}} 
+                      @onClick={{@clear}} 
                       id="clear">Clear</ButtonWrapper>
                     <ButtonWrapper 
                       class="btn-primary btn-block" 
                       type="button" 
-                      @onClick={{swaprows}} 
+                      @onClick={{@swaprows}} 
                       id="swaprows">Swap rows</ButtonWrapper>
                 </div>
             </div>
         </div>
     </div>
-    `;
+   </template>
 }

@@ -1,44 +1,44 @@
-import { hbs, scope } from "@/utils/template";
-import { RemoveIcon } from "./RemoveIcon";
-import { Item } from "@/utils/data";
+import { RemoveIcon } from "./RemoveIcon.gts";
+import type { Item } from "@/utils/data";
 import { Cell, cellFor, formula } from "@/utils/reactive";
+import { Component } from '@/utils/component';
+import type { ModifierReturn } from '@glint/template/-private/integration';
 
-export function Row({
-  item,
-  selectedCell,
-  onRemove,
-}: {
-  item: Item;
-  selectedCell: Cell<number>;
-  onRemove: (item: Item) => void;
-}) {
-  const id = item.id;
-  const labelCell = cellFor(item, "label");
+type RowArgs = {
+  Args: {
+    item: Item;
+    selectedCell: Cell<number>;
+    onRemove: (item: Item) => void;
+  }
+};
 
-  const onClick = () => {
-    if (selectedCell.value === id) {
-      selectedCell.value = 0;
-    } else {
-      selectedCell.value = id;
-    }
-  };
-
-  const className = formula(() => {
-    return id === selectedCell.value ? "danger" : "";
+export class Row extends Component<RowArgs> {
+  isClicked = false;
+  get labelCell() {
+    return cellFor(this.args.item, "label");
+  }
+  get id() {
+    return this.args.item.id;
+  }
+  className = formula(() => {
+    return this.args.item.id === this.args.selectedCell.value ? "danger" : "";
   });
-
-  let isClicked = false;
-
-  const onClickRemove = (e: Event) => {
-    if (e.isTrusted) {
-      isClicked = true;
+  onClick = () => {
+    if (this.args.selectedCell.value === this.id) {
+      this.args.selectedCell.value = 0;
+    } else {
+      this.args.selectedCell.value = this.id;
     }
-    onRemove(item);
   };
-
-  const modifier = (element: HTMLDivElement) => {
-    return async () => {
-      if (!isClicked) {
+  onClickRemove = (e: Event) => {
+    if (e.isTrusted) {
+      this.isClicked = true;
+    }
+    this.args.onRemove(this.args.item);
+  };
+  modifier = (element: HTMLDivElement): ModifierReturn => {
+    const result  = async () => {
+      if (!this.isClicked) {
         return;
       }
       const scrollTop  = document.documentElement.scrollTop;
@@ -66,23 +66,21 @@ export function Row({
         await new Promise((resolve) => setTimeout(resolve, 1400));
       }
       
-    }
+    };
+    return result as unknown as ModifierReturn;
   }
-
-  scope({ RemoveIcon, labelCell, modifier, onClick, className, onClickRemove });
-
-  return hbs`
-    <tr class={{className}} {{modifier}}>
-        <td class="col-md-1">{{id}}</td>
+  <template>
+  <tr class={{this.className}} {{this.modifier}}>
+        <td class="col-md-1">{{this.id}}</td>
         <td class="col-md-4">
-            <a {{on "click" onClick}}  data-test-select="true">{{labelCell}}</a>
+            <a {{on "click" this.onClick}}  data-test-select="true">{{this.labelCell}}</a>
         </td>
         <td class="col-md-1">
-            <a {{on "click" onClickRemove}} data-test-remove="true">
+            <a {{on "click" this.onClickRemove}} data-test-remove="true">
                 <RemoveIcon />
             </a>
         </td>
         <td class="col-md-6"></td>
     </tr>
-  `;
+  </template>
 }

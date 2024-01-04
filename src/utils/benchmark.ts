@@ -1,4 +1,4 @@
-import { Application } from '@/components/Application';
+import { Application } from '@/components/Application.gts';
 import { measureRender } from '@/utils/measure-render';
 import { setResolveRender } from '@/utils/runtime';
 

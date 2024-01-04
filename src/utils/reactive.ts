@@ -3,7 +3,6 @@
   It's related to Glimmer-VM's `@tracked` system, but without invalidation step.
   We explicitly update DOM only when it's needed and only if tags are changed.
 */
-
 import { scheduleRevalidate } from "@/utils/runtime";
 
 export const asyncOpcodes = new WeakSet<tagOp>();
@@ -43,6 +42,7 @@ function tracker() {
 // "data" cell, it's value can be updated, and it's used to create derived cells
 export class Cell<T extends unknown = unknown> {
   _value!: T;
+  declare toHTML: () => string;
   [Symbol.toPrimitive]() {
     return this.value;
   }
@@ -89,6 +89,7 @@ function bindAllCellsToTag(cells: Set<Cell>, tag: MergedCell) {
 // "derived" cell, it's value is calculated from other cells, and it's value can't be updated
 export class MergedCell {
   fn: () => unknown;
+  declare toHTML: () => string;
   isConst = false;
   isDestroyed = false;
   [Symbol.toPrimitive]() {
