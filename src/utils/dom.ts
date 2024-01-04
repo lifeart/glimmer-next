@@ -8,7 +8,7 @@ import {
   renderElement,
   destroyElement,
 } from "@/utils/component";
-import { AnyCell, Cell, MergedCell, formula, tags } from "@/utils/reactive";
+import { AnyCell, Cell, MergedCell, formula, isTag } from "@/utils/reactive";
 import { bindUpdatingOpcode } from "@/utils/vm";
 import { ListComponent } from "@/utils/list";
 import { ifCondition } from "@/utils/if";
@@ -53,7 +53,7 @@ function $prop(
       formula(value as unknown as () => unknown, `${element.tagName}.${key}`),
       destructors
     );
-  } else if (tags.has(value as AnyCell)) {
+  } else if (value !== null && (value as AnyCell)[isTag]) {
     destructors.push(
       bindUpdatingOpcode(value as AnyCell, (value) => {
         // @ts-expect-error types casting
@@ -79,7 +79,7 @@ function $attr(
       formula(value as unknown as () => unknown, `${element.tagName}.${key}`),
       destructors
     );
-  } else if (tags.has(value as AnyCell)) {
+  } else if (value !== null && (value as AnyCell)[isTag]) {
     destructors.push(
       bindUpdatingOpcode(value as AnyCell, (value) => {
         if (value === null) {
@@ -121,7 +121,7 @@ function addChild(
   } else if (typeof child === "string" || typeof child === "number") {
     const text = $text(child);
     element.appendChild(text);
-  } else if (tags.has(child as AnyCell)) {
+  } else if (child !== null &&  (child as AnyCell)[isTag]) {
     element.appendChild(cellToText(child as AnyCell));
   } else if (typeof child === "function") {
     // looks like a component
@@ -199,21 +199,31 @@ function _DOM(
     $prop(element, key, value, destructors);
   });
   if (classNameModifiers.length > 0) {
-    const formulas = classNameModifiers.map((modifier) => {
-      if (typeof modifier === "function") {
-        return formula(modifier as unknown as () => unknown);
-      } else {
-        return modifier;
-      }
-    });
-    $prop(
-      element,
-      "className",
-      formula(() => {
-        return formulas.join(" ");
-      }),
-      destructors
-    );
+    if (classNameModifiers.length === 1) {
+      $prop(
+        element,
+        "className",
+        classNameModifiers[0],
+        destructors
+      );
+    } else {
+      const formulas = classNameModifiers.map((modifier) => {
+        if (typeof modifier === "function") {
+          return formula(modifier as unknown as () => unknown, 'functional modifier');
+        } else {
+          return modifier;
+        }
+      });
+      $prop(
+        element,
+        "className",
+        formula(() => {
+          return formulas.join(" ");
+        }, element.tagName + '.className'),
+        destructors
+      );
+    }
+   
   }
   children.forEach((child) => {
     addChild(element, child);
@@ -338,10 +348,10 @@ function cellToText(cell: Cell | MergedCell) {
 function text(text: string | Cell | MergedCell | Fn): NodeReturnType {
   if (typeof text === "string") {
     return def($text(text));
-  } else if (tags.has(text as AnyCell)) {
+  } else if (text !== null && (text as AnyCell)[isTag]) {
     return def(cellToText(text as AnyCell));
   } else if (typeof text === "function") {
-    const maybeFormula = formula(text);
+    const maybeFormula = formula(text, 'textNode');
     if (maybeFormula.isConst) {
       try {
         return def($text(String(maybeFormula.value)));

@@ -4,6 +4,7 @@ import {
   tagsToRevalidate,
   executeTag,
   relatedTags,
+  relatedTagsForCell,
 } from "@/utils/reactive";
 
 let revalidateScheduled = false;
@@ -30,14 +31,14 @@ export function scheduleRevalidate() {
 export async function syncDom() {
   const sharedTags = new Set<MergedCell>();
   setIsRendering(true);
-  for (const tag of tagsToRevalidate) {
-    await executeTag(tag);
+  for (const cell of tagsToRevalidate) {
+    await executeTag(cell);
     // we always have related tags
-    const subTags = relatedTags.get(tag)!;
+    const subTags = relatedTagsForCell(cell);
     subTags.forEach((tag) => {
       sharedTags.add(tag);
     });
-    subTags.clear();
+    relatedTags.delete(cell);
   }
   tagsToRevalidate.clear();
   for (const tag of sharedTags) {

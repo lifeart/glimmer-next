@@ -16,7 +16,13 @@ export const tagsToRevalidate: Set<Cell> = new Set();
 // List of derived tags for each cell
 export const relatedTags: WeakMap<Cell, Set<MergedCell>> = new WeakMap();
 
-export const tags: WeakSet<Cell | MergedCell> = new WeakSet();
+export const isTag = Symbol("isTag");
+
+window["getVM"] = () => ({
+  relatedTags, tagsToRevalidate, opsForTag
+})
+
+
 // console.info({
 //   opsForTag,
 //   tagsToRevalidate,
@@ -47,12 +53,12 @@ export class Cell<T extends unknown = unknown> {
     return this.value;
   }
   _debugName?: string | undefined;
+  [isTag] = true;
   constructor(value: T, debugName?: string) {
     this._value = value;
     this._debugName = debugName;
-    opsForTag.set(this, []);
-    tags.add(this);
-    relatedTags.set(this, new Set());
+    // opsForTag.set(this, []);
+    // relatedTags.set(this, new Set());
   }
   get value() {
     if (currentTracker !== null) {
@@ -78,12 +84,25 @@ export function listDependentCells(cells: Array<AnyCell>, cell: MergedCell) {
   return msg.join(" ");
 }
 
+export function opsFor(cell: AnyCell) {
+  if (!opsForTag.has(cell)) {
+    opsForTag.set(cell, []);
+  }
+  return opsForTag.get(cell)!;
+}
+
+export function relatedTagsForCell(cell: Cell) {
+  if (!relatedTags.has(cell)) {
+    relatedTags.set(cell, new Set());
+  }
+  return relatedTags.get(cell)!;
+}
+
 function bindAllCellsToTag(cells: Set<Cell>, tag: MergedCell) {
   cells.forEach((cell) => {
-    // we have related tags created in the constructor
-    relatedTags.get(cell)!.add(tag);
+    const tags = relatedTagsForCell(cell);
+    tags.add(tag);
   });
-  // console.info(listDependentCells(Array.from(cells), tag));
 }
 
 // "derived" cell, it's value is calculated from other cells, and it's value can't be updated
@@ -96,15 +115,22 @@ export class MergedCell {
     return this.value;
   }
   _debugName?: string | undefined;
+  relatedCells: Set<Cell> | null = null;
+  [isTag] = true;
   constructor(fn: () => unknown, debugName?: string) {
     this.fn = fn;
     this._debugName = debugName;
     opsForTag.set(this, []);
-    tags.add(this);
   }
   destroy() {
     this.isDestroyed = true;
-    opsForTag.set(this, []);
+    opsForTag.delete(this);
+    if (this.relatedCells !== null) {
+      this.relatedCells.forEach((cell) => {
+        const tags = relatedTagsForCell(cell);
+        tags.delete(this);
+      });
+    }
   }
   get value() {
     if (this.isDestroyed) {
@@ -121,6 +147,7 @@ export class MergedCell {
         } else {
           this.isConst = true;
         }
+        this.relatedCells = currentTracker;
         currentTracker = null;
       }
     } else {
@@ -136,7 +163,7 @@ export type tagOp = (...values: unknown[]) => Promise<void> | void;
 export async function executeTag(tag: Cell | MergedCell) {
   let opcode: null | tagOp = null;
   // we always have ops for a tag
-  const ops = opsForTag.get(tag)!;
+  const ops = opsFor(tag)!;
   try {
     const value = tag.value;
     for (const op of ops) {

@@ -22,7 +22,7 @@ export class Row extends Component<RowArgs> {
   }
   className = formula(() => {
     return this.args.item.id === this.args.selectedCell.value ? "danger" : "";
-  });
+  }, 'row.className');
   onClick = () => {
     if (this.args.selectedCell.value === this.id) {
       this.args.selectedCell.value = 0;

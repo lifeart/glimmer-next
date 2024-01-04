@@ -1,4 +1,4 @@
-import { opsForTag, type AnyCell, type tagOp, asyncOpcodes, setIsRendering, isRendering, formula } from './reactive';
+import { opsForTag, type AnyCell, type tagOp, asyncOpcodes, setIsRendering, isRendering, formula, opsFor } from './reactive';
 
 type maybeDestructor = undefined | (() => void);
 type maybePromise = undefined | Promise<void>;
@@ -22,7 +22,7 @@ export function effect(cb: () => void): () => void {
     runEffectDestructor(destructor);
     destructor = undefined;
     return sourceTag.value;
-  });
+  }, 'effect');
   const destroyOpcode = bindUpdatingOpcode(tag, (value: unknown) => {
     if (import.meta.env.DEV) {
       if (value instanceof Promise) {
@@ -50,7 +50,7 @@ export function effect(cb: () => void): () => void {
 // this function creates opcode for a tag, it's called when we need to update DOM for a specific tag
 export function bindUpdatingOpcode(tag: AnyCell, op: tagOp) {
   // we set initial ops in the constructor
-  const ops = opsForTag.get(tag)!;
+  const ops = opsFor(tag)!;
   // apply the op to the current value
   if (isRendering()) {
     const value = op(tag.value) as unknown as void | Promise<void>;
@@ -69,10 +69,16 @@ export function bindUpdatingOpcode(tag: AnyCell, op: tagOp) {
   }
   ops.push(op);
   return () => {
-    // console.info(`Removing Updating Opcode for ${tag._debugName}`);
+    // console.info(`Removing Updating Opcode for ${tag._debugName}`, tag);
     const index = ops.indexOf(op);
     if (index > -1) {
       ops.splice(index, 1);
+    }
+    if (ops.length === 0) {
+      opsForTag.delete(tag);
+      if ('destroy' in tag) {
+        tag.destroy();
+      }
     }
   };
 }
