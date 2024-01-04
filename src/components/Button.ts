@@ -12,7 +12,7 @@ export function Button({
   scope({ onClick, text, id });
   return hbs`
         <button id={{id}} class="btn" ...attributes {{on 'click' onClick}}>
-            {{yield text to="slot"}}
+            {{yield to="slot"}}
         </button>
     `;
 }

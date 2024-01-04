@@ -265,6 +265,10 @@ function slot(name: string, params: () => unknown[], $slot: Slots) {
           elements.map((el) => {
             if (typeof el === "string" || typeof el === "number") {
               return $text(String(el));
+            } else if (typeof el === 'function') {
+              // here likely el is as slot constructor
+              // @ts-expect-error function signature
+              return el();
             } else {
               return el;
             }
@@ -290,6 +294,10 @@ function slot(name: string, params: () => unknown[], $slot: Slots) {
     elements.map((el) => {
       if (typeof el === "string" || typeof el === "number") {
         return $text(String(el));
+      } else if (typeof el === 'function') {
+        // here likely el is as slot constructor
+        // @ts-expect-error function signature
+        return el();
       } else {
         return el;
       }

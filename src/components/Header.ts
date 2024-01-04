@@ -30,12 +30,36 @@ export function Header({
             </div>
             <div class="col-md-6">
                 <div class="row">
-                    <ButtonWrapper class="btn-primary btn-block" type="button" @onClick={{run}} @text="Create 1 000 items" @id="run" />
-                    <ButtonWrapper class="btn-primary btn-block" type="button" @onClick={{runlots}} @text="Create 5 000 items" @id="runlots" />
-                    <ButtonWrapper class="btn-primary btn-block" type="button" @onClick={{add}} @text="Append 1 000 rows" @id="add" />
-                    <ButtonWrapper class="btn-primary btn-block" type="button" @onClick={{update}} @text="Update every 10th row" @id="update" />
-                    <ButtonWrapper class="btn-primary btn-block" type="button" @onClick={{clear}} @text="Clear" @id="clear" />
-                    <ButtonWrapper class="btn-primary btn-block" type="button" @onClick={{swaprows}} @text="Swap rows" @id="swaprows" />
+                    <ButtonWrapper 
+                      class="btn-primary btn-block" 
+                      type="button" 
+                      @onClick={{run}}
+                      id="run">Create 1 000 items</ButtonWrapper>
+                    <ButtonWrapper 
+                      class="btn-primary btn-block" 
+                      type="button" 
+                      @onClick={{runlots}}
+                      id="runlots">Create 5 000 items</ButtonWrapper>
+                    <ButtonWrapper 
+                      class="btn-primary btn-block" 
+                      type="button" 
+                      @onClick={{add}} 
+                      id="add">Append 1 000 rows</ButtonWrapper>
+                    <ButtonWrapper 
+                      class="btn-primary btn-block" 
+                      type="button" 
+                      @onClick={{update}} 
+                      id="update">Update every 10th row</ButtonWrapper>
+                    <ButtonWrapper 
+                      class="btn-primary btn-block" 
+                      type="button" 
+                      @onClick={{clear}} 
+                      id="clear">Clear</ButtonWrapper>
+                    <ButtonWrapper 
+                      class="btn-primary btn-block" 
+                      type="button" 
+                      @onClick={{swaprows}} 
+                      id="swaprows">Swap rows</ButtonWrapper>
                 </div>
             </div>
         </div>
