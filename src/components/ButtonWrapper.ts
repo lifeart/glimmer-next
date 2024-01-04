@@ -1,4 +1,5 @@
 import { Button } from "@/components/Button";
+import { cell } from "@/utils/reactive";
 import { hbs, scope } from "@/utils/template";
 
 export function ButtonWrapper({
@@ -10,10 +11,10 @@ export function ButtonWrapper({
   text: string;
   id: string;
 }) {
-  scope({ Button, text, id, onClick });
+  scope({ Button, text, id, onClick, className });
   return hbs`
         <div class="col-sm-6 smallpad">
-            <Button @onClick={{onClick}} @text={{text}} @id={{id}} />
+            <Button @onClick={{onClick}} @text={{text}} class="btn-primary btn-block" type="button" @id={{id}} />
         </div>
     `;
 }

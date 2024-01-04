@@ -74,8 +74,10 @@ export class Component<T extends Props = Record<string, unknown>>
   nodes!: Node[];
   index!: number;
   slots!: Slots;
-  constructor(props: T) {
+  $fw: unknown;
+  constructor(props: T, fw: unknown) {
     this.args = props;
+    this.$fw = fw;
   }
   template!: ComponentReturnType;
 }

@@ -10,36 +10,27 @@ import { AnyCell, Cell, MergedCell, formula, tags } from "@/utils/reactive";
 import { bindUpdatingOpcode } from "@/utils/vm";
 import { ListComponent } from "@/utils/list";
 import { ifCondition } from "@/utils/if";
-import {
-  DestructorFn,
-  Destructors,
-  executeDestructors,
-} from "./destroyable";
+import { DestructorFn, Destructors, executeDestructors } from "./destroyable";
 
 type ModifierFn = (
   element: HTMLElement,
   ...args: unknown[]
 ) => void | DestructorFn;
 
+type Attr =
+  | MergedCell
+  | Cell
+  | string
+  | ((element: HTMLElement, attribute: string) => void);
+
 type Props = {
-  properties: [
-    string,
-    (
-      | MergedCell
-      | Cell
-      | string
-      | ((element: HTMLElement, attribute: string) => void)
-    )
-  ][];
-  attributes: [
-    string,
-    (
-      | MergedCell
-      | Cell
-      | string
-      | ((element: HTMLElement, attribute: string) => void)
-    )
-  ][];
+  fw: {
+    props: Array<[string, Attr]>;
+    attrs: Array<[string, Attr]>;
+    events: Array<[string, EventListener | ModifierFn]>;
+  };
+  properties: [string, Attr][];
+  attributes: [string, Attr][];
   events: [string, EventListener | ModifierFn][];
 };
 
@@ -53,7 +44,7 @@ function $prop(
   value: unknown,
   destructors: DestructorFn[]
 ) {
-  if (typeof value === 'function') {
+  if (typeof value === "function") {
     $attr(
       element,
       key,
@@ -79,7 +70,10 @@ function $attr(
   value: unknown,
   destructors: Destructors
 ) {
-  if (typeof value === 'function') {
+  if (key === "...attributes") {
+    return;
+  }
+  if (typeof value === "function") {
     $attr(
       element,
       key,
@@ -122,7 +116,7 @@ function addChild(
     element.appendChild(text);
   } else if (tags.has(child as AnyCell)) {
     element.appendChild(cellToText(child as AnyCell));
-  } else if (typeof child === 'function') {
+  } else if (typeof child === "function") {
     // looks like a component
     const componentProps:
       | ComponentReturnType
@@ -155,9 +149,18 @@ function _DOM(
 ): NodeReturnType {
   const element = document.createElement(tag);
   const destructors: Destructors = [];
-  const attributes = props.attributes || [];
-  const properties = props.properties || [];
-  const events = props.events || [];
+  const hasSplatAttrs = props.attributes.find(
+    (el) => el[0] === "...attributes"
+  );
+  const attributes = hasSplatAttrs
+    ? [...props.fw.attrs, ...props.attributes]
+    : props.attributes;
+  const properties = hasSplatAttrs
+    ? [...props.fw.props, ...props.properties]
+    : props.properties;
+  const events = hasSplatAttrs
+    ? [...props.fw.events, ...props.events]
+    : props.events;
   events.forEach(([eventName, fn]) => {
     if (eventName === "onCreated") {
       const destructor = (fn as ModifierFn)(element);
@@ -170,12 +173,38 @@ function _DOM(
       );
     }
   });
+  const seenKeys = new Set<string>();
   attributes.forEach(([key, value]) => {
+    if (seenKeys.has(key)) {
+      return;
+    }
+    seenKeys.add(key);
     $attr(element, key, value, destructors);
   });
+  const classNameModifiers: Attr[] = [];
   properties.forEach(([key, value]) => {
+    if (key === 'className') {
+      classNameModifiers.push(value);
+      return;
+    }
+    if (seenKeys.has(key)) {
+      return;
+    }
+    seenKeys.add(key);
     $prop(element, key, value, destructors);
   });
+  if (classNameModifiers.length > 0) {
+    const formulas = classNameModifiers.map((modifier) => {
+      if (typeof modifier === 'function') {
+        return formula(modifier as unknown as () => unknown);
+      } else {
+        return modifier;
+      }
+    });
+    $prop(element, 'className', formula(() => {
+      return formulas.join(' ');
+    }), destructors);
+  }
   children.forEach((child) => {
     addChild(element, child);
   });
@@ -259,7 +288,7 @@ function text(text: string | Cell | MergedCell | Fn): NodeReturnType {
     return def($text(text));
   } else if (tags.has(text as AnyCell)) {
     return def(cellToText(text as AnyCell));
-  } else if (typeof text === 'function') {
+  } else if (typeof text === "function") {
     const maybeFormula = formula(text);
     if (maybeFormula.isConst) {
       try {

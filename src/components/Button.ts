@@ -11,7 +11,7 @@ export function Button({
 }) {
   scope({ onClick, text, id });
   return hbs`
-        <button id={{id}} class="btn btn-primary btn-block" type="button" {{on 'click' onClick}}>
+        <button id={{id}} class="btn" ...attributes {{on 'click' onClick}}>
             {{text}}
         </button>
     `;

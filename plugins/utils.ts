@@ -66,7 +66,7 @@ export function serializeChildren(
     .map((child) => {
       if (typeof child === "string") {
         if (isPath(child)) {
-          return `${serializePath(child)}`;
+          return serializePath(child);
         }
         return `DOM.text('${child}')`;
       }
@@ -126,6 +126,13 @@ function serializeProp(
   }`;
 }
 
+function toObject(args: [string, string | number | boolean | null | undefined][]) {
+  return `{${args.map((attr) => serializeProp(attr)).join(", ")}}`;
+}
+function toArray(args: [string, string | number | boolean | null | undefined][]) {
+  return `[${args.map((attr) => serializeAttribute(attr[0], attr[1])).join(", ")}]`;
+}
+
 export function serializeNode(
   node: string | null | HBSNode | HBSControlExpression
 ): string | undefined | null {
@@ -148,64 +155,44 @@ export function serializeNode(
     }
 
     if (key === "@each") {
-      return `DOM.each(${arrayName}, (${paramNames.join(",")}) => {
-        return ${toChildArray(childs)};
-      }, ${eachKey ? escapeString(eachKey) : null})`;
+      return `DOM.each(${arrayName}, (${paramNames.join(",")}) => ${toChildArray(childs)}, ${eachKey ? escapeString(eachKey) : null})`;
     } else if (key === "@if") {
-      return `DOM.if(${arrayName}, () => {
-        return ${toChildArray(childs)};
-      }, () => {
-        return ${toChildArray(inverses)};
-      })`;
+      return `DOM.if(${arrayName}, () => ${toChildArray(childs)}, () => ${toChildArray(inverses)} )`;
     }
   } else if (
     typeof node === "object" &&
     node.tag &&
     node.tag.toLowerCase() !== node.tag
   ) {
-    // it's component function
+
+    const args = node.attributes.filter((attr) => {
+      return attr[0].startsWith('@');
+    });
+    const attrs = node.attributes.filter((attr) => {
+      return !attr[0].startsWith('@');
+    });
+    const props = node.properties;
+    const secondArg = `{attrs: ${toArray(attrs)}, props: ${toArray(props)}, events: ${toArray(node.events)}}`;
+
     if (node.selfClosing) {
-      return `DOM.c(new ${node.tag}({
-        ${node.attributes
-          .map((attr) => {
-            return serializeProp(attr);
-          })
-          .join(", ")}
-      }))`;
+      return `DOM.c(new ${node.tag}(${toObject(args)}, ${secondArg}))`;
     } else {
       let slotChildren = serializeChildren(node.children);
-      return `DOM.withSlots(DOM.c(new ${node.tag}({
-        ${node.attributes
-          .map((attr) => {
-            return serializeProp(attr);
-          })
-          .join(", ")}
-      }), { default: (${node.blockParams.join(",")}) => ${
+      return `DOM.withSlots(DOM.c(new ${node.tag}(${toObject(node.attributes)}, ${secondArg}), { default: (${node.blockParams.join(",")}) => ${
         slotChildren !== "null" ? `[${slotChildren}]` : "[]"
       } }))`;
     }
   } else if (typeof node === "object" && node.tag) {
     return `DOM('${node.tag}', {
-      events: [${node.events
-        .map((attr) => {
-          return serializeAttribute(attr[0], attr[1]);
-        })
-        .join(", ")}],
-      properties: [${node.properties
-        .map((attr) => {
-          return serializeAttribute(attr[0], attr[1]);
-        })
-        .join(", ")}], 
-      attributes: [${node.attributes
-        .map((attr) => {
-          return serializeAttribute(attr[0], attr[1]);
-        })
-        .join(", ")}]
+      events: ${toArray(node.events)},
+      properties: ${toArray(node.properties)}, 
+      attributes: ${toArray(node.attributes)},
+      fw: $fw,
     }, ${serializeChildren(node.children)} )`;
   } else {
     if (typeof node === "string") {
       if (isPath(node)) {
-        return `DOM.text(` + serializePath(node) + `)`;
+        return serializePath(node);
       } else {
         return `DOM.text(\`${node}\`)`;
       }
