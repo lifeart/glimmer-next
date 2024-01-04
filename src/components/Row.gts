@@ -20,15 +20,20 @@ export class Row extends Component<RowArgs> {
   get id() {
     return this.args.item.id;
   }
+  get selected() {
+    return this.args.selectedCell.value;
+  }
+  set selected(value: number) {
+    this.args.selectedCell.value = value;
+  }
+  get isSelected() {
+    return this.selected === this.id;
+  }
   className = formula(() => {
-    return this.args.item.id === this.args.selectedCell.value ? "danger" : "";
+    return this.isSelected ? "danger" : "";
   }, 'row.className');
   onClick = () => {
-    if (this.args.selectedCell.value === this.id) {
-      this.args.selectedCell.value = 0;
-    } else {
-      this.args.selectedCell.value = this.id;
-    }
+    this.selected = this.isSelected ? 0 : this.id;
   };
   onClickRemove = (e: Event) => {
     if (e.isTrusted) {
@@ -70,17 +75,17 @@ export class Row extends Component<RowArgs> {
     return result as unknown as ModifierReturn;
   }
   <template>
-  <tr class={{this.className}} {{this.modifier}}>
-        <td class="col-md-1">{{this.id}}</td>
-        <td class="col-md-4">
-            <a {{on "click" this.onClick}}  data-test-select>{{this.labelCell}}</a>
-        </td>
-        <td class="col-md-1">
-            <a {{on "click" this.onClickRemove}} data-test-remove>
-                <RemoveIcon />
-            </a>
-        </td>
-        <td class="col-md-6"></td>
+    <tr class={{this.className}} {{this.modifier}}>
+      <td class="col-md-1">{{this.id}}</td>
+      <td class="col-md-4">
+        <a {{on "click" this.onClick}}  data-test-select>{{this.labelCell}}</a>
+      </td>
+      <td class="col-md-1">
+        <a {{on "click" this.onClickRemove}} data-test-remove>
+          <RemoveIcon />
+        </a>
+      </td>
+      <td class="col-md-6"></td>
     </tr>
   </template>
 }
