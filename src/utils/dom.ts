@@ -24,7 +24,7 @@ type Attr =
   | ((element: HTMLElement, attribute: string) => void);
 
 type Props = {
-  fw: {
+  fw?: {
     props: Array<[string, Attr]>;
     attrs: Array<[string, Attr]>;
     events: Array<[string, EventListener | ModifierFn]>;
@@ -149,17 +149,17 @@ function _DOM(
 ): NodeReturnType {
   const element = document.createElement(tag);
   const destructors: Destructors = [];
-  const hasSplatAttrs = props.attributes.find(
-    (el) => el[0] === "...attributes"
-  );
+  const hasSplatAttrs =
+    props.attributes.find((el) => el[0] === "...attributes") &&
+    typeof props.fw !== undefined;
   const attributes = hasSplatAttrs
-    ? [...props.fw.attrs, ...props.attributes]
+    ? [...props.fw!.attrs, ...props.attributes]
     : props.attributes;
   const properties = hasSplatAttrs
-    ? [...props.fw.props, ...props.properties]
+    ? [...props.fw!.props, ...props.properties]
     : props.properties;
   const events = hasSplatAttrs
-    ? [...props.fw.events, ...props.events]
+    ? [...props.fw!.events, ...props.events]
     : props.events;
   events.forEach(([eventName, fn]) => {
     if (eventName === "onCreated") {
@@ -183,7 +183,7 @@ function _DOM(
   });
   const classNameModifiers: Attr[] = [];
   properties.forEach(([key, value]) => {
-    if (key === 'className') {
+    if (key === "className") {
       classNameModifiers.push(value);
       return;
     }
@@ -195,15 +195,20 @@ function _DOM(
   });
   if (classNameModifiers.length > 0) {
     const formulas = classNameModifiers.map((modifier) => {
-      if (typeof modifier === 'function') {
+      if (typeof modifier === "function") {
         return formula(modifier as unknown as () => unknown);
       } else {
         return modifier;
       }
     });
-    $prop(element, 'className', formula(() => {
-      return formulas.join(' ');
-    }), destructors);
+    $prop(
+      element,
+      "className",
+      formula(() => {
+        return formulas.join(" ");
+      }),
+      destructors
+    );
   }
   children.forEach((child) => {
     addChild(element, child);

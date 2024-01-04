@@ -30,12 +30,12 @@ export function Header({
             </div>
             <div class="col-md-6">
                 <div class="row">
-                    <ButtonWrapper @onClick={{run}} @text="Create 1 000 items" @id="run" />
-                    <ButtonWrapper @onClick={{runlots}} @text="Create 5 000 items" @id="runlots" />
-                    <ButtonWrapper @onClick={{add}} @text="Append 1 000 rows" @id="add" />
-                    <ButtonWrapper @onClick={{update}} @text="Update every 10th row" @id="update" />
-                    <ButtonWrapper @onClick={{clear}} @text="Clear" @id="clear" />
-                    <ButtonWrapper @onClick={{swaprows}} @text="Swap rows" @id="swaprows" />
+                    <ButtonWrapper class="btn-primary btn-block" type="button" @onClick={{run}} @text="Create 1 000 items" @id="run" />
+                    <ButtonWrapper class="btn-primary btn-block" type="button" @onClick={{runlots}} @text="Create 5 000 items" @id="runlots" />
+                    <ButtonWrapper class="btn-primary btn-block" type="button" @onClick={{add}} @text="Append 1 000 rows" @id="add" />
+                    <ButtonWrapper class="btn-primary btn-block" type="button" @onClick={{update}} @text="Update every 10th row" @id="update" />
+                    <ButtonWrapper class="btn-primary btn-block" type="button" @onClick={{clear}} @text="Clear" @id="clear" />
+                    <ButtonWrapper class="btn-primary btn-block" type="button" @onClick={{swaprows}} @text="Swap rows" @id="swaprows" />
                 </div>
             </div>
         </div>

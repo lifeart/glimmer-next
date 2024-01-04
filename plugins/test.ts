@@ -89,7 +89,7 @@ export function transform(source: string, fileName: string) {
     if (isTemplateTag) {
       result = `function () {
       const $slots = {};
-      const $fw = this.$fw || {attrs:[], props: [], events: []};
+      const $fw = this.$fw;
       const roots = [${results.join(", ")}];
       return $fin(roots, $slots, ${String(isNodeStable(results[0]))}, this);
     }`;
@@ -97,13 +97,13 @@ export function transform(source: string, fileName: string) {
       result = isClass
         ? `() => {
       const $slots = {};
-      const $fw = arguments[1] || {attrs:[], props: [], events: []};
+      const $fw = arguments[1];
       const roots = [${results.join(", ")}];
       return $fin(roots, $slots, ${String(isNodeStable(results[0]))}, this);
     }`
         : `(() => {
       const $slots = {};
-      const $fw = arguments[1] || {attrs:[], props: [], events: []};
+      const $fw = arguments[1];
       const roots = [${results.join(", ")}];
       return $fin(roots, $slots, ${String(isNodeStable(results[0]))}, this);
     })()`;

@@ -164,7 +164,9 @@ export function serializeNode(
     node.tag &&
     node.tag.toLowerCase() !== node.tag
   ) {
-
+    const hasSplatAttrs = node.attributes.find((attr) => {
+      return attr[0] === "...attributes";
+    });
     const args = node.attributes.filter((attr) => {
       return attr[0].startsWith('@');
     });
@@ -172,7 +174,7 @@ export function serializeNode(
       return !attr[0].startsWith('@');
     });
     const props = node.properties;
-    const secondArg = `{attrs: ${toArray(attrs)}, props: ${toArray(props)}, events: ${toArray(node.events)}}`;
+    const secondArg = hasSplatAttrs ?  `{attrs: [...$fw.attrs, ...${toArray(attrs)}], props: [...$fw.props, ...${toArray(props)}], events: [...$fw.events,...${toArray(node.events)}]}` : `{attrs: ${toArray(attrs)}, props: ${toArray(props)}, events: ${toArray(node.events)}}`;
 
     if (node.selfClosing) {
       return `DOM.c(new ${node.tag}(${toObject(args)}, ${secondArg}))`;
@@ -183,11 +185,14 @@ export function serializeNode(
       } }))`;
     }
   } else if (typeof node === "object" && node.tag) {
+    const hasSplatAttrs = node.attributes.find((attr) => {
+      return attr[0] === "...attributes";
+    });
     return `DOM('${node.tag}', {
       events: ${toArray(node.events)},
       properties: ${toArray(node.properties)}, 
-      attributes: ${toArray(node.attributes)},
-      fw: $fw,
+      attributes: ${toArray(node.attributes)}
+      ${hasSplatAttrs ? `, fw: $fw,` : ""}
     }, ${serializeChildren(node.children)} )`;
   } else {
     if (typeof node === "string") {
