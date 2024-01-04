@@ -56,9 +56,9 @@ export class Cell<T extends unknown = unknown> {
   [isTag] = true;
   constructor(value: T, debugName?: string) {
     this._value = value;
-    this._debugName = debugName;
-    // opsForTag.set(this, []);
-    // relatedTags.set(this, new Set());
+    if (import.meta.env.DEV) {
+      this._debugName = debugName;
+    }
   }
   get value() {
     if (currentTracker !== null) {
@@ -86,14 +86,18 @@ export function listDependentCells(cells: Array<AnyCell>, cell: MergedCell) {
 
 export function opsFor(cell: AnyCell) {
   if (!opsForTag.has(cell)) {
-    opsForTag.set(cell, []);
+    const ops: tagOp[] = [];
+    opsForTag.set(cell, ops);
+    return ops;
   }
   return opsForTag.get(cell)!;
 }
 
 export function relatedTagsForCell(cell: Cell) {
   if (!relatedTags.has(cell)) {
-    relatedTags.set(cell, new Set());
+    const tags = new Set<MergedCell>();
+    relatedTags.set(cell, tags);
+    return tags;
   }
   return relatedTags.get(cell)!;
 }
@@ -119,8 +123,9 @@ export class MergedCell {
   [isTag] = true;
   constructor(fn: () => unknown, debugName?: string) {
     this.fn = fn;
-    this._debugName = debugName;
-    opsForTag.set(this, []);
+    if (import.meta.env.DEV) {
+      this._debugName = debugName;
+    }
   }
   destroy() {
     this.isDestroyed = true;
