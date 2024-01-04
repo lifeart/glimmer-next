@@ -1,5 +1,5 @@
-export abstract class Application {
+export class Application {
     constructor(root: HTMLElement) {
-        
+
     }
 }

@@ -1,5 +1,5 @@
 import { Destructors } from "./destroyable";
-import type { TemplateContext, Context, Invoke, ComponentReturn, InvokeDirect, NamedArgs } from '@glint/template/-private/integration';
+import type { TemplateContext, Context, Invoke, ComponentReturn } from '@glint/template/-private/integration';
 
 export type ComponentRenderTarget =
   | HTMLElement
