@@ -1,13 +1,15 @@
-This is [sample](https://g-next.netlify.app/) `compilable` runtime for `glimmer-vm` experiment. [![Netlify Status](https://api.netlify.com/api/v1/badges/43af359b-56a7-4607-9e01-04ca3a545470/deploy-status)](https://app.netlify.com/sites/g-next/deploys)
+# gNext [![Netlify Status](https://api.netlify.com/api/v1/badges/43af359b-56a7-4607-9e01-04ca3a545470/deploy-status)](https://app.netlify.com/sites/g-next/deploys)
 
-Related issue:
-    https://github.com/glimmerjs/glimmer-vm/issues/1540
-
-Related PR:
-    https://github.com/glimmerjs/glimmer-vm/pull/1541
+`gNext` is a cutting-edge, compilable runtime environment designed as `glimmer-vm` experiment, showcasing the power and flexibility of modern web component development. This runtime is a live example of how Glimmer-VM can be used in real-world applications, providing developers with a practical and interactive experience. Explore our [sample](https://g-next.netlify.app/) at netlify.
 
 
-### Component sample
+## Quick Links
+* Related issue: [glimmer-vm/issues/1540](https://github.com/glimmerjs/glimmer-vm/issues/1540)
+* Related PR: [glimmer-vm/pull/1541](https://github.com/glimmerjs/glimmer-vm/pull/1541)
+    
+
+## Component sample
+Based on [template imports RFC](https://rfcs.emberjs.com/id/0779-first-class-component-templates/)
 
 ```gjs
 import { RemoveIcon } from "./RemoveIcon.gts";
@@ -66,11 +68,40 @@ export class Row extends Component<RowArgs> {
 
 ```
 
-### Notes
+## Key Features
 
-* every component is a function, it's running only once
-* basic `glint` support
-* all kind of slots supported (`{{yield}}`)
+### Simple and Expressive Component Model
+* <b>Component as Functions:</b> Every component in gNext is a function, executed only once for efficiency and better performance.
+* <b>Class based components:</b> Class based components are supported as well.
+* <b>Basic Glint Support:</b> Integration with Glint for improved TypeScript support and developer experience.
+* <b>Comprehensive Slot Support:</b> Full support for different kinds of slots, including {{yield}}, enhancing the flexibility in component composition.
+* <b>Modifiers and Helpers APIs:</b>
+Modifiers for element-specific logic.
+Helpers for reusable logic across components.
+
+### Reactive Primitives
+
+* <b>Mutable State with `cell<T>`:</b> Use cell<T> for creating reactive, mutable states. Updating and accessing cell values is straightforward and efficient.
+* <b>Derived State with `formula`:</b> Create derived states that automatically update when dependencies change, ensuring reactive and responsive UIs.
+* <b>Support for destructors:</b> Enables clean-up and resource management, preventing memory leaks.
+
+## Benefits and Use Cases
+
+<b>gNext</b> serves as a powerful tool for web developers looking to harness the capabilities of Glimmer-VM in a real-world setting. Its benefits and use cases include:
+
+* <b>Efficient DOM Rendering:</b> Experience fast and efficient DOM updates and rendering, crucial for high-performance web applications.
+* <b>Reactive State Management:</b> Manage component states reactively, ensuring UIs are always up-to-date with the underlying data.
+* <b>Enhanced Developer Experience:</b> Enjoy a seamless development experience with features like TypeScript support, comprehensive API documentation, and easy-to-understand examples.
+* <b>Flexible Component Composition:</b> Leverage advanced component composition techniques to build complex UIs with ease.
+* <b>Resource Management:</b> Efficiently manage resources with destructors, preventing common issues like memory leaks.
+
+<b>gNext</b> is not just a library; it's a gateway to building modern, efficient, and reactive web applications using Glimmer-VM. Whether you are building dynamic user interfaces, complex single-page applications, or just experimenting with new front-end technologies, gNext provides the tools and capabilities to bring your ideas to life.
+
+Explore <b>gNext</b> and elevate your web development experience!
+
+
+### Notes
+#
 * modifiers API: 
 ```js
 function modifier(element: Element, ...args: Args) {
