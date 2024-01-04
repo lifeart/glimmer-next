@@ -73,7 +73,7 @@ export class Row extends Component<RowArgs> {
 ### Notes
 
 * every component is a function, it's running only once
-* only default slot is supported for now (`{{yield}}`)
+* all kind of slots supported (`{{yield}}`)
 * modifiers API: 
 ```js
 function modifier(element: Element, ...args: Args) {
