@@ -15,7 +15,6 @@ export function Smile(this: object) {
   const destroyEffect = effect(() => {
     ticker++;
     let localTicker = ticker;
-    console.info(`smile is rendered with value: ${String(isVisible.value)}, ${localTicker}`);
     return () => {
       console.log(`destroying effect: ${localTicker}`);
     }
