@@ -12,6 +12,28 @@ export default defineConfig({
   plugins: [compiler()],
   build: {
     modulePreload: false,
+    target: 'esnext',
+    minify: 'terser',
+    rollupOptions: {
+      treeshake: 'recommended'
+    },
+    terserOptions: {
+      module: true,
+      compress: {
+        hoist_funs: true,
+        inline: 1,
+        passes: 3,
+        unsafe: true,
+        unsafe_symbols: true,
+      },
+      mangle: {
+        module: true,
+        toplevel: true,
+        properties: {
+          builtins: false,
+        }
+      }
+    }
   },
   resolve: {
     alias: {

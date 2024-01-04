@@ -25,6 +25,7 @@
     "@glint/environment-glimmerx": "^1.2.1",
     "@glint/template": "^1.2.1",
     "content-tag": "^1.2.2",
+    "terser": "^5.26.0",
     "ts-node": "^10.9.2"
   }
 }
