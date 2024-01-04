@@ -5,6 +5,8 @@ import {
   type ComponentReturnType,
   Slots,
   Component,
+  renderElement,
+  destroyElement,
 } from "@/utils/component";
 import { AnyCell, Cell, MergedCell, formula, tags } from "@/utils/reactive";
 import { bindUpdatingOpcode } from "@/utils/vm";
@@ -146,7 +148,7 @@ function _DOM(
 ): NodeReturnType {
   const element = document.createElement(tag);
   const destructors: Destructors = [];
-  const hasSplatAttrs = 'fw' in props;
+  const hasSplatAttrs = "fw" in props;
   const attributes = hasSplatAttrs
     ? [...props.fw!.attrs, ...props.attributes]
     : props.attributes;
@@ -244,11 +246,45 @@ function mergeComponents(
   });
   return {
     nodes,
+    slots: {},
     index: 0,
   };
 }
 
 function slot(name: string, params: () => unknown[], $slot: Slots) {
+  if (!(name in $slot)) {
+    const slotPlaceholder: NodeReturnType = def(document.createComment(""));
+    let isRendered = false;
+    Object.defineProperty($slot, name, {
+      set(value: Slots[string]) {
+        if (isRendered) {
+          throw new Error(`Slot ${name} is already rendered`);
+        }
+        const elements = value(...params());
+        const nodes = mergeComponents(
+          elements.map((el) => {
+            if (typeof el === "string" || typeof el === "number") {
+              return $text(String(el));
+            } else {
+              return el;
+            }
+          })
+        );
+
+        renderElement(
+          slotPlaceholder.node.parentNode!,
+          nodes,
+          slotPlaceholder.node
+        );
+        destroyElement(slotPlaceholder);
+        isRendered = true;
+      },
+      get() {
+        throw new Error("slot is not set");
+      },
+    });
+    return slotPlaceholder;
+  }
   const elements = $slot[name](...params());
   return mergeComponents(
     elements.map((el) => {

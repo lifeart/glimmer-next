@@ -13,7 +13,11 @@ export function ButtonWrapper({
   scope({ Button, text, id, onClick });
   return hbs`
         <div class="col-sm-6 smallpad">
-            <Button @onClick={{onClick}} @text={{text}} ...attributes @id={{id}} />
+            <Button @onClick={{onClick}} @text={{text}} ...attributes @id={{id}}>
+                <:slot as |texts|>
+                    {{texts}}
+                </:slot>
+            </Button>
         </div>
     `;
 }

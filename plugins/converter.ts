@@ -64,7 +64,11 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
         return null;
       }
       if (node.path.original === "yield") {
-        return `$:() => DOM.slot('default', () => [${node.params
+        let slotName = node.hash.pairs.find((p) => p.key === "to")?.value || 'default';
+        if (typeof slotName !== "string") {
+          slotName = ToJSType(slotName);
+        }
+        return `$:() => DOM.slot('${slotName}', () => [${node.params
           .map((p) => ToJSType(p))
           .join(",")}], $slots)`;
       }

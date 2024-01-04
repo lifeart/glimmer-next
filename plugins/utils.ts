@@ -202,12 +202,28 @@ export function serializeNode(
     if (node.selfClosing) {
       return `DOM.c(new ${node.tag}(${toObject(args)}, ${secondArg}))`;
     } else {
-      let slotChildren = serializeChildren(node.children);
-      return `DOM.withSlots(DOM.c(new ${node.tag}(${toObject(
-        node.attributes
-      )}, ${secondArg}), { default: (${node.blockParams.join(",")}) => ${
-        slotChildren !== "null" ? `[${slotChildren}]` : "[]"
-      } }))`;
+      const slots: HBSNode[] = node.children.filter((child) => {
+        if (typeof child === 'string') {
+          return false;
+        } else if ('isControl' in child) {
+          return false;
+        } else {
+          return child.tag.startsWith(':');
+        }
+      }) as HBSNode[];
+      if (slots.length === 0) {
+        slots.push(node);
+      }
+      const serializedSlots = slots.map((slot) => {
+        const slotChildren = serializeChildren(slot.children);
+        const slotName = slot.tag.startsWith(':') ? slot.tag.slice(1) : 'default';
+        return `${slotName}: (${slot.blockParams.join(",")}) => ${
+          slotChildren !== "null" ? `[${slotChildren}]` : "[]"
+        }`;
+      });
+      const fn = `new ${node.tag}(${toObject(node.attributes)}, ${secondArg})`;
+      const slotsObj = `{${serializedSlots.join(',')}}`;
+      return `DOM.withSlots(DOM.c(${fn}), ${slotsObj})`;
     }
   } else if (typeof node === "object" && node.tag) {
     const hasSplatAttrs = node.attributes.find((attr) => {
