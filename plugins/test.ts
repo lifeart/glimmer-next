@@ -23,7 +23,7 @@ export function transform(source: string, fileName: string) {
 
   const babelResult = transformSync(rawTxt, {
     plugins: [processTemplate(hbsToProcess)],
-    filename: fileName,
+    filename: fileName.replace('.gts', '.ts').replace('.gjs', '.js'),
     presets: ["@babel/preset-typescript"],
   });
 
