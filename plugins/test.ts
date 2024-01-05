@@ -16,7 +16,7 @@ function isNodeStable(node: string) {
   );
 }
 
-export function transform(source: string, fileName: string) {
+export function transform(source: string, fileName: string, mode: 'development' | 'production') {
   const programs: Array<HBSNode | HBSControlExpression>[] = [];
   const seenNodes: Set<ASTv1.Node> = new Set();
   const rawTxt: string = source;
@@ -24,7 +24,7 @@ export function transform(source: string, fileName: string) {
   const programResults: string[] = [];
 
   const babelResult = transformSync(rawTxt, {
-    plugins: [processTemplate(hbsToProcess)],
+    plugins: [processTemplate(hbsToProcess, mode)],
     filename: fileName.replace(".gts", ".ts").replace(".gjs", ".js"),
     presets: [["@babel/preset-typescript", { allExtensions: true, onlyRemoveTypeImports: true }]],
   });

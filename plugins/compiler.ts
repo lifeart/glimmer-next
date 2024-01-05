@@ -3,7 +3,7 @@ import { Preprocessor } from "content-tag";
 import { transform } from "./test";
 const p = new Preprocessor();
 
-export function compiler(): Plugin {
+export function compiler(mode: string): Plugin {
   return {
     enforce: "pre",
     name: "glimmer-next",
@@ -14,7 +14,7 @@ export function compiler(): Plugin {
           .process(code, file)
           .split("static{")
           .join("$static() {");
-        return transform(intermediate, file);
+        return transform(intermediate, file, mode as 'development' | 'production');
       }
       if (!code.includes("@/utils/template")) {
         return;
@@ -22,7 +22,7 @@ export function compiler(): Plugin {
       let result: string | undefined = undefined;
       if (ext === "ts" || ext === "js") {
         const source = code;
-        const result = transform(source, file);
+        const result = transform(source, file, mode as 'development' | 'production');
         return result;
       }
       return result;

@@ -9,8 +9,8 @@ const self = import.meta.url;
 
 const currentPath = path.dirname(fileURLToPath(self));
 
-export default defineConfig({
-  plugins: [compiler()],
+export default defineConfig(({ mode }) => ({
+  plugins: [compiler(mode)],
   define: {
     'IS_GLIMMER_COMPAT_MODE': flags.IS_GLIMMER_COMPAT_MODE,
   },
@@ -44,5 +44,4 @@ export default defineConfig({
       "@/components": path.join(currentPath, "src", "components"),
       "@/utils": path.join(currentPath, "src", "utils"),
     },
-  },
-});
+  }}));

@@ -1,10 +1,9 @@
 import type Babel from "@babel/core";
 import { SYMBOLS } from "./symbols";
 
-export function processTemplate(hbsToProcess: string[]) {
+export function processTemplate(hbsToProcess: string[], mode: 'development' | 'production') {
   return function babelPlugin(babel: { types: typeof Babel.types }) {
     const { types: t } = babel;
-
     return {
       name: "ast-transform", // not required
       visitor: {
@@ -33,6 +32,13 @@ export function processTemplate(hbsToProcess: string[]) {
                   path.node.arguments[0]
                 )
               );
+            } else if (path.node.callee.name === "formula") {
+              if (mode === 'production') {
+                // remove last argument if two arguments
+                if (path.node.arguments.length === 2) {
+                  path.node.arguments.pop();
+                }
+              }
             }
           }
         },
