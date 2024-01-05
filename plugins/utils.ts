@@ -191,12 +191,12 @@ export function serializeNode(
     });
     const props = node.properties;
     const secondArg = hasSplatAttrs
-      ? `{attrs: [...$fw.attrs, ...${toArray(
+      ? `{props: [...$fw.props, ...${toArray(
+        props
+      )}], attrs: [...$fw.attrs, ...${toArray(
           attrs
-        )}], props: [...$fw.props, ...${toArray(
-          props
         )}], events: [...$fw.events,...${toArray(node.events)}]}`
-      : `{attrs: ${toArray(attrs)}, props: ${toArray(props)}, events: ${toArray(
+      : `{props: ${toArray(props)}, attrs: ${toArray(attrs)},  events: ${toArray(
           node.events
         )}}`;
 
