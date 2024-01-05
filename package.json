@@ -11,12 +11,6 @@
     "fix": "prettier --write ."
   },
   "devDependencies": {
-    "@types/babel__core": "^7.20.5",
-    "prettier": "^3.1.1",
-    "prettier-plugin-ember-template-tag": "^2.0.0",
-    "typescript": "^5.2.2",
-    "vite": "^5.0.8",
-    "vitest": "^1.1.1",
     "@babel/core": "^7.23.6",
     "@babel/preset-typescript": "^7.23.3",
     "@glimmer/syntax": "^0.87.1",
@@ -24,8 +18,17 @@
     "@glint/environment-ember-template-imports": "^1.2.1",
     "@glint/environment-glimmerx": "^1.2.1",
     "@glint/template": "^1.2.1",
+    "@types/babel__core": "^7.20.5",
     "content-tag": "^1.2.2",
-    "terser": "^5.26.0"
+    "prettier": "^3.1.1",
+    "prettier-plugin-ember-template-tag": "^2.0.0",
+    "terser": "^5.26.0",
+    "typescript": "^5.2.2",
+    "vite": "^5.0.8",
+    "vitest": "^1.1.1",
+    "vite-plugin-circular-dependency": "^0.2.1"
   },
-  "dependencies": {}
+  "dependencies": {
+    
+  }
 }
