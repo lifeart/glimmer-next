@@ -34,7 +34,7 @@ export function effect(cb: () => void): () => void {
     destructor = undefined;
     return sourceTag.value;
   }, 'effect');
-  const destroyOpcode = bindUpdatingOpcode(tag, (value: unknown) => {
+  const destroyOpcode = opcodeFor(tag, (value: unknown) => {
     if (import.meta.env.DEV) {
       if (value instanceof Promise) {
         throw new Error(`Effect can't be a promise: ${cb.toString()}`);
@@ -58,26 +58,29 @@ export function effect(cb: () => void): () => void {
   };
 }
 
-// this function creates opcode for a tag, it's called when we need to update DOM for a specific tag
-export function bindUpdatingOpcode(tag: AnyCell, op: tagOp) {
-  // we set initial ops in the constructor
+function trackingTransaction(cb: () => void) {
+    if (isRendering()) {
+        cb();
+    } else {
+        setIsRendering(true);
+        cb();
+        setIsRendering(false);
+    }
+}
+
+export function evaluateOpcode(tag: AnyCell, op: tagOp) {
+    trackingTransaction(() => {
+        const value = op(tag.value) as unknown as void | Promise<void>;
+        if (value !== undefined) {
+          // console.info(`Adding Async Updating Opcode for ${tag._debugName}`);
+          asyncOpcodes.add(op);
+        }
+    });
+}
+
+export function opcodeFor(tag: AnyCell, op: tagOp) {
+  evaluateOpcode(tag, op);
   const ops = opsFor(tag)!;
-  // apply the op to the current value
-  if (isRendering()) {
-    const value = op(tag.value) as unknown as void | Promise<void>;
-    if (value !== undefined) {
-      // console.info(`Adding Async Updating Opcode for ${tag._debugName}`);
-      asyncOpcodes.add(op);
-    }
-  } else {
-    setIsRendering(true);
-    const value = op(tag.value) as unknown as void | Promise<void>;
-    if (value !== undefined) {
-      // console.info(`Adding Async Updating Opcode for ${tag._debugName}`);
-      asyncOpcodes.add(op);
-    }
-    setIsRendering(false);
-  }
   ops.push(op);
   return () => {
     // console.info(`Removing Updating Opcode for ${tag._debugName}`, tag);

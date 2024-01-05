@@ -7,7 +7,7 @@ import {
 } from '@/utils/component';
 import { api } from '@/utils/dom-api';
 import { Cell, isTag } from '@/utils/reactive';
-import { bindUpdatingOpcode } from '@/utils/vm';
+import { opcodeFor } from '@/utils/vm';
 
 function setIndex(item: GenericReturnType, index: number) {
   item.forEach((item) => {
@@ -73,7 +73,7 @@ export class ListComponent<T extends { id: number }> {
 
     addDestructors(
       [
-        bindUpdatingOpcode(tag, async () => {
+        opcodeFor(tag, async () => {
           await this.syncList(tag.value);
         }),
       ],

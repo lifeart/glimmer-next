@@ -9,7 +9,7 @@ import {
   destroyElement,
 } from '@/utils/component';
 import { AnyCell, Cell, MergedCell, formula, isTag } from '@/utils/reactive';
-import { bindUpdatingOpcode } from '@/utils/vm';
+import { evaluateOpcode, opcodeFor } from '@/utils/vm';
 import { ListComponent } from '@/utils/list';
 import { ifCondition } from '@/utils/if';
 import { DestructorFn, Destructors, executeDestructors } from './destroyable';
@@ -51,7 +51,7 @@ function $prop(
     );
   } else if (value !== null && (value as AnyCell)[isTag]) {
     destructors.push(
-      bindUpdatingOpcode(value as AnyCell, (value) => {
+      opcodeFor(value as AnyCell, (value) => {
         // @ts-expect-error types casting
         element[key] = value;
       }),
@@ -77,7 +77,7 @@ function $attr(
     );
   } else if (value !== null && (value as AnyCell)[isTag]) {
     destructors.push(
-      bindUpdatingOpcode(value as AnyCell, (value) => {
+      opcodeFor(value as AnyCell, (value) => {
         // @ts-expect-error type casting
         api.attr(element, key, value);
       }),
@@ -94,6 +94,7 @@ function addChild(
     | NodeReturnType
     | ComponentReturnType
     | string
+    | number
     | Cell
     | MergedCell
     | Function,
@@ -108,7 +109,7 @@ function addChild(
   } else if (typeof child === 'object' && 'node' in child) {
     api.append(element, child.node);
   } else if (typeof child === 'string' || typeof child === 'number') {
-    api.append(element, api.text(child));
+    api.append(element, api.text(child as string));
   } else if (child !== null && (child as AnyCell)[isTag]) {
     api.append(element, cellToText(child as AnyCell));
   } else if (typeof child === 'function') {
@@ -119,52 +120,32 @@ function addChild(
     );
     let componentProps: ComponentReturnType | NodeReturnType | string | number =
       '';
-    const dest = bindUpdatingOpcode(f, (value) => {
+    evaluateOpcode(f, (value) => {
       componentProps = value as unknown as
         | ComponentReturnType
         | NodeReturnType
         | string
         | number;
     });
-    if (
-      componentProps !== null &&
-      (componentProps as unknown as AnyCell)[isTag]
-    ) {
-      return addChild(element, componentProps as unknown as AnyCell);
-    } else if (typeof componentProps === 'function') {
-      return addChild(
-        element,
-        formula(() => {
-          return child()();
-        }, `${element.tagName}.child.fn`) as unknown as AnyCell,
-      );
-    }
-    if (typeof componentProps !== 'object') {
-      if (f.isConst) {
-        const text = api.text(String(componentProps));
-        api.append(element, text);
-      } else {
+    if (f.isConst) {
+      f.destroy();
+      return addChild(element, componentProps);
+    } else {
+      if (typeof componentProps === 'string' || typeof componentProps === 'number') {
         const text = api.text('');
         addDestructors(
           [
-            bindUpdatingOpcode(f, (value) => {
+            opcodeFor(f, (value) => {
               api.textContent(text, String(value));
             }),
           ],
           text,
         );
         api.append(element, text);
+      } else {
+        throw new Error('invalid reactive type');
       }
-    } else if ('nodes' in componentProps) {
-      // @ts-expect-error never
-      componentProps.nodes.forEach((node) => {
-        api.append(element, node);
-      });
-    } else {
-      // @ts-expect-error never
-      api.append(element, componentProps.node);
     }
-    dest();
   }
 }
 
@@ -198,24 +179,32 @@ function _DOM(
     // textContent is a special case
     if (eventName === EVENT_TYPE.TEXT_CONTENT) {
       if (typeof fn === 'function') {
-        destructors.push(
-          bindUpdatingOpcode(
-            formula(() => {
-              // @ts-expect-error function signature
-              const v = fn();
-              if (typeof v === 'string' || typeof v === 'number') {
-                return v;
-              } else if (v !== null && (v as unknown as AnyCell)[isTag]) {
-                return (v as unknown as AnyCell).value;
-              } else {
-                throw new Error('invalid textContent value');
-              }
-            }, `${element.tagName}.textContent`),
-            (value) => {
-              api.textContent(element, String(value));
-            },
-          ),
-        );
+        let realValue: unknown;
+        const checkCell = formula(fn, `${element.tagName}.textContent`);
+        evaluateOpcode(checkCell, (value) => {
+          realValue = value;
+        });
+        if (checkCell.isConst && typeof realValue === 'string' || typeof realValue === 'number') {
+          checkCell.destroy();
+          api.textContent(element, String(realValue));
+        } else {
+          if (realValue !== null && (realValue as unknown as AnyCell)[isTag]) {
+            checkCell.destroy();
+            destructors.push(
+              opcodeFor(realValue as unknown as AnyCell, (value) => {
+                api.textContent(element, String(value));
+              }),
+            );
+          } else if (typeof realValue === 'string' || typeof realValue === 'number') {
+            destructors.push(
+              opcodeFor(checkCell, (value) => {
+                api.textContent(element, String(value));
+              }),
+            );
+          } else {
+            throw new Error('invalid textContent value');
+          }
+        }
       } else {
         api.textContent(element, fn);
       }
@@ -392,7 +381,7 @@ function cellToText(cell: Cell | MergedCell) {
   const textNode = api.text('');
   addDestructors(
     [
-      bindUpdatingOpcode(cell, (value) => {
+      opcodeFor(cell, (value) => {
         api.textContent(textNode, String(value ?? ''));
       }),
     ],

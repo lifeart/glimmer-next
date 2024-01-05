@@ -133,9 +133,10 @@ export class MergedCell {
     opsForTag.delete(this);
     if (this.relatedCells !== null) {
       this.relatedCells.forEach((cell) => {
-        const tags = relatedTagsForCell(cell);
-        tags.delete(this);
+        // should be save, because at this point we at the end of the render cycle
+        relatedTags.delete(cell);
       });
+      this.relatedCells.clear();
     }
   }
   get value() {
@@ -169,6 +170,9 @@ export type tagOp = (...values: unknown[]) => Promise<void> | void;
 export async function executeTag(tag: Cell | MergedCell) {
   let opcode: null | tagOp = null;
   // we always have ops for a tag
+  if (!opsForTag.has(tag)) {
+    return;
+  }
   const ops = opsFor(tag)!;
   try {
     const value = tag.value;

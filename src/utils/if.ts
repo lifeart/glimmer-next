@@ -6,7 +6,7 @@ import {
   runDestructors,
 } from '@/utils/component';
 import { formula, type Cell, type MergedCell } from '@/utils/reactive';
-import { bindUpdatingOpcode } from '@/utils/vm';
+import { opcodeFor } from '@/utils/vm';
 import { addDestructors } from './component';
 import { api } from '@/utils/dom-api';
 
@@ -46,7 +46,7 @@ export function ifCondition(
   addDestructors(
     [
       runExistingDestructors,
-      bindUpdatingOpcode(cell, (value) => {
+      opcodeFor(cell, (value) => {
         if (throwedError) {
           Promise.resolve().then(() => {
             const newPlaceholder = api.comment();
