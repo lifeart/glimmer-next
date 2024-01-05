@@ -7,7 +7,7 @@ import {
   resolvedChildren,
   serializePath,
 } from "./utils";
-import { SYMBOLS } from "./symbols";
+import { EVENT_TYPE, SYMBOLS } from "./symbols";
 
 export function convert(seenNodes: Set<ASTv1.Node>) {
   function ToJSType(node: ASTv1.Node, wrap = true): any {
@@ -221,7 +221,7 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
             }
           } else {
             return [
-              "onCreated",
+              EVENT_TYPE.ON_CREATED,
               `$:($n) => $:${mod.path.original}($n, ${mod.params
                 .map((p) => ToJSType(p))
                 .join(",")})`,
@@ -235,7 +235,7 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
       const v = children[0];
       if (!v.includes(SYMBOLS.SLOT)) {
         node.children = [];
-        node.events.push(['textContent', v]);
+        node.events.push([EVENT_TYPE.TEXT_CONTENT, v]);
       }
     }
     return node as unknown as HBSNode;

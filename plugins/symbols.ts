@@ -9,3 +9,8 @@ export const SYMBOLS = {
     COMPONENT: "$_c",
     WITH_SLOTS: "$_withSlots",
 }
+
+export const EVENT_TYPE = {
+    ON_CREATED: '0',
+    TEXT_CONTENT: '1',
+}

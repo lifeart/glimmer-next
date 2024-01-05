@@ -157,6 +157,12 @@ function addChild(
     dest();
   }
 }
+
+const EVENT_TYPE = {
+  ON_CREATED: '0',
+  TEXT_CONTENT: '1',
+}
+
 function _DOM(
   tag: string,
   tagProps: Props,
@@ -185,7 +191,8 @@ function _DOM(
     ? [...tagProps[3]!.events, ..._events]
     : _events;
   events.forEach(([eventName, fn]) => {
-    if (eventName === "textContent") {
+    // textContent is a special case
+    if (eventName === EVENT_TYPE.TEXT_CONTENT) {
       if (typeof fn === 'function') {
         destructors.push(
           bindUpdatingOpcode(formula(() => {
@@ -205,12 +212,14 @@ function _DOM(
       } else {
         api.textContent(element, fn);
       }
-    } else if (eventName === "onCreated") {
+      // modifier case
+    } else if (eventName === EVENT_TYPE.ON_CREATED) {
       const destructor = (fn as ModifierFn)(element);
       if (typeof destructor === "function") {
         destructors.push(destructor);
       }
     } else {
+      // event case (on modifier)
       destructors.push(
         addEventListener(element, eventName, fn as EventListener)
       );

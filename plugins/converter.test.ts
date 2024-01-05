@@ -4,6 +4,7 @@ import { preprocess } from "@glimmer/syntax";
 import { convert } from "./converter";
 import { ASTv1 } from "@glimmer/syntax";
 import { HBSControlExpression, HBSNode } from "./utils";
+import { EVENT_TYPE } from "./symbols";
 
 function $t<T extends ASTv1.Node>(tpl: string): T {
   const seenNodes: Set<ASTv1.Node> = new Set();
@@ -107,9 +108,7 @@ describe("convert function builder", () => {
       expect($t<ASTv1.ElementNode>(`<div> sd</div>`)).toEqual(
         $node({
           tag: "div",
-          events: [
-            ['textContent', ' sd']
-          ]
+          events: [[EVENT_TYPE.TEXT_CONTENT, " sd"]],
         })
       );
     });
@@ -181,7 +180,7 @@ describe("convert function builder", () => {
       expect($t<ASTv1.ElementNode>(`<div {{foo-bar}}></div>`)).toEqual(
         $node({
           tag: "div",
-          events: [["onCreated", "$:($n) => $:foo-bar($n, )"]],
+          events: [["0", "$:($n) => $:foo-bar($n, )"]],
         })
       );
     });
@@ -258,9 +257,7 @@ describe("convert function builder", () => {
         $node({
           tag: "div",
           hasStableChild: true,
-          events: [
-            ['textContent', 'foo']
-          ]
+          events: [[EVENT_TYPE.TEXT_CONTENT, "foo"]],
         })
       );
       expect($t<ASTv1.ElementNode>(`<div><p></p></div>`)).toEqual(
