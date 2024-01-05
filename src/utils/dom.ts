@@ -26,16 +26,15 @@ type Attr =
   | string
   | ((element: HTMLElement, attribute: string) => void);
 
-type Props = {
-  fw?: {
-    props: Array<[string, Attr]>;
-    attrs: Array<[string, Attr]>;
-    events: Array<[string, EventListener | ModifierFn]>;
-  };
-  properties: [string, Attr][];
-  attributes: [string, Attr][];
-  events: [string, EventListener | ModifierFn][];
+type TagAttr = [string, Attr];
+type TagProp = [string, Attr];
+type TagEvent = [string, EventListener | ModifierFn];
+type FwType = {
+  props: TagProp[];
+  attrs: TagAttr[];
+  events: TagEvent[];
 };
+type Props = [TagProp[], TagAttr[], TagEvent[], FwType?];
 
 function $prop(
   element: HTMLElement,
@@ -133,8 +132,8 @@ function addChild(
 }
 function _DOM(
   tag: string,
-  props: Props,
-  ...children: (
+  tagProps: Props,
+  children: (
     | NodeReturnType
     | ComponentReturnType
     | string
@@ -145,16 +144,19 @@ function _DOM(
 ): NodeReturnType {
   const element = api.element(tag);
   const destructors: Destructors = [];
-  const hasSplatAttrs = "fw" in props;
+  const props = tagProps[0];
+  const attrs = tagProps[1];
+  const _events = tagProps[2];
+  const hasSplatAttrs = tagProps.length === 4;
   const attributes = hasSplatAttrs
-    ? [...props.fw!.attrs, ...props.attributes]
-    : props.attributes;
+    ? [...tagProps[3]!.attrs, ...attrs]
+    : attrs;
   const properties = hasSplatAttrs
-    ? [...props.fw!.props, ...props.properties]
-    : props.properties;
+    ? [...tagProps[3]!.props, ...props]
+    : props;
   const events = hasSplatAttrs
-    ? [...props.fw!.events, ...props.events]
-    : props.events;
+    ? [...tagProps[3]!.events, ..._events]
+    : _events;
   events.forEach(([eventName, fn]) => {
     if (eventName === "onCreated") {
       const destructor = (fn as ModifierFn)(element);

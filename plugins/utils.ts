@@ -223,7 +223,7 @@ export function serializeNode(
           slotChildren !== "null" ? `[${slotChildren}]` : "[]"
         }`;
       });
-      const fn = `new ${node.tag}(${toObject(node.attributes)}, ${secondArg})`;
+      const fn = `new ${node.tag}(${toObject(args)}, ${secondArg})`;
       const slotsObj = `{${serializedSlots.join(',')}}`;
       // @todo - we could pass `hasStableChild` ans hasBlock / hasBlockParams to the DOM helper
       // including `has-block` helper
@@ -236,12 +236,12 @@ export function serializeNode(
     node.attributes = node.attributes.filter((attr) => {
       return attr[0] !== "...attributes";
     });
-    return `${SYMBOLS.TAG}('${node.tag}', {
-      events: ${toArray(node.events)},
-      properties: ${toArray(node.properties)}, 
-      attributes: ${toArray(node.attributes)}
-      ${hasSplatAttrs ? `, fw: $fw,` : ""}
-    }, ${serializeChildren(node.children)} )`;
+    return `${SYMBOLS.TAG}('${node.tag}', [
+      ${toArray(node.properties)}, 
+      ${toArray(node.attributes)},
+      ${toArray(node.events)},
+      ${hasSplatAttrs ? `$fw` : ''}
+    ], [${serializeChildren(node.children)}])`;
   } else {
     if (typeof node === "string") {
       if (isPath(node)) {
