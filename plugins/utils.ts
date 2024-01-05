@@ -23,6 +23,41 @@ export type HBSNode = {
   children: (string | HBSNode | HBSControlExpression)[];
 };
 
+const RESERVED_TAG_NAMES = [
+  'linearGradient',
+  'radialGradient',
+  'animateMotion',
+  'animateTransform',
+  'clipPath',
+  'feBlend',
+  'feColorMatrix',
+  'feComponentTransfer',
+  'feComposite',
+  'feConvolveMatrix',
+  'feDiffuseLighting',
+  'feDisplacementMap',
+  'feDistantLight',
+  'feDropShadow',
+  'feFlood',
+  'feFuncA',
+  'feFuncB',
+  'feFuncR',
+  'feFuncG',
+  'feGaussianBlur',
+  'feImage',
+  'feMerge',
+  'feMergeNode',
+  'feMorphology',
+  'feOffset',
+  'fePointLight',
+  'feSpecularLighting',
+  'feSpotLight',
+  'feTile',
+  'feTurbulence',
+  'foreignObject',
+  'glyphRef'
+]
+
 export function escapeString(str: string) {
   const lines = str.split('\n');
   if (lines.length === 1) {
@@ -190,7 +225,7 @@ export function serializeNode(
   } else if (
     typeof node === 'object' &&
     node.tag &&
-    node.tag.toLowerCase() !== node.tag
+    node.tag.toLowerCase() !== node.tag && !RESERVED_TAG_NAMES.includes(node.tag)
   ) {
     const hasSplatAttrs = node.attributes.find((attr) => {
       return attr[0] === '...attributes';
@@ -276,12 +311,15 @@ export function serializeNode(
     node.attributes = node.attributes.filter((attr) => {
       return attr[0] !== '...attributes';
     });
-    return `${SYMBOLS.TAG}('${node.tag}', [
+    const isSvg = node.tag === "svg";
+    const prefix = isSvg ? `${SYMBOLS.ENTER_SVG}(),` : "";
+    const postfix = isSvg ? `,${SYMBOLS.EXIT_SVG}()` : "";
+    return `${prefix}${SYMBOLS.TAG}('${node.tag}', [
       ${toArray(node.properties)}, 
       ${toArray(node.attributes)},
       ${toArray(node.events)},
       ${hasSplatAttrs ? `$fw` : ''}
-    ], [${serializeChildren(node.children)}])`;
+    ], [${serializeChildren(node.children)}])${postfix}`;
   } else {
     if (typeof node === 'string') {
       if (isPath(node)) {

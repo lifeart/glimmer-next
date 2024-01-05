@@ -5,6 +5,8 @@ import { renderComponent, runDestructors } from '@/utils/component';
 import { Header } from './Header.gts';
 import { Component } from '@/utils/component';
 import { Row } from './Row.gts';
+import { Icon } from './Icon.gts';
+
 export class Application extends Component {
   itemsCell = cell<Item[]>([], 'items');
   rootNode!: HTMLElement;
@@ -66,6 +68,7 @@ export class Application extends Component {
         @swaprows={{this.actions.swaprows}}
         @runlots={{this.actions.runlots}}
       />
+      <Icon />
       <table class='table table-hover table-striped test-data'>
         <tbody id='tbody'>
           {{#each this.itemsCell as |item|}}

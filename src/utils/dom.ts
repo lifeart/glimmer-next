@@ -15,6 +15,8 @@ import { ifCondition } from '@/utils/if';
 import { DestructorFn, Destructors, executeDestructors } from './destroyable';
 import { api } from '@/utils/dom-api';
 
+let svgContextOpened = false;
+
 type ModifierFn = (
   element: HTMLElement,
   ...args: unknown[]
@@ -172,7 +174,14 @@ const EVENT_TYPE = {
   ON_CREATED: '0',
   TEXT_CONTENT: '1',
 };
-
+export function $_enterSVG() {
+  svgContextOpened = true;
+  return def(document.createComment("svg-context-start"));
+}
+export function $_exitSVG() {
+  svgContextOpened = false;
+  return def(document.createComment("svg-context-start"));
+}
 function _DOM(
   tag: string,
   tagProps: Props,
@@ -185,7 +194,7 @@ function _DOM(
     | Function
   )[],
 ): NodeReturnType {
-  const element = api.element(tag);
+  const element = svgContextOpened ? api.svgElement(tag) : api.element(tag);
   const destructors: Destructors = [];
   const props = tagProps[0];
   const attrs = tagProps[1];
