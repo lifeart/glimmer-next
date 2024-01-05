@@ -1,4 +1,13 @@
-import { opsForTag, type AnyCell, type tagOp, asyncOpcodes, setIsRendering, isRendering, formula, opsFor } from './reactive';
+import {
+  opsForTag,
+  type AnyCell,
+  type tagOp,
+  asyncOpcodes,
+  setIsRendering,
+  isRendering,
+  formula,
+  opsFor,
+} from "./reactive";
 
 type maybeDestructor = undefined | (() => void);
 type maybePromise = undefined | Promise<void>;
@@ -8,28 +17,30 @@ function runEffectDestructor(destructor: maybeDestructor) {
     const result = destructor() as unknown as maybePromise;
     if (import.meta.env.DEV) {
       if (result && result instanceof Promise) {
-        throw new Error(`Effect destructor can't be a promise: ${destructor.toString()}`);
+        throw new Error(
+          `Effect destructor can't be a promise: ${destructor.toString()}`
+        );
       }
     }
   }
 }
 
 export function effect(cb: () => void): () => void {
-  const sourceTag = formula(cb); // we have binded tracking chain for tag
+  const sourceTag = formula(cb, "effect.internal"); // we have binded tracking chain for tag
   let destructor: maybeDestructor;
   let isDestroyCalled = false;
   const tag = formula(() => {
     runEffectDestructor(destructor);
     destructor = undefined;
     return sourceTag.value;
-  }, 'effect');
+  }, "effect");
   const destroyOpcode = bindUpdatingOpcode(tag, (value: unknown) => {
     if (import.meta.env.DEV) {
       if (value instanceof Promise) {
         throw new Error(`Effect can't be a promise: ${cb.toString()}`);
       }
     }
-    if (typeof value === 'function') {
+    if (typeof value === "function") {
       destructor = value as unknown as () => void;
     }
     // tag is computed here;
@@ -60,7 +71,7 @@ export function bindUpdatingOpcode(tag: AnyCell, op: tagOp) {
     }
   } else {
     setIsRendering(true);
-    const value = op(tag.value)  as unknown as void | Promise<void>;
+    const value = op(tag.value) as unknown as void | Promise<void>;
     if (value !== undefined) {
       // console.info(`Adding Async Updating Opcode for ${tag._debugName}`);
       asyncOpcodes.add(op);
@@ -76,7 +87,7 @@ export function bindUpdatingOpcode(tag: AnyCell, op: tagOp) {
     }
     if (ops.length === 0) {
       opsForTag.delete(tag);
-      if ('destroy' in tag) {
+      if ("destroy" in tag) {
         tag.destroy();
       }
     }
