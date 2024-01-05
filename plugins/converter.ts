@@ -1,4 +1,5 @@
 import type { ASTv1 } from '@glimmer/syntax';
+import { print, builders } from '@glimmer/syntax';
 import {
   HBSControlExpression,
   HBSNode,
@@ -175,7 +176,47 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
     return !propertyKeys.includes(name);
   }
 
+  function isAllChildNodesSimpleElements(element: ASTv1.ElementNode) {
+    return element.children.every((child) => {
+      if (child.type === 'ElementNode') {
+        return (
+          child.tag.charAt(0).toLowerCase() === child.tag.charAt(0)  &&
+          !child.tag.startsWith(':')
+        );
+      }
+      return true;
+    });
+  }
+
   function ElementToNode(element: ASTv1.ElementNode): HBSNode {
+    if (element.tag === 'svg' && isAllChildNodesSimpleElements(element)) {
+      element.children.forEach((child) => {
+        seenNodes.add(child);
+      });
+
+      const inner = print(builders.template(element.children));
+      element.children = [];
+      // console.log(print(element));
+      return {
+        tag: element.tag,
+        blockParams: [],
+        selfClosing: element.selfClosing,
+        hasStableChild: true,
+        attributes: element.attributes
+        .filter((el) => isAttribute(el.name))
+        .map((attr) => {
+          const rawValue = ToJSType(attr.value);
+          return [attr.name, rawValue];
+        }),
+        properties: [],
+        events: [
+          [EVENT_TYPE.ON_CREATED, `$:(el) => {
+            el.innerHTML = \`${inner}\`
+          }`]
+        ],
+        children: [],
+      };
+    }
     const children = resolvedChildren(element.children)
       .map((el) => ToJSType(el))
       .filter((el) => el !== null);
