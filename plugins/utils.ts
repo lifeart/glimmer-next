@@ -1,4 +1,5 @@
 import type { ASTv1 } from "@glimmer/syntax";
+import { SYMBOLS } from "./symbols";
 
 export type HBSControlExpression = {
   type: "each" | "if";
@@ -68,7 +69,7 @@ export function serializeChildren(
         if (isPath(child)) {
           return serializePath(child);
         }
-        return `DOM.text(${escapeString(child)})`;
+        return `${SYMBOLS.TEXT}(${escapeString(child)})`;
       }
       return serializeNode(child);
     })
@@ -161,13 +162,13 @@ export function serializeNode(
     }
 
     if (key === "@each") {
-      return `DOM.each(${arrayName}, (${paramNames.join(
+      return `${SYMBOLS.EACH}(${arrayName}, (${paramNames.join(
         ","
       )}) => ${toChildArray(childs)}, ${
         eachKey ? escapeString(eachKey) : null
       })`;
     } else if (key === "@if") {
-      return `DOM.if(${arrayName}, () => ${toChildArray(
+      return `${SYMBOLS.IF}(${arrayName}, () => ${toChildArray(
         childs
       )}, () => ${toChildArray(inverses)} )`;
     }
@@ -201,7 +202,7 @@ export function serializeNode(
 
     if (node.selfClosing) {
       // @todo - we could pass `hasStableChild` ans hasBlock / hasBlockParams to the DOM helper
-      return `DOM.c(new ${node.tag}(${toObject(args)}, ${secondArg}))`;
+      return `${SYMBOLS.COMPONENT}(new ${node.tag}(${toObject(args)}, ${secondArg}))`;
     } else {
       const slots: HBSNode[] = node.children.filter((child) => {
         if (typeof child === 'string') {
@@ -226,7 +227,7 @@ export function serializeNode(
       const slotsObj = `{${serializedSlots.join(',')}}`;
       // @todo - we could pass `hasStableChild` ans hasBlock / hasBlockParams to the DOM helper
       // including `has-block` helper
-      return `DOM.withSlots(DOM.c(${fn}), ${slotsObj})`;
+      return `${SYMBOLS.WITH_SLOTS}(${SYMBOLS.COMPONENT}(${fn}), ${slotsObj})`;
     }
   } else if (typeof node === "object" && node.tag) {
     const hasSplatAttrs = node.attributes.find((attr) => {
@@ -235,7 +236,7 @@ export function serializeNode(
     node.attributes = node.attributes.filter((attr) => {
       return attr[0] !== "...attributes";
     });
-    return `DOM('${node.tag}', {
+    return `${SYMBOLS.TAG}('${node.tag}', {
       events: ${toArray(node.events)},
       properties: ${toArray(node.properties)}, 
       attributes: ${toArray(node.attributes)}
@@ -246,7 +247,7 @@ export function serializeNode(
       if (isPath(node)) {
         return serializePath(node);
       } else {
-        return `DOM.text(${escapeString(node)})`;
+        return `${SYMBOLS.TEXT}(${escapeString(node)})`;
       }
     }
     throw new Error("Unknown node type: " + JSON.stringify(node, null, 2));

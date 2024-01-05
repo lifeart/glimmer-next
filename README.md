@@ -82,6 +82,9 @@ export class Row extends Component<RowArgs> {
 * <b>Modifiers and Helpers APIs:</b>
 Modifiers for element-specific logic.
 Helpers for reusable logic across components.
+* <b>Template Imports:</b> Import templates from other files, enabling better code organization and reusability.
+* <b>Template Compilation:</b> Compile templates to JavaScript functions for improved performance and efficiency.
+* <b>Opcodes tree-shaking:</b> Opcodes tree-shaking for smaller bundle size. We don't include unused DOM and component, flow-control opcodes in the bundle.
 
 ### Reactive Primitives
 

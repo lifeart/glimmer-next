@@ -7,6 +7,7 @@ import {
   resolvedChildren,
   serializePath,
 } from "./utils";
+import { SYMBOLS } from "./symbols";
 
 export function convert(seenNodes: Set<ASTv1.Node>) {
   function ToJSType(node: ASTv1.Node, wrap = true): any {
@@ -68,7 +69,7 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
         if (typeof slotName !== "string") {
           slotName = ToJSType(slotName);
         }
-        return `$:() => DOM.slot('${slotName}', () => [${node.params
+        return `$:() => ${SYMBOLS.SLOT}('${slotName}', () => [${node.params
           .map((p) => ToJSType(p))
           .join(",")}], $slots)`;
       }

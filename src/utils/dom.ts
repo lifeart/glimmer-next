@@ -37,10 +37,6 @@ type Props = {
   events: [string, EventListener | ModifierFn][];
 };
 
-function $text(str: string) {
-  return api.text(str);
-}
-
 function $prop(
   element: HTMLElement,
   key: string,
@@ -113,7 +109,7 @@ function addChild(
   } else if (typeof child === "object" && "node" in child) {
     api.append(element, child.node);
   } else if (typeof child === "string" || typeof child === "number") {
-    api.append(element, $text(child));
+    api.append(element, api.text(child));
   } else if (child !== null &&  (child as AnyCell)[isTag]) {
     api.append(element, cellToText(child as AnyCell));
   } else if (typeof child === "function") {
@@ -124,7 +120,7 @@ function addChild(
       | string
       | number = child();
     if (typeof componentProps !== "object") {
-      const text = $text(String(componentProps));
+      const text = api.text(String(componentProps));
       api.append(element, text);
     } else if ("nodes" in componentProps) {
       componentProps.nodes.forEach((node) => {
@@ -275,7 +271,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots) {
         const nodes = mergeComponents(
           elements.map((el) => {
             if (typeof el === "string" || typeof el === "number") {
-              return $text(String(el));
+              return api.text(String(el));
             } else if (typeof el === "function") {
               // here likely el is as slot constructor
               // @ts-expect-error function signature
@@ -304,7 +300,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots) {
   return mergeComponents(
     elements.map((el) => {
       if (typeof el === "string" || typeof el === "number") {
-        return $text(String(el));
+        return api.text(String(el));
       } else if (typeof el === "function") {
         // here likely el is as slot constructor
         // @ts-expect-error function signature
@@ -327,7 +323,7 @@ function withSlots(
 }
 
 function cellToText(cell: Cell | MergedCell) {
-  const textNode = $text("");
+  const textNode = api.text("");
   addDestructors(
     [
       bindUpdatingOpcode(cell, (value) => {
@@ -340,19 +336,19 @@ function cellToText(cell: Cell | MergedCell) {
 }
 function text(text: string | Cell | MergedCell | Fn): NodeReturnType {
   if (typeof text === "string") {
-    return def($text(text));
+    return def(api.text(text));
   } else if (text !== null && (text as AnyCell)[isTag]) {
     return def(cellToText(text as AnyCell));
   } else if (typeof text === "function") {
     const maybeFormula = formula(text, 'textNode');
     if (maybeFormula.isConst) {
       try {
-        return def($text(String(maybeFormula.value)));
+        return def(api.text(String(maybeFormula.value)));
       } finally {
         maybeFormula.destroy();
       }
     } else {
-      return DOM.text(maybeFormula);
+      return $_text(maybeFormula);
     }
   } else {
     throw new Error("invalid text");
@@ -388,16 +384,14 @@ function each<T extends { id: number }>(
   return def(outlet);
 }
 
-_DOM.each = each;
-_DOM.if = ifCond;
-_DOM.slot = slot;
-_DOM.c = component;
-_DOM.withSlots = withSlots;
-_DOM.text = text;
-
-export const DOM = _DOM;
-
-export function $fin(
+export const $_if = ifCond;
+export const $_each = each;
+export const $_slot = slot;
+export const $_c = component;
+export const $_withSlots = withSlots;
+export const $_text = text;
+export const $_tag = _DOM;
+export function $_fin(
   roots: Array<ComponentReturnType | NodeReturnType>,
   slots: Slots,
   isStable: boolean,

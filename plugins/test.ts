@@ -6,11 +6,13 @@ import { HBSControlExpression, HBSNode, serializeNode } from "./utils";
 import { processTemplate } from "./babel";
 import { convert } from "./converter";
 
+import { SYMBOLS } from "./symbols";
+
 function isNodeStable(node: string) {
   return (
-    node.trim().startsWith("DOM(") ||
-    node.trim().startsWith("DOM.text(") ||
-    !node.trim().includes("DOM")
+    node.trim().startsWith(`${SYMBOLS.TAG}(`) ||
+    node.trim().startsWith(`${SYMBOLS.TEXT}(`) ||
+    !node.trim().includes("$_")
   );
 }
 
@@ -92,7 +94,7 @@ export function transform(source: string, fileName: string) {
       const $slots = {};
       const $fw = this.$fw;
       const roots = [${results.join(", ")}];
-      return $fin(roots, $slots, ${String(isNodeStable(results[0]))}, this);
+      return ${SYMBOLS.FINALIZE_COMPONENT}(roots, $slots, ${String(isNodeStable(results[0]))}, this);
     }`;
     } else {
       result = isClass
@@ -100,13 +102,13 @@ export function transform(source: string, fileName: string) {
       const $slots = {};
       const $fw = arguments[1];
       const roots = [${results.join(", ")}];
-      return $fin(roots, $slots, ${String(isNodeStable(results[0]))}, this);
+      return ${SYMBOLS.FINALIZE_COMPONENT}(roots, $slots, ${String(isNodeStable(results[0]))}, this);
     }`
         : `(() => {
       const $slots = {};
       const $fw = arguments[1];
       const roots = [${results.join(", ")}];
-      return $fin(roots, $slots, ${String(isNodeStable(results[0]))}, this);
+      return ${SYMBOLS.FINALIZE_COMPONENT}(roots, $slots, ${String(isNodeStable(results[0]))}, this);
     })()`;
     }
 

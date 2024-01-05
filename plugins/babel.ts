@@ -1,4 +1,5 @@
 import type Babel from "@babel/core";
+import { SYMBOLS } from "./symbols";
 
 export function processTemplate(hbsToProcess: string[]) {
   return function babelPlugin(babel: { types: typeof Babel.types }) {
@@ -45,12 +46,14 @@ export function processTemplate(hbsToProcess: string[]) {
           }
         },
         Program(path: any) {
+
+          const PUBLIC_API = Object.values(SYMBOLS);
+          const IMPORTS = PUBLIC_API.map((name) => {
+            return t.importSpecifier(t.identifier(name), t.identifier(name));
+          });
           path.node.body.unshift(
             t.importDeclaration(
-              [
-                t.importSpecifier(t.identifier("DOM"), t.identifier("DOM")),
-                t.importSpecifier(t.identifier("$fin"), t.identifier("$fin")),
-              ],
+              IMPORTS,
               t.stringLiteral("@/utils/dom")
             )
           );
