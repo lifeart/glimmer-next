@@ -82,7 +82,7 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
             if (typeof el !== "string") {
               return String(el);
             }
-            return isPath(el) ? serializePath(el) : escapeString(el);
+            return isPath(el) ? serializePath(el, false) : escapeString(el);
           })
           .join(",")})`;
       }

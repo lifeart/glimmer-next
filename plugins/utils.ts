@@ -46,9 +46,9 @@ export function resolvePath(str: string) {
   return str.replace("$:", "").replace("@", "this.args.");
 }
 
-export function serializePath(p: string): string {
+export function serializePath(p: string, wrap = flags.IS_GLIMMER_COMPAT_MODE): string {
   const isFunction = p.startsWith('$:(');
-  if (flags.IS_GLIMMER_COMPAT_MODE === false) {
+  if (wrap === false) {
     return resolvePath(p);
   }
   if (isFunction) {
