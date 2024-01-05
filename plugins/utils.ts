@@ -73,7 +73,7 @@ export function serializeChildren(
   children: Array<string | HBSNode | HBSControlExpression>
 ) {
   if (children.length === 0) {
-    return "null";
+    return '';
   }
   return `${children
     .map((child) => {
@@ -90,7 +90,7 @@ export function serializeChildren(
 
 function toChildArray(childs: Array<HBSNode | string> | null): string {
   if (!childs) {
-    return "[null]";
+    return "[]";
   }
   return `[${childs
     .map((child) => serializeNode(child))
@@ -245,9 +245,7 @@ export function serializeNode(
       const serializedSlots = slots.map((slot) => {
         const slotChildren = serializeChildren(slot.children);
         const slotName = slot.tag.startsWith(':') ? slot.tag.slice(1) : 'default';
-        return `${slotName}: (${slot.blockParams.join(",")}) => ${
-          slotChildren !== "null" ? `[${slotChildren}]` : "[]"
-        }`;
+        return `${slotName}: (${slot.blockParams.join(",")}) => [${slotChildren}]`;
       });
       let fn = `new ${node.tag}(${SYMBOLS.ARGS}(${toObject(args)}), ${secondArg})`;
       if (flags.IS_GLIMMER_COMPAT_MODE === false) {
