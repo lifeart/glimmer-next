@@ -266,11 +266,13 @@ function def(node: Node) {
 }
 
 function mergeComponents(
-  components: Array<ComponentReturnType | NodeReturnType | Node>
+  components: Array<ComponentReturnType | NodeReturnType | Node | string | number>
 ) {
   const nodes: Array<Node> = [];
   components.forEach((component) => {
-    if ("index" in component) {
+    if (typeof component === "string" || typeof component === "number") {
+      nodes.push(api.text(String(component)));
+    } else if ("index" in component) {
       if ("nodes" in component) {
         nodes.push(...component.nodes);
       } else if ("node" in component) {
