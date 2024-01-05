@@ -13,6 +13,7 @@ import { bindUpdatingOpcode } from "@/utils/vm";
 import { ListComponent } from "@/utils/list";
 import { ifCondition } from "@/utils/if";
 import { DestructorFn, Destructors, executeDestructors } from "./destroyable";
+import { api } from "@/utils/dom-api";
 
 type ModifierFn = (
   element: HTMLElement,
@@ -37,7 +38,7 @@ type Props = {
 };
 
 function $text(str: string) {
-  return document.createTextNode(str);
+  return api.text(str);
 }
 
 function $prop(
@@ -82,20 +83,13 @@ function $attr(
   } else if (value !== null && (value as AnyCell)[isTag]) {
     destructors.push(
       bindUpdatingOpcode(value as AnyCell, (value) => {
-        if (value === null) {
-          element.setAttribute(key, "");
-        } else {
-          // @ts-expect-error type casting
-          element.setAttribute(key, value);
-        }
+        // @ts-expect-error type casting
+        api.attr(element, key, value);
       })
     );
   } else {
-    if (value === null) {
-      element.setAttribute(key, "");
-    } else {
-      element.setAttribute(key, value as string);
-    }
+    // @ts-expect-error type casting
+    api.attr(element, key, value);
   }
 }
 
@@ -114,15 +108,14 @@ function addChild(
   }
   if (typeof child === "object" && "nodes" in child) {
     child.nodes.forEach((node) => {
-      element.appendChild(node);
+      api.append(element, node);
     });
   } else if (typeof child === "object" && "node" in child) {
-    element.appendChild(child.node);
+    api.append(element, child.node);
   } else if (typeof child === "string" || typeof child === "number") {
-    const text = $text(child);
-    element.appendChild(text);
+    api.append(element, $text(child));
   } else if (child !== null &&  (child as AnyCell)[isTag]) {
-    element.appendChild(cellToText(child as AnyCell));
+    api.append(element, cellToText(child as AnyCell));
   } else if (typeof child === "function") {
     // looks like a component
     const componentProps:
@@ -132,13 +125,13 @@ function addChild(
       | number = child();
     if (typeof componentProps !== "object") {
       const text = $text(String(componentProps));
-      element.appendChild(text);
+      api.append(element, text);
     } else if ("nodes" in componentProps) {
       componentProps.nodes.forEach((node) => {
-        element.appendChild(node);
+        api.append(element, node);
       });
     } else {
-      element.appendChild(componentProps.node);
+      api.append(element, componentProps.node);
     }
   }
 }
@@ -154,7 +147,7 @@ function _DOM(
     | Function
   )[]
 ): NodeReturnType {
-  const element = document.createElement(tag);
+  const element = api.element(tag);
   const destructors: Destructors = [];
   const hasSplatAttrs = "fw" in props;
   const attributes = hasSplatAttrs
@@ -271,7 +264,7 @@ function mergeComponents(
 
 function slot(name: string, params: () => unknown[], $slot: Slots) {
   if (!(name in $slot)) {
-    const slotPlaceholder: NodeReturnType = def(document.createComment(""));
+    const slotPlaceholder: NodeReturnType = def(api.comment());
     let isRendered = false;
     Object.defineProperty($slot, name, {
       set(value: Slots[string]) {
@@ -338,7 +331,7 @@ function cellToText(cell: Cell | MergedCell) {
   addDestructors(
     [
       bindUpdatingOpcode(cell, (value) => {
-        textNode.textContent = String(value ?? "");
+        api.textContent(textNode, String(value ?? ""));
       }),
     ],
     textNode
@@ -373,7 +366,7 @@ function ifCond(
   trueBranch: BranchCb,
   falseBranch: BranchCb
 ) {
-  const outlet = document.createDocumentFragment();
+  const outlet = api.fragment();
   ifCondition(cell, outlet, trueBranch, falseBranch);
   return def(outlet);
 }
@@ -383,7 +376,7 @@ function each<T extends { id: number }>(
   fn: (item: T) => Array<ComponentReturnType | NodeReturnType>,
   key: string | null = null
 ) {
-  const outlet = document.createDocumentFragment();
+  const outlet = api.fragment();
   new ListComponent(
     {
       tag: items as Cell<T[]>,
@@ -423,7 +416,7 @@ export function $fin(
     }
   });
   if (!isStable) {
-    nodes.unshift(document.createComment(""));
+    nodes.unshift(api.comment());
   }
   addDestructors(
     [

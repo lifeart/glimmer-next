@@ -8,6 +8,7 @@ import {
 import { formula, type Cell, type MergedCell } from "@/utils/reactive";
 import { bindUpdatingOpcode } from "@/utils/vm";
 import { addDestructors } from "./component";
+import { api } from "@/utils/dom-api";
 
 export function ifCondition(
   cell: Cell<boolean> | MergedCell,
@@ -17,10 +18,10 @@ export function ifCondition(
   existingPlaceholder?: Comment
 ) {
   // "if-placeholder"
-  const placeholder = existingPlaceholder || document.createComment("");
+  const placeholder = existingPlaceholder || api.comment();
   const target = outlet;
   if (!placeholder.isConnected) {
-    target.appendChild(placeholder);
+    api.append(target, placeholder);
   }
   let prevComponent: GenericReturnType = null;
   let isDestructorRunning = false;
@@ -48,12 +49,13 @@ export function ifCondition(
       bindUpdatingOpcode(cell, (value) => {
         if (throwedError) {
           Promise.resolve().then(() => {
-            const newPlaceholder = document.createComment("");
+            const newPlaceholder = api.comment();
             if (!placeholder.isConnected) {
               // placeholder is disconnected, it means whole `if` is removed from DOM, no need to recover;
               return;
             }
-            placeholder.parentElement?.insertBefore(
+            api.insert(
+              placeholder.parentElement!,
               newPlaceholder,
               placeholder
             );

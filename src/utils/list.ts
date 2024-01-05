@@ -5,6 +5,7 @@ import {
   destroyElement,
   renderElement,
 } from "@/utils/component";
+import { api } from "@/utils/dom-api";
 import { Cell, isTag } from "@/utils/reactive";
 import { bindUpdatingOpcode } from "@/utils/vm";
 
@@ -60,8 +61,8 @@ export class ListComponent<T extends { id: number }> {
     }
     this.setupKeyForItem();
     // "list bottom marker"
-    this.bottomMarker = document.createComment("");
-    mainNode.appendChild(this.bottomMarker);
+    this.bottomMarker = api.comment();
+    api.append(mainNode, this.bottomMarker);
 
     if (!tag[isTag]) {
       console.warn("iterator for @each should be a cell");
@@ -111,10 +112,10 @@ export class ListComponent<T extends { id: number }> {
     if (amountOfKeys > 0) {
       return this.bottomMarker;
     } else {
-      const fragment = document.createDocumentFragment();
+      const fragment = api.fragment();
       // list fragment marker
-      const marker = document.createComment("");
-      fragment.appendChild(marker);
+      const marker = api.comment();
+      api.append(fragment, marker);
       return marker;
     }
   }
@@ -203,7 +204,7 @@ export class ListComponent<T extends { id: number }> {
     if (targetNode !== this.bottomMarker) {
       const parent = targetNode.parentNode!;
       parent.removeChild(targetNode);
-      this.bottomMarker.parentNode!.insertBefore(parent, this.bottomMarker);
+      api.insert(this.bottomMarker.parentNode!, parent, this.bottomMarker);
     }
   }
   getListItemIndex(key: string) {

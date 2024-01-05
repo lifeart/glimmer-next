@@ -1,5 +1,11 @@
-import { Destructors } from "./destroyable";
-import type { TemplateContext, Context, Invoke, ComponentReturn } from '@glint/template/-private/integration';
+import { Destructors } from "@/utils/destroyable";
+import type {
+  TemplateContext,
+  Context,
+  Invoke,
+  ComponentReturn,
+} from "@glint/template/-private/integration";
+import { api } from "@/utils/dom-api";
 
 export type ComponentRenderTarget =
   | HTMLElement
@@ -13,14 +19,14 @@ export type GenericReturnType =
   | null
   | null[];
 
-  // this is workaround for `if` case, where we don't have stable root, and to remove it properly we need to look into last rendered part
+// this is workaround for `if` case, where we don't have stable root, and to remove it properly we need to look into last rendered part
 export const relatedRoots: WeakMap<DocumentFragment, GenericReturnType> =
   new WeakMap();
 
 function renderNode(parent: Node, target: Node, placeholder: Node | Comment) {
   if (target.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
     if (target.childNodes.length) {
-      parent.insertBefore(target, placeholder);
+      api.insert(parent, target, placeholder);
     } else {
       const roots = relatedRoots.get(target as DocumentFragment);
       if (roots !== undefined) {
@@ -28,7 +34,7 @@ function renderNode(parent: Node, target: Node, placeholder: Node | Comment) {
       }
     }
   } else {
-    parent.insertBefore(target, placeholder);
+    api.insert(parent, target, placeholder);
   }
 }
 
@@ -61,25 +67,32 @@ export function renderComponent(
 ): ComponentReturnType {
   const targetElement = targetFor(target);
   component.nodes.forEach((node) => {
-    targetElement.appendChild(node);
+    api.append(targetElement, node);
   });
   return component;
 }
 
 export type Props = Record<string, unknown>;
 
-type Get<T, K, Otherwise = {}> = K extends keyof T ? Exclude<T[K], undefined> : Otherwise;
-export class Component<T extends Props = any>
-  implements ComponentReturnType
-{
-  args!: Get<T, 'Args'>;
-  declare [Context]: TemplateContext<this, Get<T, 'Args'>, Get<T, 'Blocks'>, Get<T, 'Element', null>>;
-  declare [Invoke]: (args: Get<T, 'Args'>) => ComponentReturn<Get<T, 'Blocks'>, Get<T, 'Element', null>>;
+type Get<T, K, Otherwise = {}> = K extends keyof T
+  ? Exclude<T[K], undefined>
+  : Otherwise;
+export class Component<T extends Props = any> implements ComponentReturnType {
+  args!: Get<T, "Args">;
+  declare [Context]: TemplateContext<
+    this,
+    Get<T, "Args">,
+    Get<T, "Blocks">,
+    Get<T, "Element", null>
+  >;
+  declare [Invoke]: (
+    args: Get<T, "Args">
+  ) => ComponentReturn<Get<T, "Blocks">, Get<T, "Element", null>>;
   nodes!: Node[];
   index!: number;
   slots!: Slots;
   $fw: unknown;
-  constructor(props: Get<T, 'Args'>, fw?: unknown) {
+  constructor(props: Get<T, "Args">, fw?: unknown) {
     this.args = props;
     this.$fw = fw;
   }
@@ -165,7 +178,7 @@ export function addDestructors(
   source: ComponentReturnType | NodeReturnType | HTMLElement | Text | Comment
 ) {
   if (destructors.length === 0) {
-    return
+    return;
   }
   let node: Node;
   if ("nodes" in source) {
@@ -194,7 +207,7 @@ export function runDestructors(
   if ($destructors.has(targetNode)) {
     $destructors.get(targetNode)!.forEach((fn) => {
       const result = fn();
-      if (result !== undefined && 'then' in result) {
+      if (result !== undefined && "then" in result) {
         promises.push(result);
       }
     });
@@ -215,7 +228,6 @@ export function targetFor(
     return outlet.nodes[0] as HTMLElement;
   }
 }
-
 
 export type Slots = Record<
   string,
