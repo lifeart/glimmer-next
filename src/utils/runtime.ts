@@ -5,7 +5,7 @@ import {
   executeTag,
   relatedTags,
   relatedTagsForCell,
-} from "@/utils/reactive";
+} from '@/utils/reactive';
 
 let revalidateScheduled = false;
 type voidFn = () => void;

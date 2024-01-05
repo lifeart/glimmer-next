@@ -4,18 +4,18 @@ import {
   relatedRoots,
   renderElement,
   runDestructors,
-} from "@/utils/component";
-import { formula, type Cell, type MergedCell } from "@/utils/reactive";
-import { bindUpdatingOpcode } from "@/utils/vm";
-import { addDestructors } from "./component";
-import { api } from "@/utils/dom-api";
+} from '@/utils/component';
+import { formula, type Cell, type MergedCell } from '@/utils/reactive';
+import { bindUpdatingOpcode } from '@/utils/vm';
+import { addDestructors } from './component';
+import { api } from '@/utils/dom-api';
 
 export function ifCondition(
   cell: Cell<boolean> | MergedCell,
   outlet: DocumentFragment,
   trueBranch: () => GenericReturnType,
   falseBranch: () => GenericReturnType,
-  existingPlaceholder?: Comment
+  existingPlaceholder?: Comment,
 ) {
   // "if-placeholder"
   const placeholder = existingPlaceholder || api.comment();
@@ -33,9 +33,9 @@ export function ifCondition(
     }
   };
 
-  if (typeof cell === "function") {
+  if (typeof cell === 'function') {
     cell = formula(cell);
-  } else if (typeof cell === "boolean") {
+  } else if (typeof cell === 'boolean') {
     cell = formula(() => cell);
   } else if (typeof cell === 'number') {
     cell = formula(() => cell);
@@ -54,11 +54,7 @@ export function ifCondition(
               // placeholder is disconnected, it means whole `if` is removed from DOM, no need to recover;
               return;
             }
-            api.insert(
-              placeholder.parentNode!,
-              newPlaceholder,
-              placeholder
-            );
+            api.insert(placeholder.parentNode!, newPlaceholder, placeholder);
             Promise.all(runDestructors(placeholder)).then(async () => {
               if (!newPlaceholder.isConnected) {
                 // placeholder is disconnected, it means whole `if` is removed from DOM, no need to recover;
@@ -72,7 +68,7 @@ export function ifCondition(
                 outlet,
                 trueBranch,
                 falseBranch,
-                newPlaceholder
+                newPlaceholder,
               );
             });
           });
@@ -86,7 +82,7 @@ export function ifCondition(
           renderElement(
             placeholder.parentNode || target,
             prevComponent,
-            placeholder
+            placeholder,
           );
           return;
         }
@@ -120,11 +116,11 @@ export function ifCondition(
           renderElement(
             placeholder.parentNode || target,
             prevComponent,
-            placeholder
+            placeholder,
           );
         })();
       }),
     ],
-    placeholder
+    placeholder,
   );
 }

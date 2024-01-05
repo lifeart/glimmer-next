@@ -19,7 +19,7 @@ export function emitDomClickEvent(selector: ButtonSelectors) {
         bubbles: true,
         cancelable: true,
         view: window,
-      })
+      }),
     );
   } else {
     throw new Error(`Could not find element with selector ${selector}`);

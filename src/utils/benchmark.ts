@@ -20,7 +20,7 @@ export function createBenchmark() {
             new Promise((resolve) => {
               setResolveRender(resolve);
               update();
-            })
+            }),
         );
       };
     },

@@ -1,11 +1,11 @@
-import { Destructors } from "@/utils/destroyable";
+import { Destructors } from '@/utils/destroyable';
 import type {
   TemplateContext,
   Context,
   Invoke,
   ComponentReturn,
-} from "@glint/template/-private/integration";
-import { api } from "@/utils/dom-api";
+} from '@glint/template/-private/integration';
+import { api } from '@/utils/dom-api';
 
 export type ComponentRenderTarget =
   | HTMLElement
@@ -41,13 +41,13 @@ function renderNode(parent: Node, target: Node, placeholder: Node | Comment) {
 export function renderElement(
   target: Node,
   el: GenericReturnType,
-  placeholder: Comment | Node
+  placeholder: Comment | Node,
 ) {
   if (!Array.isArray(el)) {
     if (el === null) {
       return;
     }
-    if ("nodes" in el) {
+    if ('nodes' in el) {
       el.nodes.forEach((node) => {
         renderNode(target, node, placeholder);
       });
@@ -63,7 +63,7 @@ export function renderElement(
 
 export function renderComponent(
   component: ComponentReturnType,
-  target: ComponentRenderTarget
+  target: ComponentRenderTarget,
 ): ComponentReturnType {
   const targetElement = targetFor(target);
   component.nodes.forEach((node) => {
@@ -78,21 +78,21 @@ type Get<T, K, Otherwise = {}> = K extends keyof T
   ? Exclude<T[K], undefined>
   : Otherwise;
 export class Component<T extends Props = any> implements ComponentReturnType {
-  args!: Get<T, "Args">;
+  args!: Get<T, 'Args'>;
   declare [Context]: TemplateContext<
     this,
-    Get<T, "Args">,
-    Get<T, "Blocks">,
-    Get<T, "Element", null>
+    Get<T, 'Args'>,
+    Get<T, 'Blocks'>,
+    Get<T, 'Element', null>
   >;
   declare [Invoke]: (
-    args: Get<T, "Args">
-  ) => ComponentReturn<Get<T, "Blocks">, Get<T, "Element", null>>;
+    args: Get<T, 'Args'>,
+  ) => ComponentReturn<Get<T, 'Blocks'>, Get<T, 'Element', null>>;
   nodes!: Node[];
   index!: number;
   slots!: Slots;
   $fw: unknown;
-  constructor(props: Get<T, "Args">, fw?: unknown) {
+  constructor(props: Get<T, 'Args'>, fw?: unknown) {
     this.args = props;
     this.$fw = fw;
   }
@@ -105,7 +105,7 @@ export async function destroyElement(
     | NodeReturnType
     | Array<ComponentReturnType | NodeReturnType>
     | null
-    | null[]
+    | null[],
 ) {
   if (Array.isArray(component)) {
     await Promise.all(component.map((component) => destroyElement(component)));
@@ -113,7 +113,7 @@ export async function destroyElement(
     if (component === null) {
       return;
     }
-    if ("nodes" in component) {
+    if ('nodes' in component) {
       const destructors: Array<Promise<void>> = [];
       component.nodes.forEach((node) => {
         runDestructors(node, destructors);
@@ -137,7 +137,7 @@ export async function destroyElement(
       } catch (e) {
         console.warn(
           `Woops, looks like node we trying to destroy no more in DOM`,
-          e
+          e,
         );
       }
     } else {
@@ -154,7 +154,7 @@ export async function destroyElement(
       } catch (e) {
         console.warn(
           `Woops, looks like node we trying to destroy no more in DOM`,
-          e
+          e,
         );
       }
     }
@@ -163,7 +163,7 @@ export async function destroyElement(
 
 var $destructors = new WeakMap<Node, Destructors>();
 
-window["getDestructors"] = () => $destructors;
+window['getDestructors'] = () => $destructors;
 
 function getNode(el: Node): Node {
   if (el.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
@@ -175,15 +175,15 @@ function getNode(el: Node): Node {
 
 export function addDestructors(
   destructors: Destructors,
-  source: ComponentReturnType | NodeReturnType | HTMLElement | Text | Comment
+  source: ComponentReturnType | NodeReturnType | HTMLElement | Text | Comment,
 ) {
   if (destructors.length === 0) {
     return;
   }
   let node: Node;
-  if ("nodes" in source) {
+  if ('nodes' in source) {
     node = getNode(source.nodes[0]);
-  } else if ("node" in source) {
+  } else if ('node' in source) {
     node = getNode(source.node);
   } else {
     node = getNode(source);
@@ -195,19 +195,19 @@ export function addDestructors(
     const oldDestructors = $destructors.get(node) || [];
     $destructors.set(
       node,
-      oldDestructors.filter((fn) => !destructors.includes(fn))
+      oldDestructors.filter((fn) => !destructors.includes(fn)),
     );
   };
 }
 
 export function runDestructors(
   targetNode: Node,
-  promises: Array<Promise<void>> = []
+  promises: Array<Promise<void>> = [],
 ): Array<Promise<void>> {
   if ($destructors.has(targetNode)) {
     $destructors.get(targetNode)!.forEach((fn) => {
       const result = fn();
-      if (result !== undefined && "then" in result) {
+      if (result !== undefined && 'then' in result) {
         promises.push(result);
       }
     });
@@ -220,7 +220,7 @@ export function runDestructors(
 }
 
 export function targetFor(
-  outlet: ComponentRenderTarget
+  outlet: ComponentRenderTarget,
 ): HTMLElement | DocumentFragment {
   if (outlet instanceof HTMLElement || outlet instanceof DocumentFragment) {
     return outlet;
@@ -248,7 +248,7 @@ export type NodeReturnType = {
 export function addEventListener(
   node: Node,
   eventName: string,
-  fn: EventListener
+  fn: EventListener,
 ) {
   node.addEventListener(eventName, fn);
   return () => {

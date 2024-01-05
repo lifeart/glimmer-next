@@ -2,7 +2,7 @@ export async function measureRender(
   name: string,
   startMark: string,
   endMark: string,
-  render: () => Promise<void> | void
+  render: () => Promise<void> | void,
 ) {
   const endObserved = new Promise<void>((resolve) => {
     new PerformanceObserver((entries, observer) => {

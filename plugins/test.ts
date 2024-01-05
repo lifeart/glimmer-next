@@ -1,22 +1,26 @@
 // https://astexplorer.net/#/gist/c2f0f7e4bf505471c94027c580af8329/c67119639ba9e8fd61a141e8e2f4cbb6f3a31de9
 // https://astexplorer.net/#/gist/4e3b4c288e176bb7ce657f9dea95f052/8dcabe8144c7dc337d21e8c771413db30ca5d397
-import { preprocess, traverse, ASTv1 } from "@glimmer/syntax";
-import { transformSync } from "@babel/core";
-import { HBSControlExpression, HBSNode, serializeNode } from "./utils";
-import { processTemplate } from "./babel";
-import { convert } from "./converter";
+import { preprocess, traverse, ASTv1 } from '@glimmer/syntax';
+import { transformSync } from '@babel/core';
+import { HBSControlExpression, HBSNode, serializeNode } from './utils';
+import { processTemplate } from './babel';
+import { convert } from './converter';
 
-import { SYMBOLS } from "./symbols";
+import { SYMBOLS } from './symbols';
 
 function isNodeStable(node: string) {
   return (
     node.trim().startsWith(`${SYMBOLS.TAG}(`) ||
     node.trim().startsWith(`${SYMBOLS.TEXT}(`) ||
-    !node.trim().includes("$_")
+    !node.trim().includes('$_')
   );
 }
 
-export function transform(source: string, fileName: string, mode: 'development' | 'production') {
+export function transform(
+  source: string,
+  fileName: string,
+  mode: 'development' | 'production',
+) {
   const programs: Array<HBSNode | HBSControlExpression>[] = [];
   const seenNodes: Set<ASTv1.Node> = new Set();
   const rawTxt: string = source;
@@ -25,11 +29,16 @@ export function transform(source: string, fileName: string, mode: 'development' 
 
   const babelResult = transformSync(rawTxt, {
     plugins: [processTemplate(hbsToProcess, mode)],
-    filename: fileName.replace(".gts", ".ts").replace(".gjs", ".js"),
-    presets: [["@babel/preset-typescript", { allExtensions: true, onlyRemoveTypeImports: true }]],
+    filename: fileName.replace('.gts', '.ts').replace('.gjs', '.js'),
+    presets: [
+      [
+        '@babel/preset-typescript',
+        { allExtensions: true, onlyRemoveTypeImports: true },
+      ],
+    ],
   });
 
-  const txt = babelResult?.code ?? "";
+  const txt = babelResult?.code ?? '';
 
   const { ToJSType, ElementToNode } = convert(seenNodes);
 
@@ -76,50 +85,56 @@ export function transform(source: string, fileName: string, mode: 'development' 
 
     const results = input.reduce((acc, node) => {
       const serializedNode = serializeNode(node);
-      if (typeof serializedNode === "string") {
+      if (typeof serializedNode === 'string') {
         acc.push(serializedNode);
         return acc;
       }
       return acc;
     }, [] as string[]);
 
-    const isClass = txt?.includes("template = ") ?? false;
+    const isClass = txt?.includes('template = ') ?? false;
     const isTemplateTag =
-      fileName.endsWith(".gts") || fileName.endsWith(".gjs");
+      fileName.endsWith('.gts') || fileName.endsWith('.gjs');
 
-    let result = "";
+    let result = '';
 
     if (isTemplateTag) {
       result = `function () {
       const $slots = {};
       const $fw = this.$fw;
-      const roots = [${results.join(", ")}];
-      return ${SYMBOLS.FINALIZE_COMPONENT}(roots, $slots, ${String(isNodeStable(results[0]))}, this);
+      const roots = [${results.join(', ')}];
+      return ${SYMBOLS.FINALIZE_COMPONENT}(roots, $slots, ${String(
+        isNodeStable(results[0]),
+      )}, this);
     }`;
     } else {
       result = isClass
         ? `() => {
       const $slots = {};
       const $fw = arguments[1];
-      const roots = [${results.join(", ")}];
-      return ${SYMBOLS.FINALIZE_COMPONENT}(roots, $slots, ${String(isNodeStable(results[0]))}, this);
+      const roots = [${results.join(', ')}];
+      return ${SYMBOLS.FINALIZE_COMPONENT}(roots, $slots, ${String(
+        isNodeStable(results[0]),
+      )}, this);
     }`
         : `(() => {
       const $slots = {};
       const $fw = arguments[1];
-      const roots = [${results.join(", ")}];
-      return ${SYMBOLS.FINALIZE_COMPONENT}(roots, $slots, ${String(isNodeStable(results[0]))}, this);
+      const roots = [${results.join(', ')}];
+      return ${SYMBOLS.FINALIZE_COMPONENT}(roots, $slots, ${String(
+        isNodeStable(results[0]),
+      )}, this);
     })()`;
     }
 
     programResults.push(result);
   });
 
-  let src = txt ?? "";
+  let src = txt ?? '';
 
   programResults.forEach((result) => {
-    src = src?.replace("$placeholder", result);
+    src = src?.replace('$placeholder', result);
   });
 
-  return src.split("$:").join("");
+  return src.split('$:').join('');
 }

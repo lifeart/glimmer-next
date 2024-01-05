@@ -1,5 +1,3 @@
 export class Application {
-    constructor(root: HTMLElement) {
-
-    }
+  constructor(root: HTMLElement) {}
 }

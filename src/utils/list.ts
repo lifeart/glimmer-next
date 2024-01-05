@@ -4,10 +4,10 @@ import {
   addDestructors,
   destroyElement,
   renderElement,
-} from "@/utils/component";
-import { api } from "@/utils/dom-api";
-import { Cell, isTag } from "@/utils/reactive";
-import { bindUpdatingOpcode } from "@/utils/vm";
+} from '@/utils/component';
+import { api } from '@/utils/dom-api';
+import { Cell, isTag } from '@/utils/reactive';
+import { bindUpdatingOpcode } from '@/utils/vm';
 
 function setIndex(item: GenericReturnType, index: number) {
   item.forEach((item) => {
@@ -19,7 +19,7 @@ function getIndex(item: GenericReturnType) {
 }
 function getFirstNode(rawItem: GenericReturnType) {
   const item = rawItem[0];
-  if ("nodes" in item) {
+  if ('nodes' in item) {
     return item.nodes[0];
   } else {
     return item.node;
@@ -40,7 +40,7 @@ export class ListComponent<T extends { id: number }> {
   index = 0;
   ItemComponent: (item: T, index?: number) => GenericReturnType;
   bottomMarker!: Comment;
-  key: string = "@identity";
+  key: string = '@identity';
   constructor(
     {
       tag,
@@ -51,7 +51,7 @@ export class ListComponent<T extends { id: number }> {
       key: string | null;
       ItemComponent: (item: T, index?: number) => GenericReturnType;
     },
-    outlet: HTMLElement | DocumentFragment
+    outlet: HTMLElement | DocumentFragment,
   ) {
     this.ItemComponent = ItemComponent;
     const mainNode = outlet;
@@ -65,7 +65,7 @@ export class ListComponent<T extends { id: number }> {
     api.append(mainNode, this.bottomMarker);
 
     if (!tag[isTag]) {
-      console.warn("iterator for @each should be a cell");
+      console.warn('iterator for @each should be a cell');
       if (Array.isArray(tag)) {
         tag = new Cell(tag);
       }
@@ -77,16 +77,16 @@ export class ListComponent<T extends { id: number }> {
           await this.syncList(tag.value);
         }),
       ],
-      this.bottomMarker
+      this.bottomMarker,
     );
   }
   setupKeyForItem() {
-    if (this.key === "@identity") {
+    if (this.key === '@identity') {
       let cnt = 0;
       const map: WeakMap<T, string> = new WeakMap();
       this.keyForItem = (item: T) => {
         const key = map.get(item);
-        if (typeof key === "string") {
+        if (typeof key === 'string') {
           return key;
         } else {
           cnt++;
@@ -123,7 +123,7 @@ export class ListComponent<T extends { id: number }> {
     const existingKeys = new Set(this.keyMap.keys());
     const updatingKeys = new Set(items.map((item) => this.keyForItem(item)));
     const keysToRemove = [...existingKeys].filter(
-      (key) => !updatingKeys.has(key)
+      (key) => !updatingKeys.has(key),
     );
     const amountOfKeys = existingKeys.size;
     let targetNode = this.getTargetNode(amountOfKeys);
@@ -132,10 +132,10 @@ export class ListComponent<T extends { id: number }> {
 
     // iterate over existing keys and remove them
     const removedIndexes = keysToRemove.map((key) =>
-      this.getListItemIndex(key)
+      this.getListItemIndex(key),
     );
     const removePromise = Promise.all(
-      keysToRemove.map((key) => this.destroyListItem(key))
+      keysToRemove.map((key) => this.destroyListItem(key)),
     );
     const rmDist = addDestructors(
       [
@@ -143,7 +143,7 @@ export class ListComponent<T extends { id: number }> {
           await removePromise;
         },
       ],
-      this.bottomMarker
+      this.bottomMarker,
     );
     removePromise.then(() => {
       rmDist?.();

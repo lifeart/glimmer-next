@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url";
 import { compiler } from "./plugins/compiler.ts";
 import { flags } from "./plugins/flags.ts";
 
-
 const self = import.meta.url;
 
 const currentPath = path.dirname(fileURLToPath(self));
@@ -12,14 +11,14 @@ const currentPath = path.dirname(fileURLToPath(self));
 export default defineConfig(({ mode }) => ({
   plugins: [compiler(mode)],
   define: {
-    'IS_GLIMMER_COMPAT_MODE': flags.IS_GLIMMER_COMPAT_MODE,
+    IS_GLIMMER_COMPAT_MODE: flags.IS_GLIMMER_COMPAT_MODE,
   },
   build: {
     modulePreload: false,
-    target: 'esnext',
-    minify: 'terser',
+    target: "esnext",
+    minify: "terser",
     rollupOptions: {
-      treeshake: 'recommended'
+      treeshake: "recommended",
     },
     terserOptions: {
       module: true,
@@ -35,13 +34,14 @@ export default defineConfig(({ mode }) => ({
         toplevel: true,
         properties: {
           builtins: false,
-        }
-      }
-    }
+        },
+      },
+    },
   },
   resolve: {
     alias: {
       "@/components": path.join(currentPath, "src", "components"),
       "@/utils": path.join(currentPath, "src", "utils"),
     },
-  }}));
+  },
+}));

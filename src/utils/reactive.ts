@@ -3,7 +3,7 @@
   It's related to Glimmer-VM's `@tracked` system, but without invalidation step.
   We explicitly update DOM only when it's needed and only if tags are changed.
 */
-import { scheduleRevalidate } from "@/utils/runtime";
+import { scheduleRevalidate } from '@/utils/runtime';
 
 export const asyncOpcodes = new WeakSet<tagOp>();
 // List of DOM operations for each tag
@@ -16,12 +16,13 @@ export const tagsToRevalidate: Set<Cell> = new Set();
 // List of derived tags for each cell
 export const relatedTags: WeakMap<Cell, Set<MergedCell>> = new WeakMap();
 
-export const isTag = Symbol("isTag");
+export const isTag = Symbol('isTag');
 
-window["getVM"] = () => ({
-  relatedTags, tagsToRevalidate, opsForTag
-})
-
+window['getVM'] = () => ({
+  relatedTags,
+  tagsToRevalidate,
+  opsForTag,
+});
 
 // console.info({
 //   opsForTag,
@@ -77,11 +78,11 @@ export class Cell<T extends unknown = unknown> {
 }
 
 export function listDependentCells(cells: Array<AnyCell>, cell: MergedCell) {
-  const msg = [cell._debugName, "depends on:"];
+  const msg = [cell._debugName, 'depends on:'];
   cells.forEach((cell) => {
     msg.push(cell._debugName);
   });
-  return msg.join(" ");
+  return msg.join(' ');
 }
 
 export function opsFor(cell: AnyCell) {
@@ -182,7 +183,7 @@ export async function executeTag(tag: Cell | MergedCell) {
   } catch (e: any) {
     if (import.meta.env.DEV) {
       console.error({
-        message: "Error executing tag",
+        message: 'Error executing tag',
         error: e,
         tag,
         opcode: opcode?.toString(),
@@ -201,7 +202,7 @@ const cellsMap = new WeakMap<object, Record<string, Cell<unknown>>>();
 // this is function to create a reactive cell from an object property
 export function cellFor<T extends object, K extends keyof T>(
   obj: T,
-  key: K
+  key: K,
 ): Cell<T[K]> {
   const refs = cellsMap.get(obj) || {};
   if (key in refs) {
@@ -209,7 +210,7 @@ export function cellFor<T extends object, K extends keyof T>(
   }
   const cellValue = new Cell<T[K]>(
     obj[key],
-    `${obj.constructor.name}.${String(key)}`
+    `${obj.constructor.name}.${String(key)}`,
   );
   refs[key as unknown as string] = cellValue;
   cellsMap.set(obj, refs);
@@ -227,7 +228,7 @@ export function cellFor<T extends object, K extends keyof T>(
 type Fn = () => unknown;
 
 export function formula(fn: Function | Fn, debugName?: string) {
-  return new MergedCell(fn, `formula:${debugName ?? "unknown"}`);
+  return new MergedCell(fn, `formula:${debugName ?? 'unknown'}`);
 }
 
 export function cell<T>(value: T, debugName?: string) {

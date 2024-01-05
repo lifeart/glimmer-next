@@ -1,10 +1,10 @@
-import { registerDestructor } from "@/utils/destroyable";
-import { cell } from "@/utils/reactive";
-import { hbs, scope } from "@/utils/template";
-import { effect } from "@/utils/vm";
+import { registerDestructor } from '@/utils/destroyable';
+import { cell } from '@/utils/reactive';
+import { hbs, scope } from '@/utils/template';
+import { effect } from '@/utils/vm';
 
 export function Smile(this: object) {
-  const isVisible = cell(true, "isVisible");
+  const isVisible = cell(true, 'isVisible');
 
   const interval = setInterval(() => {
     isVisible.update(!isVisible.value);
@@ -17,7 +17,7 @@ export function Smile(this: object) {
     let localTicker = ticker;
     return () => {
       console.log(`destroying effect: ${localTicker}`);
-    }
+    };
   });
 
   setTimeout(() => {
@@ -26,15 +26,15 @@ export function Smile(this: object) {
   }, 5000);
 
   const fadeOut = (element: HTMLSpanElement) => {
-    element.style.opacity = "0.1";
-    element.style.transition = "opacity 0.2s linear";
+    element.style.opacity = '0.1';
+    element.style.transition = 'opacity 0.2s linear';
 
     setTimeout(() => {
-      element.style.opacity = "1";
+      element.style.opacity = '1';
     }, 100);
 
     return async () => {
-      element.style.opacity = "0";
+      element.style.opacity = '0';
       await new Promise((resolve) => setTimeout(resolve, 200));
     };
   };

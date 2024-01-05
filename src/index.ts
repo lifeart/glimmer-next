@@ -5,7 +5,12 @@ import './style.css';
 
 import { createBenchmark } from '@/utils/benchmark';
 
-import { enforcePaintEvent, ButtonSelectors, emitDomClickEvent, waitForIdle } from '@/utils/compat';
+import {
+  enforcePaintEvent,
+  ButtonSelectors,
+  emitDomClickEvent,
+  waitForIdle,
+} from '@/utils/compat';
 
 // @ts-check
 // https://codepen.io/lifeart/pen/abMzEZm?editors=0110

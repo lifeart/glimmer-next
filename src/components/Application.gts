@@ -1,12 +1,12 @@
-import type { Item } from "@/utils/data";
-import { buildData, swapRows, updateData } from "@/utils/data";
-import { cell } from "@/utils/reactive";
-import { renderComponent, runDestructors } from "@/utils/component";
-import { Header } from "./Header.gts";
-import { Component } from "@/utils/component";
-import { Row } from "./Row.gts";
+import type { Item } from '@/utils/data';
+import { buildData, swapRows, updateData } from '@/utils/data';
+import { cell } from '@/utils/reactive';
+import { renderComponent, runDestructors } from '@/utils/component';
+import { Header } from './Header.gts';
+import { Component } from '@/utils/component';
+import { Row } from './Row.gts';
 export class Application extends Component {
-  itemsCell = cell<Item[]>([], "items");
+  itemsCell = cell<Item[]>([], 'items');
   rootNode!: HTMLElement;
   get items() {
     return this.itemsCell.value;
@@ -14,10 +14,10 @@ export class Application extends Component {
   set items(value: Item[]) {
     this.itemsCell.value = value;
   }
-  selectedCell = cell(0, "selectedCell");
+  selectedCell = cell(0, 'selectedCell');
   async destroy() {
     await Promise.all(runDestructors(this.rootNode));
-    this.rootNode.innerHTML = "";
+    this.rootNode.innerHTML = '';
     this.rootNode = null!;
   }
   constructor(rootNode: HTMLElement) {
@@ -57,26 +57,26 @@ export class Application extends Component {
     runlots: () => this.create_5_000itemsCell(),
   };
   <template>
-    <div class="container">
-            <Header 
-                @run={{this.actions.run}} 
-                @add={{this.actions.add}} 
-                @update={{this.actions.update}} 
-                @clear={{this.actions.clear}} 
-                @swaprows={{this.actions.swaprows}} 
-                @runlots={{this.actions.runlots}}
+    <div class='container'>
+      <Header
+        @run={{this.actions.run}}
+        @add={{this.actions.add}}
+        @update={{this.actions.update}}
+        @clear={{this.actions.clear}}
+        @swaprows={{this.actions.swaprows}}
+        @runlots={{this.actions.runlots}}
+      />
+      <table class='table table-hover table-striped test-data'>
+        <tbody id='tbody'>
+          {{#each this.itemsCell as |item|}}
+            <Row
+              @item={{item}}
+              @selectedCell={{this.selectedCell}}
+              @onRemove={{this.removeItem}}
             />
-            <table class="table table-hover table-striped test-data">
-                <tbody id="tbody">
-                    {{#each this.itemsCell as |item|}}
-                        <Row 
-                            @item={{item}} 
-                            @selectedCell={{this.selectedCell}} 
-                            @onRemove={{this.removeItem}}
-                        />
-                    {{/each}}
-                </tbody>
-            </table>
-        </div>
+          {{/each}}
+        </tbody>
+      </table>
+    </div>
   </template>
 }

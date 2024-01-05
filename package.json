@@ -8,10 +8,13 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest",
+    "fix": "prettier --write .",
     "t": "ts-node --esm ./plugins/test.ts"
   },
   "devDependencies": {
     "@types/babel__core": "^7.20.5",
+    "prettier": "^3.1.1",
+    "prettier-plugin-ember-template-tag": "^2.0.0",
     "typescript": "^5.2.2",
     "vite": "^5.0.8",
     "vitest": "^1.1.1"

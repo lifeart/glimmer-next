@@ -7,13 +7,13 @@ import {
   Component,
   renderElement,
   destroyElement,
-} from "@/utils/component";
-import { AnyCell, Cell, MergedCell, formula, isTag } from "@/utils/reactive";
-import { bindUpdatingOpcode } from "@/utils/vm";
-import { ListComponent } from "@/utils/list";
-import { ifCondition } from "@/utils/if";
-import { DestructorFn, Destructors, executeDestructors } from "./destroyable";
-import { api } from "@/utils/dom-api";
+} from '@/utils/component';
+import { AnyCell, Cell, MergedCell, formula, isTag } from '@/utils/reactive';
+import { bindUpdatingOpcode } from '@/utils/vm';
+import { ListComponent } from '@/utils/list';
+import { ifCondition } from '@/utils/if';
+import { DestructorFn, Destructors, executeDestructors } from './destroyable';
+import { api } from '@/utils/dom-api';
 
 type ModifierFn = (
   element: HTMLElement,
@@ -40,21 +40,21 @@ function $prop(
   element: HTMLElement,
   key: string,
   value: unknown,
-  destructors: DestructorFn[]
+  destructors: DestructorFn[],
 ) {
-  if (typeof value === "function") {
+  if (typeof value === 'function') {
     $prop(
       element,
       key,
-      formula(value,`${element.tagName}.${key}`),
-      destructors
+      formula(value, `${element.tagName}.${key}`),
+      destructors,
     );
   } else if (value !== null && (value as AnyCell)[isTag]) {
     destructors.push(
       bindUpdatingOpcode(value as AnyCell, (value) => {
         // @ts-expect-error types casting
         element[key] = value;
-      })
+      }),
     );
   } else {
     // @ts-expect-error never ever
@@ -66,21 +66,21 @@ function $attr(
   element: HTMLElement,
   key: string,
   value: unknown,
-  destructors: Destructors
+  destructors: Destructors,
 ) {
-  if (typeof value === "function") {
+  if (typeof value === 'function') {
     $attr(
       element,
       key,
       formula(value as unknown as () => unknown, `${element.tagName}.${key}`),
-      destructors
+      destructors,
     );
   } else if (value !== null && (value as AnyCell)[isTag]) {
     destructors.push(
       bindUpdatingOpcode(value as AnyCell, (value) => {
         // @ts-expect-error type casting
         api.attr(element, key, value);
-      })
+      }),
     );
   } else {
     // @ts-expect-error type casting
@@ -96,61 +96,71 @@ function addChild(
     | string
     | Cell
     | MergedCell
-    | Function
+    | Function,
 ) {
   if (child === null) {
     return;
   }
-  if (typeof child === "object" && "nodes" in child) {
+  if (typeof child === 'object' && 'nodes' in child) {
     child.nodes.forEach((node) => {
       api.append(element, node);
     });
-  } else if (typeof child === "object" && "node" in child) {
+  } else if (typeof child === 'object' && 'node' in child) {
     api.append(element, child.node);
-  } else if (typeof child === "string" || typeof child === "number") {
+  } else if (typeof child === 'string' || typeof child === 'number') {
     api.append(element, api.text(child));
-  } else if (child !== null &&  (child as AnyCell)[isTag]) {
+  } else if (child !== null && (child as AnyCell)[isTag]) {
     api.append(element, cellToText(child as AnyCell));
-  } else if (typeof child === "function") {
+  } else if (typeof child === 'function') {
     // looks like a component
-    const f = formula(child as unknown as () => unknown, `${element.tagName}.child.fn`);
-    let componentProps:
-      | ComponentReturnType
-      | NodeReturnType
-      | string
-      | number = ''
+    const f = formula(
+      child as unknown as () => unknown,
+      `${element.tagName}.child.fn`,
+    );
+    let componentProps: ComponentReturnType | NodeReturnType | string | number =
+      '';
     const dest = bindUpdatingOpcode(f, (value) => {
-      componentProps = value as unknown as ComponentReturnType | NodeReturnType | string | number;
+      componentProps = value as unknown as
+        | ComponentReturnType
+        | NodeReturnType
+        | string
+        | number;
     });
-    if (componentProps !== null && (componentProps as unknown as AnyCell)[isTag]) {
+    if (
+      componentProps !== null &&
+      (componentProps as unknown as AnyCell)[isTag]
+    ) {
       return addChild(element, componentProps as unknown as AnyCell);
     } else if (typeof componentProps === 'function') {
-      return addChild(element, formula(() => {
-        return child()();
-      }, `${element.tagName}.child.fn`) as unknown as AnyCell);
-    } 
-    if (typeof componentProps !== "object") {
+      return addChild(
+        element,
+        formula(() => {
+          return child()();
+        }, `${element.tagName}.child.fn`) as unknown as AnyCell,
+      );
+    }
+    if (typeof componentProps !== 'object') {
       if (f.isConst) {
         const text = api.text(String(componentProps));
         api.append(element, text);
       } else {
-        const text = api.text("");
+        const text = api.text('');
         addDestructors(
           [
             bindUpdatingOpcode(f, (value) => {
               api.textContent(text, String(value));
             }),
           ],
-          text
+          text,
         );
         api.append(element, text);
       }
-    } else if ("nodes" in componentProps) {
+    } else if ('nodes' in componentProps) {
       // @ts-expect-error never
       componentProps.nodes.forEach((node) => {
         api.append(element, node);
       });
-    }else {
+    } else {
       // @ts-expect-error never
       api.append(element, componentProps.node);
     }
@@ -161,7 +171,7 @@ function addChild(
 const EVENT_TYPE = {
   ON_CREATED: '0',
   TEXT_CONTENT: '1',
-}
+};
 
 function _DOM(
   tag: string,
@@ -173,7 +183,7 @@ function _DOM(
     | Cell
     | MergedCell
     | Function
-  )[]
+  )[],
 ): NodeReturnType {
   const element = api.element(tag);
   const destructors: Destructors = [];
@@ -181,33 +191,30 @@ function _DOM(
   const attrs = tagProps[1];
   const _events = tagProps[2];
   const hasSplatAttrs = typeof tagProps[3] === 'object';
-  const attributes = hasSplatAttrs
-    ? [...tagProps[3]!.attrs, ...attrs]
-    : attrs;
-  const properties = hasSplatAttrs
-    ? [...tagProps[3]!.props, ...props]
-    : props;
-  const events = hasSplatAttrs
-    ? [...tagProps[3]!.events, ..._events]
-    : _events;
+  const attributes = hasSplatAttrs ? [...tagProps[3]!.attrs, ...attrs] : attrs;
+  const properties = hasSplatAttrs ? [...tagProps[3]!.props, ...props] : props;
+  const events = hasSplatAttrs ? [...tagProps[3]!.events, ..._events] : _events;
   events.forEach(([eventName, fn]) => {
     // textContent is a special case
     if (eventName === EVENT_TYPE.TEXT_CONTENT) {
       if (typeof fn === 'function') {
         destructors.push(
-          bindUpdatingOpcode(formula(() => {
-            // @ts-expect-error function signature
-            const v = fn();
-            if (typeof v === 'string' || typeof v === 'number') {
-              return v;
-            } else if (v !== null && (v as unknown as AnyCell)[isTag]) {
-              return (v as unknown as AnyCell).value;
-            } else {
-              throw new Error('invalid textContent value');
-            }
-          }, `${element.tagName}.textContent`), (value) => {
-            api.textContent(element, String(value));
-          })
+          bindUpdatingOpcode(
+            formula(() => {
+              // @ts-expect-error function signature
+              const v = fn();
+              if (typeof v === 'string' || typeof v === 'number') {
+                return v;
+              } else if (v !== null && (v as unknown as AnyCell)[isTag]) {
+                return (v as unknown as AnyCell).value;
+              } else {
+                throw new Error('invalid textContent value');
+              }
+            }, `${element.tagName}.textContent`),
+            (value) => {
+              api.textContent(element, String(value));
+            },
+          ),
         );
       } else {
         api.textContent(element, fn);
@@ -215,13 +222,13 @@ function _DOM(
       // modifier case
     } else if (eventName === EVENT_TYPE.ON_CREATED) {
       const destructor = (fn as ModifierFn)(element);
-      if (typeof destructor === "function") {
+      if (typeof destructor === 'function') {
         destructors.push(destructor);
       }
     } else {
       // event case (on modifier)
       destructors.push(
-        addEventListener(element, eventName, fn as EventListener)
+        addEventListener(element, eventName, fn as EventListener),
       );
     }
   });
@@ -235,7 +242,7 @@ function _DOM(
   });
   const classNameModifiers: Attr[] = [];
   properties.forEach(([key, value]) => {
-    if (key === "className") {
+    if (key === 'className') {
       classNameModifiers.push(value);
       return;
     }
@@ -247,30 +254,27 @@ function _DOM(
   });
   if (classNameModifiers.length > 0) {
     if (classNameModifiers.length === 1) {
-      $prop(
-        element,
-        "className",
-        classNameModifiers[0],
-        destructors
-      );
+      $prop(element, 'className', classNameModifiers[0], destructors);
     } else {
       const formulas = classNameModifiers.map((modifier) => {
-        if (typeof modifier === "function") {
-          return formula(modifier as unknown as () => unknown, 'functional modifier');
+        if (typeof modifier === 'function') {
+          return formula(
+            modifier as unknown as () => unknown,
+            'functional modifier',
+          );
         } else {
           return modifier;
         }
       });
       $prop(
         element,
-        "className",
+        'className',
         formula(() => {
-          return formulas.join(" ");
+          return formulas.join(' ');
         }, element.tagName + '.className'),
-        destructors
+        destructors,
       );
     }
-   
   }
   children.forEach((child) => {
     addChild(element, child);
@@ -281,7 +285,7 @@ function _DOM(
 }
 
 function component(comp: ComponentReturnType | Component) {
-  if ("template" in comp) {
+  if ('template' in comp) {
     return (comp.template as unknown as () => ComponentReturnType)();
   }
   return comp;
@@ -295,16 +299,18 @@ function def(node: Node) {
 }
 
 function mergeComponents(
-  components: Array<ComponentReturnType | NodeReturnType | Node | string | number>
+  components: Array<
+    ComponentReturnType | NodeReturnType | Node | string | number
+  >,
 ) {
   const nodes: Array<Node> = [];
   components.forEach((component) => {
-    if (typeof component === "string" || typeof component === "number") {
+    if (typeof component === 'string' || typeof component === 'number') {
       nodes.push(api.text(String(component)));
-    } else if ("index" in component) {
-      if ("nodes" in component) {
+    } else if ('index' in component) {
+      if ('nodes' in component) {
         nodes.push(...component.nodes);
-      } else if ("node" in component) {
+      } else if ('node' in component) {
         nodes.push(component.node);
       }
     } else {
@@ -330,28 +336,28 @@ function slot(name: string, params: () => unknown[], $slot: Slots) {
         const elements = value(...params());
         const nodes = mergeComponents(
           elements.map((el) => {
-            if (typeof el === "string" || typeof el === "number") {
+            if (typeof el === 'string' || typeof el === 'number') {
               return api.text(String(el));
-            } else if (typeof el === "function") {
+            } else if (typeof el === 'function') {
               // here likely el is as slot constructor
               // @ts-expect-error function signature
               return el();
             } else {
               return el;
             }
-          })
+          }),
         );
 
         renderElement(
           slotPlaceholder.node.parentNode!,
           nodes,
-          slotPlaceholder.node
+          slotPlaceholder.node,
         );
         destroyElement(slotPlaceholder);
         isRendered = true;
       },
       get() {
-        throw new Error("slot is not set");
+        throw new Error('slot is not set');
       },
     });
     return slotPlaceholder;
@@ -359,22 +365,22 @@ function slot(name: string, params: () => unknown[], $slot: Slots) {
   const elements = $slot[name](...params());
   return mergeComponents(
     elements.map((el) => {
-      if (typeof el === "string" || typeof el === "number") {
+      if (typeof el === 'string' || typeof el === 'number') {
         return api.text(String(el));
-      } else if (typeof el === "function") {
+      } else if (typeof el === 'function') {
         // here likely el is as slot constructor
         // @ts-expect-error function signature
         return el();
       } else {
         return el;
       }
-    })
+    }),
   );
 }
 
 function withSlots(
   component: ComponentReturnType,
-  slots: Record<string, () => Array<ComponentReturnType | NodeReturnType>>
+  slots: Record<string, () => Array<ComponentReturnType | NodeReturnType>>,
 ) {
   Object.keys(slots).forEach((slotName) => {
     component.slots[slotName] = slots[slotName];
@@ -383,23 +389,23 @@ function withSlots(
 }
 
 function cellToText(cell: Cell | MergedCell) {
-  const textNode = api.text("");
+  const textNode = api.text('');
   addDestructors(
     [
       bindUpdatingOpcode(cell, (value) => {
-        api.textContent(textNode, String(value ?? ""));
+        api.textContent(textNode, String(value ?? ''));
       }),
     ],
-    textNode
+    textNode,
   );
   return textNode;
 }
 function text(text: string | Cell | MergedCell | Fn): NodeReturnType {
-  if (typeof text === "string") {
+  if (typeof text === 'string') {
     return def(api.text(text));
   } else if (text !== null && (text as AnyCell)[isTag]) {
     return def(cellToText(text as AnyCell));
-  } else if (typeof text === "function") {
+  } else if (typeof text === 'function') {
     const maybeFormula = formula(text, 'textNode');
     if (maybeFormula.isConst) {
       try {
@@ -411,7 +417,7 @@ function text(text: string | Cell | MergedCell | Fn): NodeReturnType {
       return $_text(maybeFormula);
     }
   } else {
-    throw new Error("invalid text");
+    throw new Error('invalid text');
   }
 }
 
@@ -420,7 +426,7 @@ type BranchCb = () => ComponentReturnType | NodeReturnType;
 function ifCond(
   cell: Cell<boolean>,
   trueBranch: BranchCb,
-  falseBranch: BranchCb
+  falseBranch: BranchCb,
 ) {
   const outlet = api.fragment();
   ifCondition(cell, outlet, trueBranch, falseBranch);
@@ -430,7 +436,7 @@ function ifCond(
 function each<T extends { id: number }>(
   items: Cell<T[]> | MergedCell,
   fn: (item: T) => Array<ComponentReturnType | NodeReturnType>,
-  key: string | null = null
+  key: string | null = null,
 ) {
   const outlet = api.fragment();
   new ListComponent(
@@ -439,7 +445,7 @@ function each<T extends { id: number }>(
       ItemComponent: fn,
       key,
     },
-    outlet
+    outlet,
   );
   return def(outlet);
 }
@@ -451,10 +457,10 @@ const ArgProxyHandler = {
     return undefined;
   },
   set() {
-    throw new Error("args are readonly");
+    throw new Error('args are readonly');
   },
 };
-export function $_args(args: Record<string, unknown>) { 
+export function $_args(args: Record<string, unknown>) {
   if (IS_GLIMMER_COMPAT_MODE) {
     return new Proxy(args, ArgProxyHandler);
   } else {
@@ -472,15 +478,15 @@ export function $_fin(
   roots: Array<ComponentReturnType | NodeReturnType>,
   slots: Slots,
   isStable: boolean,
-  ctx: unknown
+  ctx: unknown,
 ) {
   const nodes: Array<
     HTMLElement | ComponentReturnType | NodeReturnType | Text | Comment
   > = [];
   roots.forEach((root) => {
-    if ("nodes" in root) {
+    if ('nodes' in root) {
       nodes.push(
-        ...(root.nodes as unknown as Array<HTMLElement | Text | Comment>)
+        ...(root.nodes as unknown as Array<HTMLElement | Text | Comment>),
       );
     } else {
       nodes.push(root.node as unknown as HTMLElement | Text | Comment);
@@ -495,7 +501,7 @@ export function $_fin(
         executeDestructors(ctx as unknown as object);
       },
     ],
-    nodes[0]
+    nodes[0],
   );
   return {
     nodes,
