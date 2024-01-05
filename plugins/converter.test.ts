@@ -107,7 +107,17 @@ describe("convert function builder", () => {
       expect($t<ASTv1.ElementNode>(`<div> sd</div>`)).toEqual(
         $node({
           tag: "div",
-          children: [" sd"],
+          events: [
+            ['textContent', ' sd']
+          ]
+        })
+      );
+    });
+    test("converts a simple element with complex child", () => {
+      expect($t<ASTv1.ElementNode>(`<div> sd<span></span></div>`)).toEqual(
+        $node({
+          tag: "div",
+          children: [" sd", $node({ tag: "span" })],
         })
       );
     });
@@ -248,7 +258,9 @@ describe("convert function builder", () => {
         $node({
           tag: "div",
           hasStableChild: true,
-          children: ["foo"],
+          events: [
+            ['textContent', 'foo']
+          ]
         })
       );
       expect($t<ASTv1.ElementNode>(`<div><p></p></div>`)).toEqual(

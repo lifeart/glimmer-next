@@ -29,7 +29,7 @@ export class Row extends Component<RowArgs> {
   get isSelected() {
     return this.selected === this.id;
   }
-  className = () => {
+  get className() {
     return this.isSelected ? "danger" : "";
   };
   onClick = () => {

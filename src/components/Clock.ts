@@ -1,24 +1,33 @@
 import { registerDestructor } from "@/utils/destroyable";
-import { cell, formula } from "@/utils/reactive";
+import { cell } from "@/utils/reactive";
 import { hbs, scope } from "@/utils/template";
 
-export function Clock() {
+
+function Display(props: { value: string }) {
+  scope({ props });
+  return hbs`<span>{{props.value}}</span>`;
+}
+
+export function Clock(this: any) {
   const time = cell(Date.now(), "time");
 
   const timeInterval = setInterval(() => {
     time.value = Date.now();
   }, 1000);
 
-  const current = formula(() => {
-    return new Date(time.value).toLocaleTimeString();
+  Object.defineProperty(this, "current", {
+    get() {
+      return new Date(time.value).toLocaleTimeString();
+    },
+    set() {
+    }
   });
 
-  // @ts-expect-error this is not typed
   registerDestructor(this, () => {
     clearInterval(timeInterval);
   });
 
-  scope({ current });
+  scope({ Display });
 
-  return hbs`<span>{{current}}</span>`;
+  return hbs`<span><Display @value={{this.current}} /></span>`;
 }

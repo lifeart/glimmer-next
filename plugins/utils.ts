@@ -1,5 +1,6 @@
 import type { ASTv1 } from "@glimmer/syntax";
 import { SYMBOLS } from "./symbols";
+import { flags } from "./flags";
 
 export type HBSControlExpression = {
   type: "each" | "if";
@@ -41,8 +42,19 @@ export function isPath(str: string) {
   return str.startsWith("$:");
 }
 
-export function serializePath(p: string): string {
-  return p.replace("$:", "").replace("@", "this.args.");
+export function resolvePath(str: string) {
+  return str.replace("$:", "").replace("@", "this.args.");
+}
+
+export function serializePath(p: string, wrap = flags.IS_GLIMMER_COMPAT_MODE): string {
+  const isFunction = p.startsWith('$:(');
+  if (wrap === false) {
+    return resolvePath(p);
+  }
+  if (isFunction) {
+    return resolvePath(p);
+  }
+  return `() => ${resolvePath(p)}`;
 }
 
 export function resolvedChildren(els: ASTv1.Node[]) {
@@ -61,7 +73,7 @@ export function serializeChildren(
   children: Array<string | HBSNode | HBSControlExpression>
 ) {
   if (children.length === 0) {
-    return "null";
+    return '';
   }
   return `${children
     .map((child) => {
@@ -78,7 +90,7 @@ export function serializeChildren(
 
 function toChildArray(childs: Array<HBSNode | string> | null): string {
   if (!childs) {
-    return "[null]";
+    return "[]";
   }
   return `[${childs
     .map((child) => serializeNode(child))
@@ -190,7 +202,7 @@ export function serializeNode(
       return !attr[0].startsWith("@");
     });
     const props = node.properties;
-    const secondArg = hasSplatAttrs
+    let secondArg = hasSplatAttrs
       ? `{props: [...$fw.props, ...${toArray(
         props
       )}], attrs: [...$fw.attrs, ...${toArray(
@@ -200,9 +212,23 @@ export function serializeNode(
           node.events
         )}}`;
 
+    let isSecondArgEmpty = secondArg.split('[]').length === 4;  
+    if (isSecondArgEmpty) {
+      if (!secondArg.includes('...')) {
+        isSecondArgEmpty = true;
+        secondArg = '';
+      } else {
+        isSecondArgEmpty = false;
+      }
+    }
+
     if (node.selfClosing) {
       // @todo - we could pass `hasStableChild` ans hasBlock / hasBlockParams to the DOM helper
-      return `${SYMBOLS.COMPONENT}(new ${node.tag}(${toObject(args)}, ${secondArg}))`;
+      if (flags.IS_GLIMMER_COMPAT_MODE === false) {
+        return `${SYMBOLS.COMPONENT}(new ${node.tag}(${toObject(args)}, ${secondArg}))`;
+      } else {
+        return `${SYMBOLS.COMPONENT}(new ${node.tag}(${SYMBOLS.ARGS}(${toObject(args)}), ${secondArg}))`;
+      }
     } else {
       const slots: HBSNode[] = node.children.filter((child) => {
         if (typeof child === 'string') {
@@ -219,11 +245,12 @@ export function serializeNode(
       const serializedSlots = slots.map((slot) => {
         const slotChildren = serializeChildren(slot.children);
         const slotName = slot.tag.startsWith(':') ? slot.tag.slice(1) : 'default';
-        return `${slotName}: (${slot.blockParams.join(",")}) => ${
-          slotChildren !== "null" ? `[${slotChildren}]` : "[]"
-        }`;
+        return `${slotName}: (${slot.blockParams.join(",")}) => [${slotChildren}]`;
       });
-      const fn = `new ${node.tag}(${toObject(args)}, ${secondArg})`;
+      let fn = `new ${node.tag}(${SYMBOLS.ARGS}(${toObject(args)}), ${secondArg})`;
+      if (flags.IS_GLIMMER_COMPAT_MODE === false) {
+        fn = `new ${node.tag}(${toObject(args)}, ${secondArg})`;
+      }
       const slotsObj = `{${serializedSlots.join(',')}}`;
       // @todo - we could pass `hasStableChild` ans hasBlock / hasBlockParams to the DOM helper
       // including `has-block` helper

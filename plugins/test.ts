@@ -118,7 +118,7 @@ export function transform(source: string, fileName: string) {
   let src = txt ?? "";
 
   programResults.forEach((result) => {
-    src = txt?.replace("$placeholder", result);
+    src = src?.replace("$placeholder", result);
   });
 
   return src.split("$:").join("");

@@ -113,21 +113,48 @@ function addChild(
     api.append(element, cellToText(child as AnyCell));
   } else if (typeof child === "function") {
     // looks like a component
-    const componentProps:
+    const f = formula(child as unknown as () => unknown, `${element.tagName}.child.fn`);
+    let componentProps:
       | ComponentReturnType
       | NodeReturnType
       | string
-      | number = child();
+      | number = ''
+    const dest = bindUpdatingOpcode(f, (value) => {
+      componentProps = value as unknown as ComponentReturnType | NodeReturnType | string | number;
+    });
+    if (componentProps !== null && (componentProps as unknown as AnyCell)[isTag]) {
+      return addChild(element, componentProps as unknown as AnyCell);
+    } else if (typeof componentProps === 'function') {
+      return addChild(element, formula(() => {
+        return child()();
+      }, `${element.tagName}.child.fn`) as unknown as AnyCell);
+    } 
     if (typeof componentProps !== "object") {
-      const text = api.text(String(componentProps));
-      api.append(element, text);
+      if (f.isConst) {
+        const text = api.text(String(componentProps));
+        api.append(element, text);
+      } else {
+        const text = api.text("");
+        addDestructors(
+          [
+            bindUpdatingOpcode(f, (value) => {
+              api.textContent(text, String(value));
+            }),
+          ],
+          text
+        );
+        api.append(element, text);
+      }
     } else if ("nodes" in componentProps) {
+      // @ts-expect-error never
       componentProps.nodes.forEach((node) => {
         api.append(element, node);
       });
-    } else {
+    }else {
+      // @ts-expect-error never
       api.append(element, componentProps.node);
     }
+    dest();
   }
 }
 function _DOM(
@@ -147,7 +174,7 @@ function _DOM(
   const props = tagProps[0];
   const attrs = tagProps[1];
   const _events = tagProps[2];
-  const hasSplatAttrs = tagProps.length === 4;
+  const hasSplatAttrs = typeof tagProps[3] === 'object';
   const attributes = hasSplatAttrs
     ? [...tagProps[3]!.attrs, ...attrs]
     : attrs;
@@ -158,7 +185,27 @@ function _DOM(
     ? [...tagProps[3]!.events, ..._events]
     : _events;
   events.forEach(([eventName, fn]) => {
-    if (eventName === "onCreated") {
+    if (eventName === "textContent") {
+      if (typeof fn === 'function') {
+        destructors.push(
+          bindUpdatingOpcode(formula(() => {
+            // @ts-expect-error function signature
+            const v = fn();
+            if (typeof v === 'string' || typeof v === 'number') {
+              return v;
+            } else if (v !== null && (v as unknown as AnyCell)[isTag]) {
+              return (v as unknown as AnyCell).value;
+            } else {
+              throw new Error('invalid textContent value');
+            }
+          }, `${element.tagName}.textContent`), (value) => {
+            api.textContent(element, String(value));
+          })
+        );
+      } else {
+        api.textContent(element, fn);
+      }
+    } else if (eventName === "onCreated") {
       const destructor = (fn as ModifierFn)(element);
       if (typeof destructor === "function") {
         destructors.push(destructor);
@@ -239,11 +286,13 @@ function def(node: Node) {
 }
 
 function mergeComponents(
-  components: Array<ComponentReturnType | NodeReturnType | Node>
+  components: Array<ComponentReturnType | NodeReturnType | Node | string | number>
 ) {
   const nodes: Array<Node> = [];
   components.forEach((component) => {
-    if ("index" in component) {
+    if (typeof component === "string" || typeof component === "number") {
+      nodes.push(api.text(String(component)));
+    } else if ("index" in component) {
       if ("nodes" in component) {
         nodes.push(...component.nodes);
       } else if ("node" in component) {
@@ -385,7 +434,24 @@ function each<T extends { id: number }>(
   );
   return def(outlet);
 }
-
+const ArgProxyHandler = {
+  get(target: Record<string, () => unknown>, prop: string) {
+    if (prop in target) {
+      return target[prop]();
+    }
+    return undefined;
+  },
+  set() {
+    throw new Error("args are readonly");
+  },
+};
+export function $_args(args: Record<string, unknown>) { 
+  if (IS_GLIMMER_COMPAT_MODE) {
+    return new Proxy(args, ArgProxyHandler);
+  } else {
+    return args;
+  }
+}
 export const $_if = ifCond;
 export const $_each = each;
 export const $_slot = slot;

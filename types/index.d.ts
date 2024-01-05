@@ -3,6 +3,8 @@ declare global {
     getDestructors: () => WeakSet<Node, Array<() => void>>;
     getVM: () => any;
   }
+
+  const IS_GLIMMER_COMPAT_MODE: boolean;
 }
 
 declare module '@glint/environment-ember-template-imports/globals' {
