@@ -185,7 +185,27 @@ function _DOM(
     ? [...tagProps[3]!.events, ..._events]
     : _events;
   events.forEach(([eventName, fn]) => {
-    if (eventName === "onCreated") {
+    if (eventName === "textContent") {
+      if (typeof fn === 'function') {
+        destructors.push(
+          bindUpdatingOpcode(formula(() => {
+            // @ts-expect-error function signature
+            const v = fn();
+            if (typeof v === 'string' || typeof v === 'number') {
+              return v;
+            } else if (v !== null && (v as unknown as AnyCell)[isTag]) {
+              return (v as unknown as AnyCell).value;
+            } else {
+              throw new Error('invalid textContent value');
+            }
+          }, `${element.tagName}.textContent`), (value) => {
+            api.textContent(element, String(value));
+          })
+        );
+      } else {
+        api.textContent(element, fn);
+      }
+    } else if (eventName === "onCreated") {
       const destructor = (fn as ModifierFn)(element);
       if (typeof destructor === "function") {
         destructors.push(destructor);

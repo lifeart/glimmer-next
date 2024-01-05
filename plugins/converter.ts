@@ -175,6 +175,10 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
   }
 
   function ElementToNode(element: ASTv1.ElementNode): HBSNode {
+
+    const children = resolvedChildren(element.children)
+    .map((el) => ToJSType(el))
+    .filter((el) => el !== null);
     const node = {
       tag: element.tag,
       selfClosing: element.selfClosing,
@@ -225,10 +229,15 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
           }
         })
         .filter((el) => el !== null),
-      children: resolvedChildren(element.children)
-        .map((el) => ToJSType(el))
-        .filter((el) => el !== null),
+      children: children,
     };
+    if (children.length === 1 && typeof children[0] === 'string') {
+      const v = children[0];
+      if (!v.includes(SYMBOLS.SLOT)) {
+        node.children = [];
+        node.events.push(['textContent', v]);
+      }
+    }
     return node as unknown as HBSNode;
   }
   return {
