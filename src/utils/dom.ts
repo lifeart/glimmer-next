@@ -18,7 +18,7 @@ import { api } from '@/utils/dom-api';
 let svgContextOpened = false;
 
 type ModifierFn = (
-  element: HTMLElement,
+  element: HTMLElement | SVGElement,
   ...args: unknown[]
 ) => void | DestructorFn;
 
@@ -39,7 +39,7 @@ type FwType = {
 type Props = [TagProp[], TagAttr[], TagEvent[], FwType?];
 
 function $prop(
-  element: HTMLElement,
+  element: HTMLElement | SVGElement,
   key: string,
   value: unknown,
   destructors: DestructorFn[],
@@ -65,7 +65,7 @@ function $prop(
 }
 
 function $attr(
-  element: HTMLElement,
+  element: HTMLElement | SVGElement,
   key: string,
   value: unknown,
   destructors: Destructors,
@@ -91,7 +91,7 @@ function $attr(
 }
 
 function addChild(
-  element: HTMLElement,
+  element: HTMLElement | SVGElement,
   child:
     | NodeReturnType
     | ComponentReturnType

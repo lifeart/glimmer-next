@@ -175,7 +175,7 @@ function getNode(el: Node): Node {
 
 export function addDestructors(
   destructors: Destructors,
-  source: ComponentReturnType | NodeReturnType | HTMLElement | Text | Comment,
+  source: ComponentReturnType | NodeReturnType | HTMLElement | SVGElement | Text | Comment,
 ) {
   if (destructors.length === 0) {
     return;
