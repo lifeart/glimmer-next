@@ -41,12 +41,16 @@ export function isPath(str: string) {
   return str.startsWith("$:");
 }
 
-export function serializePath(p: string, wrap = true): string {
+export function resolvePath(str: string) {
+  return str.replace("$:", "").replace("@", "this.args.");
+}
+
+export function serializePath(p: string): string {
   const isFunction = p.startsWith('$:(');
-  if (isFunction || wrap === false) {
-    return p.replace("$:", "").replace("@", "this.args.");
+  if (isFunction) {
+    return resolvePath(p);
   }
-  return `() => ${p.replace("$:", "").replace("@", "this.args.")}`;
+  return `() => ${resolvePath(p)}`;
 }
 
 export function resolvedChildren(els: ASTv1.Node[]) {
@@ -127,7 +131,7 @@ function serializeProp(
   }
   const isScopeValue = isPath(attr[1]);
   return `${toPropName(attr[0])}: ${
-    isScopeValue ? serializePath(attr[1], false) : escapeString(attr[1])
+    isScopeValue ? serializePath(attr[1]) : escapeString(attr[1])
   }`;
 }
 
@@ -206,7 +210,7 @@ export function serializeNode(
 
     if (node.selfClosing) {
       // @todo - we could pass `hasStableChild` ans hasBlock / hasBlockParams to the DOM helper
-      return `${SYMBOLS.COMPONENT}(new ${node.tag}(${toObject(args)}, ${secondArg}))`;
+      return `${SYMBOLS.COMPONENT}(new ${node.tag}(${SYMBOLS.ARGS}(${toObject(args)}), ${secondArg}))`;
     } else {
       const slots: HBSNode[] = node.children.filter((child) => {
         if (typeof child === 'string') {
@@ -227,7 +231,7 @@ export function serializeNode(
           slotChildren !== "null" ? `[${slotChildren}]` : "[]"
         }`;
       });
-      const fn = `new ${node.tag}(${toObject(args)}, ${secondArg})`;
+      const fn = `new ${node.tag}(${SYMBOLS.ARGS}(${toObject(args)}), ${secondArg})`;
       const slotsObj = `{${serializedSlots.join(',')}}`;
       // @todo - we could pass `hasStableChild` ans hasBlock / hasBlockParams to the DOM helper
       // including `has-block` helper

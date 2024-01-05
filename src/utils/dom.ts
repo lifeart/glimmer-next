@@ -113,24 +113,48 @@ function addChild(
     api.append(element, cellToText(child as AnyCell));
   } else if (typeof child === "function") {
     // looks like a component
-    const componentProps:
+    const f = formula(child as unknown as () => unknown, `${element.tagName}.child.fn`);
+    let componentProps:
       | ComponentReturnType
       | NodeReturnType
       | string
-      | number = child();
+      | number = ''
+    const dest = bindUpdatingOpcode(f, (value) => {
+      componentProps = value as unknown as ComponentReturnType | NodeReturnType | string | number;
+    });
     if (componentProps !== null && (componentProps as unknown as AnyCell)[isTag]) {
       return addChild(element, componentProps as unknown as AnyCell);
-    }
+    } else if (typeof componentProps === 'function') {
+      return addChild(element, formula(() => {
+        return child()();
+      }, `${element.tagName}.child.fn`) as unknown as AnyCell);
+    } 
     if (typeof componentProps !== "object") {
-      const text = api.text(String(componentProps));
-      api.append(element, text);
+      if (f.isConst) {
+        const text = api.text(String(componentProps));
+        api.append(element, text);
+      } else {
+        const text = api.text("");
+        addDestructors(
+          [
+            bindUpdatingOpcode(f, (value) => {
+              api.textContent(text, String(value));
+            }),
+          ],
+          text
+        );
+        api.append(element, text);
+      }
     } else if ("nodes" in componentProps) {
+      // @ts-expect-error never
       componentProps.nodes.forEach((node) => {
         api.append(element, node);
       });
-    } else {
+    }else {
+      // @ts-expect-error never
       api.append(element, componentProps.node);
     }
+    dest();
   }
 }
 function _DOM(
@@ -388,7 +412,25 @@ function each<T extends { id: number }>(
   );
   return def(outlet);
 }
-
+const ArgProxyHandler = {
+  get(target: Record<string, () => unknown>, prop: string) {
+    if (prop in target) {
+      return target[prop]();
+    }
+    return undefined;
+  },
+  set() {
+    throw new Error("args are readonly");
+  },
+};
+const IS_GLIMMER_COMPAT_MODE = true;
+export function $_args(args: Record<string, unknown>) { 
+  if (IS_GLIMMER_COMPAT_MODE) {
+    return new Proxy(args, ArgProxyHandler);
+  } else {
+    return args;
+  }
+}
 export const $_if = ifCond;
 export const $_each = each;
 export const $_slot = slot;
