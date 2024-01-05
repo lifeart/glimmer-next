@@ -174,7 +174,7 @@ function _DOM(
   const props = tagProps[0];
   const attrs = tagProps[1];
   const _events = tagProps[2];
-  const hasSplatAttrs = tagProps.length === 4;
+  const hasSplatAttrs = typeof tagProps[3] === 'object';
   const attributes = hasSplatAttrs
     ? [...tagProps[3]!.attrs, ...attrs]
     : attrs;

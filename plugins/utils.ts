@@ -202,7 +202,7 @@ export function serializeNode(
       return !attr[0].startsWith("@");
     });
     const props = node.properties;
-    const secondArg = hasSplatAttrs
+    let secondArg = hasSplatAttrs
       ? `{props: [...$fw.props, ...${toArray(
         props
       )}], attrs: [...$fw.attrs, ...${toArray(
@@ -211,6 +211,16 @@ export function serializeNode(
       : `{props: ${toArray(props)}, attrs: ${toArray(attrs)},  events: ${toArray(
           node.events
         )}}`;
+
+    let isSecondArgEmpty = secondArg.split('[]').length === 4;  
+    if (isSecondArgEmpty) {
+      if (!secondArg.includes('...')) {
+        isSecondArgEmpty = true;
+        secondArg = '';
+      } else {
+        isSecondArgEmpty = false;
+      }
+    }
 
     if (node.selfClosing) {
       // @todo - we could pass `hasStableChild` ans hasBlock / hasBlockParams to the DOM helper
