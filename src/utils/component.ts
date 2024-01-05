@@ -127,7 +127,7 @@ export async function destroyElement(
             relatedRoots.delete(node as DocumentFragment);
             return;
           }
-          const parent = node.parentElement;
+          const parent = node.parentNode;
           if (parent !== null) {
             parent.removeChild(node);
           } else {
@@ -150,7 +150,7 @@ export async function destroyElement(
         return;
       }
       try {
-        component.node.parentElement!.removeChild(component.node);
+        component.node.parentNode!.removeChild(component.node);
       } catch (e) {
         console.warn(
           `Woops, looks like node we trying to destroy no more in DOM`,

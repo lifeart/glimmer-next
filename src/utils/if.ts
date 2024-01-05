@@ -55,7 +55,7 @@ export function ifCondition(
               return;
             }
             api.insert(
-              placeholder.parentElement!,
+              placeholder.parentNode!,
               newPlaceholder,
               placeholder
             );
@@ -84,7 +84,7 @@ export function ifCondition(
           prevComponent = nextBranch();
           relatedRoots.set(outlet, prevComponent);
           renderElement(
-            placeholder.parentElement || target,
+            placeholder.parentNode || target,
             prevComponent,
             placeholder
           );
@@ -118,7 +118,7 @@ export function ifCondition(
           prevComponent = nextBranch();
           relatedRoots.set(outlet, prevComponent);
           renderElement(
-            placeholder.parentElement || target,
+            placeholder.parentNode || target,
             prevComponent,
             placeholder
           );
