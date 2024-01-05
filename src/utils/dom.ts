@@ -423,7 +423,6 @@ const ArgProxyHandler = {
     throw new Error("args are readonly");
   },
 };
-const IS_GLIMMER_COMPAT_MODE = true;
 export function $_args(args: Record<string, unknown>) { 
   if (IS_GLIMMER_COMPAT_MODE) {
     return new Proxy(args, ArgProxyHandler);

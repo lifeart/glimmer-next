@@ -4,12 +4,11 @@ import { hbs, scope } from "@/utils/template";
 
 
 function Display(props: { value: string }) {
-  console.log("Display", props);
   scope({ props });
   return hbs`<span>{{props.value}}</span>`;
 }
 
-export function Clock() {
+export function Clock(this: any) {
   const time = cell(Date.now(), "time");
 
   const timeInterval = setInterval(() => {
@@ -24,7 +23,6 @@ export function Clock() {
     }
   });
 
-  // @ts-expect-error this is not typed
   registerDestructor(this, () => {
     clearInterval(timeInterval);
   });

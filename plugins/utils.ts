@@ -1,5 +1,6 @@
 import type { ASTv1 } from "@glimmer/syntax";
 import { SYMBOLS } from "./symbols";
+import { flags } from "./flags";
 
 export type HBSControlExpression = {
   type: "each" | "if";
@@ -47,6 +48,9 @@ export function resolvePath(str: string) {
 
 export function serializePath(p: string): string {
   const isFunction = p.startsWith('$:(');
+  if (flags.IS_GLIMMER_COMPAT_MODE === false) {
+    return resolvePath(p);
+  }
   if (isFunction) {
     return resolvePath(p);
   }
@@ -210,7 +214,11 @@ export function serializeNode(
 
     if (node.selfClosing) {
       // @todo - we could pass `hasStableChild` ans hasBlock / hasBlockParams to the DOM helper
-      return `${SYMBOLS.COMPONENT}(new ${node.tag}(${SYMBOLS.ARGS}(${toObject(args)}), ${secondArg}))`;
+      if (flags.IS_GLIMMER_COMPAT_MODE === false) {
+        return `${SYMBOLS.COMPONENT}(new ${node.tag}(${toObject(args)}, ${secondArg}))`;
+      } else {
+        return `${SYMBOLS.COMPONENT}(new ${node.tag}(${SYMBOLS.ARGS}(${toObject(args)}), ${secondArg}))`;
+      }
     } else {
       const slots: HBSNode[] = node.children.filter((child) => {
         if (typeof child === 'string') {
@@ -231,7 +239,10 @@ export function serializeNode(
           slotChildren !== "null" ? `[${slotChildren}]` : "[]"
         }`;
       });
-      const fn = `new ${node.tag}(${SYMBOLS.ARGS}(${toObject(args)}), ${secondArg})`;
+      let fn = `new ${node.tag}(${SYMBOLS.ARGS}(${toObject(args)}), ${secondArg})`;
+      if (flags.IS_GLIMMER_COMPAT_MODE === false) {
+        fn = `new ${node.tag}(${toObject(args)}, ${secondArg})`;
+      }
       const slotsObj = `{${serializedSlots.join(',')}}`;
       // @todo - we could pass `hasStableChild` ans hasBlock / hasBlockParams to the DOM helper
       // including `has-block` helper

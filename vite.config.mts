@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { compiler } from "./plugins/compiler.ts";
+import { flags } from "./plugins/flags.ts";
 
 
 const self = import.meta.url;
@@ -10,6 +11,9 @@ const currentPath = path.dirname(fileURLToPath(self));
 
 export default defineConfig({
   plugins: [compiler()],
+  define: {
+    'IS_GLIMMER_COMPAT_MODE': flags.IS_GLIMMER_COMPAT_MODE,
+  },
   build: {
     modulePreload: false,
     target: 'esnext',
