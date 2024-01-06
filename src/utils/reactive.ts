@@ -133,8 +133,7 @@ export class MergedCell {
     opsForTag.delete(this);
     if (this.relatedCells !== null) {
       this.relatedCells.forEach((cell) => {
-        // should be save, because at this point we at the end of the render cycle
-        relatedTags.delete(cell);
+        relatedTags.get(cell)?.delete(this);
       });
       this.relatedCells.clear();
     }
