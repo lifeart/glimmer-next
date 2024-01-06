@@ -216,9 +216,14 @@ function _DOM(
       }
     } else {
       // event case (on modifier)
-      destructors.push(
-        addEventListener(element, eventName, fn as EventListener),
-      );
+      if (RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES) {
+        destructors.push(
+          addEventListener(element, eventName, fn as EventListener),
+        );
+      } else {
+        addEventListener(element, eventName, fn as EventListener);
+      }
+    
     }
   });
   const seenKeys = new Set<string>();

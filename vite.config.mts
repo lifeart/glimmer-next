@@ -31,6 +31,7 @@ export default defineConfig(({ mode }) => ({
   plugins: [...plugins, compiler(mode), circleDependency({})],
   define: {
     IS_GLIMMER_COMPAT_MODE: flags.IS_GLIMMER_COMPAT_MODE,
+    RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES: flags.RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES,
   },
   build: {
     lib: isLibBuild ? {

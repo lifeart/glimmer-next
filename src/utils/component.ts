@@ -251,6 +251,7 @@ export type NodeReturnType = {
   node: Node;
   index: number;
 };
+const noop = () => {};
 
 export function addEventListener(
   node: Node,
@@ -258,7 +259,12 @@ export function addEventListener(
   fn: EventListener,
 ) {
   node.addEventListener(eventName, fn);
-  return () => {
-    node.removeEventListener(eventName, fn);
-  };
+  if (RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES) {
+    return () => {
+      node.removeEventListener(eventName, fn);
+    };
+  } else {
+    return noop;
+  }
+
 }

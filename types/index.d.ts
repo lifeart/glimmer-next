@@ -5,6 +5,7 @@ declare global {
   }
 
   const IS_GLIMMER_COMPAT_MODE: boolean;
+  const RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES: boolean;
 }
 
 declare module '@glint/environment-ember-template-imports/globals' {
