@@ -1,7 +1,7 @@
 {
   "name": "@lifeart/gxt",
   "private": false,
-  "version": "0.0.4",
+  "version": "0.0.5",
   "type": "module",
   "license": "MIT",
   "keywords": [
@@ -18,7 +18,7 @@
     "build": "tsc && vite build",
     "build-lib": "tsc && vite build -- --lib",
     "preview": "vite preview",
-    "prepublishOnly": "npm run build-lib",
+    "prepublishOnly": "npm run build-lib && node ./utils/write-compiler-types.js",
     "test": "vitest",
     "fix": "prettier --write ."
   },
