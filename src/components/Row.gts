@@ -1,14 +1,15 @@
 import { RemoveIcon } from './RemoveIcon.gts';
 import type { Item } from '@/utils/data';
-import { type Cell, cellFor } from '@/utils/reactive';
+import { cellFor } from '@/utils/reactive';
 import { Component } from '@/utils/component';
 import type { ModifierReturn } from '@glint/template/-private/integration';
 
 type RowArgs = {
   Args: {
     item: Item;
-    selectedCell: Cell<number>;
+    selected: number;
     onRemove: (item: Item) => void;
+    onSelect: (item: Item) => void;
   };
 };
 
@@ -20,20 +21,14 @@ export class Row extends Component<RowArgs> {
   get id() {
     return this.args.item.id;
   }
-  get selected() {
-    return this.args.selectedCell.value;
-  }
-  set selected(value: number) {
-    this.args.selectedCell.value = value;
-  }
   get isSelected() {
-    return this.selected === this.id;
+    return this.args.selected === this.id;
   }
   get className() {
     return this.isSelected ? 'danger' : '';
   }
   onClick = () => {
-    this.selected = this.isSelected ? 0 : this.id;
+    this.args.onSelect(this.args.item);
   };
   onClickRemove = (e: Event) => {
     if (e.isTrusted) {

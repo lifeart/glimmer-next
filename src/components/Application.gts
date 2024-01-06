@@ -7,6 +7,7 @@ import { Component } from '@/utils/component';
 import { Row } from './Row.gts';
 export class Application extends Component {
   itemsCell = cell<Item[]>([], 'items');
+  selectedCell = cell(0, 'selectedCell');
   rootNode!: HTMLElement;
   get items() {
     return this.itemsCell.value;
@@ -14,7 +15,9 @@ export class Application extends Component {
   set items(value: Item[]) {
     this.itemsCell.value = value;
   }
-  selectedCell = cell(0, 'selectedCell');
+  get selected() {
+    return this.selectedCell.value;
+  }
   async destroy() {
     await Promise.all(runDestructors(this.rootNode));
     this.rootNode.innerHTML = '';
@@ -22,13 +25,19 @@ export class Application extends Component {
   }
   constructor(rootNode: HTMLElement) {
     super({});
-    this.removeItem = this.removeItem.bind(this);
     this.rootNode = rootNode;
     // @ts-expect-error wrong signature for template
     renderComponent(this.template(), this.rootNode);
   }
-  removeItem(item: Item) {
+  removeItem = (item: Item) => {
     this.items = this.items.filter((i) => i.id !== item.id);
+  }
+  onSelect = (item: Item) => {
+    if (this.selectedCell.value === item.id) {
+      this.selectedCell.value = 0;
+      return;
+    }
+    this.selectedCell.value = item.id;
   }
   create_1_000itemsCell() {
     this.items = buildData(1000);
@@ -71,7 +80,8 @@ export class Application extends Component {
           {{#each this.items as |item|}}
             <Row
               @item={{item}}
-              @selectedCell={{this.selectedCell}}
+              @onSelect={{this.onSelect}}
+              @selected={{this.selected}}
               @onRemove={{this.removeItem}}
             />
           {{/each}}
