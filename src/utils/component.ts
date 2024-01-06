@@ -67,6 +67,10 @@ export function renderComponent(
   component: ComponentReturnType,
   target: ComponentRenderTarget,
 ): ComponentReturnType {
+  if ('template' in component && typeof component.template === 'function') {
+    // @ts-expect-error typings mismatch
+    return renderComponent(component.template());
+  }
   const targetElement = targetFor(target);
   component.nodes.forEach((node) => {
     api.append(targetElement, node);

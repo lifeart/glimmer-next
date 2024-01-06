@@ -10,6 +10,7 @@
 
 - Related issue: [glimmer-vm/issues/1540](https://github.com/glimmerjs/glimmer-vm/issues/1540)
 - Related PR: [glimmer-vm/pull/1541](https://github.com/glimmerjs/glimmer-vm/pull/1541)
+- Sample App: [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark/pull/1554)
 
 ## Component sample
 
@@ -18,7 +19,7 @@ Based on [template imports RFC](https://rfcs.emberjs.com/id/0779-first-class-com
 ```gjs
 import { RemoveIcon } from "./RemoveIcon.gts";
 import type { Item } from "@/utils/data";
-import { Cell, cellFor, formula, Component } from "@lifeart/gxt";
+import { type Cell, cellFor, Component } from "@lifeart/gxt";
 
 type RowArgs = {
   Args: {
@@ -44,9 +45,9 @@ export class Row extends Component<RowArgs> {
   get isSelected() {
     return this.selected === this.id;
   }
-  className = formula(() => {
+  get className() {
     return this.isSelected ? "danger" : "";
-  });
+  };
   onClick = () => {
     this.selected = this.isSelected ? 0 : this.id;
   };
@@ -149,4 +150,33 @@ export function Icon() {
 
   return hbs`<i class="glyphicon glyphicon-remove"></i>`;
 }
+```
+
+
+### Setup
+
+```
+pnpm install @lifeart/gxt
+```
+
+Edit `vite.config.mts` to import compiler:
+
+```js
+import { defineConfig } from "vite";
+import { compiler } from "@lifeart/gxt/compiler";
+
+export default defineConfig(({ mode }) => ({
+  plugins: [compiler(mode)],
+}));
+```
+
+To render root component, use `renderComponent` function.
+
+```js
+import { renderComponent } from "@lifeart/gxt";
+import App from "./App.gts";
+
+renderComponent(new App(), document.getElementById("app"));
+```
+
 ```
