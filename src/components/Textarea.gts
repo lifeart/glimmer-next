@@ -1,4 +1,4 @@
-import { cell, formula } from '@/utils/reactive';
+import { cell, formula } from '@lifeart/gxt';
 
 const time = cell(Date.now(), 'time');
 

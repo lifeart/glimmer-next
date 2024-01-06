@@ -18,8 +18,7 @@ Based on [template imports RFC](https://rfcs.emberjs.com/id/0779-first-class-com
 ```gjs
 import { RemoveIcon } from "./RemoveIcon.gts";
 import type { Item } from "@/utils/data";
-import { Cell, cellFor, formula } from "@/utils/reactive";
-import { Component } from "@/utils/component";
+import { Cell, cellFor, formula, Component } from "@lifeart/gxt";
 
 type RowArgs = {
   Args: {
@@ -141,8 +140,7 @@ function helper(...args: Args): string | boolean | number | null {
 `destructors` supported.
 
 ```ts
-import { hbs, scope } from "@/utils/template";
-import { registerDestructor } from "@/utils/destroyable";
+import { registerDestructor, hbs, scope } from "@lifeart/gxt";
 
 export function Icon() {
   registerDestructor(this, () => {

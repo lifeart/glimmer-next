@@ -1,5 +1,4 @@
-import { Component } from '@/utils/component';
-import type { Cell } from '@/utils/reactive';
+import { Component, type Cell } from '@lifeart/gxt';
 
 export class Checkbox extends Component<{
   Args: { isChecked: Cell<boolean> };

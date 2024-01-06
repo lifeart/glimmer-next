@@ -1,5 +1,4 @@
-import { Component } from '@/utils/component';
-import { hbs } from '@/utils/template';
+import { Component, hbs } from '@lifeart/gxt';
 
 type InputArgs = {
   value: string;

@@ -1,5 +1,5 @@
 import type Babel from '@babel/core';
-import { SYMBOLS } from './symbols';
+import { MAIN_IMPORT, SYMBOLS } from './symbols';
 
 export function processTemplate(
   hbsToProcess: string[],
@@ -47,7 +47,7 @@ export function processTemplate(
         },
         ImportDeclaration(path: any) {
           if (path.node.source.value === '@ember/template-compiler') {
-            path.node.source.value = '@/utils/template';
+            path.node.source.value = MAIN_IMPORT;
             path.node.specifiers.forEach((specifier: any) => {
               specifier.local.name = 'hbs';
               specifier.imported.name = 'hbs';
@@ -60,7 +60,7 @@ export function processTemplate(
             return t.importSpecifier(t.identifier(name), t.identifier(name));
           });
           path.node.body.unshift(
-            t.importDeclaration(IMPORTS, t.stringLiteral('@/utils/dom')),
+            t.importDeclaration(IMPORTS, t.stringLiteral(MAIN_IMPORT)),
           );
         },
         TaggedTemplateExpression(path: any) {

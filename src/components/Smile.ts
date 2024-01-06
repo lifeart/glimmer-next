@@ -1,7 +1,4 @@
-import { registerDestructor } from '@/utils/destroyable';
-import { cell } from '@/utils/reactive';
-import { hbs, scope } from '@/utils/template';
-import { effect } from '@/utils/vm';
+import { registerDestructor, cell, hbs, scope, effect } from '@lifeart/gxt';
 
 export function Smile(this: object) {
   const isVisible = cell(true, 'isVisible');

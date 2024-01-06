@@ -1,7 +1,6 @@
 import { RemoveIcon } from './RemoveIcon.gts';
 import type { Item } from '@/utils/data';
-import { cellFor } from '@/utils/reactive';
-import { Component } from '@/utils/component';
+import { Component, cellFor } from '@lifeart/gxt';
 import type { ModifierReturn } from '@glint/template/-private/integration';
 
 type RowArgs = {

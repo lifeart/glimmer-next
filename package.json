@@ -1,34 +1,51 @@
 {
   "name": "@lifeart/gxt",
-  "private": true,
-  "version": "0.0.0",
+  "private": false,
+  "version": "0.0.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build-lib": "tsc && vite build -- --lib",
     "preview": "vite preview",
+    "prepublishOnly": "npm run build-lib",
     "test": "vitest",
     "fix": "prettier --write ."
   },
+  "files": [
+    "dist"
+  ],
+  "module": "./dist/gxt.index.es.js",
+  "types": "./dist/src/utils/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/gxt.index.es.js",
+      "types": "./dist/src/utils/index.d.ts"
+    },
+    "./compiler": {
+      "import": "./dist/gxt.compiler.es.js",
+      "types": "./dist/compiler.d.ts"
+    }
+  },
   "devDependencies": {
-    "@babel/core": "^7.23.6",
-    "@babel/preset-typescript": "^7.23.3",
-    "@glimmer/syntax": "^0.87.1",
+    "vite-plugin-dts": "^3.7.0",
     "@glint/core": "^1.2.1",
     "@glint/environment-ember-template-imports": "^1.2.1",
     "@glint/environment-glimmerx": "^1.2.1",
     "@glint/template": "^1.2.1",
     "@types/babel__core": "^7.20.5",
-    "content-tag": "^1.2.2",
     "prettier": "^3.1.1",
     "prettier-plugin-ember-template-tag": "^2.0.0",
     "terser": "^5.26.0",
     "typescript": "^5.2.2",
     "vite": "^5.0.8",
-    "vitest": "^1.1.1",
-    "vite-plugin-circular-dependency": "^0.2.1"
+    "vite-plugin-circular-dependency": "^0.2.1",
+    "vitest": "^1.1.1"
   },
   "dependencies": {
-    
+    "@babel/core": "^7.23.6",
+    "@babel/preset-typescript": "^7.23.3",
+    "@glimmer/syntax": "^0.87.1",
+    "content-tag": "^1.2.2"
   }
 }

@@ -1,9 +1,6 @@
-import type { Item } from '@/utils/data';
-import { buildData, swapRows, updateData } from '@/utils/data';
-import { cell } from '@/utils/reactive';
-import { renderComponent, runDestructors } from '@/utils/component';
+import { buildData, swapRows, updateData, type Item } from '@/utils/data';
+import { renderComponent, runDestructors, Component, cell } from '@lifeart/gxt';
 import { Header } from './Header.gts';
-import { Component } from '@/utils/component';
 import { Row } from './Row.gts';
 export class Application extends Component {
   itemsCell = cell<Item[]>([], 'items');

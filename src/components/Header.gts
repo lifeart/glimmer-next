@@ -1,4 +1,4 @@
-import { Component } from '@/utils/component';
+import { Component } from '@lifeart/gxt';
 import { ButtonWrapper } from './ButtonWrapper.gts';
 import { Smile } from './Smile';
 import { Clock } from './Clock';

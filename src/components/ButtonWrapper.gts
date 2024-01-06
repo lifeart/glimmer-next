@@ -1,4 +1,4 @@
-import { Component } from '@/utils/component';
+import { Component } from '@lifeart/gxt';
 import { Button } from '@/components/Button.gts';
 
 type ButtonWrapperSignature = {

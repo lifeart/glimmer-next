@@ -1,6 +1,4 @@
-import { registerDestructor } from '@/utils/destroyable';
-import { cell } from '@/utils/reactive';
-import { hbs, scope } from '@/utils/template';
+import { cell, registerDestructor, hbs, scope } from '@lifeart/gxt';
 
 function Display(props: { value: string }) {
   scope({ props });

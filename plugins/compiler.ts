@@ -1,6 +1,7 @@
 import { type Plugin } from 'vite';
 import { Preprocessor } from 'content-tag';
 import { transform } from './test';
+import { MAIN_IMPORT } from './symbols';
 const p = new Preprocessor();
 
 export function compiler(mode: string): Plugin {
@@ -21,7 +22,7 @@ export function compiler(mode: string): Plugin {
           mode as 'development' | 'production',
         );
       }
-      if (!code.includes('@/utils/template')) {
+      if (!code.includes(MAIN_IMPORT)) {
         return;
       }
       let result: string | undefined = undefined;
