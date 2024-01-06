@@ -234,6 +234,18 @@ export function formula(fn: Function | Fn, debugName?: string) {
   return new MergedCell(fn, `formula:${debugName ?? 'unknown'}`);
 }
 
+export function deepFnValue(fn: Function | Fn) {
+  const cell = fn();
+  if (typeof cell === 'function') {
+    return deepFnValue(cell);
+  } else if (cell !== null && typeof cell === 'object' && cell[isTag]) {
+    return deepFnValue(() => cell.value);
+  } else {
+    return cell;
+  }
+}
+
+
 export function cell<T>(value: T, debugName?: string) {
   return new Cell(value, debugName);
 }

@@ -68,7 +68,7 @@ export class Application extends Component {
       />
       <table class='table table-hover table-striped test-data'>
         <tbody id='tbody'>
-          {{#each this.itemsCell as |item|}}
+          {{#each this.items as |item|}}
             <Row
               @item={{item}}
               @selectedCell={{this.selectedCell}}

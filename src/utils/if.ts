@@ -5,7 +5,7 @@ import {
   renderElement,
   runDestructors,
 } from '@/utils/component';
-import { formula, type Cell, type MergedCell } from '@/utils/reactive';
+import { formula, type Cell, type MergedCell, deepFnValue } from '@/utils/reactive';
 import { opcodeFor } from '@/utils/vm';
 import { addDestructors } from './component';
 import { api } from '@/utils/dom-api';
@@ -32,13 +32,13 @@ export function ifCondition(
       prevComponent = null;
     }
   };
-
-  if (typeof cell === 'function') {
-    cell = formula(cell);
-  } else if (typeof cell === 'boolean') {
-    cell = formula(() => cell);
-  } else if (typeof cell === 'number') {
-    cell = formula(() => cell);
+  const originalCell = cell;
+  if (typeof originalCell === 'function') {
+    cell = formula(() => deepFnValue(originalCell));
+  } else if (typeof originalCell === 'boolean') {
+    cell = formula(() => originalCell);
+  } else if (typeof originalCell === 'number') {
+    cell = formula(() => originalCell);
   }
   let runNumber = 0;
   let throwedError: Error | null = null;

@@ -7,6 +7,8 @@ import type {
 } from '@glint/template/-private/integration';
 import { api } from '@/utils/dom-api';
 
+const FRAGMENT_TYPE = 11; // Node.DOCUMENT_FRAGMENT_NODE
+
 export type ComponentRenderTarget =
   | HTMLElement
   | DocumentFragment
@@ -24,7 +26,7 @@ export const relatedRoots: WeakMap<DocumentFragment, GenericReturnType> =
   new WeakMap();
 
 function renderNode(parent: Node, target: Node, placeholder: Node | Comment) {
-  if (target.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
+  if (target.nodeType === FRAGMENT_TYPE) {
     if (target.childNodes.length) {
       api.insert(parent, target, placeholder);
     } else {
@@ -74,6 +76,7 @@ export function renderComponent(
 
 export type Props = Record<string, unknown>;
 
+
 type Get<T, K, Otherwise = {}> = K extends keyof T
   ? Exclude<T[K], undefined>
   : Otherwise;
@@ -121,7 +124,7 @@ export async function destroyElement(
       await Promise.all(destructors);
       try {
         component.nodes.forEach((node) => {
-          if (node.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
+          if (node.nodeType === FRAGMENT_TYPE) {
             const roots = relatedRoots.get(node as DocumentFragment) ?? [];
             destroyElement(roots);
             relatedRoots.delete(node as DocumentFragment);
@@ -142,7 +145,7 @@ export async function destroyElement(
       }
     } else {
       await Promise.all(runDestructors(component.node));
-      if (component.node.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
+      if (component.node.nodeType === FRAGMENT_TYPE) {
         const roots =
           relatedRoots.get(component.node as DocumentFragment) ?? [];
         destroyElement(roots);
@@ -166,7 +169,7 @@ var $destructors = new WeakMap<Node, Destructors>();
 window['getDestructors'] = () => $destructors;
 
 function getNode(el: Node): Node {
-  if (el.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
+  if (el.nodeType === FRAGMENT_TYPE) {
     return (el as DocumentFragment).lastChild!;
   } else {
     return el;

@@ -8,7 +8,7 @@ import {
   renderElement,
   destroyElement,
 } from '@/utils/component';
-import { AnyCell, Cell, MergedCell, formula, isTag } from '@/utils/reactive';
+import { AnyCell, Cell, MergedCell, formula, isTag, deepFnValue } from '@/utils/reactive';
 import { evaluateOpcode, opcodeFor } from '@/utils/vm';
 import { ListComponent } from '@/utils/list';
 import { ifCondition } from '@/utils/if';
@@ -115,7 +115,7 @@ function addChild(
   } else if (typeof child === 'function') {
     // looks like a component
     const f = formula(
-      child as unknown as () => unknown,
+      () => deepFnValue(child as Function),
       `${element.tagName}.child.fn`,
     );
     let componentProps: ComponentReturnType | NodeReturnType | string | number =
@@ -180,7 +180,7 @@ function _DOM(
     if (eventName === EVENT_TYPE.TEXT_CONTENT) {
       if (typeof fn === 'function') {
         let realValue: unknown;
-        const checkCell = formula(fn, `${element.tagName}.textContent`);
+        const checkCell = formula(() => deepFnValue(fn), `${element.tagName}.textContent`);
         evaluateOpcode(checkCell, (value) => {
           realValue = value;
         });
@@ -248,7 +248,7 @@ function _DOM(
       const formulas = classNameModifiers.map((modifier) => {
         if (typeof modifier === 'function') {
           return formula(
-            modifier as unknown as () => unknown,
+            () => deepFnValue(modifier),
             'functional modifier',
           );
         } else {

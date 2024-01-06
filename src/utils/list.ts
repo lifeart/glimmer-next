@@ -6,7 +6,7 @@ import {
   renderElement,
 } from '@/utils/component';
 import { api } from '@/utils/dom-api';
-import { Cell, isTag } from '@/utils/reactive';
+import { Cell, MergedCell, formula, isTag, deepFnValue } from '@/utils/reactive';
 import { opcodeFor } from '@/utils/vm';
 
 function setIndex(item: GenericReturnType, index: number) {
@@ -47,7 +47,7 @@ export class ListComponent<T extends { id: number }> {
       key,
       ItemComponent,
     }: {
-      tag: Cell<T[]>;
+      tag: Cell<T[]> | MergedCell;
       key: string | null;
       ItemComponent: (item: T, index?: number) => GenericReturnType;
     },
@@ -64,10 +64,14 @@ export class ListComponent<T extends { id: number }> {
     this.bottomMarker = api.comment();
     api.append(mainNode, this.bottomMarker);
 
+    const originalTag = tag;
+
     if (!tag[isTag]) {
-      console.warn('iterator for @each should be a cell');
       if (Array.isArray(tag)) {
+        console.warn('iterator for @each should be a cell');
         tag = new Cell(tag);
+      } else if (typeof originalTag === 'function') {
+        tag = formula(() => deepFnValue(originalTag));
       }
     }
 
@@ -120,14 +124,16 @@ export class ListComponent<T extends { id: number }> {
     }
   }
   async syncList(items: T[]) {
-    const existingKeys = new Set(this.keyMap.keys());
+    const existingKeys = Array.from(this.keyMap.keys());
     const updatingKeys = new Set(items.map((item) => this.keyForItem(item)));
-    const keysToRemove = [...existingKeys].filter(
+    const keysToRemove = existingKeys.filter(
       (key) => !updatingKeys.has(key),
     );
-    const amountOfKeys = existingKeys.size;
-    let targetNode = this.getTargetNode(amountOfKeys);
+    const amountOfKeys = existingKeys.length;
     const rowsToMove: Array<[GenericReturnType, number]> = [];
+    const amountOfExistingKeys = amountOfKeys - keysToRemove.length;
+
+    let targetNode = this.getTargetNode(amountOfKeys);
     let seenKeys = 0;
 
     // iterate over existing keys and remove them
@@ -157,8 +163,6 @@ export class ListComponent<T extends { id: number }> {
         });
       });
     }
-
-    const amountOfExistingKeys = amountOfKeys - keysToRemove.length;
 
     items.forEach((item, index) => {
       // @todo - fix here

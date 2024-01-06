@@ -107,7 +107,7 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
       return {
         type: name,
         isControl: true,
-        condition: ToJSType(node.params[0]),
+        condition: serializePath(ToJSType(node.params[0])),
         blockParams: node.program.blockParams,
         children: childElements?.map((el) => ToJSType(el)) ?? null,
         inverse: elseChildElements?.length
