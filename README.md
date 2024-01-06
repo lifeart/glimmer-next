@@ -176,7 +176,7 @@ To render root component, use `renderComponent` function.
 import { renderComponent } from "@lifeart/gxt";
 import App from "./App.gts";
 
-const Instance = renderComponent(new App(), document.getElementById("app"));
+const Instance = renderComponent(new App().template(), document.getElementById("app"));
 
 ```
 
