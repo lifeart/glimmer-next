@@ -177,6 +177,5 @@ import { renderComponent } from "@lifeart/gxt";
 import App from "./App.gts";
 
 renderComponent(new App(), document.getElementById("app"));
-```
 
 ```
