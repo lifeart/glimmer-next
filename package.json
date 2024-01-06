@@ -1,8 +1,18 @@
 {
   "name": "@lifeart/gxt",
   "private": false,
-  "version": "0.0.1",
+  "version": "0.0.2",
   "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "glimmerjs",
+    "glimmer-vm",
+    "web-framework"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lifeart/glimmer-next.git"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",

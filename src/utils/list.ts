@@ -154,14 +154,17 @@ export class ListComponent<T extends { id: number }> {
     removePromise.then(() => {
       rmDist?.();
     });
-    for (const value of this.keyMap.values()) {
-      removedIndexes.forEach((index) => {
-        value.forEach((item) => {
-          if (item.index > index) {
-            item.index--;
-          }
+
+    if (removedIndexes.length > 0) {
+      for (const value of this.keyMap.values()) {
+        removedIndexes.forEach((index) => {
+          value.forEach((item) => {
+            if (item.index > index) {
+              item.index--;
+            }
+          });
         });
-      });
+      }
     }
 
     items.forEach((item, index) => {
@@ -197,11 +200,11 @@ export class ListComponent<T extends { id: number }> {
         renderElement(this.bottomMarker.parentNode!, row, this.bottomMarker);
       } else {
         const nextKey = this.keyForItem(nextItem);
-        const nextRow = this.keyMap.get(nextKey);
-        const firstNode = getFirstNode(row);
+        const nextRow = this.keyMap.get(nextKey)!;
+        const firstNode = getFirstNode(nextRow);
         if (nextRow !== undefined && firstNode !== undefined) {
           const parent = firstNode.parentNode!;
-          renderElement(parent, nextRow, firstNode);
+          renderElement(parent, row, firstNode);
         }
       }
     });
