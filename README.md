@@ -176,6 +176,17 @@ To render root component, use `renderComponent` function.
 import { renderComponent } from "@lifeart/gxt";
 import App from "./App.gts";
 
-renderComponent(new App(), document.getElementById("app"));
+const Instance = renderComponent(new App(), document.getElementById("app"));
 
 ```
+
+To destroy component, use `destroyElement` function.
+
+```js
+
+import { destroyElement } from "@lifeart/gxt";
+
+destroyElement(Instance);
+
+```
+
