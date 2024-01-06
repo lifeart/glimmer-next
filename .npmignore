@@ -4,3 +4,4 @@ src
 types
 .vscode
 dist/logo.png
+!compiler.d.ts
