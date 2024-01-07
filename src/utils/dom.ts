@@ -357,8 +357,33 @@ function slot(name: string, params: () => unknown[], $slot: Slots) {
               return api.text(String(el));
             } else if (typeof el === 'function') {
               // here likely el is as slot constructor
-              // @ts-expect-error function signature
-              return el();
+              // may be a reactive thing, let's check it
+              // @todo - refactor this part of code and unify with child generation
+              const f = formula(
+                () => deepFnValue(el as Function),
+                `slot.child.fn`,
+              );
+              let componentProps:
+                | ComponentReturnType
+                | NodeReturnType
+                | string
+                | number = '';
+              evaluateOpcode(f, (value) => {
+                componentProps = value as unknown as
+                  | ComponentReturnType
+                  | NodeReturnType
+                  | string
+                  | number;
+              });
+              if (f.isConst) {
+                f.destroy();
+                return componentProps;
+              } else if (typeof componentProps === 'object') {
+                f.destroy();
+                return componentProps;
+              } else {
+                return text(f);
+              }
             } else {
               return el;
             }
@@ -423,6 +448,7 @@ function text(text: string | Cell | MergedCell | Fn): NodeReturnType {
   } else if (text !== null && (text as AnyCell)[isTag]) {
     return def(cellToText(text as AnyCell));
   } else if (typeof text === 'function') {
+    // @todo update is const check here
     const maybeFormula = formula(text, 'textNode');
     if (maybeFormula.isConst) {
       try {

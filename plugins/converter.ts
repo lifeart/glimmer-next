@@ -77,7 +77,21 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
       }
       // replacing builtin helpers
       patchNodePath(node);
-      if (node.path.original === SYMBOLS.$__hash) {
+
+      if (node.path.original === 'element') {
+        return `$:function(args, props){
+          const $slots = {};
+          return  {
+            nodes: [${SYMBOLS.TAG}(${ToJSType(
+              node.params[0],
+            )}, [ props.props, props.attrs, props.events  ], [()=>${
+              SYMBOLS.SLOT
+            }('default', ()=>[], $slots)]).node],
+            slots: $slots,
+            index: 0
+          };
+        }`;
+      } else if (node.path.original === SYMBOLS.$__hash) {
         const hashArgs: [string, PrimitiveJSType][] = node.hash.pairs.map(
           (pair) => {
             return [
@@ -128,9 +142,9 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
         if (typeof slotName !== 'string') {
           slotName = ToJSType(slotName) as unknown as string;
         }
-        return `$:() => ${SYMBOLS.SLOT}('${slotName}', () => [${node.params
-          .map((p) => ToJSType(p))
-          .join(',')}], $slots)`;
+        return `$:() => ${SYMBOLS.SLOT}(${escapeString(
+          slotName,
+        )}, () => [${node.params.map((p) => ToJSType(p)).join(',')}], $slots)`;
       }
       if (node.params.length === 0) {
         // hash case
