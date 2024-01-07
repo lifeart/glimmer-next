@@ -6,6 +6,7 @@ import { PageTwo } from './PageTwo.gts';
 // another router example, with animation
 export class Router extends Component {
   isLocked = false;
+  renderCount = 0;
   goToRouteOne = () => {
     if (this.isLocked || this.routeOne.value) return;
     this.routeOne.update(true);
@@ -21,20 +22,32 @@ export class Router extends Component {
   routeOne = cell(true);
   routeTwo = cell(false);
   modifier = (element: HTMLDivElement) => {
-    element.style.transform = 'translateX(-100%)';
+    if (this.renderCount !== 0) {
+      element.style.transform = 'translateX(100%)';
+      element.style.opacity = '0.01';
+    }
+    this.renderCount++;
     let coords!: DOMRect;
     requestAnimationFrame(() => {
       coords = element.getBoundingClientRect();
+      element.style.position = 'fixed';
+      element.style.opacity = '1';
+      element.style.top = `${coords.top}px`;
       element.style.transform = 'translateX(0)';
     });
+    element.style.zIndex = String(this.renderCount);
     setTimeout(() => {
       this.isLocked = false;
-    }, 1000);
+    }, 500);
     return async () => {
       element.style.position = 'fixed';
+      // console.log('element.style.zIndex', );
+      element.style.zIndex = String(parseInt(element.style.zIndex) - 2);
       element.style.top = `${coords.top}px`;
-      element.style.transform = 'translateX(100%)';
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      // debugger;
+      element.style.opacity = '0.01';
+      element.style.transform = 'translateX(-20%)';
+      await new Promise((resolve) => setTimeout(resolve, 500));
     };
   };
   <template>
@@ -45,16 +58,21 @@ export class Router extends Component {
       <:slot>Route Two</:slot>
     </Button>
     <style>
-      .page { transform: translate3d(0); transition: opacity 0.5s ease-in-out,
-      transform 1s ease-in-out; opacity: 1; min-height: 200px; width: 100vw;
-      padding: 20px; color: white; background-color: rgba(0,0,0,0.5) } .active {
+      .route-container {background-color: black;min-height: 280px;width:100vw;}
+      .page { 
+          box-shadow: -9px 0 20px 0px #ddd;
+      transition: opacity 0.5s ease-out,
+      transform 0.5s ease-out; opacity: 1; min-height: 240px; width: 100vw;
+      padding: 20px; color: white; background-color: black; } .active {
       background-color: yellow; }
     </style>
-    {{#if this.routeOne}}
-      <div class='page' {{this.modifier}}><PageOne @name='1' /></div>
-    {{/if}}
-    {{#if this.routeTwo}}
-      <div class='page' {{this.modifier}}><PageTwo @name='2' /></div>
-    {{/if}}
+    <div class="route-container">
+      {{#if this.routeOne}}
+        <div class='page' {{this.modifier}}><PageOne @name='1' /></div>
+      {{/if}}
+      {{#if this.routeTwo}}
+        <div class='page' {{this.modifier}}><PageTwo @name='2' /></div>
+      {{/if}}
+      </div>
   </template>
 }
