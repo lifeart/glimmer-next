@@ -5,6 +5,15 @@ import { convert } from './converter';
 import { ASTv1 } from '@glimmer/syntax';
 import { HBSControlExpression, HBSNode } from './utils';
 import { EVENT_TYPE } from './symbols';
+import { flags } from './flags';
+
+function $glimmerCompat(str: string) {
+  if (flags.IS_GLIMMER_COMPAT_MODE) {
+    return `() => ` + str.replace('$:', '');
+  } else {
+    return str.replace('$:', '');
+  }
+}
 
 function $t<T extends ASTv1.Node>(tpl: string): T {
   const seenNodes: Set<ASTv1.Node> = new Set();
@@ -44,6 +53,50 @@ function $node(partial: Partial<HBSNode>): HBSNode {
 }
 
 describe('convert function builder', () => {
+  describe('Builtin helpers in MustacheStatements', () => {
+    test('if helper properly mapped', () => {
+      expect($t<ASTv1.MustacheStatement>(`{{if foo "bar" "baz"}}`)).toEqual(
+        `$:() => $:$__if(foo,"bar","baz")`,
+      );
+    });
+    test('eq helper properly mapped', () => {
+      expect($t<ASTv1.MustacheStatement>(`{{eq foo "bar" "baz"}}`)).toEqual(
+        `$:() => $:$__eq(foo,"bar","baz")`,
+      );
+    });
+    test('debugger helper properly mapped', () => {
+      expect(
+        $t<ASTv1.MustacheStatement>(`{{debugger foo "bar" "baz"}}`),
+      ).toEqual(`$:() => $:$__debugger.call(this,foo,"bar","baz")`);
+    });
+    test('log helper properly mapped', () => {
+      expect($t<ASTv1.MustacheStatement>(`{{log foo "bar" "baz"}}`)).toEqual(
+        `$:() => $:$__log(foo,"bar","baz")`,
+      );
+    });
+  });
+  describe('Builtin helpers in SubExpression', () => {
+    test('if helper properly mapped', () => {
+      expect($t<ASTv1.MustacheStatement>(`{{q (if a b (if c d))}}`)).toEqual(
+        `$:() => $:q($__if($:a,$:b,$:$__if($:c,$:d)))`,
+      );
+    });
+    test('eq helper properly mapped', () => {
+      expect($t<ASTv1.MustacheStatement>(`{{q (eq a b)}}`)).toEqual(
+        `$:() => $:q($__eq($:a,$:b))`,
+      );
+    });
+    test('debugger helper properly mapped', () => {
+      expect($t<ASTv1.MustacheStatement>(`{{q (debugger a)}}`)).toEqual(
+        `$:() => $:q($__debugger.call($:this,$:a))`,
+      );
+    });
+    test('log helper properly mapped', () => {
+      expect($t<ASTv1.MustacheStatement>(`{{q (log a b)}}`)).toEqual(
+        `$:() => $:q($__log($:a,$:b))`,
+      );
+    });
+  });
   describe('TextNode', () => {
     test('converts a simple string', () => {
       expect($t<ASTv1.TextNode>(`"Hello World"`)).toEqual(`"Hello World"`);
@@ -191,7 +244,7 @@ describe('convert function builder', () => {
         $t<ASTv1.BlockStatement>(`{{#if foo}}123{{/if}}`),
       ).toEqual<HBSControlExpression>(
         $control({
-          condition: '$:foo',
+          condition: $glimmerCompat('$:foo'),
           children: ['123'],
         }),
       );
@@ -202,7 +255,7 @@ describe('convert function builder', () => {
         $t<ASTv1.BlockStatement>(`{{#if foo}}123{{else}}456{{/if}}`),
       ).toEqual<HBSControlExpression>(
         $control({
-          condition: '$:foo',
+          condition: $glimmerCompat('$:foo'),
           children: ['123'],
           inverse: ['456'],
         }),
@@ -215,7 +268,7 @@ describe('convert function builder', () => {
       ).toEqual<HBSControlExpression>(
         $control({
           type: 'if',
-          condition: '$:foo($:bar)',
+          condition: $glimmerCompat('$:foo($:bar)'),
           children: ['123'],
           inverse: ['456'],
         }),
@@ -229,7 +282,7 @@ describe('convert function builder', () => {
       ).toEqual<HBSControlExpression>(
         $control({
           type: 'each',
-          condition: '$:foo',
+          condition: $glimmerCompat('$:foo'),
           blockParams: ['bar', 'index'],
           children: ['123'],
         }),
@@ -243,7 +296,7 @@ describe('convert function builder', () => {
       ).toEqual<HBSControlExpression>(
         $control({
           type: 'each',
-          condition: '$:foo',
+          condition: $glimmerCompat('$:foo'),
           blockParams: ['bar', 'index'],
           children: ['123'],
           key: 'id',
@@ -280,7 +333,7 @@ describe('convert function builder', () => {
           hasStableChild: false,
           children: [
             $control({
-              condition: '$:foo',
+              condition: $glimmerCompat('$:foo'),
               children: ['123'],
             }),
           ],

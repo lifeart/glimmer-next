@@ -106,7 +106,7 @@ function addChild(
     | MergedCell
     | Function,
 ) {
-  if (child === null) {
+  if (child === null || child === undefined) {
     return;
   }
   if (typeof child === 'object' && 'nodes' in child) {
@@ -117,7 +117,7 @@ function addChild(
     api.append(element, child.node);
   } else if (typeof child === 'string' || typeof child === 'number') {
     api.append(element, api.text(child as string));
-  } else if (child !== null && (child as AnyCell)[isTag]) {
+  } else if ((child as AnyCell)[isTag]) {
     api.append(element, cellToText(child as AnyCell));
   } else if (typeof child === 'function') {
     // looks like a component
@@ -314,6 +314,14 @@ function mergeComponents(
 ) {
   const nodes: Array<Node> = [];
   components.forEach((component) => {
+    if (import.meta.env.DEV) {
+      if (typeof component === 'boolean' || typeof component === 'undefined') {
+        throw new Error(`
+          Woops, looks like we trying to render boolean or undefined to template, check used helpers.
+          It's not allowed to render boolean or undefined to template.
+        `);
+      }
+    }
     if (typeof component === 'string' || typeof component === 'number') {
       nodes.push(api.text(String(component)));
     } else if ('index' in component) {

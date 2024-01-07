@@ -1,8 +1,12 @@
 import { cell, registerDestructor, hbs, scope } from '@lifeart/gxt';
 
+function ifs(condition: number) {
+  return new Date(condition).toLocaleTimeString();
+}
+
 function Display(props: { value: string }) {
-  scope({ props });
-  return hbs`<span>{{props.value}}</span>`;
+  scope({ props, ifs });
+  return hbs`<span>{{ifs props.value}}{{log (eq props.value 10)}}</span>`;
 }
 
 export function Clock(this: any) {
@@ -14,7 +18,7 @@ export function Clock(this: any) {
 
   Object.defineProperty(this, 'current', {
     get() {
-      return new Date(time.value).toLocaleTimeString();
+      return time.value;
     },
     set() {},
   });

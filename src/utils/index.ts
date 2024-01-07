@@ -15,3 +15,4 @@ export { registerDestructor } from '@/utils/destroyable';
 export { hbs, scope } from '@/utils/template';
 export { effect } from '@/utils/vm';
 export * from '@/utils/dom';
+export * from '@/utils/helpers/index';

@@ -9,6 +9,33 @@ import {
 } from './utils';
 import { EVENT_TYPE, SYMBOLS } from './symbols';
 
+
+function patchNodePath(node: ASTv1.MustacheStatement | ASTv1.SubExpression) {
+  if (node.path.type !== 'PathExpression') {
+    return;
+  }
+   // replacing builtin helpers
+  if (node.path.original === 'if') {
+    node.path.original = '$__if';
+  } else if (node.path.original === 'eq') {
+    node.path.original = '$__eq';
+  } else if (node.path.original === 'debugger') {
+    node.path.original = '$__debugger.call';
+    node.params.unshift({
+      type: 'PathExpression',
+      original: 'this',
+      parts: ['this'],
+      loc: node.loc,
+      head: null as any,
+      tail: [],
+      this: true,
+      data: false,
+    })
+  } else if (node.path.original === 'log') {
+    node.path.original = '$__log';
+  }
+}
+
 export function convert(seenNodes: Set<ASTv1.Node>) {
   function ToJSType(node: ASTv1.Node, wrap = true): any {
     seenNodes.add(node);
@@ -33,6 +60,8 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
       if (node.path.type !== 'PathExpression') {
         return null;
       }
+      // replacing builtin helpers
+      patchNodePath(node);
       return `$:${node.path.original}(${node.params
         .map((p) => ToJSType(p))
         .join(',')})`;
@@ -64,6 +93,9 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
         }
         return null;
       }
+      // replacing builtin helpers
+      patchNodePath(node);
+
       if (node.path.original === 'yield') {
         let slotName =
           node.hash.pairs.find((p) => p.key === 'to')?.value || 'default';
