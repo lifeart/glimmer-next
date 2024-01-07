@@ -364,7 +364,7 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
     };
     if (children.length === 1 && typeof children[0] === 'string') {
       const v = children[0];
-      if (!v.includes(SYMBOLS.SLOT)) {
+      if (!v.includes(SYMBOLS.SLOT) && !node.tag.startsWith(':')) {
         node.children = [];
         node.events.push([EVENT_TYPE.TEXT_CONTENT, v]);
       }

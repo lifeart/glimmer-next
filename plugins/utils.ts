@@ -69,7 +69,10 @@ export function resolvedChildren(els: ASTv1.Node[]) {
     ) {
       return false;
     }
-    return el.type !== 'TextNode' || el.chars.trim().length !== 0;
+    if (el.type === 'TextNode' && el.chars.trim().length === 0) {
+      return false;
+    }
+    return true;
   });
 }
 

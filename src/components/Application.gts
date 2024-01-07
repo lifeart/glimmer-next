@@ -2,6 +2,8 @@ import { buildData, swapRows, updateData, type Item } from '@/utils/data';
 import { renderComponent, runDestructors, Component, cell } from '@lifeart/gxt';
 import { Header } from './Header.gts';
 import { Row } from './Row.gts';
+import { Router } from './Router.gts';
+
 export class Application extends Component {
   itemsCell = cell<Item[]>([], 'items');
   selectedCell = cell(0, 'selectedCell');
@@ -64,6 +66,7 @@ export class Application extends Component {
   };
   <template>
     <div class='container'>
+      <Router />
       <Header
         @run={{this.actions.run}}
         @add={{this.actions.add}}
