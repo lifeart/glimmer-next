@@ -71,10 +71,14 @@ export class Row extends Component<RowArgs> {
     <tr class={{this.className}} {{this.modifier}}>
       <td class='col-md-1'>{{this.id}}</td>
       <td class='col-md-4'>
-        <a {{on 'click' this.onClick}} data-test-select>{{this.labelCell}}</a>
+        <a
+          {{on 'click' this.onClick}}
+          data-no-router
+          data-test-select
+        >{{this.labelCell}}</a>
       </td>
       <td class='col-md-1'>
-        <a {{on 'click' this.onClickRemove}} data-test-remove>
+        <a {{on 'click' this.onClickRemove}} data-no-router data-test-remove>
           <RemoveIcon />
         </a>
       </td>

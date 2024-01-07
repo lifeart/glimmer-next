@@ -27,6 +27,9 @@ devDependencies:
   '@glint/template':
     specifier: ^1.2.1
     version: 1.2.1
+  '@lifeart/tiny-router':
+    specifier: ^0.0.8
+    version: 0.0.8
   '@types/babel__core':
     specifier: ^7.20.5
     version: 7.20.5
@@ -1803,6 +1806,11 @@ packages:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.1
       '@jridgewell/sourcemap-codec': 1.4.15
+
+  /@lifeart/tiny-router@0.0.8:
+    resolution: {integrity: sha512-n/iYAm4D7uSk7jEpuk4SKIAVBiW9OndfDHG5qmTafMecMt4c1V6XuaA4MvaX9JbX5qLcULV9dULFg4utofcEdg==}
+    engines: {node: ^12.16.0 || ^14.0.0 || >=16.0.0}
+    dev: true
 
   /@microsoft/api-extractor-model@7.28.3:
     resolution: {integrity: sha512-wT/kB2oDbdZXITyDh2SQLzaWwTOFbV326fP0pUwNW00WeliARs0qjmXBWmGWardEzp2U3/axkO3Lboqun6vrig==}

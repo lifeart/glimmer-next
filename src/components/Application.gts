@@ -2,12 +2,19 @@ import { buildData, swapRows, updateData, type Item } from '@/utils/data';
 import { renderComponent, runDestructors, Component, cell } from '@lifeart/gxt';
 import { Header } from './Header.gts';
 import { Row } from './Row.gts';
-import { Router } from './Router.gts';
-
+import { PageOne } from './pages/PageOne.gts';
+import { PageTwo } from './pages/PageTwo.gts';
+import { NestedRouter } from './pages/NestedRouter.gts';
+import { router } from './../services/router';
 export class Application extends Component {
+  router = router;
   itemsCell = cell<Item[]>([], 'items');
   selectedCell = cell(0, 'selectedCell');
   rootNode!: HTMLElement;
+  components = {
+    pageOne: PageOne,
+    pageTwo: PageTwo,
+  };
   get items() {
     return this.itemsCell.value;
   }
@@ -27,6 +34,8 @@ export class Application extends Component {
     this.rootNode = rootNode;
     // @ts-expect-error wrong signature for template
     renderComponent(this.template(), this.rootNode);
+    // router init
+    router.mount('/pageOne');
   }
   removeItem = (item: Item) => {
     this.items = this.items.filter((i) => i.id !== item.id);
@@ -66,7 +75,10 @@ export class Application extends Component {
   };
   <template>
     <div class='container'>
-      <Router />
+      <NestedRouter
+        @components={{this.components}}
+        @stack={{this.router.stack}}
+      />
       <Header
         @run={{this.actions.run}}
         @add={{this.actions.add}}

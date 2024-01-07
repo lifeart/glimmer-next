@@ -43,7 +43,6 @@
     }
   },
   "devDependencies": {
-    "vite-plugin-dts": "^3.7.0",
     "@glint/core": "^1.2.1",
     "@glint/environment-ember-template-imports": "^1.2.1",
     "@glint/environment-glimmerx": "^1.2.1",
@@ -55,7 +54,9 @@
     "typescript": "^5.2.2",
     "vite": "^5.0.8",
     "vite-plugin-circular-dependency": "^0.2.1",
-    "vitest": "^1.1.1"
+    "vite-plugin-dts": "^3.7.0",
+    "vitest": "^1.1.1",
+    "@lifeart/tiny-router": "^0.0.8"
   },
   "dependencies": {
     "@babel/core": "^7.23.6",
