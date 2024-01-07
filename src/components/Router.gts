@@ -48,7 +48,7 @@ export class Router extends Component {
                 transform: translate3d(0);
                 transition: opacity 0.5s ease-in-out, transform 1s ease-in-out;
                 opacity: 1;
-                min-height: 160px;
+                min-height: 200px;
                 width: 100vw;
                 padding: 20px;
                 color: white;
