@@ -6,6 +6,7 @@ import {
   isPath,
   resolvedChildren,
   serializePath,
+  toObject,
 } from './utils';
 import { EVENT_TYPE, SYMBOLS } from './symbols';
 
@@ -33,6 +34,10 @@ function patchNodePath(node: ASTv1.MustacheStatement | ASTv1.SubExpression) {
     })
   } else if (node.path.original === 'log') {
     node.path.original = '$__log';
+  } else if (node.path.original === 'array') {
+    node.path.original = '$__array';
+  } else if (node.path.original === 'hash') {
+    node.path.original = '$__hash';
   }
 }
 
@@ -62,6 +67,12 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
       }
       // replacing builtin helpers
       patchNodePath(node);
+      if (node.path.original === SYMBOLS.$__hash) {
+        const hashArgs: [string, string | number | boolean | null | undefined][] = node.hash.pairs.map((pair) => {
+          return [pair.key, ToJSType(pair.value)];
+        });
+        return `$:${node.path.original}(${toObject(hashArgs)})`;
+      }
       return `$:${node.path.original}(${node.params
         .map((p) => ToJSType(p))
         .join(',')})`;
@@ -69,7 +80,7 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
       return node.value;
     }
     if (node.type === 'StringLiteral') {
-      return node.value;
+      return escapeString(node.value);
     } else if (node.type === 'TextNode') {
       if (node.chars.trim().length === 0) {
         return null;
@@ -107,6 +118,13 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
           .join(',')}], $slots)`;
       }
       if (node.params.length === 0) {
+        // hash case
+        if (node.path.original === SYMBOLS.$__hash) {
+          const hashArgs: [string, string | number | boolean | null | undefined][] = node.hash.pairs.map((pair) => {
+            return [pair.key, ToJSType(pair.value)];
+          });
+          return `${wrap ? `$:() => ` : ''}${ToJSType(node.path)}(${toObject(hashArgs)})`;
+        }
         return ToJSType(node.path);
       } else {
         return `${wrap ? `$:() => ` : ''}${ToJSType(node.path)}(${node.params
@@ -135,6 +153,15 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
       }
       const name = node.path.original;
       const keyPair = node.hash.pairs.find((p) => p.key === 'key');
+      let keyValue: string | null = null;
+
+      if (keyPair) {
+        if (keyPair.value.type === 'StringLiteral') {
+          keyValue = keyPair.value.original;
+        } else {
+          keyValue = ToJSType(keyPair.value);
+        }
+      }
 
       return {
         type: name,
@@ -145,7 +172,7 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
         inverse: elseChildElements?.length
           ? elseChildElements.map((el) => ToJSType(el))
           : null,
-        key: keyPair ? ToJSType(keyPair.value) : null,
+        key: keyValue,
       } as HBSControlExpression;
     }
   }
@@ -242,7 +269,7 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
             const firstParam = mod.params[0];
             if (firstParam.type === 'StringLiteral') {
               return [
-                ToJSType(firstParam),
+                firstParam.original,
                 `$:($e, $n) => ${ToJSType(mod.params[1])}($e, $n, ${mod.params
                   .slice(2)
                   .map((p) => ToJSType(p))

@@ -142,7 +142,7 @@ function serializeProp(
   }`;
 }
 
-function toObject(
+export function toObject(
   args: [string, string | number | boolean | null | undefined][],
 ) {
   return `{${args.map((attr) => serializeProp(attr)).join(', ')}}`;

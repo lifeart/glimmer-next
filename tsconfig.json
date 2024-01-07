@@ -31,7 +31,7 @@
     "environment": {
       "glimmerx": {},
       "ember-template-imports": {
-        "additionalGlobals": ["on"]
+        "additionalGlobals": ["on","array","hash"]
       }
     }
   }

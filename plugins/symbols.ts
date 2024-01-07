@@ -12,6 +12,8 @@ export const SYMBOLS = {
   '$__eq': '$__eq',
   '$__debugger': '$__debugger',
   '$__log': '$__log',
+  '$__array': '$__array',
+  '$__hash': '$__hash',
 };
 
 export const EVENT_TYPE = {

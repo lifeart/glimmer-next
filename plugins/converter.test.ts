@@ -74,6 +74,16 @@ describe('convert function builder', () => {
         `$:() => $:$__log(foo,"bar","baz")`,
       );
     });
+    test('array helper properly mapped', () => {
+      expect($t<ASTv1.MustacheStatement>(`{{array foo "bar" "baz"}}`)).toEqual(
+        `$:() => $:$__array(foo,"bar","baz")`,
+      );
+    });
+    test('hash helper properly mapped', () => {
+      expect($t<ASTv1.MustacheStatement>(`{{hash foo="bar" boo="baz"}}`)).toEqual(
+        `$:() => $:$__hash({foo: "bar", boo: "baz"})`,
+      );
+    });
   });
   describe('Builtin helpers in SubExpression', () => {
     test('if helper properly mapped', () => {
@@ -94,6 +104,16 @@ describe('convert function builder', () => {
     test('log helper properly mapped', () => {
       expect($t<ASTv1.MustacheStatement>(`{{q (log a b)}}`)).toEqual(
         `$:() => $:q($__log($:a,$:b))`,
+      );
+    });
+    test('array helper properly mapped', () => {
+      expect($t<ASTv1.MustacheStatement>(`{{q (array foo "bar" "baz")}}`)).toEqual(
+        `$:() => $:q($__array($:foo,"bar","baz"))`,
+      );
+    });
+    test('hash helper properly mapped', () => {
+      expect($t<ASTv1.MustacheStatement>(`{{q (hash foo="bar" boo="baz")}}`)).toEqual(
+        `$:() => $:q($__hash({foo: "bar", boo: "baz"}))`,
       );
     });
   });

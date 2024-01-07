@@ -16,6 +16,8 @@ declare module '@glint/environment-ember-template-imports/globals' {
       event: string,
       callback: (e: Event, element: Element) => void,
     ) => ModifierReturn;
+    array: <T extends unknown>(...params: T[]) => T[],
+    hash: <T extends Record<string, unknown>>(obj: T) => T,
   }
 }
 
