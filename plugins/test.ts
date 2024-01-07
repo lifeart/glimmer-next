@@ -81,6 +81,7 @@ export function transform(
           return;
         }
         seenNodes.add(node);
+        // @ts-expect-error fix-here
         program.template.push(ToJSType(node));
       },
       TextNode(node) {
@@ -89,6 +90,7 @@ export function transform(
         }
         seenNodes.add(node);
         if (node.chars.trim().length !== 0) {
+          // @ts-expect-error fix-here
           program.template.push(ToJSType(node));
         }
       },
@@ -97,6 +99,7 @@ export function transform(
           return;
         }
         seenNodes.add(node);
+        // @ts-expect-error fix-here
         program.template.push(ToJSType(node));
       },
       ElementNode(node) {
