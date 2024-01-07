@@ -53,6 +53,13 @@ function $node(partial: Partial<HBSNode>): HBSNode {
 }
 
 describe('convert function builder', () => {
+  describe('basic element helper support', () => {
+    test('it return kinda valid component-like code', () => {
+      expect($t<ASTv1.BlockStatement>(`{{(element "tag")}}`)).toEqual(
+        `$:() => $:function(args,props){const $slots={};return{nodes:[$_tag("tag",[props.props,props.attrs,props.events],[()=>$_slot('default',()=>[],$slots)]).node],slots:$slots,index:0};}`,
+      );
+    });
+  });
   describe('Builtin helpers in MustacheStatements', () => {
     test('fn helper properly mapped', () => {
       expect($t<ASTv1.MustacheStatement>(`{{fn a "b" "c"}}`)).toEqual(
