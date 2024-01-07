@@ -2,8 +2,8 @@ import { Router } from '@lifeart/tiny-router';
 import { cellFor } from '@lifeart/gxt';
 
 class GlimmerRouter extends Router {
-  constructor(...args) {
-    super(...args);
+  constructor(routes: Record<string, string>) {
+    super(routes);
     cellFor(this, 'stack');
     cellFor(this, 'prevRoute');
     cellFor(this, 'activeRoute');

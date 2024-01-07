@@ -4,6 +4,7 @@ import { Header } from './Header.gts';
 import { Row } from './Row.gts';
 import { PageOne } from './pages/PageOne.gts';
 import { PageTwo } from './pages/PageTwo.gts';
+import { PageThree } from './pages/PageThree.gts';
 import { NestedRouter } from './pages/NestedRouter.gts';
 import { router } from './../services/router';
 export class Application extends Component {
@@ -14,6 +15,7 @@ export class Application extends Component {
   components = {
     pageOne: PageOne,
     pageTwo: PageTwo,
+    main: PageThree,
   };
   get items() {
     return this.itemsCell.value;
@@ -35,7 +37,9 @@ export class Application extends Component {
     // @ts-expect-error wrong signature for template
     renderComponent(this.template(), this.rootNode);
     // router init
-    router.mount('/pageOne');
+    requestAnimationFrame(() => {
+      router.mount(window.location.pathname);
+    });
   }
   removeItem = (item: Item) => {
     this.items = this.items.filter((i) => i.id !== item.id);

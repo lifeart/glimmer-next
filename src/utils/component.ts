@@ -26,6 +26,10 @@ export const relatedRoots: WeakMap<DocumentFragment, GenericReturnType> =
   new WeakMap();
 
 function renderNode(parent: Node, target: Node, placeholder: Node | Comment) {
+  if (target === undefined) {
+    console.warn(`Trying to render undefined`);
+    return;
+  }
   if (target.nodeType === FRAGMENT_TYPE) {
     if (target.childNodes.length) {
       api.insert(parent, target, placeholder);
@@ -127,6 +131,10 @@ export async function destroyElement(
       await Promise.all(destructors);
       try {
         component.nodes.forEach((node) => {
+          if (node === undefined) {
+            console.warn(`Trying to destroy undefined`);
+            return;
+          }
           if (node.nodeType === FRAGMENT_TYPE) {
             const roots = relatedRoots.get(node as DocumentFragment) ?? [];
             destroyElement(roots);
@@ -210,6 +218,10 @@ export function runDestructors(
   targetNode: Node,
   promises: Array<Promise<void>> = [],
 ): Array<Promise<void>> {
+  if (targetNode === undefined) {
+    console.warn(`Trying to run destructors on undefined`);
+    return promises;
+  }
   if ($destructors.has(targetNode)) {
     $destructors.get(targetNode)!.forEach((fn) => {
       const result = fn();

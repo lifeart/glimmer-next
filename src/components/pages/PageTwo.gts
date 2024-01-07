@@ -1,6 +1,13 @@
 import { Component } from '@lifeart/gxt';
 
 export class PageTwo extends Component {
+  get nextLink() {
+    if (window.location.pathname === '/') {
+      return '/pageOne';
+    } else {
+      return '/';
+    }
+  }
   <template>
     There are many variations of passages of Lorem Ipsum available, but the
     majority have suffered alteration in some form, by injected humour, or
@@ -13,6 +20,6 @@ export class PageTwo extends Component {
     Lorem Ipsum which looks reasonable. The generated Lorem Ipsum is therefore
     always free from repetition, injected humour, or non-characteristic words
     etc.
-    <a href='/pageOne'>Go to page one</a>
+    <a href={{this.nextLink}}>Go to root</a>
   </template>
 }
