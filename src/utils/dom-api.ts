@@ -1,5 +1,10 @@
 export const api = {
   attr(element: HTMLElement, name: string, value: string | null) {
+    if (name.includes(':')) {
+      const [ns, key] = name.split(':');
+      element.setAttributeNS(ns, key, value as string);
+      return;
+    }
     element.setAttribute(name, value === null ? '' : value);
   },
   comment(text = '') {
@@ -16,6 +21,9 @@ export const api = {
   },
   element(tagName = '') {
     return document.createElement(tagName);
+  },
+  svgElement(tagName = '') {
+    return document.createElementNS('http://www.w3.org/2000/svg',  tagName);
   },
   append(parent: HTMLElement | Node, child: HTMLElement | Node) {
     parent.appendChild(child);

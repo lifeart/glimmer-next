@@ -22,8 +22,10 @@ import { ifCondition } from '@/utils/if';
 import { DestructorFn, Destructors, executeDestructors } from './destroyable';
 import { api } from '@/utils/dom-api';
 
+let svgContextOpened = false;
+
 type ModifierFn = (
-  element: HTMLElement,
+  element: HTMLElement | SVGElement,
   ...args: unknown[]
 ) => void | DestructorFn;
 
@@ -44,7 +46,7 @@ type FwType = {
 type Props = [TagProp[], TagAttr[], TagEvent[], FwType?];
 
 function $prop(
-  element: HTMLElement,
+  element: HTMLElement | SVGElement,
   key: string,
   value: unknown,
   destructors: DestructorFn[],
@@ -70,7 +72,7 @@ function $prop(
 }
 
 function $attr(
-  element: HTMLElement,
+  element: HTMLElement | SVGElement,
   key: string,
   value: unknown,
   destructors: Destructors,
@@ -96,7 +98,7 @@ function $attr(
 }
 
 function addChild(
-  element: HTMLElement,
+  element: HTMLElement | SVGElement,
   child:
     | NodeReturnType
     | ComponentReturnType
@@ -163,7 +165,14 @@ const EVENT_TYPE = {
   ON_CREATED: '0',
   TEXT_CONTENT: '1',
 };
-
+export function $_enterSVG() {
+  svgContextOpened = true;
+  return def(document.createComment("svg-context-start"));
+}
+export function $_exitSVG() {
+  svgContextOpened = false;
+  return def(document.createComment("svg-context-start"));
+}
 function _DOM(
   tag: string,
   tagProps: Props,
@@ -176,7 +185,7 @@ function _DOM(
     | Function
   )[],
 ): NodeReturnType {
-  const element = api.element(tag);
+  const element = svgContextOpened ? api.svgElement(tag) : api.element(tag);
   const destructors: Destructors = [];
   const props = tagProps[0];
   const attrs = tagProps[1];

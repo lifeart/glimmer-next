@@ -2,6 +2,8 @@ import { buildData, swapRows, updateData, type Item } from '@/utils/data';
 import { renderComponent, runDestructors, Component, cell } from '@lifeart/gxt';
 import { Header } from './Header.gts';
 import { Row } from './Row.gts';
+import { Icon } from './Icon.gts';
+
 export class Application extends Component {
   itemsCell = cell<Item[]>([], 'items');
   selectedCell = cell(0, 'selectedCell');
@@ -72,6 +74,7 @@ export class Application extends Component {
         @swaprows={{this.actions.swaprows}}
         @runlots={{this.actions.runlots}}
       />
+      <Icon />
       <table class='table table-hover table-striped test-data'>
         <tbody id='tbody'>
           {{#each this.items as |item|}}
