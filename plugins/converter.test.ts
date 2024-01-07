@@ -59,6 +59,11 @@ describe('convert function builder', () => {
         `$:() => $:$__if(foo,"bar","baz")`,
       );
     });
+    test('unless helper properly mapped', () => {
+      expect($t<ASTv1.MustacheStatement>(`{{unless foo "bar" "baz"}}`)).toEqual(
+        `$:() => $:$__if(foo,"baz","bar")`,
+      );
+    });
     test('eq helper properly mapped', () => {
       expect($t<ASTv1.MustacheStatement>(`{{eq foo "bar" "baz"}}`)).toEqual(
         `$:() => $:$__eq(foo,"bar","baz")`,
@@ -89,6 +94,11 @@ describe('convert function builder', () => {
     test('if helper properly mapped', () => {
       expect($t<ASTv1.MustacheStatement>(`{{q (if a b (if c d))}}`)).toEqual(
         `$:() => $:q($__if($:a,$:b,$:$__if($:c,$:d)))`,
+      );
+    });
+    test('unless helper properly mapped', () => {
+      expect($t<ASTv1.MustacheStatement>(`{{q (unless a b (if c d))}}`)).toEqual(
+        `$:() => $:q($__if($:a,$:$__if($:c,$:d),$:b))`,
       );
     });
     test('eq helper properly mapped', () => {
@@ -291,6 +301,17 @@ describe('convert function builder', () => {
           condition: $glimmerCompat('$:foo($:bar)'),
           children: ['123'],
           inverse: ['456'],
+        }),
+      );
+
+      expect(
+        $t<ASTv1.BlockStatement>(`{{#unless (foo bar)}}123{{else}}456{{/unless}}`),
+      ).toEqual<HBSControlExpression>(
+        $control({
+          type: 'if',
+          condition: $glimmerCompat('$:foo($:bar)'),
+          children: ['456'],
+          inverse: ['123'],
         }),
       );
     });

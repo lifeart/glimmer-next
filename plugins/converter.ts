@@ -16,7 +16,13 @@ function patchNodePath(node: ASTv1.MustacheStatement | ASTv1.SubExpression) {
     return;
   }
    // replacing builtin helpers
-  if (node.path.original === 'if') {
+  if (node.path.original === 'unless') {
+    node.path.original = '$__if';
+    const condTrue = node.params[1];
+    const condFalse = node.params[2];
+    node.params[1] = condFalse;
+    node.params[2] = condTrue;
+  } else if (node.path.original === 'if') {
     node.path.original = '$__if';
   } else if (node.path.original === 'eq') {
     node.path.original = '$__eq';
@@ -163,15 +169,28 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
         }
       }
 
+      const children = childElements?.map((el) => ToJSType(el)) ?? null;
+      const inverse = elseChildElements?.map((el) => ToJSType(el)) ?? null;
+
+      if (name === 'unless') {
+        return {
+          type: 'if',
+          isControl: true,
+          condition: serializePath(ToJSType(node.params[0])),
+          blockParams: node.program.blockParams,
+          children: inverse,
+          inverse: children,
+          key: keyValue,
+        } as HBSControlExpression;
+      }
+
       return {
         type: name,
         isControl: true,
         condition: serializePath(ToJSType(node.params[0])),
         blockParams: node.program.blockParams,
-        children: childElements?.map((el) => ToJSType(el)) ?? null,
-        inverse: elseChildElements?.length
-          ? elseChildElements.map((el) => ToJSType(el))
-          : null,
+        children: children,
+        inverse: inverse,
         key: keyValue,
       } as HBSControlExpression;
     }
