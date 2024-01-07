@@ -47,7 +47,7 @@ export class Row extends Component<RowArgs> {
   }
   get className() {
     return this.isSelected ? "danger" : "";
-  };
+  }
   onClick = () => {
     this.selected = this.isSelected ? 0 : this.id;
   };
@@ -152,7 +152,6 @@ export function Icon() {
 }
 ```
 
-
 ### Setup
 
 ```
@@ -176,17 +175,16 @@ To render root component, use `renderComponent` function.
 import { renderComponent } from "@lifeart/gxt";
 import App from "./App.gts";
 
-const Instance = renderComponent(new App().template(), document.getElementById("app"));
-
+const Instance = renderComponent(
+  new App().template(),
+  document.getElementById("app"),
+);
 ```
 
 To destroy component, use `destroyElement` function.
 
 ```js
-
 import { destroyElement } from "@lifeart/gxt";
 
 destroyElement(Instance);
-
 ```
-

@@ -8,7 +8,14 @@ import {
   renderElement,
   destroyElement,
 } from '@/utils/component';
-import { AnyCell, Cell, MergedCell, formula, isTag, deepFnValue } from '@/utils/reactive';
+import {
+  AnyCell,
+  Cell,
+  MergedCell,
+  formula,
+  isTag,
+  deepFnValue,
+} from '@/utils/reactive';
 import { evaluateOpcode, opcodeFor } from '@/utils/vm';
 import { ListComponent } from '@/utils/list';
 import { ifCondition } from '@/utils/if';
@@ -131,7 +138,10 @@ function addChild(
       f.destroy();
       return addChild(element, componentProps);
     } else {
-      if (typeof componentProps === 'string' || typeof componentProps === 'number') {
+      if (
+        typeof componentProps === 'string' ||
+        typeof componentProps === 'number'
+      ) {
         const text = api.text('');
         addDestructors(
           [
@@ -180,11 +190,17 @@ function _DOM(
     if (eventName === EVENT_TYPE.TEXT_CONTENT) {
       if (typeof fn === 'function') {
         let realValue: unknown;
-        const checkCell = formula(() => deepFnValue(fn), `${element.tagName}.textContent`);
+        const checkCell = formula(
+          () => deepFnValue(fn),
+          `${element.tagName}.textContent`,
+        );
         evaluateOpcode(checkCell, (value) => {
           realValue = value;
         });
-        if (checkCell.isConst && typeof realValue === 'string' || typeof realValue === 'number') {
+        if (
+          (checkCell.isConst && typeof realValue === 'string') ||
+          typeof realValue === 'number'
+        ) {
           checkCell.destroy();
           api.textContent(element, String(realValue));
         } else {
@@ -195,7 +211,10 @@ function _DOM(
                 api.textContent(element, String(value));
               }),
             );
-          } else if (typeof realValue === 'string' || typeof realValue === 'number') {
+          } else if (
+            typeof realValue === 'string' ||
+            typeof realValue === 'number'
+          ) {
             destructors.push(
               opcodeFor(checkCell, (value) => {
                 api.textContent(element, String(value));
@@ -223,7 +242,6 @@ function _DOM(
       } else {
         addEventListener(element, eventName, fn as EventListener);
       }
-    
     }
   });
   const seenKeys = new Set<string>();
@@ -252,10 +270,7 @@ function _DOM(
     } else {
       const formulas = classNameModifiers.map((modifier) => {
         if (typeof modifier === 'function') {
-          return formula(
-            () => deepFnValue(modifier),
-            'functional modifier',
-          );
+          return formula(() => deepFnValue(modifier), 'functional modifier');
         } else {
           return modifier;
         }

@@ -44,7 +44,10 @@ export function transform(
   fileName: string,
   mode: 'development' | 'production',
 ) {
-  const programs: {meta: ResolvedHBS['flags'], template: Array<HBSNode | HBSControlExpression> }[] = [];
+  const programs: {
+    meta: ResolvedHBS['flags'];
+    template: Array<HBSNode | HBSControlExpression>;
+  }[] = [];
   const seenNodes: Set<ASTv1.Node> = new Set();
   const rawTxt: string = source;
   const hbsToProcess: ResolvedHBS[] = [];

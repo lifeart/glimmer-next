@@ -22,7 +22,7 @@
     "paths": {
       "@/components/*": ["./src/components/*"],
       "@/utils/*": ["./src/utils/*"],
-      "@lifeart/gxt": ["./src/utils/index"],
+      "@lifeart/gxt": ["./src/utils/index"]
     },
     "types": ["vite/client", "./types"]
   },

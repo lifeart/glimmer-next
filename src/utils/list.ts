@@ -6,7 +6,13 @@ import {
   renderElement,
 } from '@/utils/component';
 import { api } from '@/utils/dom-api';
-import { Cell, MergedCell, formula, isTag, deepFnValue } from '@/utils/reactive';
+import {
+  Cell,
+  MergedCell,
+  formula,
+  isTag,
+  deepFnValue,
+} from '@/utils/reactive';
 import { opcodeFor } from '@/utils/vm';
 
 function setIndex(item: GenericReturnType, index: number) {
@@ -126,9 +132,7 @@ export class ListComponent<T extends { id: number }> {
   async syncList(items: T[]) {
     const existingKeys = Array.from(this.keyMap.keys());
     const updatingKeys = new Set(items.map((item) => this.keyForItem(item)));
-    const keysToRemove = existingKeys.filter(
-      (key) => !updatingKeys.has(key),
-    );
+    const keysToRemove = existingKeys.filter((key) => !updatingKeys.has(key));
     const amountOfKeys = existingKeys.length;
     const rowsToMove: Array<[GenericReturnType, number]> = [];
     const amountOfExistingKeys = amountOfKeys - keysToRemove.length;

@@ -5,8 +5,8 @@ export type ResolvedHBS = {
   template: string;
   flags: {
     hasThisAccess: boolean;
-  }
-}
+  };
+};
 
 export function processTemplate(
   hbsToProcess: ResolvedHBS[],
@@ -14,7 +14,7 @@ export function processTemplate(
 ) {
   return function babelPlugin(babel: { types: typeof Babel.types }) {
     const { types: t } = babel;
-    type Context = Record<string, boolean |  string | undefined>;
+    type Context = Record<string, boolean | string | undefined>;
     return {
       name: 'ast-transform', // not required
       visitor: {

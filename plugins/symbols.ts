@@ -15,5 +15,4 @@ export const EVENT_TYPE = {
   TEXT_CONTENT: '1',
 };
 
-
 export const MAIN_IMPORT = '@lifeart/gxt';

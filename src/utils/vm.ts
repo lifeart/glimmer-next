@@ -59,23 +59,23 @@ export function effect(cb: () => void): () => void {
 }
 
 function trackingTransaction(cb: () => void) {
-    if (isRendering()) {
-        cb();
-    } else {
-        setIsRendering(true);
-        cb();
-        setIsRendering(false);
-    }
+  if (isRendering()) {
+    cb();
+  } else {
+    setIsRendering(true);
+    cb();
+    setIsRendering(false);
+  }
 }
 
 export function evaluateOpcode(tag: AnyCell, op: tagOp) {
-    trackingTransaction(() => {
-        const value = op(tag.value) as unknown as void | Promise<void>;
-        if (value !== undefined) {
-          // console.info(`Adding Async Updating Opcode for ${tag._debugName}`);
-          asyncOpcodes.add(op);
-        }
-    });
+  trackingTransaction(() => {
+    const value = op(tag.value) as unknown as void | Promise<void>;
+    if (value !== undefined) {
+      // console.info(`Adding Async Updating Opcode for ${tag._debugName}`);
+      asyncOpcodes.add(op);
+    }
+  });
 }
 
 export function opcodeFor(tag: AnyCell, op: tagOp) {

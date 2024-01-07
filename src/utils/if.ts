@@ -5,7 +5,12 @@ import {
   renderElement,
   runDestructors,
 } from '@/utils/component';
-import { formula, type Cell, type MergedCell, deepFnValue } from '@/utils/reactive';
+import {
+  formula,
+  type Cell,
+  type MergedCell,
+  deepFnValue,
+} from '@/utils/reactive';
 import { opcodeFor } from '@/utils/vm';
 import { addDestructors } from './component';
 import { api } from '@/utils/dom-api';

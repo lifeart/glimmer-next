@@ -28,14 +28,14 @@ export class Application extends Component {
   }
   removeItem = (item: Item) => {
     this.items = this.items.filter((i) => i.id !== item.id);
-  }
+  };
   onSelect = (item: Item) => {
     if (this.selectedCell.value === item.id) {
       this.selectedCell.value = 0;
       return;
     }
     this.selectedCell.value = item.id;
-  }
+  };
   create_1_000itemsCell() {
     this.items = buildData(1000);
   }

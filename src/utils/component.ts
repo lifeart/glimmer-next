@@ -80,7 +80,6 @@ export function renderComponent(
 
 export type Props = Record<string, unknown>;
 
-
 type Get<T, K, Otherwise = {}> = K extends keyof T
   ? Exclude<T[K], undefined>
   : Otherwise;
@@ -266,5 +265,4 @@ export function addEventListener(
   } else {
     return noop;
   }
-
 }

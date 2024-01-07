@@ -245,7 +245,6 @@ export function deepFnValue(fn: Function | Fn) {
   }
 }
 
-
 export function cell<T>(value: T, debugName?: string) {
   return new Cell(value, debugName);
 }
