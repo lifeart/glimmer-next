@@ -28,26 +28,27 @@ export class Router extends Component {
         })
         setTimeout(() => {
             this.isLocked = false;
-        }, 1500);
+        }, 1000);
         return async () => {
             element.style.position = 'fixed';
             element.style.top = `${coords.top}px`;
             element.style.transform = 'translateX(100%)';
-            await new Promise(resolve => setTimeout(resolve, 1500));
+            await new Promise(resolve => setTimeout(resolve, 1000));
         }
     }
     <template>
-        <Button class={{if this.routeOne.value 'active'}} @onClick={{this.goToRouteOne}}>
+        <Button class={{if this.routeOne 'active'}} @onClick={{this.goToRouteOne}}>
             <:slot>Route One</:slot>
         </Button>
-        <Button class={{if this.routeTwo.value 'active'}} @onClick={{this.goToRouteTwo}}>
+        <Button class={{if this.routeTwo 'active'}} @onClick={{this.goToRouteTwo}}>
             <:slot>Route Two</:slot>
         </Button>
         <style>
             .page {
-                transition: opacity 0.5s ease-in-out, transform 1.5s ease-in-out;
+                transform: translate3d(0);
+                transition: opacity 0.5s ease-in-out, transform 1s ease-in-out;
                 opacity: 1;
-                height: 100px;
+                min-height: 160px;
                 width: 100vw;
                 padding: 20px;
                 color: white;
