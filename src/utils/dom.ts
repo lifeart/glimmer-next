@@ -489,14 +489,18 @@ export function $_fin(
   if (!isStable) {
     nodes.unshift(api.comment());
   }
-  addDestructors(
-    [
-      () => {
-        executeDestructors(ctx as unknown as object);
-      },
-    ],
-    nodes[0],
-  );
+  if (ctx !== null) {
+    // no need to add destructors because component seems template-only and should not have `registerDestructor` flow.
+    addDestructors(
+      [
+        () => {
+          executeDestructors(ctx as unknown as object);
+        },
+      ],
+      nodes[0],
+    );
+  }
+
   return {
     nodes,
     slots,

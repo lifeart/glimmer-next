@@ -3,7 +3,7 @@
 import { preprocess, traverse, ASTv1 } from '@glimmer/syntax';
 import { transformSync } from '@babel/core';
 import { HBSControlExpression, HBSNode, serializeNode } from './utils';
-import { processTemplate } from './babel';
+import { processTemplate, type ResolvedHBS } from './babel';
 import { convert } from './converter';
 
 import { SYMBOLS } from './symbols';
@@ -16,15 +16,38 @@ function isNodeStable(node: string) {
   );
 }
 
+/*
+
+function isSimpleElement(element: ASTv1.ElementNode) {
+  return (
+    element.tag.charAt(0).toLowerCase() === element.tag.charAt(0) &&
+    !element.tag.startsWith(':')
+  );
+}
+
+
+export function isAllChildNodesSimpleElements(element: ASTv1.ElementNode): boolean {
+  return isSimpleElement(element) && element.children.every((child: ASTv1.Statement) => {
+    if (child.type === 'ElementNode') {
+      return isAllChildNodesSimpleElements(child);
+    } else if (child.type === 'TextNode') {
+      return true;
+    }
+    return false;
+  });
+}
+
+*/
+
 export function transform(
   source: string,
   fileName: string,
   mode: 'development' | 'production',
 ) {
-  const programs: Array<HBSNode | HBSControlExpression>[] = [];
+  const programs: {meta: ResolvedHBS['flags'], template: Array<HBSNode | HBSControlExpression> }[] = [];
   const seenNodes: Set<ASTv1.Node> = new Set();
   const rawTxt: string = source;
-  const hbsToProcess: string[] = [];
+  const hbsToProcess: ResolvedHBS[] = [];
   const programResults: string[] = [];
 
   const babelResult = transformSync(rawTxt, {
@@ -43,15 +66,19 @@ export function transform(
   const { ToJSType, ElementToNode } = convert(seenNodes);
 
   hbsToProcess.forEach((content) => {
-    const ast = preprocess(content);
-    const program: (typeof programs)[number] = [];
+    const flags = content.flags;
+    const ast = preprocess(content.template);
+    const program: (typeof programs)[number] = {
+      meta: flags,
+      template: [],
+    };
     traverse(ast, {
       MustacheStatement(node) {
         if (seenNodes.has(node)) {
           return;
         }
         seenNodes.add(node);
-        program.push(ToJSType(node));
+        program.template.push(ToJSType(node));
       },
       TextNode(node) {
         if (seenNodes.has(node)) {
@@ -59,7 +86,7 @@ export function transform(
         }
         seenNodes.add(node);
         if (node.chars.trim().length !== 0) {
-          program.push(ToJSType(node));
+          program.template.push(ToJSType(node));
         }
       },
       BlockStatement(node) {
@@ -67,21 +94,21 @@ export function transform(
           return;
         }
         seenNodes.add(node);
-        program.push(ToJSType(node));
+        program.template.push(ToJSType(node));
       },
       ElementNode(node) {
         if (seenNodes.has(node)) {
           return;
         }
         seenNodes.add(node);
-        program.push(ElementToNode(node));
+        program.template.push(ElementToNode(node));
       },
     });
     programs.push(program);
   });
 
   programs.forEach((program) => {
-    const input: Array<HBSNode | HBSControlExpression> = program;
+    const input: Array<HBSNode | HBSControlExpression> = program.template;
 
     const results = input.reduce((acc, node) => {
       const serializedNode = serializeNode(node);
@@ -97,6 +124,7 @@ export function transform(
       fileName.endsWith('.gts') || fileName.endsWith('.gjs');
 
     let result = '';
+    let finContext = program.meta.hasThisAccess ? 'this' : 'null';
 
     if (isTemplateTag) {
       result = `function () {
@@ -105,7 +133,7 @@ export function transform(
       const roots = [${results.join(', ')}];
       return ${SYMBOLS.FINALIZE_COMPONENT}(roots, $slots, ${String(
         isNodeStable(results[0]),
-      )}, this);
+      )}, ${finContext});
     }`;
     } else {
       result = isClass
@@ -115,7 +143,7 @@ export function transform(
       const roots = [${results.join(', ')}];
       return ${SYMBOLS.FINALIZE_COMPONENT}(roots, $slots, ${String(
         isNodeStable(results[0]),
-      )}, this);
+      )}, ${finContext});
     }`
         : `(() => {
       const $slots = {};
@@ -123,7 +151,7 @@ export function transform(
       const roots = [${results.join(', ')}];
       return ${SYMBOLS.FINALIZE_COMPONENT}(roots, $slots, ${String(
         isNodeStable(results[0]),
-      )}, this);
+      )}, ${finContext});
     })()`;
     }
 
