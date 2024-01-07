@@ -6,7 +6,6 @@ import {
   isPath,
   resolvedChildren,
   serializeChildren,
-  serializeNode,
   serializePath,
   toObject,
 } from './utils';
@@ -49,10 +48,10 @@ function patchNodePath(node: ASTv1.MustacheStatement | ASTv1.SubExpression) {
     node.path.original = SYMBOLS.$__fn;
   }
 }
+export type PrimitiveJSType = null | number | string | boolean | undefined;
+export type ComplexJSType = PrimitiveJSType | HBSControlExpression | HBSNode;
 
 export function convert(seenNodes: Set<ASTv1.Node>) {
-  type PrimitiveJSType = null | number | string | boolean | undefined;
-  type ComplexJSType = PrimitiveJSType | HBSControlExpression | HBSNode;
   function ToJSType(node: ASTv1.Node, wrap = true): ComplexJSType {
     seenNodes.add(node);
     if (node.type === 'ConcatStatement') {

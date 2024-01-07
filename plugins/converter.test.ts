@@ -1,7 +1,7 @@
 import { expect, test, describe } from 'vitest';
 import { preprocess } from '@glimmer/syntax';
 
-import { convert } from './converter';
+import { ComplexJSType, convert } from './converter';
 import { ASTv1 } from '@glimmer/syntax';
 import { HBSControlExpression, HBSNode } from './utils';
 import { EVENT_TYPE } from './symbols';
@@ -15,7 +15,7 @@ function $glimmerCompat(str: string) {
   }
 }
 
-function $t<T extends ASTv1.Node>(tpl: string): T {
+function $t<T extends ASTv1.Node>(tpl: string): ComplexJSType {
   const seenNodes: Set<ASTv1.Node> = new Set();
   const { ToJSType } = convert(seenNodes);
   const ast = preprocess(tpl);
