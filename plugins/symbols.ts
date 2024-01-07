@@ -14,6 +14,7 @@ export const SYMBOLS = {
   '$__log': '$__log',
   '$__array': '$__array',
   '$__hash': '$__hash',
+  '$__fn': '$__fn',
 };
 
 export const EVENT_TYPE = {

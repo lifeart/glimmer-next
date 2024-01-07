@@ -19,15 +19,15 @@ function patchNodePath(node: ASTv1.MustacheStatement | ASTv1.SubExpression) {
   }
    // replacing builtin helpers
   if (node.path.original === 'unless') {
-    node.path.original = '$__if';
+    node.path.original = SYMBOLS.$__if;
     const condTrue = node.params[1];
     const condFalse = node.params[2];
     node.params[1] = condFalse;
     node.params[2] = condTrue;
   } else if (node.path.original === 'if') {
-    node.path.original = '$__if';
+    node.path.original = SYMBOLS.$__if;
   } else if (node.path.original === 'eq') {
-    node.path.original = '$__eq';
+    node.path.original = SYMBOLS.$__eq;
   } else if (node.path.original === 'debugger') {
     node.path.original = '$__debugger.call';
     node.params.unshift({
@@ -41,11 +41,13 @@ function patchNodePath(node: ASTv1.MustacheStatement | ASTv1.SubExpression) {
       data: false,
     })
   } else if (node.path.original === 'log') {
-    node.path.original = '$__log';
+    node.path.original = SYMBOLS.$__log;
   } else if (node.path.original === 'array') {
-    node.path.original = '$__array';
+    node.path.original = SYMBOLS.$__array;
   } else if (node.path.original === 'hash') {
-    node.path.original = '$__hash';
+    node.path.original = SYMBOLS.$__hash;
+  } else if (node.path.original === 'fn') {
+    node.path.original = SYMBOLS.$__fn;
   }
 }
 

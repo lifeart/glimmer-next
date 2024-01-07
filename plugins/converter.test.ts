@@ -54,6 +54,11 @@ function $node(partial: Partial<HBSNode>): HBSNode {
 
 describe('convert function builder', () => {
   describe('Builtin helpers in MustacheStatements', () => {
+    test('fn helper properly mapped', () => {
+      expect($t<ASTv1.MustacheStatement>(`{{fn a "b" "c"}}`)).toEqual(
+        `$:() => $:$__fn(a,"b","c")`,
+      );
+    });
     test('if helper properly mapped', () => {
       expect($t<ASTv1.MustacheStatement>(`{{if foo "bar" "baz"}}`)).toEqual(
         `$:() => $:$__if(foo,"bar","baz")`,
@@ -91,6 +96,11 @@ describe('convert function builder', () => {
     });
   });
   describe('Builtin helpers in SubExpression', () => {
+    test('fn helper properly mapped', () => {
+      expect($t<ASTv1.MustacheStatement>(`{{q (fn a b (if c d))}}`)).toEqual(
+        `$:() => $:q($__fn($:a,$:b,$:$__if($:c,$:d)))`,
+      );
+    });
     test('if helper properly mapped', () => {
       expect($t<ASTv1.MustacheStatement>(`{{q (if a b (if c d))}}`)).toEqual(
         `$:() => $:q($__if($:a,$:b,$:$__if($:c,$:d)))`,
