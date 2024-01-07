@@ -19,7 +19,7 @@ export class Header extends Component<{
   <template>
     <div class='jumbotron'>
       <div class='row'>
-        {{log (hash foo=1 bar="2" baz=null book=undefined) (array 1 2 3 4 5)}}
+        {{log (hash foo=1 bar='2' baz=null book=undefined) (array 1 2 3 4 5)}}
         <div class='col-md-6'>
           <h1>GlimmerC<a
               href='https://github.com/lifeart/glimmer-next'

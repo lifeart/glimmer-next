@@ -12,12 +12,11 @@ import {
 } from './utils';
 import { EVENT_TYPE, SYMBOLS } from './symbols';
 
-
 function patchNodePath(node: ASTv1.MustacheStatement | ASTv1.SubExpression) {
   if (node.path.type !== 'PathExpression') {
     return;
   }
-   // replacing builtin helpers
+  // replacing builtin helpers
   if (node.path.original === 'unless') {
     node.path.original = SYMBOLS.$__if;
     const condTrue = node.params[1];
@@ -39,7 +38,7 @@ function patchNodePath(node: ASTv1.MustacheStatement | ASTv1.SubExpression) {
       tail: [],
       this: true,
       data: false,
-    })
+    });
   } else if (node.path.original === 'log') {
     node.path.original = SYMBOLS.$__log;
   } else if (node.path.original === 'array') {
@@ -54,7 +53,7 @@ function patchNodePath(node: ASTv1.MustacheStatement | ASTv1.SubExpression) {
 export function convert(seenNodes: Set<ASTv1.Node>) {
   type PrimitiveJSType = null | number | string | boolean | undefined;
   type ComplexJSType = PrimitiveJSType | HBSControlExpression | HBSNode;
-  function ToJSType(node: ASTv1.Node, wrap = true): ComplexJSType  {
+  function ToJSType(node: ASTv1.Node, wrap = true): ComplexJSType {
     seenNodes.add(node);
     if (node.type === 'ConcatStatement') {
       return `$:() => [${node.parts
@@ -80,9 +79,14 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
       // replacing builtin helpers
       patchNodePath(node);
       if (node.path.original === SYMBOLS.$__hash) {
-        const hashArgs: [string, PrimitiveJSType][] = node.hash.pairs.map((pair) => {
-          return [pair.key, ToJSType(pair.value) as unknown as PrimitiveJSType];
-        });
+        const hashArgs: [string, PrimitiveJSType][] = node.hash.pairs.map(
+          (pair) => {
+            return [
+              pair.key,
+              ToJSType(pair.value) as unknown as PrimitiveJSType,
+            ];
+          },
+        );
         return `$:${node.path.original}(${toObject(hashArgs)})`;
       }
       return `$:${node.path.original}(${node.params
@@ -132,10 +136,14 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
       if (node.params.length === 0) {
         // hash case
         if (node.path.original === SYMBOLS.$__hash) {
-          const hashArgs: [string, PrimitiveJSType][] = node.hash.pairs.map((pair) => {
-            return [pair.key, ToJSType(pair.value) as PrimitiveJSType];
-          });
-          return `${wrap ? `$:() => ` : ''}${ToJSType(node.path)}(${toObject(hashArgs)})`;
+          const hashArgs: [string, PrimitiveJSType][] = node.hash.pairs.map(
+            (pair) => {
+              return [pair.key, ToJSType(pair.value) as PrimitiveJSType];
+            },
+          );
+          return `${wrap ? `$:() => ` : ''}${ToJSType(node.path)}(${toObject(
+            hashArgs,
+          )})`;
         }
         return ToJSType(node.path);
       } else {
@@ -194,15 +202,30 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
           let isBoolean = p.type === 'BooleanLiteral';
           let isNull = p.type === 'NullLiteral';
           let isUndefined = p.type === 'UndefinedLiteral';
-          if (isSubExpression || isString || isBoolean || isNull || isUndefined) {
-            return `let ${node.program.blockParams[index]} = ${ToJSType(p, false)};`
+          if (
+            isSubExpression ||
+            isString ||
+            isBoolean ||
+            isNull ||
+            isUndefined
+          ) {
+            return `let ${node.program.blockParams[index]} = ${ToJSType(
+              p,
+              false,
+            )};`;
           } else {
-            return `let ${node.program.blockParams[index]} = $:() => ${ToJSType(p)};`
+            return `let ${node.program.blockParams[index]} = $:() => ${ToJSType(
+              p,
+            )};`;
           }
         });
         // note, at the moment nested let's works fine if no name overlap,
         // looks like fix for other case should be on babel level;
-        const result =  `$:...(() => {${vars.join('')}return [${serializeChildren(children as unknown as [string | HBSNode | HBSControlExpression])}]})()`;
+        const result = `$:...(() => {${vars.join(
+          '',
+        )}return [${serializeChildren(
+          children as unknown as [string | HBSNode | HBSControlExpression],
+        )}]})()`;
         return result;
       }
 

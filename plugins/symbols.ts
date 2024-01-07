@@ -8,13 +8,13 @@ export const SYMBOLS = {
   TEXT: '$_text',
   COMPONENT: '$_c',
   WITH_SLOTS: '$_withSlots',
-  '$__if': '$__if',
-  '$__eq': '$__eq',
-  '$__debugger': '$__debugger',
-  '$__log': '$__log',
-  '$__array': '$__array',
-  '$__hash': '$__hash',
-  '$__fn': '$__fn',
+  $__if: '$__if',
+  $__eq: '$__eq',
+  $__debugger: '$__debugger',
+  $__log: '$__log',
+  $__array: '$__array',
+  $__hash: '$__hash',
+  $__fn: '$__fn',
 };
 
 export const EVENT_TYPE = {

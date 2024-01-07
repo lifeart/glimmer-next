@@ -90,9 +90,9 @@ describe('convert function builder', () => {
       );
     });
     test('hash helper properly mapped', () => {
-      expect($t<ASTv1.MustacheStatement>(`{{hash foo="bar" boo="baz"}}`)).toEqual(
-        `$:() => $:$__hash({foo: "bar", boo: "baz"})`,
-      );
+      expect(
+        $t<ASTv1.MustacheStatement>(`{{hash foo="bar" boo="baz"}}`),
+      ).toEqual(`$:() => $:$__hash({foo: "bar", boo: "baz"})`);
     });
   });
   describe('Builtin helpers in SubExpression', () => {
@@ -107,9 +107,9 @@ describe('convert function builder', () => {
       );
     });
     test('unless helper properly mapped', () => {
-      expect($t<ASTv1.MustacheStatement>(`{{q (unless a b (if c d))}}`)).toEqual(
-        `$:() => $:q($__if($:a,$:$__if($:c,$:d),$:b))`,
-      );
+      expect(
+        $t<ASTv1.MustacheStatement>(`{{q (unless a b (if c d))}}`),
+      ).toEqual(`$:() => $:q($__if($:a,$:$__if($:c,$:d),$:b))`);
     });
     test('eq helper properly mapped', () => {
       expect($t<ASTv1.MustacheStatement>(`{{q (eq a b)}}`)).toEqual(
@@ -127,14 +127,14 @@ describe('convert function builder', () => {
       );
     });
     test('array helper properly mapped', () => {
-      expect($t<ASTv1.MustacheStatement>(`{{q (array foo "bar" "baz")}}`)).toEqual(
-        `$:() => $:q($__array($:foo,"bar","baz"))`,
-      );
+      expect(
+        $t<ASTv1.MustacheStatement>(`{{q (array foo "bar" "baz")}}`),
+      ).toEqual(`$:() => $:q($__array($:foo,"bar","baz"))`);
     });
     test('hash helper properly mapped', () => {
-      expect($t<ASTv1.MustacheStatement>(`{{q (hash foo="bar" boo="baz")}}`)).toEqual(
-        `$:() => $:q($__hash({foo: "bar", boo: "baz"}))`,
-      );
+      expect(
+        $t<ASTv1.MustacheStatement>(`{{q (hash foo="bar" boo="baz")}}`),
+      ).toEqual(`$:() => $:q($__hash({foo: "bar", boo: "baz"}))`);
     });
   });
   describe('TextNode', () => {
@@ -315,7 +315,9 @@ describe('convert function builder', () => {
       );
 
       expect(
-        $t<ASTv1.BlockStatement>(`{{#unless (foo bar)}}123{{else}}456{{/unless}}`),
+        $t<ASTv1.BlockStatement>(
+          `{{#unless (foo bar)}}123{{else}}456{{/unless}}`,
+        ),
       ).toEqual<HBSControlExpression>(
         $control({
           type: 'if',
@@ -329,8 +331,12 @@ describe('convert function builder', () => {
   describe('let condition', () => {
     test('it works', () => {
       expect(
-        $t<ASTv1.BlockStatement>(`{{#let foo "name" as |bar k|}}p{{bar}}{{k}}{{/let}}`),
-      ).toEqual(`$:...(() => {let bar = $:() => $:foo;let k = "name";return [$_text("p"), () => bar, () => k]})()`);
+        $t<ASTv1.BlockStatement>(
+          `{{#let foo "name" as |bar k|}}p{{bar}}{{k}}{{/let}}`,
+        ),
+      ).toEqual(
+        `$:...(() => {let bar = $:() => $:foo;let k = "name";return [$_text("p"), () => bar, () => k]})()`,
+      );
     });
   });
   describe('each condition', () => {
