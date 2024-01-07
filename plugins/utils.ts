@@ -50,7 +50,7 @@ export function serializePath(
   p: string,
   wrap = flags.IS_GLIMMER_COMPAT_MODE,
 ): string {
-  const isFunction = p.startsWith('$:(');
+  const isFunction = p.startsWith('$:(') || p.startsWith('$:...(');
   if (wrap === false) {
     return resolvePath(p);
   }

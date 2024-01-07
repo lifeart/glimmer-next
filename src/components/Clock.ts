@@ -5,8 +5,23 @@ function ifs(condition: number) {
 }
 
 function Display(props: { value: string }) {
-  scope({ props, ifs });
-  return hbs`<span>{{ifs props.value}}{{log (eq props.value 10)}}</span>`;
+  scope({ props, ifs, Display });
+  return hbs`<span>{{ifs props.value}}{{log (eq props.value 10)}}
+    <br>
+    {{log  props.value (hash value=props.value name="static")}}
+    {{#let props.value 'dddd' as |name1 dd|}}
+      This is: {{name1}} / {{dd}}
+      <br>
+      {{#let (hash parent=name1 palue=123) as |name2|}}
+        {{log name2 name2.palue name2.parent name1}}
+        This is: {{name2.palue}} and parent {{name2.parent}}
+        <br>
+        {{#let "321" as |name3|}}
+          This is: {{name3}}
+        {{/let}}
+      {{/let}}
+    {{/let}}
+  </span>`;
 }
 
 export function Clock(this: any) {

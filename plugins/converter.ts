@@ -5,6 +5,8 @@ import {
   escapeString,
   isPath,
   resolvedChildren,
+  serializeChildren,
+  serializeNode,
   serializePath,
   toObject,
 } from './utils';
@@ -48,7 +50,9 @@ function patchNodePath(node: ASTv1.MustacheStatement | ASTv1.SubExpression) {
 }
 
 export function convert(seenNodes: Set<ASTv1.Node>) {
-  function ToJSType(node: ASTv1.Node, wrap = true): any {
+  type PrimitiveJSType = null | number | string | boolean | undefined;
+  type ComplexJSType = PrimitiveJSType | HBSControlExpression | HBSNode;
+  function ToJSType(node: ASTv1.Node, wrap = true): ComplexJSType  {
     seenNodes.add(node);
     if (node.type === 'ConcatStatement') {
       return `$:() => [${node.parts
@@ -74,8 +78,8 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
       // replacing builtin helpers
       patchNodePath(node);
       if (node.path.original === SYMBOLS.$__hash) {
-        const hashArgs: [string, string | number | boolean | null | undefined][] = node.hash.pairs.map((pair) => {
-          return [pair.key, ToJSType(pair.value)];
+        const hashArgs: [string, PrimitiveJSType][] = node.hash.pairs.map((pair) => {
+          return [pair.key, ToJSType(pair.value) as unknown as PrimitiveJSType];
         });
         return `$:${node.path.original}(${toObject(hashArgs)})`;
       }
@@ -117,7 +121,7 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
         let slotName =
           node.hash.pairs.find((p) => p.key === 'to')?.value || 'default';
         if (typeof slotName !== 'string') {
-          slotName = ToJSType(slotName);
+          slotName = ToJSType(slotName) as unknown as string;
         }
         return `$:() => ${SYMBOLS.SLOT}('${slotName}', () => [${node.params
           .map((p) => ToJSType(p))
@@ -126,8 +130,8 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
       if (node.params.length === 0) {
         // hash case
         if (node.path.original === SYMBOLS.$__hash) {
-          const hashArgs: [string, string | number | boolean | null | undefined][] = node.hash.pairs.map((pair) => {
-            return [pair.key, ToJSType(pair.value)];
+          const hashArgs: [string, PrimitiveJSType][] = node.hash.pairs.map((pair) => {
+            return [pair.key, ToJSType(pair.value) as PrimitiveJSType];
           });
           return `${wrap ? `$:() => ` : ''}${ToJSType(node.path)}(${toObject(hashArgs)})`;
         }
@@ -165,29 +169,45 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
         if (keyPair.value.type === 'StringLiteral') {
           keyValue = keyPair.value.original;
         } else {
-          keyValue = ToJSType(keyPair.value);
+          keyValue = ToJSType(keyPair.value) as string;
         }
       }
 
       const children = childElements?.map((el) => ToJSType(el)) ?? null;
       const inverse = elseChildElements?.map((el) => ToJSType(el)) ?? null;
-
       if (name === 'unless') {
         return {
           type: 'if',
           isControl: true,
-          condition: serializePath(ToJSType(node.params[0])),
+          condition: serializePath(ToJSType(node.params[0]) as string),
           blockParams: node.program.blockParams,
           children: inverse,
           inverse: children,
           key: keyValue,
         } as HBSControlExpression;
+      } else if (name === 'let') {
+        const vars = node.params.map((p, index) => {
+          let isSubExpression = p.type === 'SubExpression';
+          let isString = p.type === 'StringLiteral';
+          let isBoolean = p.type === 'BooleanLiteral';
+          let isNull = p.type === 'NullLiteral';
+          let isUndefined = p.type === 'UndefinedLiteral';
+          if (isSubExpression || isString || isBoolean || isNull || isUndefined) {
+            return `let ${node.program.blockParams[index]} = ${ToJSType(p, false)};`
+          } else {
+            return `let ${node.program.blockParams[index]} = $:() => ${ToJSType(p)};`
+          }
+        });
+        // note, at the moment nested let's works fine if no name overlap,
+        // looks like fix for other case should be on babel level;
+        const result =  `$:...(() => {${vars.join('')}return [${serializeChildren(children as unknown as [string | HBSNode | HBSControlExpression])}]})()`;
+        return result;
       }
 
       return {
         type: name,
         isControl: true,
-        condition: serializePath(ToJSType(node.params[0])),
+        condition: serializePath(ToJSType(node.params[0]) as string),
         blockParams: node.program.blockParams,
         children: children,
         inverse: inverse,

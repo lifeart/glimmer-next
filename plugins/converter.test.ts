@@ -316,6 +316,13 @@ describe('convert function builder', () => {
       );
     });
   });
+  describe('let condition', () => {
+    test('it works', () => {
+      expect(
+        $t<ASTv1.BlockStatement>(`{{#let foo "name" as |bar k|}}p{{bar}}{{k}}{{/let}}`),
+      ).toEqual(`$:...(() => {let bar = $:() => $:foo;let k = "name";return [$_text("p"), () => bar, () => k]})()`);
+    });
+  });
   describe('each condition', () => {
     test('it works', () => {
       expect(
