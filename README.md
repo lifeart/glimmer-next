@@ -10,7 +10,7 @@
 
 - Related issue: [glimmer-vm/issues/1540](https://github.com/glimmerjs/glimmer-vm/issues/1540)
 - Related PR: [glimmer-vm/pull/1541](https://github.com/glimmerjs/glimmer-vm/pull/1541)
-- Sample App: [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark/pull/1554)
+- Sample App: [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark/tree/master/frameworks/keyed/gxt)
 
 ## Component sample
 
