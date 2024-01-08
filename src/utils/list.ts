@@ -7,14 +7,9 @@ import {
   renderElement,
 } from '@/utils/component';
 import { api } from '@/utils/dom-api';
-import {
-  Cell,
-  MergedCell,
-  formula,
-  isTag,
-  deepFnValue,
-} from '@/utils/reactive';
+import { Cell, MergedCell, formula, deepFnValue } from '@/utils/reactive';
 import { opcodeFor } from '@/utils/vm';
+import { isFn, isTagLike } from './shared';
 
 function setIndex(item: GenericReturnType, index: number) {
   item.forEach((item) => {
@@ -78,11 +73,11 @@ class BasicListComponent<T extends { id: number }> {
 
     const originalTag = tag;
 
-    if (!tag[isTag]) {
+    if (!isTagLike(tag)) {
       if (Array.isArray(tag)) {
         console.warn('iterator for @each should be a cell');
         tag = new Cell(tag);
-      } else if (typeof originalTag === 'function') {
+      } else if (isFn(originalTag)) {
         tag = formula(() => deepFnValue(originalTag));
       }
     }

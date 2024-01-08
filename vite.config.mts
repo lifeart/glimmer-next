@@ -5,6 +5,8 @@ import { compiler } from "./plugins/compiler.ts";
 import { flags } from "./plugins/flags.ts";
 import circleDependency from "vite-plugin-circular-dependency";
 import dts from "vite-plugin-dts";
+import babel from "vite-plugin-babel";
+import { processSource } from "./plugins/babel.ts";
 
 const isLibBuild = process.env["npm_lifecycle_script"]?.includes("--lib");
 const self = import.meta.url;
@@ -15,6 +17,22 @@ const plugins: PluginOption[] = [];
 
 if (isLibBuild) {
   plugins.push(
+    babel({
+      filter: /\.ts$/,
+      babelConfig: {
+        babelrc: false,
+        configFile: false,
+        presets: [
+          [
+            "@babel/preset-typescript",
+            {
+              allowDeclareFields: true,
+            },
+          ],
+        ],
+        plugins: [processSource],
+      },
+    }),
     dts({
       insertTypesEntry: true,
       exclude: [

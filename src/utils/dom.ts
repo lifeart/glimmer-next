@@ -13,7 +13,6 @@ import {
   Cell,
   MergedCell,
   formula,
-  isTag,
   deepFnValue,
 } from '@/utils/reactive';
 import { evaluateOpcode, opcodeFor } from '@/utils/vm';
@@ -21,9 +20,11 @@ import { SyncListComponent, AsyncListComponent } from '@/utils/list';
 import { ifCondition } from '@/utils/if';
 import { DestructorFn, Destructors, executeDestructors } from './destroyable';
 import { api } from '@/utils/dom-api';
+import { isFn, isPrimitive, isTagLike } from './shared';
 
 // EMPTY DOM PROPS
 export const $_edp = [[], [], []] as Props;
+const $_className = 'className';
 
 type ModifierFn = (
   element: HTMLElement,
@@ -52,7 +53,7 @@ function $prop(
   value: unknown,
   destructors: DestructorFn[],
 ) {
-  if (typeof value === 'function') {
+  if (isFn(value)) {
     $prop(
       element,
       key,
@@ -78,7 +79,7 @@ function $attr(
   value: unknown,
   destructors: Destructors,
 ) {
-  if (typeof value === 'function') {
+  if (isFn(value)) {
     $attr(
       element,
       key,
@@ -96,14 +97,6 @@ function $attr(
     // @ts-expect-error type casting
     api.attr(element, key, value);
   }
-}
-
-function isPrimitive(value: unknown): value is string | number {
-  return typeof value === 'string' || typeof value === 'number';
-}
-
-function isTagLike(child: unknown): child is AnyCell {
-  return (child as AnyCell)[isTag];
 }
 
 type RenderableType = ComponentReturnType | NodeReturnType | string | number;
@@ -147,7 +140,7 @@ function addChild(
     api.append(element, api.text(child));
   } else if (isTagLike(child)) {
     api.append(element, cellToText(child));
-  } else if (typeof child === 'function') {
+  } else if (isFn(child)) {
     addChild(element, resolveRenderable(child));
   }
 }
@@ -165,7 +158,7 @@ function $ev(
 ) {
   // textContent is a special case
   if (eventName === EVENT_TYPE.TEXT_CONTENT) {
-    if (typeof fn === 'function') {
+    if (isFn(fn)) {
       const value = resolveRenderable(fn, `${element.tagName}.textContent`);
       if (isPrimitive(value)) {
         api.textContent(element, String(value));
@@ -184,7 +177,7 @@ function $ev(
     // modifier case
   } else if (eventName === EVENT_TYPE.ON_CREATED) {
     const destructor = (fn as ModifierFn)(element);
-    if (typeof destructor === 'function') {
+    if (isFn(destructor)) {
       destructors.push(destructor);
     }
   } else {
@@ -233,7 +226,7 @@ function _DOM(
   });
   const classNameModifiers: Attr[] = [];
   properties.forEach(([key, value]) => {
-    if (key === 'className') {
+    if (key === $_className) {
       classNameModifiers.push(value);
       return;
     }
@@ -245,10 +238,10 @@ function _DOM(
   });
   if (classNameModifiers.length > 0) {
     if (classNameModifiers.length === 1) {
-      $prop(element, 'className', classNameModifiers[0], destructors);
+      $prop(element, $_className, classNameModifiers[0], destructors);
     } else {
       const formulas = classNameModifiers.map((modifier) => {
-        if (typeof modifier === 'function') {
+        if (isFn(modifier)) {
           return formula(() => deepFnValue(modifier), 'functional modifier');
         } else {
           return modifier;
@@ -256,7 +249,7 @@ function _DOM(
       });
       $prop(
         element,
-        'className',
+        $_className,
         formula(() => {
           return formulas.join(' ');
         }, element.tagName + '.className'),
@@ -334,7 +327,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots) {
           elements.map((el) => {
             if (isPrimitive(el)) {
               return api.text(String(el));
-            } else if (typeof el === 'function') {
+            } else if (isFn(el)) {
               const value = resolveRenderable(el, `slot ${name} element fn`);
               if (isPrimitive(value)) {
                 return api.text(String(value));
@@ -368,7 +361,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots) {
     elements.map((el) => {
       if (isPrimitive(el)) {
         return api.text(String(el));
-      } else if (typeof el === 'function') {
+      } else if (isFn(el)) {
         // here likely el is as slot constructor
         // @ts-expect-error function signature
         return el();
@@ -409,7 +402,7 @@ function text(
     return def(api.text(text));
   } else if (text !== null && isTagLike(text)) {
     return def(cellToText(text as AnyCell));
-  } else if (typeof text === 'function') {
+  } else if (isFn(text)) {
     // @todo update is const check here
     const maybeFormula = resolveRenderable(text as Fn);
     if (isPrimitive(maybeFormula)) {
@@ -471,7 +464,7 @@ export function $_each<T extends { id: number }>(
 const ArgProxyHandler = {
   get(target: Record<string, () => unknown>, prop: string) {
     if (prop in target) {
-      if (typeof target[prop] !== 'function') {
+      if (!isFn(target[prop])) {
         return target[prop];
       }
       return target[prop]();

@@ -6,6 +6,7 @@ import type {
   ComponentReturn,
 } from '@glint/template/-private/integration';
 import { api } from '@/utils/dom-api';
+import { isFn } from './shared';
 
 const FRAGMENT_TYPE = 11; // Node.DOCUMENT_FRAGMENT_NODE
 
@@ -71,7 +72,7 @@ export function renderComponent(
   component: ComponentReturnType,
   target: ComponentRenderTarget,
 ): ComponentReturnType {
-  if ('template' in component && typeof component.template === 'function') {
+  if ('template' in component && isFn(component.template)) {
     // @ts-expect-error typings mismatch
     return renderComponent(component.template());
   }

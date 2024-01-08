@@ -116,3 +116,71 @@ export function processTemplate(
     };
   };
 }
+
+export function processSource() {
+  return {
+    name: 'prod-ast-transform', // not required
+    visitor: {
+      ClassMethod(path: any) {
+        if (path.node.kind === 'constructor') {
+          if (path.node.params.length === 2) {
+            if (path.node.params[1].name === 'debugName') {
+              path.node.params.pop();
+            }
+          }
+        }
+      },
+      ExpressionStatement(path: any) {
+        // remove all console.log/warn/error/info
+        if (
+          path.node.expression &&
+          path.node.expression.type === 'CallExpression'
+        ) {
+          if (path.node.expression.callee.type === 'MemberExpression') {
+            if (path.node.expression.callee.object.name === 'console') {
+              path.remove();
+            }
+          }
+        }
+      },
+      ClassProperty(path: any) {
+        if (path.node.key.name === '_debugName') {
+          path.remove();
+        }
+      },
+      FunctionDeclaration(path: any) {
+        if (path.node.id.name === 'formula' || path.node.id.name === 'cell') {
+          path.node.params.pop();
+        }
+      },
+      AssignmentPattern(path: any) {
+        if (path.node.left.name === 'debugName') {
+          path.remove();
+        }
+      },
+      NewExpression(path: any) {
+        if (path.node.callee && path.node.callee.type === 'Identifier') {
+          if (
+            path.node.callee.name === 'MergedCell' ||
+            path.node.callee.name === 'Cell'
+          ) {
+            path.node.arguments.pop();
+          }
+        }
+      },
+      CallExpression(path: any) {
+        if (path.node.callee && path.node.callee.type === 'Identifier') {
+          if (
+            path.node.callee.name === 'cell' ||
+            path.node.callee.name === 'formula' ||
+            path.node.callee.name === 'resolveRenderable'
+          ) {
+            if (path.node.arguments.length === 2) {
+              path.node.arguments.pop();
+            }
+          }
+        }
+      },
+    },
+  };
+}

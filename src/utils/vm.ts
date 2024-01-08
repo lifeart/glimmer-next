@@ -8,6 +8,7 @@ import {
   formula,
   opsFor,
 } from './reactive';
+import { isFn } from './shared';
 
 type maybeDestructor = undefined | (() => void);
 type maybePromise = undefined | Promise<void>;
@@ -40,7 +41,7 @@ export function effect(cb: () => void): () => void {
         throw new Error(`Effect can't be a promise: ${cb.toString()}`);
       }
     }
-    if (typeof value === 'function') {
+    if (isFn(value)) {
       destructor = value as unknown as () => void;
     }
     // tag is computed here;

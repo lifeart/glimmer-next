@@ -4,6 +4,7 @@
   We explicitly update DOM only when it's needed and only if tags are changed.
 */
 import { scheduleRevalidate } from '@/utils/runtime';
+import { isFn, isTag, isTagLike } from '@/utils/shared';
 
 export const asyncOpcodes = new WeakSet<tagOp>();
 // List of DOM operations for each tag
@@ -15,8 +16,6 @@ export const opsForTag: WeakMap<
 export const tagsToRevalidate: Set<Cell> = new Set();
 // List of derived tags for each cell
 export const relatedTags: WeakMap<Cell, Set<MergedCell>> = new WeakMap();
-
-export const isTag = Symbol('isTag');
 
 window['getVM'] = () => ({
   relatedTags,
@@ -236,9 +235,9 @@ export function formula(fn: Function | Fn, debugName?: string) {
 
 export function deepFnValue(fn: Function | Fn) {
   const cell = fn();
-  if (typeof cell === 'function') {
+  if (isFn(cell)) {
     return deepFnValue(cell);
-  } else if (cell !== null && typeof cell === 'object' && cell[isTag]) {
+  } else if (cell !== null && isTagLike(cell)) {
     return deepFnValue(() => cell.value);
   } else {
     return cell;

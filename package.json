@@ -1,7 +1,7 @@
 {
   "name": "@lifeart/gxt",
   "private": false,
-  "version": "0.0.15",
+  "version": "0.0.16",
   "type": "module",
   "license": "MIT",
   "keywords": [
@@ -47,6 +47,7 @@
     "@glint/environment-ember-template-imports": "^1.2.1",
     "@glint/environment-glimmerx": "^1.2.1",
     "@glint/template": "^1.2.1",
+    "@lifeart/tiny-router": "^0.0.8",
     "@types/babel__core": "^7.20.5",
     "prettier": "^3.1.1",
     "prettier-plugin-ember-template-tag": "^2.0.0",
@@ -55,8 +56,8 @@
     "vite": "^5.0.8",
     "vite-plugin-circular-dependency": "^0.2.1",
     "vite-plugin-dts": "^3.7.0",
-    "vitest": "^1.1.1",
-    "@lifeart/tiny-router": "^0.0.8"
+    "vite-plugin-babel": "^1.2.0",
+    "vitest": "^1.1.1"
   },
   "dependencies": {
     "@babel/core": "^7.23.6",

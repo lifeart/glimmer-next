@@ -14,6 +14,7 @@ import {
 import { opcodeFor } from '@/utils/vm';
 import { addDestructors } from './component';
 import { api } from '@/utils/dom-api';
+import { isFn, isPrimitive } from './shared';
 
 export function ifCondition(
   cell: Cell<boolean> | MergedCell,
@@ -38,11 +39,9 @@ export function ifCondition(
     }
   };
   const originalCell = cell;
-  if (typeof originalCell === 'function') {
+  if (isFn(originalCell)) {
     cell = formula(() => deepFnValue(originalCell));
-  } else if (typeof originalCell === 'boolean') {
-    cell = formula(() => originalCell);
-  } else if (typeof originalCell === 'number') {
+  } else if (isPrimitive(originalCell)) {
     cell = formula(() => originalCell);
   }
   let runNumber = 0;
@@ -105,12 +104,16 @@ export function ifCondition(
           if (localRunNumber !== runNumber) {
             // @todo: run -re-inicialization logic here,
             // because it may broke form overall syncLogic delay.
-            throwedError = new Error(`
-          Woops, error in ifCondition, managed by ${cell._debugName}: 
-            Run number mismatch, looks like some modifier is removed longer than re-rendering takes. 
-            It may be a bug in your code. We can't sync DOM because it's always outdated.
-            Removing opcode to not break whole app.
-        `);
+            if (import.meta.env.DEV) {
+              throwedError = new Error(`
+                Woops, error in ifCondition, managed by ${cell._debugName}: 
+                  Run number mismatch, looks like some modifier is removed longer than re-rendering takes. 
+                  It may be a bug in your code. We can't sync DOM because it's always outdated.
+                  Removing opcode to not break whole app.
+              `);
+            } else {
+              throwedError = new Error(`ERROR_0`);
+            }
             return;
           }
           if (isDestructorRunning) {
