@@ -183,11 +183,11 @@ export function serializeNode(
     }
 
     if (key === '@each') {
-      return `${SYMBOLS.EACH}(${arrayName}, (${paramNames.join(
-        ',',
-      )}) => ${toChildArray(childs)}, ${
+      return `${
+        isSync ? SYMBOLS.EACH_SYNC : SYMBOLS.EACH
+      }(${arrayName}, (${paramNames.join(',')}) => ${toChildArray(childs)}, ${
         eachKey ? escapeString(eachKey) : null
-      }, ${isSync})`;
+      })`;
     } else if (key === '@if') {
       return `${SYMBOLS.IF}(${arrayName}, () => ${toChildArray(
         childs,

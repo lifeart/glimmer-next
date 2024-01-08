@@ -41,36 +41,30 @@ function getFirstNode(rawItem: GenericReturnType) {
 */
 type GenericReturnType = Array<ComponentReturnType | NodeReturnType>;
 
-export class ListComponent<T extends { id: number }> {
+type ListComponentArgs<T> = {
+  tag: Cell<T[]> | MergedCell;
+  key: string | null;
+  ItemComponent: (item: T, index?: number) => GenericReturnType;
+};
+type RenderTarget = HTMLElement | DocumentFragment;
+class BasicListComponent<T extends { id: number }> {
   keyMap: Map<string, GenericReturnType> = new Map();
   nodes: Node[] = [];
   index = 0;
   ItemComponent: (item: T, index?: number) => GenericReturnType;
   bottomMarker!: Comment;
   key: string = '@identity';
+  tag!: Cell<T[]> | MergedCell;
   isSync = false;
   constructor(
-    {
-      tag,
-      key,
-      ItemComponent,
-      isSync = false,
-    }: {
-      tag: Cell<T[]> | MergedCell;
-      key: string | null;
-      isSync?: boolean;
-      ItemComponent: (item: T, index?: number) => GenericReturnType;
-    },
-    outlet: HTMLElement | DocumentFragment,
+    { tag, key, ItemComponent }: ListComponentArgs<T>,
+    outlet: RenderTarget,
   ) {
     this.ItemComponent = ItemComponent;
     const mainNode = outlet;
     this.nodes = [];
     if (key) {
       this.key = key;
-    }
-    if (typeof isSync === 'boolean') {
-      this.isSync = isSync;
     }
     this.setupKeyForItem();
     // "list bottom marker"
@@ -92,26 +86,7 @@ export class ListComponent<T extends { id: number }> {
         tag = formula(() => deepFnValue(originalTag));
       }
     }
-
-    if (isSync) {
-      addDestructors(
-        [
-          opcodeFor(tag, () => {
-            this.syncList(tag.value);
-          }),
-        ],
-        this.bottomMarker,
-      );
-    } else {
-      addDestructors(
-        [
-          opcodeFor(tag, async () => {
-            await this.syncList(tag.value);
-          }),
-        ],
-        this.bottomMarker,
-      );
-    }
+    this.tag = tag;
   }
   setupKeyForItem() {
     if (this.key === '@identity') {
@@ -152,45 +127,14 @@ export class ListComponent<T extends { id: number }> {
       return marker;
     }
   }
-  async syncList(items: T[]) {
-    const existingKeys = Array.from(this.keyMap.keys());
-    const updatingKeys = new Set(items.map((item) => this.keyForItem(item)));
-    const removedIndexes: number[] = [];
-    const removeQueue: Array<Promise<void>> = [];
-    const isSync = this.isSync;
-    const keysToRemove = existingKeys.filter((key) => {
-      const isRemoved = !updatingKeys.has(key);
-      if (isRemoved) {
-        const row = this.keyMap.get(key)!;
-        removedIndexes.push(getIndex(row));
-        if (isSync) {
-          this.destroyListItemSync(row, key);
-        } else {
-          removeQueue.push(this.destroyListItem(row, key));
-        }
-      }
-      return isRemoved;
-    });
-    const amountOfKeys = existingKeys.length;
+  updateItems(
+    items: T[],
+    amountOfKeys: number,
+    keysToRemove: string[],
+    removedIndexes: number[],
+  ) {
     const rowsToMove: Array<[GenericReturnType, number]> = [];
     const amountOfExistingKeys = amountOfKeys - keysToRemove.length;
-
-    let targetNode = this.getTargetNode(amountOfKeys);
-    let seenKeys = 0;
-    if (isSync === false) {
-      const removePromise = Promise.all(removeQueue);
-      const rmDist = addDestructors(
-        [
-          async () => {
-            await removePromise;
-          },
-        ],
-        this.bottomMarker,
-      );
-      removePromise.then(() => {
-        rmDist?.();
-      });
-    }
 
     if (removedIndexes.length > 0 && this.keyMap.size > 0) {
       for (const value of this.keyMap.values()) {
@@ -204,6 +148,8 @@ export class ListComponent<T extends { id: number }> {
       }
     }
 
+    let targetNode = this.getTargetNode(amountOfKeys);
+    let seenKeys = 0;
     items.forEach((item, index) => {
       // @todo - fix here
       if (
@@ -251,11 +197,89 @@ export class ListComponent<T extends { id: number }> {
       api.insert(this.bottomMarker.parentNode!, parent, this.bottomMarker);
     }
   }
-  destroyListItemSync(row: GenericReturnType, key: string) {
+}
+
+export class SyncListComponent<
+  T extends { id: number },
+> extends BasicListComponent<T> {
+  constructor(params: ListComponentArgs<T>, outlet: RenderTarget) {
+    super(params, outlet);
+    addDestructors(
+      [
+        opcodeFor(this.tag, () => {
+          this.syncList(this.tag.value);
+        }),
+      ],
+      this.bottomMarker,
+    );
+  }
+  syncList(items: T[]) {
+    const existingKeys = Array.from(this.keyMap.keys());
+    const updatingKeys = new Set(items.map((item) => this.keyForItem(item)));
+    const removedIndexes: number[] = [];
+    const keysToRemove = existingKeys.filter((key) => {
+      const isRemoved = !updatingKeys.has(key);
+      if (isRemoved) {
+        const row = this.keyMap.get(key)!;
+        removedIndexes.push(getIndex(row));
+        this.destroyItem(row, key);
+      }
+      return isRemoved;
+    });
+    const amountOfKeys = existingKeys.length;
+    this.updateItems(items, amountOfKeys, keysToRemove, removedIndexes);
+  }
+  destroyItem(row: GenericReturnType, key: string) {
     this.keyMap.delete(key);
     destroyElementSync(row);
   }
-  async destroyListItem(row: GenericReturnType, key: string) {
+}
+export class AsyncListComponent<
+  T extends { id: number },
+> extends BasicListComponent<T> {
+  constructor(params: ListComponentArgs<any>, outlet: RenderTarget) {
+    super(params, outlet);
+    addDestructors(
+      [
+        opcodeFor(this.tag, async () => {
+          await this.syncList(this.tag.value);
+        }),
+      ],
+      this.bottomMarker,
+    );
+  }
+  async syncList(items: T[]) {
+    const existingKeys = Array.from(this.keyMap.keys());
+    const updatingKeys = new Set(items.map((item) => this.keyForItem(item)));
+    const removedIndexes: number[] = [];
+    const removeQueue: Array<Promise<void>> = [];
+    const keysToRemove = existingKeys.filter((key) => {
+      const isRemoved = !updatingKeys.has(key);
+      if (isRemoved) {
+        const row = this.keyMap.get(key)!;
+        removedIndexes.push(getIndex(row));
+        removeQueue.push(this.destroyItem(row, key));
+      }
+      return isRemoved;
+    });
+    const amountOfKeys = existingKeys.length;
+
+    const removePromise = Promise.all(removeQueue);
+    const rmDist = addDestructors(
+      [
+        async () => {
+          await removePromise;
+        },
+      ],
+      this.bottomMarker,
+    );
+    removePromise.then(() => {
+      rmDist?.();
+    });
+
+    this.updateItems(items, amountOfKeys, keysToRemove, removedIndexes);
+  }
+  async destroyItem(row: GenericReturnType, key: string) {
     this.keyMap.delete(key);
     await destroyElement(row);
   }

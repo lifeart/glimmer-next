@@ -17,7 +17,7 @@ import {
   deepFnValue,
 } from '@/utils/reactive';
 import { evaluateOpcode, opcodeFor } from '@/utils/vm';
-import { ListComponent } from '@/utils/list';
+import { SyncListComponent, AsyncListComponent } from '@/utils/list';
 import { ifCondition } from '@/utils/if';
 import { DestructorFn, Destructors, executeDestructors } from './destroyable';
 import { api } from '@/utils/dom-api';
@@ -436,19 +436,32 @@ function ifCond(
   ifCondition(cell, outlet, trueBranch, falseBranch);
   return def(outlet);
 }
-
-function each<T extends { id: number }>(
+export function $_eachSync<T extends { id: number }>(
   items: Cell<T[]> | MergedCell,
   fn: (item: T) => Array<ComponentReturnType | NodeReturnType>,
   key: string | null = null,
-  isSync = false,
 ) {
   const outlet = api.fragment();
-  new ListComponent(
+  new SyncListComponent(
     {
       tag: items as Cell<T[]>,
       ItemComponent: fn,
-      isSync,
+      key,
+    },
+    outlet,
+  );
+  return def(outlet);
+}
+export function $_each<T extends { id: number }>(
+  items: Cell<T[]> | MergedCell,
+  fn: (item: T) => Array<ComponentReturnType | NodeReturnType>,
+  key: string | null = null,
+) {
+  const outlet = api.fragment();
+  new AsyncListComponent(
+    {
+      tag: items as Cell<T[]>,
+      ItemComponent: fn,
       key,
     },
     outlet,
@@ -474,7 +487,6 @@ export function $_args(args: Record<string, unknown>) {
   }
 }
 export const $_if = ifCond;
-export const $_each = each;
 export const $_slot = slot;
 export const $_c = component;
 export const $_withSlots = withSlots;

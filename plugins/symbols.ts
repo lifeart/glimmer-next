@@ -3,6 +3,7 @@ export const SYMBOLS = {
   TAG: '$_tag',
   IF: '$_if',
   EACH: '$_each',
+  EACH_SYNC: '$_eachSync',
   SLOT: '$_slot',
   EMPTY_DOM_PROPS: '$_edp',
   ARGS: '$_args',
