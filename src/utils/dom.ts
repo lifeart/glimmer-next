@@ -23,7 +23,7 @@ import { DestructorFn, Destructors, executeDestructors } from './destroyable';
 import { api } from '@/utils/dom-api';
 
 // EMPTY DOM PROPS
-export const $_edp = [[], [], [],] as Props;
+export const $_edp = [[], [], []] as Props;
 
 type ModifierFn = (
   element: HTMLElement,
@@ -539,7 +539,17 @@ export function $_fin(
     }
   });
   if (!isStable) {
-    nodes.unshift(api.comment());
+    if (import.meta.env.DEV) {
+      nodes.unshift(
+        api.comment(`unstable root enter node: ${ctx?.constructor.name}`),
+      );
+      nodes.push(
+        api.comment(`unstable root exit node: ${ctx?.constructor.name}`),
+      );
+    } else {
+      nodes.unshift(api.comment());
+      nodes.push(api.comment());
+    }
   }
   if (ctx !== null) {
     // no need to add destructors because component seems template-only and should not have `registerDestructor` flow.

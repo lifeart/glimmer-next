@@ -85,30 +85,29 @@ export class Router extends Component {
         or placeholder if it's not static, but we need to remove from start to end.
         And likely add start-stop bounds to every component.
      }}
-    <div>
-      {{#each this.routes key='name' as |route|}}
-        <Button
-          class={{if route.state 'active'}}
-          @onClick={{fn this.goToRoute route.name}}
-        >
-          <:slot>{{route.text}}</:slot>
-        </Button>
-      {{/each}}
 
-      <style>
-        .route-container {background-color: black;min-height:
-        280px;width:100vw;} .page { box-shadow: -9px 0 20px 0px #ddd;
-        transition: opacity 0.5s ease-out, transform 0.5s ease-out; opacity: 1;
-        min-height: 240px; width: 100vw; padding: 20px; color: white;
-        background-color: black; } .active { background-color: yellow; }
-      </style>
-      <div class='route-container'>
-        {{#each this.routes as |route|}}
-          {{#if route.state}}
-            <div class='page' {{this.modifier}}><route.Component /></div>
-          {{/if}}
-        {{/each}}
-      </div>
+    {{#each this.routes key='name' as |route|}}
+      <Button
+        class={{if route.state 'active'}}
+        @onClick={{fn this.goToRoute route.name}}
+      >
+        <:slot>{{route.text}}</:slot>
+      </Button>
+    {{/each}}
+
+    <style>
+      .route-container {background-color: black;min-height: 280px;width:100vw;}
+      .page { box-shadow: -9px 0 20px 0px #ddd; transition: opacity 0.5s
+      ease-out, transform 0.5s ease-out; opacity: 1; min-height: 240px; width:
+      100vw; padding: 20px; color: white; background-color: black; } .active {
+      background-color: yellow; }
+    </style>
+    <div class='route-container'>
+      {{#each this.routes as |route|}}
+        {{#if route.state}}
+          <div class='page' {{this.modifier}}><route.Component /></div>
+        {{/if}}
+      {{/each}}
     </div>
   </template>
 }

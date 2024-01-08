@@ -280,11 +280,15 @@ export function serializeNode(
     node.attributes = node.attributes.filter((attr) => {
       return attr[0] !== '...attributes';
     });
-    let tagProps = `[${toArray(node.properties)},${toArray(node.attributes)},${toArray(node.events)},${hasSplatAttrs ? `$fw` : ''}]`;
-    if (tagProps === '[[],[],[],]') {
+    let tagProps = `[${toArray(node.properties)},${toArray(
+      node.attributes,
+    )},${toArray(node.events)}${hasSplatAttrs ? `,$fw` : ''}]`;
+    if (tagProps === '[[],[],[]]') {
       tagProps = SYMBOLS.EMPTY_DOM_PROPS;
     }
-    return `${SYMBOLS.TAG}('${node.tag}', ${tagProps}, [${serializeChildren(node.children)}])`;
+    return `${SYMBOLS.TAG}('${node.tag}', ${tagProps}, [${serializeChildren(
+      node.children,
+    )}])`;
   } else {
     if (typeof node === 'string') {
       if (isPath(node)) {

@@ -108,6 +108,33 @@ export class Component<T extends Props = any> implements ComponentReturnType {
   }
   template!: ComponentReturnType;
 }
+async function destroyNode(node: Node) {
+  if (import.meta.env.DEV) {
+    if (node === undefined) {
+      console.warn(`Trying to destroy undefined`);
+      return;
+    } else if (node.nodeType === FRAGMENT_TYPE) {
+      const roots = relatedRoots.get(node as DocumentFragment) ?? [];
+      await destroyElement(roots);
+      relatedRoots.delete(node as DocumentFragment);
+      return;
+    }
+    const parent = node.parentNode;
+    if (parent !== null) {
+      parent.removeChild(node);
+    } else {
+      throw new Error(`Node is not in DOM`);
+    }
+  } else {
+    if (node.nodeType === FRAGMENT_TYPE) {
+      const roots = relatedRoots.get(node as DocumentFragment) ?? [];
+      await destroyElement(roots);
+      relatedRoots.delete(node as DocumentFragment);
+      return;
+    }
+    node.parentNode!.removeChild(node);
+  }
+}
 
 export async function destroyElement(
   component:
@@ -125,29 +152,28 @@ export async function destroyElement(
     }
     if ('nodes' in component) {
       const destructors: Array<Promise<void>> = [];
-      component.nodes.forEach((node) => {
-        runDestructors(node, destructors);
-      });
+      const nodes = component.nodes;
+      let startNode: null | Node = nodes[0];
+      const endNode =
+        nodes.length === 1 ? null : nodes[nodes.length - 1] || null;
+      const nodesToDestroy = [startNode];
+      runDestructors(startNode, destructors);
+      while (true && endNode !== null) {
+        startNode = startNode.nextSibling;
+        if (startNode === null) {
+          break;
+        } else if (startNode === endNode) {
+          nodesToDestroy.push(endNode);
+          runDestructors(endNode, destructors);
+          break;
+        } else {
+          nodesToDestroy.push(startNode);
+          runDestructors(startNode, destructors);
+        }
+      }
       await Promise.all(destructors);
       try {
-        component.nodes.forEach((node) => {
-          if (node === undefined) {
-            console.warn(`Trying to destroy undefined`);
-            return;
-          }
-          if (node.nodeType === FRAGMENT_TYPE) {
-            const roots = relatedRoots.get(node as DocumentFragment) ?? [];
-            destroyElement(roots);
-            relatedRoots.delete(node as DocumentFragment);
-            return;
-          }
-          const parent = node.parentNode;
-          if (parent !== null) {
-            parent.removeChild(node);
-          } else {
-            throw new Error(`Node is not in DOM`);
-          }
-        });
+        await Promise.all(nodesToDestroy.map(destroyNode));
       } catch (e) {
         console.warn(
           `Woops, looks like node we trying to destroy no more in DOM`,
@@ -156,21 +182,7 @@ export async function destroyElement(
       }
     } else {
       await Promise.all(runDestructors(component.node));
-      if (component.node.nodeType === FRAGMENT_TYPE) {
-        const roots =
-          relatedRoots.get(component.node as DocumentFragment) ?? [];
-        destroyElement(roots);
-        relatedRoots.delete(component.node as DocumentFragment);
-        return;
-      }
-      try {
-        component.node.parentNode!.removeChild(component.node);
-      } catch (e) {
-        console.warn(
-          `Woops, looks like node we trying to destroy no more in DOM`,
-          e,
-        );
-      }
+      await destroyNode(component.node);
     }
   }
 }

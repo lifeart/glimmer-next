@@ -138,7 +138,7 @@ export function transform(
       const $fw = this.$fw;
       const roots = [${results.join(', ')}];
       return ${SYMBOLS.FINALIZE_COMPONENT}(roots, $slots, ${String(
-        isNodeStable(results[0]),
+        isNodeStable(results[0]) && results.length === 1,
       )}, ${finContext});
     }`;
     } else {

@@ -67,7 +67,12 @@ export class ListComponent<T extends { id: number }> {
     }
     this.setupKeyForItem();
     // "list bottom marker"
-    this.bottomMarker = api.comment();
+    if (import.meta.env.DEV) {
+      this.bottomMarker = api.comment('list bottom marker');
+    } else {
+      this.bottomMarker = api.comment();
+    }
+
     api.append(mainNode, this.bottomMarker);
 
     const originalTag = tag;
