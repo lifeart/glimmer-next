@@ -31,6 +31,7 @@ function $control(
     isControl: true,
     condition: '',
     blockParams: [],
+    isSync: false,
     children: [],
     inverse: null,
     key: null,
