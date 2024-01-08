@@ -79,9 +79,14 @@ export class Router extends Component {
     };
   };
   <template>
+    {{! 
+        We need to fix case with bounds removal,
+        at the moment we removing first registered node of the component 
+        or placeholder if it's not static, but we need to remove from start to end.
+        And likely add start-stop bounds to every component.
+     }}
     <div>
-      {{! ToDo - fix case where each not removed without wrapper div }}
-      {{#each this.routes as |route|}}
+      {{#each this.routes key='name' as |route|}}
         <Button
           class={{if route.state 'active'}}
           @onClick={{fn this.goToRoute route.name}}
@@ -89,20 +94,21 @@ export class Router extends Component {
           <:slot>{{route.text}}</:slot>
         </Button>
       {{/each}}
-    </div>
-    <style>
-      .route-container {background-color: black;min-height: 280px;width:100vw;}
-      .page { box-shadow: -9px 0 20px 0px #ddd; transition: opacity 0.5s
-      ease-out, transform 0.5s ease-out; opacity: 1; min-height: 240px; width:
-      100vw; padding: 20px; color: white; background-color: black; } .active {
-      background-color: yellow; }
-    </style>
-    <div class='route-container'>
-      {{#each this.routes as |route|}}
-        {{#if route.state}}
-          <div class='page' {{this.modifier}}><route.Component /></div>
-        {{/if}}
-      {{/each}}
+
+      <style>
+        .route-container {background-color: black;min-height:
+        280px;width:100vw;} .page { box-shadow: -9px 0 20px 0px #ddd;
+        transition: opacity 0.5s ease-out, transform 0.5s ease-out; opacity: 1;
+        min-height: 240px; width: 100vw; padding: 20px; color: white;
+        background-color: black; } .active { background-color: yellow; }
+      </style>
+      <div class='route-container'>
+        {{#each this.routes as |route|}}
+          {{#if route.state}}
+            <div class='page' {{this.modifier}}><route.Component /></div>
+          {{/if}}
+        {{/each}}
+      </div>
     </div>
   </template>
 }
