@@ -155,6 +155,7 @@ export function Icon() {
 ### Setup
 
 ```
+pnpm create vite my-app --template vanilla-ts
 pnpm install @lifeart/gxt
 ```
 
