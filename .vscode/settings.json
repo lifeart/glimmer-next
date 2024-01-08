@@ -29,5 +29,6 @@
     "editor.formatOnSave": true,
     "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
-  "cSpell.words": ["funs", "treeshake"]
+  "cSpell.words": ["funs", "treeshake"],
+  "prettier.documentSelectors": ["**/*.gjs", "**/*.gts"]
 }
