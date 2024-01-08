@@ -1,4 +1,4 @@
-import { Component, cell } from '@lifeart/gxt';
+import { Component, cell, registerDestructor } from '@lifeart/gxt';
 import { Button } from './../Button.gts';
 import { PageOne } from './PageOne.gts';
 import { PageTwo } from './PageTwo.gts';
@@ -7,21 +7,46 @@ import { PageTwo } from './PageTwo.gts';
 export class Router extends Component {
   isLocked = false;
   renderCount = 0;
-  goToRouteOne = () => {
-    if (this.isLocked || this.routeOne.value) return;
-    this.routeOne.update(true);
-    this.routeTwo.update(false);
+  isDestroyCalled = false;
+  animationTime = 500;
+  constructor() {
+    // @ts-expect-error args
+    super(...arguments);
+    registerDestructor(this, () => {
+      this.isDestroyCalled = true;
+    });
+  }
+  goToRoute = (name: string) => {
+    if (this.isLocked) {
+      return;
+    }
+    const target = this.routes.find((el) => el.name === name)!.state;
+    if (!target || target.value) {
+      return;
+    }
+    const prevRoutes = this.routes
+      .filter((el) => el.state.value)
+      .map((el) => el.state);
+    target.update(true);
+    prevRoutes.forEach((el) => el.update(false));
+
     this.isLocked = true;
   };
-  goToRouteTwo = () => {
-    if (this.isLocked || this.routeTwo.value) return;
-    this.routeTwo.update(true);
-    this.routeOne.update(false);
-    this.isLocked = true;
-  };
-  routeOne = cell(true);
-  routeTwo = cell(false);
-  modifier = (element: HTMLDivElement) => {
+  routes = [
+    {
+      name: 'routeOne',
+      text: 'Route One',
+      state: cell(true),
+      Component: PageOne,
+    },
+    {
+      name: 'routeTwo',
+      text: 'Route Two',
+      state: cell(false),
+      Component: PageTwo,
+    },
+  ];
+  modifier = (element: HTMLDivElement): any => {
     if (this.renderCount !== 0) {
       element.style.transform = 'translateX(100%)';
       element.style.opacity = '0.01';
@@ -30,7 +55,7 @@ export class Router extends Component {
     let coords!: DOMRect;
     requestAnimationFrame(() => {
       coords = element.getBoundingClientRect();
-      element.style.position = 'fixed';
+      element.style.position = 'absolute';
       element.style.opacity = '1';
       element.style.top = `${coords.top}px`;
       element.style.transform = 'translateX(0)';
@@ -38,41 +63,46 @@ export class Router extends Component {
     element.style.zIndex = String(this.renderCount);
     setTimeout(() => {
       this.isLocked = false;
-    }, 500);
+    }, this.animationTime);
     return async () => {
-      element.style.position = 'fixed';
+      if (this.isDestroyCalled) {
+        return;
+      }
+      element.style.position = 'absolute';
       // console.log('element.style.zIndex', );
       element.style.zIndex = String(parseInt(element.style.zIndex) - 2);
       element.style.top = `${coords.top}px`;
       // debugger;
       element.style.opacity = '0.01';
       element.style.transform = 'translateX(-20%)';
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, this.animationTime));
     };
   };
   <template>
-    <Button class={{if this.routeOne 'active'}} @onClick={{this.goToRouteOne}}>
-      <:slot>Route One</:slot>
-    </Button>
-    <Button class={{if this.routeTwo 'active'}} @onClick={{this.goToRouteTwo}}>
-      <:slot>Route Two</:slot>
-    </Button>
+    <div>
+      {{! ToDo - fix case where each not removed without wrapper div }}
+      {{#each this.routes as |route|}}
+        <Button
+          class={{if route.state 'active'}}
+          @onClick={{fn this.goToRoute route.name}}
+        >
+          <:slot>{{route.text}}</:slot>
+        </Button>
+      {{/each}}
+    </div>
     <style>
       .route-container {background-color: black;min-height: 280px;width:100vw;}
-      .page { 
-          box-shadow: -9px 0 20px 0px #ddd;
-      transition: opacity 0.5s ease-out,
-      transform 0.5s ease-out; opacity: 1; min-height: 240px; width: 100vw;
-      padding: 20px; color: white; background-color: black; } .active {
+      .page { box-shadow: -9px 0 20px 0px #ddd; transition: opacity 0.5s
+      ease-out, transform 0.5s ease-out; opacity: 1; min-height: 240px; width:
+      100vw; padding: 20px; color: white; background-color: black; } .active {
       background-color: yellow; }
     </style>
-    <div class="route-container">
-      {{#if this.routeOne}}
-        <div class='page' {{this.modifier}}><PageOne @name='1' /></div>
-      {{/if}}
-      {{#if this.routeTwo}}
-        <div class='page' {{this.modifier}}><PageTwo @name='2' /></div>
-      {{/if}}
-      </div>
+    <div class='route-container'>
+      {{#each this.routes as |route|}}
+        {{#if route.state}}
+          <div class='page' {{this.modifier}}><route.Component /></div>
+        {{/if}}
+      {{/each}}
+    </div>
   </template>
 }
