@@ -4,6 +4,7 @@ export const SYMBOLS = {
   IF: '$_if',
   EACH: '$_each',
   SLOT: '$_slot',
+  EMPTY_DOM_PROPS: '$_edp',
   ARGS: '$_args',
   TEXT: '$_text',
   COMPONENT: '$_c',

@@ -22,6 +22,9 @@ import { ifCondition } from '@/utils/if';
 import { DestructorFn, Destructors, executeDestructors } from './destroyable';
 import { api } from '@/utils/dom-api';
 
+// EMPTY DOM PROPS
+export const $_edp = [[], [], [],] as Props;
+
 type ModifierFn = (
   element: HTMLElement,
   ...args: unknown[]
