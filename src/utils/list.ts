@@ -47,14 +47,17 @@ export class ListComponent<T extends { id: number }> {
   ItemComponent: (item: T, index?: number) => GenericReturnType;
   bottomMarker!: Comment;
   key: string = '@identity';
+  isSync = false;
   constructor(
     {
       tag,
       key,
       ItemComponent,
+      isSync = false,
     }: {
       tag: Cell<T[]> | MergedCell;
       key: string | null;
+      isSync?: boolean;
       ItemComponent: (item: T, index?: number) => GenericReturnType;
     },
     outlet: HTMLElement | DocumentFragment,
@@ -64,6 +67,9 @@ export class ListComponent<T extends { id: number }> {
     this.nodes = [];
     if (key) {
       this.key = key;
+    }
+    if (typeof isSync === 'boolean') {
+      this.isSync = isSync;
     }
     this.setupKeyForItem();
     // "list bottom marker"
@@ -86,14 +92,25 @@ export class ListComponent<T extends { id: number }> {
       }
     }
 
-    addDestructors(
-      [
-        opcodeFor(tag, async () => {
-          await this.syncList(tag.value);
-        }),
-      ],
-      this.bottomMarker,
-    );
+    if (isSync) {
+      addDestructors(
+        [
+          opcodeFor(tag, () => {
+            this.syncList(tag.value);
+          }),
+        ],
+        this.bottomMarker,
+      );
+    } else {
+      addDestructors(
+        [
+          opcodeFor(tag, async () => {
+            await this.syncList(tag.value);
+          }),
+        ],
+        this.bottomMarker,
+      );
+    }
   }
   setupKeyForItem() {
     if (this.key === '@identity') {
@@ -137,32 +154,37 @@ export class ListComponent<T extends { id: number }> {
   async syncList(items: T[]) {
     const existingKeys = Array.from(this.keyMap.keys());
     const updatingKeys = new Set(items.map((item) => this.keyForItem(item)));
-    const keysToRemove = existingKeys.filter((key) => !updatingKeys.has(key));
+    const removedIndexes: number[] = [];
+    const removeQueue: Array<Promise<void>> = [];
+    const keysToRemove = existingKeys.filter((key) => {
+      const isRemoved = !updatingKeys.has(key);
+      if (isRemoved) {
+        const row = this.keyMap.get(key)!;
+        removedIndexes.push(getIndex(row));
+        removeQueue.push(this.destroyListItem(row, key));
+      }
+      return isRemoved;
+    });
     const amountOfKeys = existingKeys.length;
     const rowsToMove: Array<[GenericReturnType, number]> = [];
     const amountOfExistingKeys = amountOfKeys - keysToRemove.length;
 
     let targetNode = this.getTargetNode(amountOfKeys);
     let seenKeys = 0;
-
-    // iterate over existing keys and remove them
-    const removedIndexes = keysToRemove.map((key) =>
-      this.getListItemIndex(key),
-    );
-    const removePromise = Promise.all(
-      keysToRemove.map((key) => this.destroyListItem(key)),
-    );
-    const rmDist = addDestructors(
-      [
-        async () => {
-          await removePromise;
-        },
-      ],
-      this.bottomMarker,
-    );
-    removePromise.then(() => {
-      rmDist?.();
-    });
+    if (this.isSync === false) {
+      const removePromise = Promise.all(removeQueue);
+      const rmDist = addDestructors(
+        [
+          async () => {
+            await removePromise;
+          },
+        ],
+        this.bottomMarker,
+      );
+      removePromise.then(() => {
+        rmDist?.();
+      });
+    }
 
     if (removedIndexes.length > 0) {
       for (const value of this.keyMap.values()) {
@@ -223,12 +245,7 @@ export class ListComponent<T extends { id: number }> {
       api.insert(this.bottomMarker.parentNode!, parent, this.bottomMarker);
     }
   }
-  getListItemIndex(key: string) {
-    const row = this.keyMap.get(key)!;
-    return getIndex(row);
-  }
-  async destroyListItem(key: string) {
-    const row = this.keyMap.get(key)!;
+  async destroyListItem(row: GenericReturnType, key: string) {
     this.keyMap.delete(key);
     await destroyElement(row);
   }
