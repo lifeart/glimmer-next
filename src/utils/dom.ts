@@ -471,6 +471,9 @@ export function $_each<T extends { id: number }>(
 const ArgProxyHandler = {
   get(target: Record<string, () => unknown>, prop: string) {
     if (prop in target) {
+      if (typeof target[prop] !== 'function') {
+        return target[prop];
+      }
       return target[prop]();
     }
     return undefined;
