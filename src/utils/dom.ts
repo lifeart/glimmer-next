@@ -108,11 +108,11 @@ function isTagLike(child: unknown): child is AnyCell {
 
 type RenderableType = ComponentReturnType | NodeReturnType | string | number;
 
-
-function resolveRenderable(child: Function, debugName = 'resolveRenderable') : RenderableType | MergedCell | Cell {
-  const f = formula(
-    () => deepFnValue(child), debugName
-  );
+function resolveRenderable(
+  child: Function,
+  debugName = 'resolveRenderable',
+): RenderableType | MergedCell | Cell {
+  const f = formula(() => deepFnValue(child), debugName);
   let componentProps: RenderableType = '';
   evaluateOpcode(f, (value) => {
     componentProps = value as unknown as RenderableType;
