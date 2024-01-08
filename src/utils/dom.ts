@@ -56,7 +56,7 @@ function $prop(
     $prop(
       element,
       key,
-      formula(value, `${element.tagName}.${key}`),
+      resolveRenderable(value, `${element.tagName}.${key}`),
       destructors,
     );
   } else if (value !== null && isTagLike(value)) {
@@ -82,7 +82,7 @@ function $attr(
     $attr(
       element,
       key,
-      formula(value as unknown as () => unknown, `${element.tagName}.${key}`),
+      resolveRenderable(value, `${element.tagName}.${key}`),
       destructors,
     );
   } else if (value !== null && isTagLike(value)) {
@@ -108,6 +108,27 @@ function isTagLike(child: unknown): child is AnyCell {
 
 type RenderableType = ComponentReturnType | NodeReturnType | string | number;
 
+
+function resolveRenderable(child: Function, debugName = 'resolveRenderable') : RenderableType | MergedCell | Cell {
+  const f = formula(
+    () => deepFnValue(child), debugName
+  );
+  let componentProps: RenderableType = '';
+  evaluateOpcode(f, (value) => {
+    componentProps = value as unknown as RenderableType;
+  });
+  if (f.isConst) {
+    f.destroy();
+    return componentProps;
+  } else {
+    if (isPrimitive(componentProps)) {
+      return f;
+    } else {
+      throw new Error('invalid reactive type');
+    }
+  }
+}
+
 function addChild(
   element: HTMLElement,
   child: RenderableType | Cell | MergedCell | Function,
@@ -127,25 +148,7 @@ function addChild(
   } else if (isTagLike(child)) {
     api.append(element, cellToText(child));
   } else if (typeof child === 'function') {
-    // looks like a component
-    const f = formula(
-      () => deepFnValue(child as Function),
-      `${element.tagName}.child.fn`,
-    );
-    let componentProps: RenderableType = '';
-    evaluateOpcode(f, (value) => {
-      componentProps = value as unknown as RenderableType;
-    });
-    if (f.isConst) {
-      f.destroy();
-      return addChild(element, componentProps);
-    } else {
-      if (isPrimitive(componentProps)) {
-        api.append(element, cellToText(f));
-      } else {
-        throw new Error('invalid reactive type');
-      }
-    }
+    addChild(element, resolveRenderable(child));
   }
 }
 
@@ -163,34 +166,17 @@ function $ev(
   // textContent is a special case
   if (eventName === EVENT_TYPE.TEXT_CONTENT) {
     if (typeof fn === 'function') {
-      let realValue: unknown;
-      const checkCell = formula(
-        () => deepFnValue(fn),
-        `${element.tagName}.textContent`,
-      );
-      evaluateOpcode(checkCell, (value) => {
-        realValue = value;
-      });
-      if (checkCell.isConst && isPrimitive(realValue)) {
-        checkCell.destroy();
-        api.textContent(element, String(realValue));
+      const value = resolveRenderable(fn, `${element.tagName}.textContent`);
+      if (isPrimitive(value)) {
+        api.textContent(element, String(value));
+      } else if (isTagLike(value)) {
+        destructors.push(
+          opcodeFor(value, (value) => {
+            api.textContent(element, String(value));
+          }),
+        );
       } else {
-        if (realValue !== null && isTagLike(realValue)) {
-          checkCell.destroy();
-          destructors.push(
-            opcodeFor(realValue, (value) => {
-              api.textContent(element, String(value));
-            }),
-          );
-        } else if (isPrimitive(realValue)) {
-          destructors.push(
-            opcodeFor(checkCell, (value) => {
-              api.textContent(element, String(value));
-            }),
-          );
-        } else {
-          throw new Error('invalid textContent value');
-        }
+        throw new Error('invalid textContent value');
       }
     } else {
       api.textContent(element, fn);
@@ -349,33 +335,13 @@ function slot(name: string, params: () => unknown[], $slot: Slots) {
             if (isPrimitive(el)) {
               return api.text(String(el));
             } else if (typeof el === 'function') {
-              // here likely el is as slot constructor
-              // may be a reactive thing, let's check it
-              // @todo - refactor this part of code and unify with child generation
-              const f = formula(
-                () => deepFnValue(el as Function),
-                `slot.child.fn`,
-              );
-              let componentProps:
-                | ComponentReturnType
-                | NodeReturnType
-                | string
-                | number = '';
-              evaluateOpcode(f, (value) => {
-                componentProps = value as unknown as
-                  | ComponentReturnType
-                  | NodeReturnType
-                  | string
-                  | number;
-              });
-              if (f.isConst) {
-                f.destroy();
-                return componentProps;
-              } else if (typeof componentProps === 'object') {
-                f.destroy();
-                return componentProps;
+              const value = resolveRenderable(el, `slot ${name} element fn`);
+              if (isPrimitive(value)) {
+                return api.text(String(value));
+              } else if (isTagLike(value)) {
+                return cellToText(value);
               } else {
-                return text(f);
+                return value;
               }
             } else {
               return el;
@@ -445,14 +411,13 @@ function text(
     return def(cellToText(text as AnyCell));
   } else if (typeof text === 'function') {
     // @todo update is const check here
-    const maybeFormula = formula(text, 'textNode');
-    if (maybeFormula.isConst) {
-      try {
-        return def(api.text(String(maybeFormula.value)));
-      } finally {
-        maybeFormula.destroy();
-      }
+    const maybeFormula = resolveRenderable(text as Fn);
+    if (isPrimitive(maybeFormula)) {
+      return def(api.text(String(maybeFormula)));
+    } else if (isTagLike(maybeFormula)) {
+      return def(cellToText(maybeFormula));
     } else {
+      // @ts-expect-error 'ComponentReturnType | NodeReturnType' is not assignable to type 'string | number | null'
       return $_text(maybeFormula);
     }
   } else {
