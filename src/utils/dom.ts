@@ -441,12 +441,14 @@ function each<T extends { id: number }>(
   items: Cell<T[]> | MergedCell,
   fn: (item: T) => Array<ComponentReturnType | NodeReturnType>,
   key: string | null = null,
+  isSync = false,
 ) {
   const outlet = api.fragment();
   new ListComponent(
     {
       tag: items as Cell<T[]>,
       ItemComponent: fn,
+      isSync,
       key,
     },
     outlet,

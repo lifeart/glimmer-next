@@ -181,13 +181,22 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
       }
       const name = node.path.original;
       const keyPair = node.hash.pairs.find((p) => p.key === 'key');
+      const syncPair = node.hash.pairs.find((p) => p.key === 'sync');
       let keyValue: string | null = null;
+      let syncValue: boolean = false;
 
       if (keyPair) {
         if (keyPair.value.type === 'StringLiteral') {
           keyValue = keyPair.value.original;
         } else {
           keyValue = ToJSType(keyPair.value) as string;
+        }
+      }
+      if (syncPair) {
+        if (syncPair.value.type === 'BooleanLiteral') {
+          syncValue = syncPair.value.value;
+        } else {
+          syncValue = ToJSType(syncPair.value) as boolean;
         }
       }
 
@@ -201,6 +210,7 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
           blockParams: node.program.blockParams,
           children: inverse,
           inverse: children,
+          isSync: syncValue,
           key: keyValue,
         } as HBSControlExpression;
       } else if (name === 'let') {
@@ -242,6 +252,7 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
         isControl: true,
         condition: serializePath(ToJSType(node.params[0]) as string),
         blockParams: node.program.blockParams,
+        isSync: syncValue,
         children: children,
         inverse: inverse,
         key: keyValue,

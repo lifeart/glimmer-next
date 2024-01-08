@@ -10,6 +10,7 @@ export type HBSControlExpression = {
   children: Array<HBSNode | string>;
   inverse: Array<HBSNode | string> | null;
   key: string | null;
+  isSync: boolean;
 };
 
 export type HBSNode = {
@@ -172,6 +173,7 @@ export function serializeNode(
     const arrayName = node.condition;
     const paramNames = node.blockParams;
     const childs = node.children;
+    const isSync = node.isSync;
     const inverses = node.inverse;
     let eachKey = node.key;
 
@@ -185,7 +187,7 @@ export function serializeNode(
         ',',
       )}) => ${toChildArray(childs)}, ${
         eachKey ? escapeString(eachKey) : null
-      })`;
+      }, ${isSync})`;
     } else if (key === '@if') {
       return `${SYMBOLS.IF}(${arrayName}, () => ${toChildArray(
         childs,

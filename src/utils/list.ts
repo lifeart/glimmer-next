@@ -3,6 +3,7 @@ import {
   NodeReturnType,
   addDestructors,
   destroyElement,
+  destroyElementSync,
   renderElement,
 } from '@/utils/component';
 import { api } from '@/utils/dom-api';
@@ -156,12 +157,17 @@ export class ListComponent<T extends { id: number }> {
     const updatingKeys = new Set(items.map((item) => this.keyForItem(item)));
     const removedIndexes: number[] = [];
     const removeQueue: Array<Promise<void>> = [];
+    const isSync = this.isSync;
     const keysToRemove = existingKeys.filter((key) => {
       const isRemoved = !updatingKeys.has(key);
       if (isRemoved) {
         const row = this.keyMap.get(key)!;
         removedIndexes.push(getIndex(row));
-        removeQueue.push(this.destroyListItem(row, key));
+        if (isSync) {
+          this.destroyListItemSync(row, key);
+        } else {
+          removeQueue.push(this.destroyListItem(row, key));
+        }
       }
       return isRemoved;
     });
@@ -171,7 +177,7 @@ export class ListComponent<T extends { id: number }> {
 
     let targetNode = this.getTargetNode(amountOfKeys);
     let seenKeys = 0;
-    if (this.isSync === false) {
+    if (isSync === false) {
       const removePromise = Promise.all(removeQueue);
       const rmDist = addDestructors(
         [
@@ -186,7 +192,7 @@ export class ListComponent<T extends { id: number }> {
       });
     }
 
-    if (removedIndexes.length > 0) {
+    if (removedIndexes.length > 0 && this.keyMap.size > 0) {
       for (const value of this.keyMap.values()) {
         removedIndexes.forEach((index) => {
           value.forEach((item) => {
@@ -244,6 +250,10 @@ export class ListComponent<T extends { id: number }> {
       parent.removeChild(targetNode);
       api.insert(this.bottomMarker.parentNode!, parent, this.bottomMarker);
     }
+  }
+  destroyListItemSync(row: GenericReturnType, key: string) {
+    this.keyMap.delete(key);
+    destroyElementSync(row);
   }
   async destroyListItem(row: GenericReturnType, key: string) {
     this.keyMap.delete(key);

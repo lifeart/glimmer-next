@@ -136,6 +136,55 @@ async function destroyNode(node: Node) {
   }
 }
 
+export function destroyElementSync(
+  component:
+    | ComponentReturnType
+    | NodeReturnType
+    | Array<ComponentReturnType | NodeReturnType>
+    | null
+    | null[],
+) {
+  if (Array.isArray(component)) {
+    component.map((component) => destroyElementSync(component));
+  } else {
+    if (component === null) {
+      return;
+    }
+    if ('nodes' in component) {
+      const nodes = component.nodes;
+      let startNode: null | Node = nodes[0];
+      const endNode =
+        nodes.length === 1 ? null : nodes[nodes.length - 1] || null;
+      const nodesToDestroy = [startNode];
+      runDestructorsSync(startNode);
+      while (true && endNode !== null) {
+        startNode = startNode.nextSibling;
+        if (startNode === null) {
+          break;
+        } else if (startNode === endNode) {
+          nodesToDestroy.push(endNode);
+          runDestructorsSync(endNode);
+          break;
+        } else {
+          nodesToDestroy.push(startNode);
+          runDestructorsSync(startNode);
+        }
+      }
+      try {
+        nodesToDestroy.map(destroyNode);
+      } catch (e) {
+        console.warn(
+          `Woops, looks like node we trying to destroy no more in DOM`,
+          e,
+        );
+      }
+    } else {
+      runDestructorsSync(component.node);
+      destroyNode(component.node);
+    }
+  }
+}
+
 export async function destroyElement(
   component:
     | ComponentReturnType
@@ -225,7 +274,17 @@ export function addDestructors(
     );
   };
 }
-
+function runDestructorsSync(targetNode: Node) {
+  if ($destructors.has(targetNode)) {
+    $destructors.get(targetNode)!.forEach((fn) => {
+      fn();
+    });
+    $destructors.delete(targetNode);
+  }
+  targetNode.childNodes.forEach((node) => {
+    runDestructorsSync(node);
+  });
+}
 export function runDestructors(
   targetNode: Node,
   promises: Array<Promise<void>> = [],
