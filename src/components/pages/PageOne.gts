@@ -3,17 +3,34 @@ import { Smile } from './page-one/Smile';
 
 export class PageOne extends Component {
   <template>
-    <p>It is a long established fact that a reader will be distracted by the
-      readable content of a page when looking at its layout. The point of using
-      Lorem Ipsum is that it has a more-or-less normal distribution of letters,
-      as opposed to using
-      <Smile />
-      'Content here, content here', making it look like readable English. Many
-      desktop publishing packages and web page editors now use Lorem Ipsum as
-      their default model text, and a search for 'lorem ipsum' will uncover many
-      web sites still in their infancy. Various versions have evolved over the
-      years, sometimes by accident, sometimes on purpose (injected humour and
-      the like).
-      <a href='/pageTwo'>Go to page two</a></p>
+    <p class='text-white p-3'>
+      <h1><q>Compilers are the New Frameworks</q> - Tom Dale &copy;</h1>
+      <br />
+
+      <p>Imagine a world where the robust, mature ecosystems of development
+        tools meet the cutting-edge performance of modern compilers. That's what
+        we're building here! Our platform takes the best of established
+        technologies and infuses them with a new, state-of-the-art compiler.</p>
+      <br />
+      <h2>This means:</h2><br />
+      <ul class='list-disc list-inside text-slate-900 dark:text-slate-200'>
+        <li><b>Increased Performance:</b>
+          Our modern compiler accelerates your code, making it run faster than
+          ever.</li>
+        <li><b>Optimized Memory Usage:</b>
+          Experience more efficient memory management, allowing your
+          applications to run smoother and more reliably.</li>
+        <li><b>Seamless Integration:</b>
+          Enjoy the ease of integrating with your favorite tools and frameworks
+          from the mature ecosystem.</li>
+        <li><b>Future-Proof Technology:</b>
+          Stay ahead with a platform that evolves with the latest advancements
+          in compiler technology.</li>
+
+      </ul><br />
+      <i>Join us in shaping the future of development, where power meets
+        efficiency. Get ready to elevate your coding experience!</i>
+      <br /><br />
+      <a href='/pageTwo'>Go to page two <Smile /></a></p>
   </template>
 }

@@ -10,18 +10,45 @@ export class PageTwo extends Component {
     }
   }
   <template>
-    There are many variations of passages of Lorem Ipsum available, but the
-    majority have suffered alteration in some form, by injected humour, or
-    randomised words which don't look even slightly believable. If you are going
-    to use a passage of Lorem Ipsum, you need to be sure there isn't anything
-    embarrassing hidden in the middle of text.
-    <Clock />
-    All the Lorem Ipsum generators on the Internet tend to repeat predefined
-    chunks as necessary, making this the first true generator on the Internet.
-    It uses a dictionary of over 200 Latin words, combined with a handful of
-    model sentence structures, to generate Lorem Ipsum which looks reasonable.
-    The generated Lorem Ipsum is therefore always free from repetition, injected
-    humour, or non-characteristic words etc.
-    <a href={{this.nextLink}}>Go to root</a>
+    <div class='container mx-auto px-4 bg-black text-white'>
+      <div class='shadow-md rounded px-8 pt-6 pb-8 mb-4'>
+        <h2 class='text-2xl font-semibold mb-4'>Embracing Modern Compiler
+          Technology</h2>
+        <p class='text-lg mb-4'>GlimmerNext is the evolution of GlimmerVM,
+          designed to integrate seamlessly with the latest compiler technology.
+          Our goal is to harness the power of modern compilers to bring
+          unprecedented performance improvements and efficient memory usage to
+          the Ember community.</p>
+
+        <h2 class='text-2xl font-semibold mb-4'>Backward Compatibility</h2>
+        <p class='text-lg mb-4'>A key focus of GlimmerNext is to ensure backward
+          compatibility with the entire Ember community's infrastructure and
+          tooling. We understand the importance of a smooth transition and aim
+          to make the integration process as effortless as possible for
+          developers.</p>
+
+        <h2 class='text-2xl font-semibold mb-4'>Key Objectives</h2>
+        <ul class='list-disc list-inside mb-4'>
+          <li class='text-lg mb-2'>Leveraging cutting-edge compiler technology
+            to optimize performance and memory management.</li>
+          <li class='text-lg mb-2'>Ensuring that GlimmerNext works harmoniously
+            with existing Ember tools and ecosystems.</li>
+          <li class='text-lg mb-2'>Providing a robust platform that evolves with
+            technological advancements, maintaining the forefront position in
+            web development.</li>
+        </ul>
+
+        <h2 class='text-2xl font-semibold mb-4'>Community-Driven Development</h2>
+        <p class='text-lg mb-4'>We believe in the power of community
+          collaboration. GlimmerNext is committed to working closely with the
+          Ember community, gathering feedback, and continuously improving to
+          meet the evolving needs of developers.</p>
+      </div>
+
+      <a href={{this.nextLink}}>Go to root</a>
+
+      <br /><br />
+      <Clock />
+    </div>
   </template>
 }

@@ -38,13 +38,13 @@ export class Router extends Component {
   routes = [
     {
       name: 'routeOne',
-      text: 'Route One',
+      text: 'Into',
       state: cell(true),
       Component: PageOne,
     },
     {
       name: 'routeTwo',
-      text: 'Route Two',
+      text: 'Goals',
       state: cell(false),
       Component: PageTwo,
     },
