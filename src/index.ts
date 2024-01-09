@@ -27,6 +27,11 @@ export default async function render() {
 
   const app = await benchmark.render();
 
+  if (window.location.pathname !== '/benchmark') {
+    console.timeEnd('render');
+    return;
+  }
+
   await waitForIdle();
 
   // return;

@@ -2,6 +2,8 @@ import { Component, cell, registerDestructor } from '@lifeart/gxt';
 import { Button } from './../Button.gts';
 import { PageOne } from './PageOne.gts';
 import { PageTwo } from './PageTwo.gts';
+import { Benchmark } from './Benchmark.gts';
+import { Tests } from './Tests.gts';
 
 // another router example, with animation
 export class Router extends Component {
@@ -16,9 +18,6 @@ export class Router extends Component {
       this.isDestroyCalled = true;
     });
   }
-  goToTests = () => {
-    window.location.href = '/tests.html';
-  };
   goToRoute = (name: string) => {
     if (this.isLocked) {
       return;
@@ -47,6 +46,18 @@ export class Router extends Component {
       text: 'Route Two',
       state: cell(false),
       Component: PageTwo,
+    },
+    {
+      name: 'benchmark',
+      text: 'Benchmark',
+      state: cell(false),
+      Component: Benchmark,
+    },
+    {
+      name: 'tests',
+      text: 'Tests',
+      state: cell(false),
+      Component: Tests,
     },
   ];
   modifier = (element: HTMLDivElement): any => {
@@ -97,7 +108,6 @@ export class Router extends Component {
         {{route.text}}
       </Button>
     {{/each}}
-    <Button @onClick={{this.goToTests}}>Tests</Button>
 
     <style>
       .route-container {background-color: black;min-height: 280px;width:100vw;}

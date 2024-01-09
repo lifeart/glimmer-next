@@ -12,6 +12,8 @@ class GlimmerRouter extends Router {
 
 export const router = new GlimmerRouter({
   main: '',
+  tests: '/tests',
+  benchmark: '/benchmark',
   pageOne: '/pageOne',
   pageTwo: '/pageTwo',
 });
