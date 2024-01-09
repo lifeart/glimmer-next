@@ -1,9 +1,11 @@
 import {
+  ComponentReturnType,
   destroyElement,
   GenericReturnType,
+  NodeReturnType,
   relatedRoots,
+  removeDestructor,
   renderElement,
-  runDestructors,
 } from '@/utils/component';
 import {
   formula,
@@ -12,11 +14,13 @@ import {
   deepFnValue,
 } from '@/utils/reactive';
 import { opcodeFor } from '@/utils/vm';
-import { addDestructors } from './component';
+import { associateDestroyable } from './component';
 import { api } from '@/utils/dom-api';
-import { isFn, isPrimitive } from './shared';
+import { addToTree, isFn, isPrimitive } from './shared';
 
 export function ifCondition(
+  this: any,
+  ctx: ComponentReturnType | NodeReturnType,
   cell: Cell<boolean> | MergedCell,
   outlet: DocumentFragment,
   trueBranch: () => GenericReturnType,
@@ -47,88 +51,96 @@ export function ifCondition(
   let runNumber = 0;
   let throwedError: Error | null = null;
 
-  addDestructors(
-    [
-      runExistingDestructors,
-      opcodeFor(cell, (value) => {
-        if (throwedError) {
-          Promise.resolve().then(() => {
-            const newPlaceholder = api.comment();
-            if (!placeholder.isConnected) {
+  associateDestroyable(ctx, [
+    runExistingDestructors,
+    opcodeFor(cell, (value) => {
+      if (throwedError) {
+        Promise.resolve().then(() => {
+          const newPlaceholder = api.comment();
+          if (!placeholder.isConnected) {
+            // placeholder is disconnected, it means whole `if` is removed from DOM, no need to recover;
+            return;
+          }
+          api.insert(placeholder.parentNode!, newPlaceholder, placeholder);
+          runExistingDestructors().then(async () => {
+            removeDestructor(ctx, runExistingDestructors);
+            if (!newPlaceholder.isConnected) {
               // placeholder is disconnected, it means whole `if` is removed from DOM, no need to recover;
               return;
             }
-            api.insert(placeholder.parentNode!, newPlaceholder, placeholder);
-            Promise.all(runDestructors(placeholder)).then(async () => {
-              if (!newPlaceholder.isConnected) {
-                // placeholder is disconnected, it means whole `if` is removed from DOM, no need to recover;
-                return;
-              }
-              if (prevComponent) {
-                throw new Error(`Component should be destroyed`);
-              }
-              ifCondition(
-                cell,
-                outlet,
-                trueBranch,
-                falseBranch,
-                newPlaceholder,
-              );
-            });
+            if (prevComponent) {
+              throw new Error(`Component should be destroyed`);
+            }
+            const el2 = ifCondition(
+              ctx,
+              cell,
+              outlet,
+              trueBranch,
+              falseBranch,
+              newPlaceholder,
+            );
+            addToTree(ctx, el2, 'ifCondition');
           });
-          throw throwedError;
-        }
-        runNumber++;
-        if (runNumber === 1) {
-          let nextBranch = value ? trueBranch : falseBranch;
-          prevComponent = nextBranch();
-          relatedRoots.set(outlet, prevComponent);
-          renderElement(
-            placeholder.parentNode || target,
-            prevComponent,
-            placeholder,
-          );
+        });
+        throw throwedError;
+      }
+      runNumber++;
+      if (runNumber === 1) {
+        let nextBranch = value ? trueBranch : falseBranch;
+        // @ts-expect-error
+        prevComponent = nextBranch(this);
+         // @todo - fix type here
+        addToTree(this, prevComponent as ComponentReturnType, nextBranch.name);
+        relatedRoots.set(outlet, prevComponent);
+        renderElement(
+          placeholder.parentNode || target,
+          prevComponent,
+          placeholder,
+        );
+        return;
+      }
+      (async () => {
+        if (runNumber === 1 || isDestructorRunning) {
           return;
         }
-        (async () => {
-          if (runNumber === 1 || isDestructorRunning) {
-            return;
+        let localRunNumber = runNumber;
+        let nextBranch = value ? trueBranch : falseBranch;
+        if (prevComponent) {
+          let prevCmp = prevComponent;
+          prevComponent = null;
+          await destroyElement(prevCmp);
+        }
+        if (localRunNumber !== runNumber) {
+          // @todo: run -re-inicialization logic here,
+          // because it may broke form overall syncLogic delay.
+          if (import.meta.env.DEV) {
+            throwedError = new Error(`
+              Woops, error in ifCondition, managed by ${cell._debugName}: 
+                Run number mismatch, looks like some modifier is removed longer than re-rendering takes. 
+                It may be a bug in your code. We can't sync DOM because it's always outdated.
+                Removing opcode to not break whole app.
+            `);
+          } else {
+            throwedError = new Error(`ERROR_0`);
           }
-          let localRunNumber = runNumber;
-          let nextBranch = value ? trueBranch : falseBranch;
-          if (prevComponent) {
-            let prevCmp = prevComponent;
-            prevComponent = null;
-            await destroyElement(prevCmp);
-          }
-          if (localRunNumber !== runNumber) {
-            // @todo: run -re-inicialization logic here,
-            // because it may broke form overall syncLogic delay.
-            if (import.meta.env.DEV) {
-              throwedError = new Error(`
-                Woops, error in ifCondition, managed by ${cell._debugName}: 
-                  Run number mismatch, looks like some modifier is removed longer than re-rendering takes. 
-                  It may be a bug in your code. We can't sync DOM because it's always outdated.
-                  Removing opcode to not break whole app.
-              `);
-            } else {
-              throwedError = new Error(`ERROR_0`);
-            }
-            return;
-          }
-          if (isDestructorRunning) {
-            return;
-          }
-          prevComponent = nextBranch();
-          relatedRoots.set(outlet, prevComponent);
-          renderElement(
-            placeholder.parentNode || target,
-            prevComponent,
-            placeholder,
-          );
-        })();
-      }),
-    ],
-    placeholder,
-  );
+          return;
+        }
+        if (isDestructorRunning) {
+          return;
+        }
+        // @ts-expect-error
+        prevComponent = nextBranch(this);
+        // @todo - fix type here
+        addToTree(this, prevComponent as ComponentReturnType, nextBranch.name);
+
+        relatedRoots.set(outlet, prevComponent);
+        renderElement(
+          placeholder.parentNode || target,
+          prevComponent,
+          placeholder,
+        );
+      })();
+    }),
+  ]);
+  return this;
 }

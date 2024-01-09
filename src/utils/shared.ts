@@ -1,3 +1,4 @@
+import { associateDestroyable, type ComponentReturnType, type NodeReturnType } from '@/utils/component';
 import { type AnyCell } from './reactive';
 
 export const isTag = Symbol('isTag');
@@ -20,4 +21,48 @@ export function isPrimitive(value: unknown): value is string | number {
 
 export function isTagLike(child: unknown): child is AnyCell {
   return (child as AnyCell)[isTag];
+}
+
+export const RENDER_TREE = new WeakMap<
+  ComponentReturnType | NodeReturnType,
+  Array<ComponentReturnType | NodeReturnType | HTMLElement>
+>();
+
+export function addToTree(ctx: ComponentReturnType | NodeReturnType, node: ComponentReturnType | HTMLElement | NodeReturnType, debugName?: string) {
+  if (node instanceof Node) {
+    // we don't need HTML nodes in the render tree
+    // debugger;
+    return;
+  } else if ('ctx' in node && node.ctx === null) {
+    // if it's simple node without context, no needs to add it to the tree as well
+    // for proper debug this logic need to be removed
+    // it's error prone approach because if we had complex component as child will see memory leak
+    return;
+  }
+  associateDestroyable(node, [() => {
+    const tree = RENDER_TREE.get(ctx);
+    if (tree) {
+      const index = tree.indexOf(node);
+      if (index !== -1) {
+        tree.splice(index, 1);
+        if (tree.length === 0) {
+          RENDER_TREE.delete(ctx);
+        }
+      }
+    }
+  }]);
+  if (debugName) {
+    Object.defineProperty(node, 'debugName', {
+      value: debugName,
+      enumerable: false,
+    });
+  }
+ 
+  if (!node) {
+    throw new Error('invalid node');
+  }
+  if (!RENDER_TREE.has(ctx)) {
+    RENDER_TREE.set(ctx, []);
+  }
+  RENDER_TREE.get(ctx)!.push(node);
 }

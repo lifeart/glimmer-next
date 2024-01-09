@@ -96,12 +96,12 @@ export function serializeChildren(
     .join(', ')}`;
 }
 
-function toChildArray(childs: Array<HBSNode | string> | null): string {
+function toChildArray(childs: Array<HBSNode | string> | null, ctxName = 'this'): string {
   if (!childs) {
     return '[]';
   }
   return `[${childs
-    .map((child) => serializeNode(child))
+    .map((child) => serializeNode(child, ctxName))
     .filter((el) => el)
     .join(', ')}]`;
 }
@@ -161,7 +161,7 @@ function toArray(
 }
 
 export function serializeNode(
-  node: string | null | HBSNode | HBSControlExpression,
+  node: string | null | HBSNode | HBSControlExpression, ctxName = 'this'
 ): string | undefined | null {
   if (node === null) {
     return null;
@@ -183,15 +183,18 @@ export function serializeNode(
     }
 
     if (key === '@each') {
+      if (paramNames.length === 1) {
+        paramNames.push('index');
+      }
       return `${
         isSync ? SYMBOLS.EACH_SYNC : SYMBOLS.EACH
-      }(${arrayName}, (${paramNames.join(',')}) => ${toChildArray(childs)}, ${
+      }(${arrayName}, (${paramNames.join(',')}, ctx) => ${toChildArray(childs, 'ctx')}, ${
         eachKey ? escapeString(eachKey) : null
-      })`;
+      }, ${ctxName})`;
     } else if (key === '@if') {
-      return `${SYMBOLS.IF}(${arrayName}, () => ${toChildArray(
-        childs,
-      )}, () => ${toChildArray(inverses)} )`;
+      return `${SYMBOLS.IF}(${arrayName}, (ctx) => ${toChildArray(
+        childs, 'ctx'
+      )}, (ctx) => ${toChildArray(inverses, 'ctx')}, ${ctxName})`;
     }
   } else if (
     typeof node === 'object' &&
@@ -229,7 +232,7 @@ export function serializeNode(
     if (isSecondArgEmpty) {
       if (!secondArg.includes('...')) {
         isSecondArgEmpty = true;
-        secondArg = '';
+        secondArg = 'void 0';
       } else {
         isSecondArgEmpty = false;
       }
@@ -238,13 +241,13 @@ export function serializeNode(
     if (node.selfClosing) {
       // @todo - we could pass `hasStableChild` ans hasBlock / hasBlockParams to the DOM helper
       if (flags.IS_GLIMMER_COMPAT_MODE === false) {
-        return `${SYMBOLS.COMPONENT}(new ${node.tag}(${toObject(
+        return `${SYMBOLS.COMPONENT}(${node.tag},${toObject(
           args,
-        )}, ${secondArg}))`;
+        )}, ${secondArg}, ${ctxName})`;
       } else {
-        return `${SYMBOLS.COMPONENT}(new ${node.tag}(${SYMBOLS.ARGS}(${toObject(
+        return `${SYMBOLS.COMPONENT}(${node.tag},${SYMBOLS.ARGS}(${toObject(
           args,
-        )}), ${secondArg}))`;
+        )}), ${secondArg}, ${ctxName})`;
       }
     } else {
       const slots: HBSNode[] = node.children.filter((child) => {
@@ -268,9 +271,9 @@ export function serializeNode(
           ',',
         )}) => [${slotChildren}]`;
       });
-      let fn = `new ${node.tag}(${SYMBOLS.ARGS}(${toObject(
+      let fn = `${node.tag},${SYMBOLS.ARGS}(${toObject(
         args,
-      )}), ${secondArg})`;
+      )}), ${secondArg}, ${ctxName}`;
       if (flags.IS_GLIMMER_COMPAT_MODE === false) {
         fn = `new ${node.tag}(${toObject(args)}, ${secondArg})`;
       }
@@ -294,7 +297,7 @@ export function serializeNode(
     }
     return `${SYMBOLS.TAG}('${node.tag}', ${tagProps}, [${serializeChildren(
       node.children,
-    )}])`;
+    )}], ${ctxName})`;
   } else {
     if (typeof node === 'string') {
       if (isPath(node)) {
