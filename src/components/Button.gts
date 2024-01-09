@@ -8,10 +8,11 @@ type ButtonSignature = {
     default: [];
   };
 };
+
 // @glint-ignore: 1
 export const Button: ComponentLike<ButtonSignature> = <template>
   {{! @glint-expect-error: ...attributes }}
-  <button class='btn' ...attributes {{on 'click' @onClick}} type='button'>
+  <button ...attributes {{on 'click' @onClick}} type='button'>
     {{! @glint-expect-error: yield }}
     {{yield}}
   </button>

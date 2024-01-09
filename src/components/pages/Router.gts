@@ -4,6 +4,7 @@ import { PageOne } from './PageOne.gts';
 import { PageTwo } from './PageTwo.gts';
 import { Benchmark } from './Benchmark.gts';
 import { Tests } from './Tests.gts';
+import { Header } from '@/components/Header.gts';
 
 // another router example, with animation
 export class Router extends Component {
@@ -100,21 +101,39 @@ export class Router extends Component {
         And likely add start-stop bounds to every component.
      }}
 
-    {{#each this.routes key='name' as |route|}}
-      <Button
-        class={{if route.state 'active'}}
-        @onClick={{fn this.goToRoute route.name}}
-      >
-        {{route.text}}
-      </Button>
-    {{/each}}
+    <Header>
 
+      <:desktop>
+        {{#each this.routes key='name' as |route|}}
+          <Button
+            class={{if route.state 'text-sky-500'}}
+            {{! @glint-expect-error object-ligeral with same props }}
+            class='text-sm font-semibold leading-6 text-gray-900'
+            @onClick={{fn this.goToRoute route.name}}
+          >
+            {{route.text}}
+          </Button>
+        {{/each}}
+      </:desktop>
+      <:mobile>
+        {{#each this.routes key='name' as |route|}}
+          <Button
+            class={{if route.state 'text-sky-500'}}
+            {{! @glint-expect-error object-ligeral with same props }}
+            class='-mx-3 block rounded-lg px-3 py-2 text-base font-semibold leading-7 text-gray-900 hover:bg-gray-50'
+            @onClick={{fn this.goToRoute route.name}}
+          >
+            {{route.text}}
+          </Button>
+        {{/each}}
+      </:mobile>
+
+    </Header>
     <style>
-      .route-container {background-color: black;min-height: 280px;width:100vw;}
-      .page { box-shadow: -9px 0 20px 0px #ddd; transition: opacity 0.5s
-      ease-out, transform 0.5s ease-out; opacity: 1; min-height: 240px; width:
-      100vw; padding: 20px; color: white; background-color: black; } .active {
-      background-color: yellow; }
+      .route-container {background-color: black;height:100vh;width:100vw;} .page
+      { box-shadow: -13px -15px 20px 0px #e3e3e3; transition: opacity 0.5s
+      ease-out, transform 0.5s ease-out; opacity: 1; height: 100vh; width:
+      100vw; padding: 20px; color: white; background-color: black; }
     </style>
     <div class='route-container'>
       {{#each this.routes as |route|}}

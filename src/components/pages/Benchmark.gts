@@ -1,7 +1,7 @@
 import { buildData, swapRows, updateData, type Item } from '@/utils/data';
 import { Component, cell } from '@lifeart/gxt';
-import { Header } from './../Header.gts';
-import { Row } from './../Row.gts';
+import { Header } from './benchmark/Header.gts';
+import { Row } from './benchmark/Row.gts';
 
 export class Benchmark extends Component {
   itemsCell = cell<Item[]>([], 'items');
@@ -62,8 +62,8 @@ export class Benchmark extends Component {
         @swaprows={{this.actions.swaprows}}
         @runlots={{this.actions.runlots}}
       />
-      <table class='table table-hover table-striped test-data'>
-        <tbody id='tbody'>
+      <table class='table-auto'>
+        <tbody>
           {{#each this.items as |item|}}
             <Row
               @item={{item}}

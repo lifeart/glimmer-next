@@ -29,11 +29,9 @@ export class Application extends Component {
     });
   }
   <template>
-    <div class='container'>
-      <NestedRouter
-        @components={{this.components}}
-        @stack={{this.router.stack}}
-      />
-    </div>
+    <NestedRouter
+      @components={{this.components}}
+      @stack={{this.router.stack}}
+    />
   </template>
 }
