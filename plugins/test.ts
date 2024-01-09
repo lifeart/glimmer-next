@@ -135,7 +135,8 @@ export function transform(
     if (isTemplateTag) {
       result = `function () {
       const $slots = {};
-      const $fw = this.$fw;
+      const $fw = this.$fw || arguments[1];
+      this.args = this.args || arguments[0];
       const roots = [${results.join(', ')}];
       return ${SYMBOLS.FINALIZE_COMPONENT}(roots, $slots, ${String(
         isNodeStable(results[0]) && results.length === 1,

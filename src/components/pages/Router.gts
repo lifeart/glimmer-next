@@ -91,7 +91,7 @@ export class Router extends Component {
         class={{if route.state 'active'}}
         @onClick={{fn this.goToRoute route.name}}
       >
-        <:slot>{{route.text}}</:slot>
+        {{route.text}}
       </Button>
     {{/each}}
 

@@ -15,9 +15,7 @@ export class ButtonWrapper extends Component<ButtonWrapperSignature> {
   <template>
     <div class='col-sm-6 smallpad'>
       <Button @onClick={{@onClick}} ...attributes>
-        <:slot>
-          {{yield}}
-        </:slot>
+        {{yield}}
       </Button>
     </div>
   </template>
