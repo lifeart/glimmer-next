@@ -3,6 +3,7 @@ import { ComponentLike } from '@glint/template';
 declare global {
   interface Window {
     getDestructors: () => WeakSet<Node, Array<() => void>>;
+    drawTreeToConsole: () => void;
     getVM: () => any;
   }
 
