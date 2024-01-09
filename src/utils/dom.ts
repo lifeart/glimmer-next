@@ -20,7 +20,18 @@ import { SyncListComponent, AsyncListComponent } from '@/utils/list';
 import { ifCondition } from '@/utils/if';
 import { DestructorFn, Destructors, executeDestructors } from './destroyable';
 import { api } from '@/utils/dom-api';
-import { isFn, isPrimitive, isTagLike, $template, $nodes, $node, $slotsProp, $attrsProp, $propsProp, $eventsProp } from './shared';
+import {
+  isFn,
+  isPrimitive,
+  isTagLike,
+  $template,
+  $nodes,
+  $node,
+  $slotsProp,
+  $attrsProp,
+  $propsProp,
+  $eventsProp,
+} from './shared';
 
 // EMPTY DOM PROPS
 export const $_edp = [[], [], []] as Props;
@@ -210,9 +221,15 @@ function _DOM(
   const attrs = tagProps[1];
   const _events = tagProps[2];
   const hasSplatAttrs = typeof tagProps[3] === 'object';
-  const attributes = hasSplatAttrs ? [...tagProps[3]![$attrsProp], ...attrs] : attrs;
-  const properties = hasSplatAttrs ? [...tagProps[3]![$propsProp], ...props] : props;
-  const events = hasSplatAttrs ? [...tagProps[3]![$eventsProp], ..._events] : _events;
+  const attributes = hasSplatAttrs
+    ? [...tagProps[3]![$attrsProp], ...attrs]
+    : attrs;
+  const properties = hasSplatAttrs
+    ? [...tagProps[3]![$propsProp], ...props]
+    : props;
+  const events = hasSplatAttrs
+    ? [...tagProps[3]![$eventsProp], ..._events]
+    : _events;
   events.forEach(([eventName, fn]) => {
     $ev(element, eventName, fn, destructors);
   });

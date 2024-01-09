@@ -1,4 +1,4 @@
-import { $nodes, $slotsProp } from ".";
+import { $nodes, $slotsProp } from '.';
 
 export function hbs(tpl: TemplateStringsArray) {
   return {

@@ -79,13 +79,15 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
       patchNodePath(node);
 
       if (node.path.original === 'element') {
-        return `$:function(args,props){const $slots={};return{[${SYMBOLS.$nodes}]:[${
-          SYMBOLS.TAG
-        }(${ToJSType(
-          node.params[0],
-        )},[props[${SYMBOLS.$propsProp}],props[${SYMBOLS.$attrsProp}],props[${SYMBOLS.$eventsProp}]],[()=>${
+        return `$:function(args,props){const $slots={};return{[${
+          SYMBOLS.$nodes
+        }]:[${SYMBOLS.TAG}(${ToJSType(node.params[0])},[props[${
+          SYMBOLS.$propsProp
+        }],props[${SYMBOLS.$attrsProp}],props[${SYMBOLS.$eventsProp}]],[()=>${
           SYMBOLS.SLOT
-        }('default',()=>[],$slots)])[${SYMBOLS.$node}]],[${SYMBOLS.$slotsProp}]:$slots,index:0};}`;
+        }('default',()=>[],$slots)])[${SYMBOLS.$node}]],[${
+          SYMBOLS.$slotsProp
+        }]:$slots,index:0};}`;
       } else if (node.path.original === SYMBOLS.$__hash) {
         const hashArgs: [string, PrimitiveJSType][] = node.hash.pairs.map(
           (pair) => {

@@ -214,12 +214,16 @@ export function serializeNode(
     let secondArg = hasSplatAttrs
       ? `{[${SYMBOLS.$propsProp}]: [...$fw[${SYMBOLS.$propsProp}], ...${toArray(
           props,
-        )}], [${SYMBOLS.$attrsProp}]: [...$fw[${SYMBOLS.$attrsProp}], ...${toArray(
-          attrs,
-        )}], [${SYMBOLS.$eventsProp}]: [...$fw[${SYMBOLS.$eventsProp}],...${toArray(node.events)}]}`
-      : `{[${SYMBOLS.$propsProp}]: ${toArray(props)}, [${SYMBOLS.$attrsProp}]: ${toArray(
-          attrs,
-        )},  [${SYMBOLS.$eventsProp}]: ${toArray(node.events)}}`;
+        )}], [${SYMBOLS.$attrsProp}]: [...$fw[${
+          SYMBOLS.$attrsProp
+        }], ...${toArray(attrs)}], [${SYMBOLS.$eventsProp}]: [...$fw[${
+          SYMBOLS.$eventsProp
+        }],...${toArray(node.events)}]}`
+      : `{[${SYMBOLS.$propsProp}]: ${toArray(props)}, [${
+          SYMBOLS.$attrsProp
+        }]: ${toArray(attrs)},  [${SYMBOLS.$eventsProp}]: ${toArray(
+          node.events,
+        )}}`;
 
     let isSecondArgEmpty = secondArg.split('[]').length === 4;
     if (isSecondArgEmpty) {

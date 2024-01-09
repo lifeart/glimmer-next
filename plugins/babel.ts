@@ -42,7 +42,9 @@ export function processTemplate(
                   t.identifier('hbs'),
                   path.node.body.body[0].expression.arguments[0],
                 ),
-                null, null, true
+                null,
+                null,
+                true,
               ),
             );
           }
