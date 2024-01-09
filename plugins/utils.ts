@@ -83,7 +83,7 @@ export function resolvedChildren(els: ASTv1.Node[]) {
 }
 
 export function serializeChildren(
-  children: Array<string | HBSNode | HBSControlExpression>,
+  children: Array<string | HBSNode | HBSControlExpression>, ctxName: string
 ) {
   if (children.length === 0) {
     return '';
@@ -96,7 +96,7 @@ export function serializeChildren(
         }
         return `${SYMBOLS.TEXT}(${escapeString(child)})`;
       }
-      return serializeNode(child);
+      return serializeNode(child, ctxName);
     })
     .join(', ')}`;
 }
@@ -270,7 +270,7 @@ export function serializeNode(
         slots.push(node);
       }
       const serializedSlots = slots.map((slot) => {
-        const slotChildren = serializeChildren(slot.children);
+        const slotChildren = serializeChildren(slot.children, ctxName);
         const slotName = slot.tag.startsWith(':')
           ? slot.tag.slice(1)
           : 'default';
@@ -303,7 +303,7 @@ export function serializeNode(
       tagProps = SYMBOLS.EMPTY_DOM_PROPS;
     }
     return `${SYMBOLS.TAG}('${node.tag}', ${tagProps}, [${serializeChildren(
-      node.children,
+      node.children, ctxName,
     )}], ${ctxName})`;
   } else {
     if (typeof node === 'string') {

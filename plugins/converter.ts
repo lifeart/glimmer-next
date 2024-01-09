@@ -244,7 +244,7 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
         const result = `$:...(() => {${vars.join(
           '',
         )}return [${serializeChildren(
-          children as unknown as [string | HBSNode | HBSControlExpression],
+          children as unknown as [string | HBSNode | HBSControlExpression], 'this' // @todo - fix possible context floating here
         )}]})()`;
         return result;
       }
