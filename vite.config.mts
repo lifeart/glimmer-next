@@ -71,6 +71,10 @@ export default defineConfig(({ mode }) => ({
     minify: "terser",
     rollupOptions: {
       treeshake: "recommended",
+      input: !isLibBuild ? {
+        main: 'index.html',
+        nested: 'tests.html',
+      } : undefined,
       external: isLibBuild
         ? [
             "@babel/core",
@@ -103,6 +107,7 @@ export default defineConfig(({ mode }) => ({
       "@/components": path.join(currentPath, "src", "components"),
       "@/utils": path.join(currentPath, "src", "utils"),
       "@lifeart/gxt": path.join(currentPath, "src", "utils", "index.ts"),
+      '@/tests': path.join(currentPath, "src", "tests"),
     },
   },
 }));

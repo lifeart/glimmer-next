@@ -1,7 +1,7 @@
 import type { ComponentLike } from '@glint/template';
 type ButtonSignature = {
   Args: {
-    onClick: () => void;
+    onClick?: () => void;
   };
   Element: HTMLButtonElement;
   Blocks: {
@@ -11,7 +11,7 @@ type ButtonSignature = {
 // @glint-ignore: 1
 export const Button: ComponentLike<ButtonSignature> = <template>
   {{! @glint-expect-error: ...attributes }}
-  <button class='btn' ...attributes {{on 'click' @onClick}}>
+  <button class='btn' ...attributes {{on 'click' @onClick}} type='button'>
     {{! @glint-expect-error: yield }}
     {{yield}}
   </button>

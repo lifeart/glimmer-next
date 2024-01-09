@@ -21,6 +21,7 @@
 
     "paths": {
       "@/components/*": ["./src/components/*"],
+      "@/tests/*": ["./src/tests/*"],
       "@/utils/*": ["./src/utils/*"],
       "@lifeart/gxt": ["./src/utils/index"]
     },
