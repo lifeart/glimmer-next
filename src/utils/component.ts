@@ -200,8 +200,8 @@ export async function destroyElement(
     if (component === null) {
       return;
     }
-    const destructors: Array<Promise<void>> = [];
     if ($nodes in component) {
+      const destructors: Array<Promise<void>> = [];
       if (component.ctx) {
         runDestructors(component.ctx, destructors);
       }
