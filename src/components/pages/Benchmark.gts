@@ -62,7 +62,24 @@ export class Benchmark extends Component {
         @swaprows={{this.actions.swaprows}}
         @runlots={{this.actions.runlots}}
       />
-      <table class='table-auto'>
+      <table
+        class='w-full text-sm text-left rtl:text-right text-gray-500 dark:text-gray-400'
+      >
+        <thead
+          class='text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400'
+        >
+          <tr>
+            <th scope='col' class='px-6 py-3'>
+              #
+            </th>
+            <th scope='col' class='px-6 py-3'>
+              Label
+            </th>
+            <th scope='col' class='px-6 py-3'>
+              Edit
+            </th>
+          </tr>
+        </thead>
         <tbody>
           {{#each this.items as |item|}}
             <Row
@@ -70,6 +87,7 @@ export class Benchmark extends Component {
               @onSelect={{this.onSelect}}
               @selected={{this.selected}}
               @onRemove={{this.removeItem}}
+              class='bg-white border-b dark:bg-gray-800 dark:border-gray-700'
             />
           {{/each}}
         </tbody>

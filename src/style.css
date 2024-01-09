@@ -3,6 +3,7 @@
 @tailwind utilities;
 
 body {
+  background-color: black;
   font-family: Arial, Helvetica, sans-serif;
   font:
     1em Arial,
@@ -10,6 +11,6 @@ body {
     sans-serif;
 }
 
-a {
+a[href] {
   color: pink;
 }

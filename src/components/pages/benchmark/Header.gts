@@ -1,7 +1,5 @@
 import { Component } from '@lifeart/gxt';
 import { ButtonWrapper } from './ButtonWrapper.gts';
-import { Smile } from './Smile';
-import { Clock } from './Clock';
 
 type Cb = () => void;
 
@@ -19,18 +17,10 @@ export class Header extends Component<{
   <template>
     <div class='jumbotron'>
       <div class='row'>
-        {{log (hash foo=1 bar='2' baz=null book=undefined) (array 1 2 3 4 5)}}
         <div class='col-md-6'>
-          <h1>GlimmerC<a
-              href='https://github.com/lifeart/glimmer-next'
-              target='_blank'
-            ><Smile /></a>re
-            <Clock /></h1>
-        </div>
-        <div class='col-md-6'>
-          <div class='row'>
+          <div class='flex'>
             <ButtonWrapper
-              class='btn-primary btn-block'
+              class='mr-1'
               type='button'
               @onClick={{@run}}
               id='run'
@@ -38,7 +28,7 @@ export class Header extends Component<{
               Create 1 000 items
             </ButtonWrapper>
             <ButtonWrapper
-              class='btn-primary btn-block'
+              class='mr-1'
               type='button'
               @onClick={{@runlots}}
               id='runlots'
@@ -46,7 +36,7 @@ export class Header extends Component<{
               Create 5 000 items
             </ButtonWrapper>
             <ButtonWrapper
-              class='btn-primary btn-block'
+              class='mr-1'
               type='button'
               @onClick={{@add}}
               id='add'
@@ -54,29 +44,31 @@ export class Header extends Component<{
               Append 1 000 rows
             </ButtonWrapper>
             <ButtonWrapper
-              class='btn-primary btn-block'
+              class='mr-1'
               type='button'
               @onClick={{@update}}
               id='update'
             >
               Update every 10th row
             </ButtonWrapper>
+
             <ButtonWrapper
-              class='btn-primary btn-block'
-              type='button'
-              @onClick={{@clear}}
-              id='clear'
-            >
-              Clear
-            </ButtonWrapper>
-            <ButtonWrapper
-              class='btn-primary btn-block'
+              class='mr-1'
               type='button'
               @onClick={{@swaprows}}
               id='swaprows'
             >
               Swap rows
             </ButtonWrapper>
+            <ButtonWrapper
+              class='mr-1'
+              type='button'
+              @onClick={{@clear}}
+              id='clear'
+            >
+              Clear
+            </ButtonWrapper>
+
           </div>
         </div>
       </div>
