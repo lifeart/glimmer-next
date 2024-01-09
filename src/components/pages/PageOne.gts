@@ -1,5 +1,6 @@
 import { Component } from '@lifeart/gxt';
 import { Smile } from './page-one/Smile';
+import { Table } from './page-one/Table.gts';
 
 export class PageOne extends Component {
   <template>
@@ -11,6 +12,11 @@ export class PageOne extends Component {
         tools meet the cutting-edge performance of modern compilers. That's what
         we're building here! Our platform takes the best of established
         technologies and infuses them with a new, state-of-the-art compiler.</p>
+      <br />
+
+      <div class='overflow-x-auto relative'>
+        <Table />
+      </div>
       <br />
       <h2>This means:</h2><br />
       <ul class='list-disc list-inside text-slate-900 dark:text-slate-200'>
