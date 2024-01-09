@@ -1,7 +1,6 @@
 import 'qunit/qunit/qunit.css';
 import 'qunit-theme-ember/qunit.css';
 
-
 import * as QUnit from 'qunit';
 import { setup } from 'qunit-dom';
 
