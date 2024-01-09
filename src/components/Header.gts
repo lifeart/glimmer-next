@@ -3,17 +3,17 @@ import { cell } from '@lifeart/gxt';
 const isMobileDialogVisible = cell(window.innerWidth < 1024);
 const isMobile = () => window.innerWidth < 1024;
 
-window.addEventListener('resize', () => {
-  if (window.innerWidth < 1024) {
-    if (isMobileDialogVisible.value !== true) {
-      isMobileDialogVisible.update(true);
-    }
-  } else {
-    if (isMobileDialogVisible.value !== false) {
-      isMobileDialogVisible.update(false);
-    }
-  }
-});
+// window.addEventListener('resize', () => {
+//   if (window.innerWidth < 1024) {
+//     if (isMobileDialogVisible.value !== true) {
+//       isMobileDialogVisible.update(true);
+//     }
+//   } else {
+//     if (isMobileDialogVisible.value !== false) {
+//       isMobileDialogVisible.update(false);
+//     }
+//   }
+// });
 
 const onClick = () => {
   if (isMobile()) {

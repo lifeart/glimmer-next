@@ -53,7 +53,7 @@ export class Benchmark extends Component {
     runlots: () => this.create_5_000itemsCell(),
   };
   <template>
-    <div class='container'>
+    <div class='bg-black p-2'>
       <Header
         @run={{this.actions.run}}
         @add={{this.actions.add}}
