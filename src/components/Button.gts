@@ -1,16 +1,18 @@
-// import { type Component } from '@lifeart/gxt';
-
-// type ButtonSignature = {
-//   Args: {
-//     onClick: () => void;
-//   };
-//   Element: HTMLButtonElement;
-//   Blocks: {
-//     slot: [];
-//   };
-// };
-export const Button = <template>
+import type { ComponentLike } from '@glint/template';
+type ButtonSignature = {
+  Args: {
+    onClick: () => void;
+  };
+  Element: HTMLButtonElement;
+  Blocks: {
+    default: [];
+  };
+};
+// @glint-ignore: 1
+export const Button: ComponentLike<ButtonSignature> = <template>
+  {{! @glint-expect-error: ...attributes }}
   <button class='btn' ...attributes {{on 'click' @onClick}}>
+    {{! @glint-expect-error: yield }}
     {{yield}}
   </button>
 </template>;
