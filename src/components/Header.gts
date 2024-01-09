@@ -1,3 +1,26 @@
+import { cell } from '@lifeart/gxt';
+
+const isMobileDialogVisible = cell(window.innerWidth < 1024);
+const isMobile = () => window.innerWidth < 1024;
+
+window.addEventListener('resize', () => {
+  if (window.innerWidth < 1024) {
+    if (isMobileDialogVisible.value !== true) {
+      isMobileDialogVisible.update(true);
+    }
+  } else {
+    if (isMobileDialogVisible.value !== false) {
+      isMobileDialogVisible.update(false);
+    }
+  }
+});
+
+const onClick = () => {
+  if (isMobile()) {
+    isMobileDialogVisible.update(!isMobileDialogVisible.value);
+  }
+};
+
 export const Header = <template>
   <header class='bg-white'>
     <nav
@@ -5,7 +28,7 @@ export const Header = <template>
       aria-label='Global'
     >
       <div class='flex lg:flex-1'>
-        <a href='#' class='-m-1.5 p-1.5'>
+        <a href='#' class='-m-1.5 p-1.5' {{on 'click' onClick}}>
           <span class='sr-only'>GXT</span>
           <img class='h-8 w-auto' src='/logo.png' alt='' />
         </a>
@@ -45,8 +68,14 @@ export const Header = <template>
           <span aria-hidden='true'>&rarr;</span></a>
       </div>
     </nav>
+    {{! @todo - fix conditional slots }}
     <!-- Mobile menu, show/hide based on menu open state. -->
-    <div class='lg:hidden' role='dialog' aria-modal='true'>
+    <div
+      class={{if isMobileDialogVisible '' 'hidden'}}
+      role='dialog'
+      aria-modal='true'
+      {{on 'click' onClick}}
+    >
       <!-- Background backdrop, show/hide based on slide-over state. -->
       <div class='fixed inset-0 z-10'></div>
       <div

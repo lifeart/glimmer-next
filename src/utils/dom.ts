@@ -128,7 +128,8 @@ function resolveRenderable(
     if (isPrimitive(componentProps)) {
       return f;
     } else {
-      throw new Error('invalid reactive type');
+      // looks like a component
+      return componentProps;
     }
   }
 }
@@ -368,7 +369,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots) {
         isRendered = true;
       },
       get() {
-        throw new Error('slot is not set');
+        throw new Error(`Slot ${name} is not set`);
       },
     });
     return slotPlaceholder;
