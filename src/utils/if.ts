@@ -1,8 +1,7 @@
 import {
-  ComponentReturnType,
+  type Component,
   destroyElement,
-  GenericReturnType,
-  NodeReturnType,
+  type GenericReturnType,
   relatedRoots,
   removeDestructor,
   renderElement,
@@ -19,12 +18,11 @@ import { api } from '@/utils/dom-api';
 import { addToTree, isFn, isPrimitive } from './shared';
 
 export function ifCondition(
-  this: any,
-  ctx: ComponentReturnType | NodeReturnType,
+  ctx: Component<any>,
   cell: Cell<boolean> | MergedCell,
   outlet: DocumentFragment,
-  trueBranch: () => GenericReturnType,
-  falseBranch: () => GenericReturnType,
+  trueBranch: (ifContext: Component<any>) => GenericReturnType,
+  falseBranch: (ifContext: Component<any>) => GenericReturnType,
   existingPlaceholder?: Comment,
 ) {
   // "if-placeholder"
@@ -41,6 +39,7 @@ export function ifCondition(
       await destroyElement(prevComponent);
       prevComponent = null;
     }
+    relatedRoots.delete(outlet);
   };
   const originalCell = cell;
   if (isFn(originalCell)) {
@@ -87,10 +86,9 @@ export function ifCondition(
       runNumber++;
       if (runNumber === 1) {
         let nextBranch = value ? trueBranch : falseBranch;
-        // @ts-expect-error
-        prevComponent = nextBranch(this);
-         // @todo - fix type here
-        addToTree(this, prevComponent as ComponentReturnType, nextBranch.name);
+        // @ts-expect-error this any type
+        prevComponent = nextBranch(this as unknown as Component<any>);
+        // console.log('renderedComponent for parent', ctx, prevComponent);
         relatedRoots.set(outlet, prevComponent);
         renderElement(
           placeholder.parentNode || target,
@@ -108,6 +106,7 @@ export function ifCondition(
         if (prevComponent) {
           let prevCmp = prevComponent;
           prevComponent = null;
+          // console.log('prevComponent', prevCmp);
           await destroyElement(prevCmp);
         }
         if (localRunNumber !== runNumber) {
@@ -128,10 +127,9 @@ export function ifCondition(
         if (isDestructorRunning) {
           return;
         }
-        // @ts-expect-error
+        // @ts-expect-error this any type
         prevComponent = nextBranch(this);
-        // @todo - fix type here
-        addToTree(this, prevComponent as ComponentReturnType, nextBranch.name);
+        // console.log('renderedComponent for parent', ctx, prevComponent);
 
         relatedRoots.set(outlet, prevComponent);
         renderElement(
@@ -142,5 +140,6 @@ export function ifCondition(
       })();
     }),
   ]);
-  return this;
+  // @ts-expect-error
+  return this as unknown as Component<any>;
 }

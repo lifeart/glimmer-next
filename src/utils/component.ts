@@ -6,7 +6,15 @@ import type {
   ComponentReturn,
 } from '@glint/template/-private/integration';
 import { api } from '@/utils/dom-api';
-import { isFn, $template, $nodes, $node, $args, $fwProp, RENDER_TREE } from './shared';
+import {
+  isFn,
+  $template,
+  $nodes,
+  $node,
+  $args,
+  $fwProp,
+  RENDER_TREE,
+} from './shared';
 
 const FRAGMENT_TYPE = 11; // Node.DOCUMENT_FRAGMENT_NODE
 
@@ -88,7 +96,9 @@ export type Props = Record<string, unknown>;
 type Get<T, K, Otherwise = {}> = K extends keyof T
   ? Exclude<T[K], undefined>
   : Otherwise;
-export class Component<T extends Props = any> implements ComponentReturnType {
+export class Component<T extends Props = any>
+  implements Omit<ComponentReturnType, 'ctx'>
+{
   args!: Get<T, 'Args'>;
   declare [Context]: TemplateContext<
     this,
@@ -153,11 +163,7 @@ export function destroyElementSync(
     }
 
     if ($nodes in component) {
-      
-      runDestructorsSync(component);
-      // @ts-expect-error
-      if (component.ctx) {
-        // @ts-expect-error
+      if (component.ctx !== null) {
         runDestructorsSync(component.ctx);
       }
       const nodes = component[$nodes];
@@ -204,13 +210,10 @@ export async function destroyElement(
     if (component === null) {
       return;
     }
-    const destructors: Array<Promise<void>> = [];
     if ($nodes in component) {
-      runDestructors(component as ComponentReturnType, destructors);
-      // @ts-expect-error
+      const destructors: Array<Promise<void>> = [];
       if (component.ctx) {
-        // @ts-expect-error
-        runDestructors(component.ctx);
+        runDestructors(component.ctx, destructors);
       }
       const nodes = component[$nodes];
       let startNode: null | Node = nodes[0];
@@ -251,11 +254,23 @@ export function associateDestroyable(ctx: any, destructors: Destructors) {
   if (destructors.length === 0) {
     return;
   }
+
+  if (import.meta.env.DEV) {
+    if (ctx.ctx && ctx.ctx !== ctx) {
+      throw new Error(`Invalid context`);
+    }
+  }
   const oldDestructors = $newDestructors.get(ctx) || [];
-  $newDestructors.set(ctx, [...oldDestructors, ...destructors]);
+  oldDestructors.push(...destructors);
+  $newDestructors.set(ctx, oldDestructors);
 }
 
 export function removeDestructor(ctx: any, destructor: DestructorFn) {
+  if (import.meta.env.DEV) {
+    if (ctx.ctx && ctx.ctx !== ctx) {
+      throw new Error(`Invalid context`);
+    }
+  }
   const oldDestructors = $newDestructors.get(ctx) || [];
   $newDestructors.set(
     ctx,
@@ -263,29 +278,31 @@ export function removeDestructor(ctx: any, destructor: DestructorFn) {
   );
 }
 
-function runDestructorsSync(targetNode: ComponentReturnType) {
+function runDestructorsSync(targetNode: Component<any>) {
   if ($newDestructors.has(targetNode)) {
     $newDestructors.get(targetNode)!.forEach((fn) => {
       fn();
     });
     $newDestructors.delete(targetNode);
   }
-  RENDER_TREE.get(targetNode)?.forEach((node) => {
-    if ($nodes in node) {
+  const nodesToRemove = RENDER_TREE.get(targetNode);
+  if (nodesToRemove) {
+    /*
+      we need slice here because of search for it:
+      @todo - case 42 (associateDestroyable)
+      tldr list may be mutated during removal and forEach is stopped
+    */
+    nodesToRemove.slice().forEach((node) => {
       runDestructorsSync(node);
-    }
-    RENDER_TREE.delete(node as any);
-  });
-  RENDER_TREE.delete(targetNode);
+      // RENDER_TREE.delete(node as any);
+    });
+    // RENDER_TREE.delete(targetNode);
+  }
 }
 export function runDestructors(
-  target: ComponentReturnType,
+  target: Component<any>,
   promises: Array<Promise<void>> = [],
 ): Array<Promise<void>> {
-  if (!($nodes in target)) {
-    console.info(`Trying to run destructors on non-component`);
-    return promises;
-  }
   if ($newDestructors.has(target)) {
     $newDestructors.get(target)!.forEach((fn) => {
       const promise = fn();
@@ -297,13 +314,19 @@ export function runDestructors(
   } else {
     // console.info(`No destructors found for component`);
   }
-  RENDER_TREE.get(target)?.forEach((node) => {
-    if ($nodes in node) {
+  const nodesToRemove = RENDER_TREE.get(target);
+  if (nodesToRemove) {
+    /*
+      we need slice here because of search for it:
+      @todo - case 42 (associateDestroyable)
+      tldr list may be mutated during removal and forEach is stopped
+    */
+    nodesToRemove.slice().forEach((node) => {
       runDestructors(node, promises);
-    }
-    RENDER_TREE.delete(node as any);
-  });
-  RENDER_TREE.delete(target);
+      // RENDER_TREE.delete(node as any);
+    });
+    // RENDER_TREE.delete(target);
+  }
   return promises;
 }
 
@@ -326,6 +349,7 @@ export type Slots = Record<
 export type ComponentReturnType = {
   nodes: Node[];
   index: number;
+  ctx: Component<any> | null;
   slots: Slots;
 };
 export type NodeReturnType = {

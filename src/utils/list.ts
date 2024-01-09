@@ -6,11 +6,12 @@ import {
   destroyElementSync,
   removeDestructor,
   renderElement,
+  type Component,
 } from '@/utils/component';
 import { api } from '@/utils/dom-api';
 import { Cell, MergedCell, formula, deepFnValue } from '@/utils/reactive';
 import { opcodeFor } from '@/utils/vm';
-import { $node, $nodes, isFn, isTagLike, addToTree } from './shared';
+import { $node, $nodes, isFn, isTagLike } from './shared';
 
 function setIndex(item: GenericReturnType, index: number) {
   item.forEach((item) => {
@@ -40,7 +41,7 @@ type GenericReturnType = Array<ComponentReturnType | NodeReturnType>;
 type ListComponentArgs<T> = {
   tag: Cell<T[]> | MergedCell;
   key: string | null;
-  ctx: ComponentReturnType | NodeReturnType;
+  ctx: Component<any>;
   ItemComponent: (item: T, index?: number) => GenericReturnType;
 };
 type RenderTarget = HTMLElement | DocumentFragment;
@@ -48,18 +49,21 @@ class BasicListComponent<T extends { id: number }> {
   keyMap: Map<string, GenericReturnType> = new Map();
   nodes: Node[] = [];
   index = 0;
-  ctx!: ComponentReturnType | NodeReturnType;
+  parentCtx!: Component<any>;
   ItemComponent: (item: T, index?: number) => GenericReturnType;
   bottomMarker!: Comment;
   key: string = '@identity';
   tag!: Cell<T[]> | MergedCell;
   isSync = false;
+  get ctx() {
+    return this;
+  }
   constructor(
     { tag, ctx, key, ItemComponent }: ListComponentArgs<T>,
     outlet: RenderTarget,
   ) {
     this.ItemComponent = ItemComponent;
-    this.ctx = ctx;
+    this.parentCtx = ctx;
     const mainNode = outlet;
     this[$nodes] = [];
     if (key) {
@@ -163,13 +167,24 @@ class BasicListComponent<T extends { id: number }> {
       if (!maybeRow) {
         // @ts-expect-error
         const row = this.ItemComponent(item, index, this);
-        row.forEach((item) => {
-          // @ts-expect-error
-          if (item.ctx) {
-            // @ts-expect-error
-            addToTree(this, item.ctx);
-          }
-        });       
+        /* @todo - fix here 
+          Assigning destructors to row works just fine if it's  not a dynamic component.
+          if it's a dynamic component, it's not possible to associate destructors to it
+          and we end up having nested child binded to list class itself, instead of list-item.
+          It happens because list item does not have instance with proper context.
+
+          May be a case where we need compiler-created dynamic component wrapper to solve this issue.
+        */
+
+        // We expect that child component will be registered as a child of list component.
+
+        // row.forEach((item) => {
+        //   // @ts-expect-error
+        //   if (item.ctx) {
+        //     // @ts-expect-error
+        //     addToTree(this, item.ctx);
+        //   }
+        // });
         this.keyMap.set(key, row);
         row.forEach((item) => {
           renderElement(targetNode.parentNode!, item, targetNode);
@@ -271,11 +286,10 @@ export class AsyncListComponent<
       const destroyFn = async () => {
         await removePromise;
       };
-      associateDestroyable(this.ctx, [ destroyFn ]);
+      associateDestroyable(this.parentCtx, [destroyFn]);
       removePromise.then(() => {
         removeDestructor(this, destroyFn);
       });
-  
     }
     this.updateItems(items, amountOfKeys, keysToRemove, removedIndexes);
   }

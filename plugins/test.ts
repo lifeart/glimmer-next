@@ -16,28 +16,38 @@ function isNodeStable(node: string) {
   );
 }
 
-/*
-
 function isSimpleElement(element: ASTv1.ElementNode) {
-  return (
-    element.tag.charAt(0).toLowerCase() === element.tag.charAt(0) &&
-    !element.tag.startsWith(':')
-  );
+  const tag = element.tag;
+  if (tag.includes('.') || tag.startsWith(':')) {
+    return false;
+  }
+  return tag.toLowerCase() === tag;
 }
 
-
-export function isAllChildNodesSimpleElements(element: ASTv1.ElementNode): boolean {
-  return isSimpleElement(element) && element.children.every((child: ASTv1.Statement) => {
+export function isAllChildNodesSimpleElements(children: ASTv1.Node[]): boolean {
+  return children.every((child: ASTv1.Node) => {
     if (child.type === 'ElementNode') {
-      return isAllChildNodesSimpleElements(child);
+      return (
+        isSimpleElement(child) && isAllChildNodesSimpleElements(child.children)
+      );
     } else if (child.type === 'TextNode') {
       return true;
+    } else if (child.type === 'MustacheCommentStatement') {
+      return true;
+    } else if (child.type === 'CommentStatement') {
+      return true;
+    } else if (child.type === 'MustacheStatement') {
+      if (child.path.type !== 'PathExpression') {
+        return false;
+      } else if (child.path.original === 'yield') {
+        return true;
+      } else if (child.path.data) {
+        return true;
+      }
     }
     return false;
   });
 }
-
-*/
 
 export function transform(
   source: string,
@@ -76,6 +86,12 @@ export function transform(
       template: [],
     };
     traverse(ast, {
+      Template(node) {
+        const isSimple = isAllChildNodesSimpleElements(node.body);
+        if (!isSimple && flags.hasThisAccess === false) {
+          flags.hasThisAccess = true;
+        }
+      },
       MustacheStatement(node) {
         if (seenNodes.has(node)) {
           return;
@@ -131,34 +147,38 @@ export function transform(
 
     let result = '';
     let finContext = program.meta.hasThisAccess ? 'this' : 'null';
+    const hasFw = results.some((el) => el.includes('$fw'));
+    const hasSlots = results.some((el) => el.includes('$slots'));
 
     if (isTemplateTag) {
       result = `function () {
-      const $slots = {};
-      const $fw = this[${SYMBOLS.$fwProp}] || arguments[1];
+      ${hasSlots ? `const $slots = {};` : ''}
+      ${hasFw ? `const $fw = this[${SYMBOLS.$fwProp}] || arguments[1];` : ''}
       this[${SYMBOLS.$args}] = this[${SYMBOLS.$args}] || arguments[0];
       const roots = [${results.join(', ')}];
-      return ${SYMBOLS.FINALIZE_COMPONENT}(roots, $slots, ${String(
+      return ${SYMBOLS.FINALIZE_COMPONENT}(roots, ${
+        hasSlots ? '$slots' : '{}'
+      }, ${String(
         isNodeStable(results[0]) && results.length === 1,
       )}, ${finContext});
     }`;
     } else {
       result = isClass
         ? `() => {
-      const $slots = {};
-      const $fw = arguments[1];
+      ${hasSlots ? `const $slots = {};` : ''}
+      ${hasFw ? `const $fw = arguments[1];` : ''}
       const roots = [${results.join(', ')}];
-      return ${SYMBOLS.FINALIZE_COMPONENT}(roots, $slots, ${String(
-        isNodeStable(results[0]),
-      )}, ${finContext});
+      return ${SYMBOLS.FINALIZE_COMPONENT}(roots, ${
+        hasSlots ? '$slots' : '{}'
+      }, ${String(isNodeStable(results[0]))}, ${finContext});
     }`
         : `(() => {
-      const $slots = {};
-      const $fw = arguments[1];
+      ${hasSlots ? `const $slots = {};` : ''}
+      ${hasFw ? `const $fw = arguments[1];` : ''}
       const roots = [${results.join(', ')}];
-      return ${SYMBOLS.FINALIZE_COMPONENT}(roots, $slots, ${String(
-        isNodeStable(results[0]),
-      )}, ${finContext});
+      return ${SYMBOLS.FINALIZE_COMPONENT}(roots, ${
+        hasSlots ? '$slots' : '{}'
+      }, ${String(isNodeStable(results[0]))}, ${finContext});
     })()`;
     }
 
