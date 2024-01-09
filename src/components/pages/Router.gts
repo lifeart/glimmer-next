@@ -16,6 +16,9 @@ export class Router extends Component {
       this.isDestroyCalled = true;
     });
   }
+  goToTests = () => {
+    window.location.href = '/tests.html';
+  };
   goToRoute = (name: string) => {
     if (this.isLocked) {
       return;
@@ -94,6 +97,7 @@ export class Router extends Component {
         {{route.text}}
       </Button>
     {{/each}}
+    <Button @onClick={{this.goToTests}}>Tests</Button>
 
     <style>
       .route-container {background-color: black;min-height: 280px;width:100vw;}
