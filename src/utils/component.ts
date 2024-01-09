@@ -153,10 +153,7 @@ export function destroyElementSync(
     }
 
     if ($nodes in component) {
-      
-      runDestructorsSync(component);
-      if (component.ctx) {
-        // @ts-expect-error
+      if (component.ctx !== null) {
         runDestructorsSync(component.ctx);
       }
       const nodes = component[$nodes];
@@ -205,10 +202,8 @@ export async function destroyElement(
     }
     const destructors: Array<Promise<void>> = [];
     if ($nodes in component) {
-      runDestructors(component as ComponentReturnType, destructors);
       if (component.ctx) {
-        // @ts-expect-error
-        runDestructors(component.ctx);
+        runDestructors(component.ctx, destructors);
       }
       const nodes = component[$nodes];
       let startNode: null | Node = nodes[0];
@@ -250,7 +245,8 @@ export function associateDestroyable(ctx: any, destructors: Destructors) {
     return;
   }
   const oldDestructors = $newDestructors.get(ctx) || [];
-  $newDestructors.set(ctx, [...oldDestructors, ...destructors]);
+  oldDestructors.push(...destructors);
+  $newDestructors.set(ctx, oldDestructors);
 }
 
 export function removeDestructor(ctx: any, destructor: DestructorFn) {
@@ -261,7 +257,7 @@ export function removeDestructor(ctx: any, destructor: DestructorFn) {
   );
 }
 
-function runDestructorsSync(targetNode: ComponentReturnType) {
+function runDestructorsSync(targetNode: Component<any>) {
   if ($newDestructors.has(targetNode)) {
     $newDestructors.get(targetNode)!.forEach((fn) => {
       fn();
@@ -277,7 +273,7 @@ function runDestructorsSync(targetNode: ComponentReturnType) {
   RENDER_TREE.delete(targetNode);
 }
 export function runDestructors(
-  target: ComponentReturnType,
+  target: Component<any>,
   promises: Array<Promise<void>> = [],
 ): Array<Promise<void>> {
   if (!($nodes in target)) {

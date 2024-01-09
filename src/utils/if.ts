@@ -1,8 +1,7 @@
 import {
-  ComponentReturnType,
+  type Component,
   destroyElement,
-  GenericReturnType,
-  NodeReturnType,
+  type GenericReturnType,
   relatedRoots,
   removeDestructor,
   renderElement,
@@ -19,8 +18,7 @@ import { api } from '@/utils/dom-api';
 import { addToTree, isFn, isPrimitive } from './shared';
 
 export function ifCondition(
-  this: any,
-  ctx: ComponentReturnType | NodeReturnType,
+  ctx: Component<any>,
   cell: Cell<boolean> | MergedCell,
   outlet: DocumentFragment,
   trueBranch: () => GenericReturnType,
@@ -89,8 +87,6 @@ export function ifCondition(
         let nextBranch = value ? trueBranch : falseBranch;
         // @ts-expect-error
         prevComponent = nextBranch(this);
-         // @todo - fix type here
-        addToTree(this, prevComponent as ComponentReturnType, nextBranch.name);
         relatedRoots.set(outlet, prevComponent);
         renderElement(
           placeholder.parentNode || target,
@@ -131,7 +127,6 @@ export function ifCondition(
         // @ts-expect-error
         prevComponent = nextBranch(this);
         // @todo - fix type here
-        addToTree(this, prevComponent as ComponentReturnType, nextBranch.name);
 
         relatedRoots.set(outlet, prevComponent);
         renderElement(
@@ -142,5 +137,6 @@ export function ifCondition(
       })();
     }),
   ]);
-  return this;
+  // @ts-expect-error
+  return this as unknown as Component<any>;
 }

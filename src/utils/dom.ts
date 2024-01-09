@@ -41,7 +41,7 @@ export const $_emptySlot = Object.seal(Object.freeze({}));
 
 const $_className = 'className';
 
-let ROOT: ComponentReturnType | null = null;
+let ROOT: Component<any> | null = null;
 
 
 type ModifierFn = (
@@ -227,7 +227,6 @@ function _DOM(
   )[], ctx: any,
 ): NodeReturnType {
   const element = api.element(tag);
-  addToTree(ctx, element);
   const destructors: Destructors = [];
   const props = tagProps[0];
   const attrs = tagProps[1];
@@ -289,7 +288,6 @@ function _DOM(
   children.forEach((child) => {
     addChild(element, child, destructors);
   });
-
   associateDestroyable(ctx, destructors);
   return def(element);
 }
@@ -313,7 +311,7 @@ function drawTreeToConsole() {
 }
 window.drawTreeToConsole = drawTreeToConsole;
 // hello, basic component manager
-function component(comp: ComponentReturnType | Component, args: Record<string, unknown>, fw: FwType, ctx: ComponentReturnType) {
+function component(comp: ComponentReturnType | Component, args: Record<string, unknown>, fw: FwType, ctx: Component<any>) {
   if (ROOT === null) {
     // @todo - move it to 'renderComponent'
     ROOT = ctx;
@@ -325,11 +323,14 @@ function component(comp: ComponentReturnType | Component, args: Record<string, u
     const result = (instance[$template] as unknown as () => ComponentReturnType)();
     if (result.ctx !== null) { // here is workaround for simple components @todo - figure out how to show context-less components in tree
       // for now we don't adding it
-      addToTree(ctx, instance, (comp as any)?.name);
+      addToTree(ctx, instance);
     }
     return result;
   }
-  addToTree(ctx, instance, (comp as any)?.name);
+  if (instance.ctx !== null) {
+    // for now we adding only components with context
+    addToTree(ctx, instance);
+  }
   return instance;
 }
 type Fn = () => unknown;
@@ -489,39 +490,38 @@ function ifCond(
   cell: Cell<boolean>,
   trueBranch: BranchCb,
   falseBranch: BranchCb,
-  ctx: unknown,
+  ctx: Component<any>,
 ) {
   const outlet = api.fragment();
   // @ts-expect-error new
   const instance = new ifCondition(ctx, cell, outlet, trueBranch, falseBranch);
-  addToTree(ctx as ComponentReturnType, instance);
+  addToTree(ctx, instance);
   return def(outlet);
 }
 export function $_eachSync<T extends { id: number }>(
   items: Cell<T[]> | MergedCell,
   fn: (item: T) => Array<ComponentReturnType | NodeReturnType>,
   key: string | null = null,
-  ctx: unknown,
+  ctx: Component<any>,
 ) {
   const outlet = api.fragment();
   const instance = new SyncListComponent(
     {
       tag: items as Cell<T[]>,
       ItemComponent: fn,
-      ctx: ctx as ComponentReturnType, // @todo - fix typings here
+      ctx,
       key,
     },
     outlet,
   );
-  // @todo - fix typings here
-  addToTree(ctx as ComponentReturnType, instance as unknown as ComponentReturnType);
+  addToTree(ctx, instance as unknown as Component<any>);
   return def(outlet);
 }
 export function $_each<T extends { id: number }>(
   items: Cell<T[]> | MergedCell,
   fn: (item: T) => Array<ComponentReturnType | NodeReturnType>,
   key: string | null = null,
-  ctx: unknown,
+  ctx: Component<any>,
 ) {
   const outlet = api.fragment();
   const instance = new AsyncListComponent(
@@ -529,12 +529,11 @@ export function $_each<T extends { id: number }>(
       tag: items as Cell<T[]>,
       ItemComponent: fn,
       key,
-      ctx: ctx as ComponentReturnType, // @todo - fix typings here
+      ctx,
     },
     outlet,
   );
-  // @todo - fix typings here
-  addToTree(ctx as ComponentReturnType, instance as unknown as ComponentReturnType);
+  addToTree(ctx, instance as unknown as Component<any>);
   return def(outlet);
 }
 const ArgProxyHandler = {

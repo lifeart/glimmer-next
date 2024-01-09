@@ -1,4 +1,4 @@
-import { associateDestroyable, type ComponentReturnType, type NodeReturnType } from '@/utils/component';
+import { associateDestroyable, Component } from '@/utils/component';
 import { type AnyCell } from './reactive';
 
 export const isTag = Symbol('isTag');
@@ -24,20 +24,18 @@ export function isTagLike(child: unknown): child is AnyCell {
 }
 
 export const RENDER_TREE = new WeakMap<
-  ComponentReturnType | NodeReturnType,
-  Array<ComponentReturnType | NodeReturnType | HTMLElement>
+  Component<any>,
+  Array<Component>
 >();
 
-export function addToTree(ctx: ComponentReturnType | NodeReturnType, node: ComponentReturnType | HTMLElement | NodeReturnType, debugName?: string) {
+export function addToTree(ctx: Component<any>, node: Component<any>, debugName?: string) {
   if (node instanceof Node) {
-    // we don't need HTML nodes in the render tree
-    // debugger;
-    return;
+    throw new Error('invalid node');
   } else if ('ctx' in node && node.ctx === null) {
     // if it's simple node without context, no needs to add it to the tree as well
     // for proper debug this logic need to be removed
     // it's error prone approach because if we had complex component as child will see memory leak
-    return;
+    throw new Error('invalid node');
   }
   associateDestroyable(node, [() => {
     const tree = RENDER_TREE.get(ctx);

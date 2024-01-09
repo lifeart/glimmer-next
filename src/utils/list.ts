@@ -6,6 +6,7 @@ import {
   destroyElementSync,
   removeDestructor,
   renderElement,
+  type Component,
 } from '@/utils/component';
 import { api } from '@/utils/dom-api';
 import { Cell, MergedCell, formula, deepFnValue } from '@/utils/reactive';
@@ -40,7 +41,7 @@ type GenericReturnType = Array<ComponentReturnType | NodeReturnType>;
 type ListComponentArgs<T> = {
   tag: Cell<T[]> | MergedCell;
   key: string | null;
-  ctx: ComponentReturnType | NodeReturnType;
+  ctx: Component<any>;
   ItemComponent: (item: T, index?: number) => GenericReturnType;
 };
 type RenderTarget = HTMLElement | DocumentFragment;
@@ -48,7 +49,7 @@ class BasicListComponent<T extends { id: number }> {
   keyMap: Map<string, GenericReturnType> = new Map();
   nodes: Node[] = [];
   index = 0;
-  ctx!: ComponentReturnType | NodeReturnType;
+  ctx!: Component<any>;
   ItemComponent: (item: T, index?: number) => GenericReturnType;
   bottomMarker!: Comment;
   key: string = '@identity';
