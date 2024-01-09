@@ -21,8 +21,8 @@ export function ifCondition(
   ctx: Component<any>,
   cell: Cell<boolean> | MergedCell,
   outlet: DocumentFragment,
-  trueBranch: () => GenericReturnType,
-  falseBranch: () => GenericReturnType,
+  trueBranch: (ifContext: Component<any>) => GenericReturnType,
+  falseBranch: (ifContext: Component<any>) => GenericReturnType,
   existingPlaceholder?: Comment,
 ) {
   // "if-placeholder"
@@ -39,6 +39,7 @@ export function ifCondition(
       await destroyElement(prevComponent);
       prevComponent = null;
     }
+    relatedRoots.delete(outlet);
   };
   const originalCell = cell;
   if (isFn(originalCell)) {
@@ -85,8 +86,9 @@ export function ifCondition(
       runNumber++;
       if (runNumber === 1) {
         let nextBranch = value ? trueBranch : falseBranch;
-        // @ts-expect-error
-        prevComponent = nextBranch(this);
+        // @ts-expect-error this any type
+        prevComponent = nextBranch(this as unknown as Component<any>);
+        console.log('renderedComponent', prevComponent);
         relatedRoots.set(outlet, prevComponent);
         renderElement(
           placeholder.parentNode || target,
@@ -104,6 +106,7 @@ export function ifCondition(
         if (prevComponent) {
           let prevCmp = prevComponent;
           prevComponent = null;
+          console.log('prevComponent', prevCmp);
           await destroyElement(prevCmp);
         }
         if (localRunNumber !== runNumber) {
@@ -124,9 +127,9 @@ export function ifCondition(
         if (isDestructorRunning) {
           return;
         }
-        // @ts-expect-error
+        // @ts-expect-error this any type
         prevComponent = nextBranch(this);
-        // @todo - fix type here
+        console.log('renderedComponent', prevComponent);
 
         relatedRoots.set(outlet, prevComponent);
         renderElement(

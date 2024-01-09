@@ -24,6 +24,11 @@ export type HBSNode = {
   children: (string | HBSNode | HBSControlExpression)[];
 };
 
+let ctxIndex = 0;
+export function nextCtxName() {
+  return `ctx${ctxIndex++}`;
+}
+
 export function escapeString(str: string) {
   const lines = str.split('\n');
   if (lines.length === 1) {
@@ -182,19 +187,21 @@ export function serializeNode(
       eachKey = '@identity';
     }
 
+    const newCtxName = nextCtxName();
+
     if (key === '@each') {
       if (paramNames.length === 1) {
         paramNames.push('index');
       }
       return `${
         isSync ? SYMBOLS.EACH_SYNC : SYMBOLS.EACH
-      }(${arrayName}, (${paramNames.join(',')}, ctx) => ${toChildArray(childs, 'ctx')}, ${
+      }(${arrayName}, (${paramNames.join(',')},${newCtxName}) => ${toChildArray(childs, newCtxName)}, ${
         eachKey ? escapeString(eachKey) : null
       }, ${ctxName})`;
     } else if (key === '@if') {
-      return `${SYMBOLS.IF}(${arrayName}, (ctx) => ${toChildArray(
-        childs, 'ctx'
-      )}, (ctx) => ${toChildArray(inverses, 'ctx')}, ${ctxName})`;
+      return `${SYMBOLS.IF}(${arrayName}, (${newCtxName}) => ${toChildArray(
+        childs, newCtxName
+      )}, (${newCtxName}) => ${toChildArray(inverses, newCtxName)}, ${ctxName})`;
     }
   } else if (
     typeof node === 'object' &&
