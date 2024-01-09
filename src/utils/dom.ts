@@ -1,10 +1,10 @@
 import {
   addEventListener,
   associateDestroyable,
-  NodeReturnType,
+  type NodeReturnType,
   type ComponentReturnType,
-  Slots,
-  Component,
+  type Slots,
+  type Component,
   renderElement,
   destroyElement,
 } from '@/utils/component';
@@ -37,6 +37,8 @@ import {
 
 // EMPTY DOM PROPS
 export const $_edp = [[], [], []] as Props;
+export const $_emptySlot = Object.seal(Object.freeze({}));
+
 const $_className = 'className';
 
 let ROOT: ComponentReturnType | null = null;
@@ -313,6 +315,7 @@ window.drawTreeToConsole = drawTreeToConsole;
 // hello, basic component manager
 function component(comp: ComponentReturnType | Component, args: Record<string, unknown>, fw: FwType, ctx: ComponentReturnType) {
   if (ROOT === null) {
+    // @todo - move it to 'renderComponent'
     ROOT = ctx;
   }
   // @ts-expect-error construct signature
@@ -320,7 +323,6 @@ function component(comp: ComponentReturnType | Component, args: Record<string, u
   // todo - fix typings here
   if ($template in instance) {
     const result = (instance[$template] as unknown as () => ComponentReturnType)();
-    // @ts-expect-error
     if (result.ctx !== null) { // here is workaround for simple components @todo - figure out how to show context-less components in tree
       // for now we don't adding it
       addToTree(ctx, instance, (comp as any)?.name);
@@ -344,6 +346,7 @@ function mergeComponents(
   >,
 ) {
   const nodes: Array<Node> = [];
+  const contexts: Array<Component> = [];
   components.forEach((component) => {
     if (import.meta.env.DEV) {
       if (typeof component === 'boolean' || typeof component === 'undefined') {
@@ -357,6 +360,9 @@ function mergeComponents(
       nodes.push(api.text(String(component)));
     } else if ('index' in component) {
       if ($nodes in component) {
+        if (component.ctx !== null) {
+          contexts.push(component.ctx)
+        }
         nodes.push(...component[$nodes]);
       } else if ($node in component) {
         nodes.push(component[$node]);
@@ -367,8 +373,10 @@ function mergeComponents(
   });
   return {
     [$nodes]: nodes,
-    [$slotsProp]: {},
+    [$slotsProp]: $_emptySlot,
     index: 0,
+    // @todo - fix proper ctx merging here;
+    ctx: contexts.length > 0 ? contexts[0] : null,
   };
 }
 
@@ -381,6 +389,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots) {
         if (isRendered) {
           throw new Error(`Slot ${name} is already rendered`);
         }
+        // @todo - figure out destructors for slot (shoud work, bu need to be tested)
         const elements = value(...params());
         const nodes = mergeComponents(
           elements.map((el) => {
@@ -559,7 +568,7 @@ export function $_fin(
   roots: Array<ComponentReturnType | NodeReturnType>,
   slots: Slots,
   isStable: boolean,
-  ctx: unknown,
+  ctx: Component<any> | null,
 ) {
   const nodes: Array<
     HTMLElement | ComponentReturnType | NodeReturnType | Text | Comment

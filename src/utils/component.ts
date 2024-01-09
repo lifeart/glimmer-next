@@ -88,7 +88,7 @@ export type Props = Record<string, unknown>;
 type Get<T, K, Otherwise = {}> = K extends keyof T
   ? Exclude<T[K], undefined>
   : Otherwise;
-export class Component<T extends Props = any> implements ComponentReturnType {
+export class Component<T extends Props = any> implements Omit<ComponentReturnType, 'ctx'> {
   args!: Get<T, 'Args'>;
   declare [Context]: TemplateContext<
     this,
@@ -155,7 +155,6 @@ export function destroyElementSync(
     if ($nodes in component) {
       
       runDestructorsSync(component);
-      // @ts-expect-error
       if (component.ctx) {
         // @ts-expect-error
         runDestructorsSync(component.ctx);
@@ -207,7 +206,6 @@ export async function destroyElement(
     const destructors: Array<Promise<void>> = [];
     if ($nodes in component) {
       runDestructors(component as ComponentReturnType, destructors);
-      // @ts-expect-error
       if (component.ctx) {
         // @ts-expect-error
         runDestructors(component.ctx);
@@ -326,6 +324,7 @@ export type Slots = Record<
 export type ComponentReturnType = {
   nodes: Node[];
   index: number;
+  ctx: Component<any> | null;
   slots: Slots;
 };
 export type NodeReturnType = {
