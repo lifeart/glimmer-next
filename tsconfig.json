@@ -32,7 +32,7 @@
     "environment": {
       "glimmerx": {},
       "ember-template-imports": {
-        "additionalGlobals": ["on", "array", "hash", "fn"]
+        "additionalGlobals": ["on", "array", "hash", "fn", "element"]
       }
     }
   }
