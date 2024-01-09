@@ -6,7 +6,7 @@ import type {
   ComponentReturn,
 } from '@glint/template/-private/integration';
 import { api } from '@/utils/dom-api';
-import { isFn } from './shared';
+import { isFn, $template, $nodes, $node, $args, $fwProp } from './shared';
 
 const FRAGMENT_TYPE = 11; // Node.DOCUMENT_FRAGMENT_NODE
 
@@ -54,12 +54,12 @@ export function renderElement(
     if (el === null) {
       return;
     }
-    if ('nodes' in el) {
-      el.nodes.forEach((node) => {
+    if ($nodes in el) {
+      el[$nodes].forEach((node) => {
         renderNode(target, node, placeholder);
       });
     } else {
-      renderNode(target, el.node, placeholder);
+      renderNode(target, el[$node], placeholder);
     }
   } else {
     el.forEach((item) => {
@@ -72,12 +72,12 @@ export function renderComponent(
   component: ComponentReturnType,
   target: ComponentRenderTarget,
 ): ComponentReturnType {
-  if ('template' in component && isFn(component.template)) {
-    // @ts-expect-error typings mismatch
-    return renderComponent(component.template());
-  }
   const targetElement = targetFor(target);
-  component.nodes.forEach((node) => {
+
+  if ($template in component && isFn(component[$template])) {
+    return renderComponent(component[$template](), targetElement);
+  }
+  component[$nodes].forEach((node) => {
     api.append(targetElement, node);
   });
   return component;
@@ -104,8 +104,8 @@ export class Component<T extends Props = any> implements ComponentReturnType {
   slots!: Slots;
   $fw: unknown;
   constructor(props: Get<T, 'Args'>, fw?: unknown) {
-    this.args = props;
-    this.$fw = fw;
+    this[$args] = props;
+    this[$fwProp] = fw;
   }
   template!: ComponentReturnType;
 }
@@ -151,8 +151,8 @@ export function destroyElementSync(
     if (component === null) {
       return;
     }
-    if ('nodes' in component) {
-      const nodes = component.nodes;
+    if ($nodes in component) {
+      const nodes = component[$nodes];
       let startNode: null | Node = nodes[0];
       const endNode =
         nodes.length === 1 ? null : nodes[nodes.length - 1] || null;
@@ -180,8 +180,8 @@ export function destroyElementSync(
         );
       }
     } else {
-      runDestructorsSync(component.node);
-      destroyNode(component.node);
+      runDestructorsSync(component[$node]);
+      destroyNode(component[$node]);
     }
   }
 }
@@ -200,9 +200,9 @@ export async function destroyElement(
     if (component === null) {
       return;
     }
-    if ('nodes' in component) {
+    if ($nodes in component) {
       const destructors: Array<Promise<void>> = [];
-      const nodes = component.nodes;
+      const nodes = component[$nodes];
       let startNode: null | Node = nodes[0];
       const endNode =
         nodes.length === 1 ? null : nodes[nodes.length - 1] || null;
@@ -231,8 +231,8 @@ export async function destroyElement(
         );
       }
     } else {
-      await Promise.all(runDestructors(component.node));
-      await destroyNode(component.node);
+      await Promise.all(runDestructors(component[$node]));
+      await destroyNode(component[$node]);
     }
   }
 }
@@ -257,10 +257,10 @@ export function addDestructors(
     return;
   }
   let node: Node;
-  if ('nodes' in source) {
-    node = getNode(source.nodes[0]);
-  } else if ('node' in source) {
-    node = getNode(source.node);
+  if ($nodes in source) {
+    node = getNode(source[$nodes][0]);
+  } else if ($node in source) {
+    node = getNode(source[$node]);
   } else {
     node = getNode(source);
   }
@@ -315,7 +315,7 @@ export function targetFor(
   if (outlet instanceof HTMLElement || outlet instanceof DocumentFragment) {
     return outlet;
   } else {
-    return outlet.nodes[0] as HTMLElement;
+    return outlet[$nodes][0] as HTMLElement;
   }
 }
 

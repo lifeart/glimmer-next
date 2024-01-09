@@ -94,13 +94,12 @@ export default defineConfig(({ mode }) => ({
         passes: 3,
         unsafe: true,
         unsafe_symbols: true,
+        computed_props: true,
       },
       mangle: {
         module: true,
         toplevel: true,
-        properties: {
-          builtins: false,
-        },
+        properties: false,
       },
     },
   },

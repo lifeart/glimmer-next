@@ -34,8 +34,7 @@ export class Application extends Component {
   constructor(rootNode: HTMLElement) {
     super({});
     this.rootNode = rootNode;
-    // @ts-expect-error wrong signature for template
-    renderComponent(this.template(), this.rootNode);
+    renderComponent(this, this.rootNode);
     // router init
     requestAnimationFrame(() => {
       router.mount(window.location.pathname);

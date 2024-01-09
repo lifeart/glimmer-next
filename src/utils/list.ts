@@ -9,7 +9,7 @@ import {
 import { api } from '@/utils/dom-api';
 import { Cell, MergedCell, formula, deepFnValue } from '@/utils/reactive';
 import { opcodeFor } from '@/utils/vm';
-import { isFn, isTagLike } from './shared';
+import { $node, $nodes, isFn, isTagLike } from './shared';
 
 function setIndex(item: GenericReturnType, index: number) {
   item.forEach((item) => {
@@ -21,10 +21,10 @@ function getIndex(item: GenericReturnType) {
 }
 function getFirstNode(rawItem: GenericReturnType) {
   const item = rawItem[0];
-  if ('nodes' in item) {
-    return item.nodes[0];
+  if ($nodes in item) {
+    return item[$nodes][0];
   } else {
-    return item.node;
+    return item[$node];
   }
 }
 
@@ -57,7 +57,7 @@ class BasicListComponent<T extends { id: number }> {
   ) {
     this.ItemComponent = ItemComponent;
     const mainNode = outlet;
-    this.nodes = [];
+    this[$nodes] = [];
     if (key) {
       this.key = key;
     }

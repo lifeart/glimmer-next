@@ -16,3 +16,4 @@ export { hbs, scope } from '@/utils/template';
 export { effect } from '@/utils/vm';
 export * from '@/utils/dom';
 export * from '@/utils/helpers/index';
+export { $template, $node, $nodes, $args, $fwProp, $slotsProp, $propsProp, $attrsProp, $eventsProp } from '@/utils/shared';

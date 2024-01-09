@@ -1,7 +1,9 @@
+import { $nodes, $slotsProp } from ".";
+
 export function hbs(tpl: TemplateStringsArray) {
   return {
-    nodes: [],
-    slots: {},
+    [$nodes]: [],
+    [$slotsProp]: {},
     index: 0,
     tpl,
   };

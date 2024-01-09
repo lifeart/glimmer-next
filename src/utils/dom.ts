@@ -20,7 +20,7 @@ import { SyncListComponent, AsyncListComponent } from '@/utils/list';
 import { ifCondition } from '@/utils/if';
 import { DestructorFn, Destructors, executeDestructors } from './destroyable';
 import { api } from '@/utils/dom-api';
-import { isFn, isPrimitive, isTagLike } from './shared';
+import { isFn, isPrimitive, isTagLike, $template, $nodes, $node, $slotsProp, $attrsProp, $propsProp, $eventsProp } from './shared';
 
 // EMPTY DOM PROPS
 export const $_edp = [[], [], []] as Props;
@@ -129,12 +129,12 @@ function addChild(
   if (child === null || child === undefined) {
     return;
   }
-  if (typeof child === 'object' && 'nodes' in child) {
-    child.nodes.forEach((node) => {
+  if (typeof child === 'object' && $nodes in child) {
+    child[$nodes].forEach((node) => {
       api.append(element, node);
     });
-  } else if (typeof child === 'object' && 'node' in child) {
-    api.append(element, child.node);
+  } else if (typeof child === 'object' && $node in child) {
+    api.append(element, child[$node]);
   } else if (isPrimitive(child)) {
     // @ts-expect-error number to string type casting
     api.append(element, api.text(child));
@@ -210,9 +210,9 @@ function _DOM(
   const attrs = tagProps[1];
   const _events = tagProps[2];
   const hasSplatAttrs = typeof tagProps[3] === 'object';
-  const attributes = hasSplatAttrs ? [...tagProps[3]!.attrs, ...attrs] : attrs;
-  const properties = hasSplatAttrs ? [...tagProps[3]!.props, ...props] : props;
-  const events = hasSplatAttrs ? [...tagProps[3]!.events, ..._events] : _events;
+  const attributes = hasSplatAttrs ? [...tagProps[3]![$attrsProp], ...attrs] : attrs;
+  const properties = hasSplatAttrs ? [...tagProps[3]![$propsProp], ...props] : props;
+  const events = hasSplatAttrs ? [...tagProps[3]![$eventsProp], ..._events] : _events;
   events.forEach(([eventName, fn]) => {
     $ev(element, eventName, fn, destructors);
   });
@@ -266,8 +266,8 @@ function _DOM(
 }
 
 function component(comp: ComponentReturnType | Component) {
-  if ('template' in comp) {
-    return (comp.template as unknown as () => ComponentReturnType)();
+  if ($template in comp) {
+    return (comp[$template] as unknown as () => ComponentReturnType)();
   }
   return comp;
 }
@@ -297,18 +297,18 @@ function mergeComponents(
     if (isPrimitive(component)) {
       nodes.push(api.text(String(component)));
     } else if ('index' in component) {
-      if ('nodes' in component) {
-        nodes.push(...component.nodes);
-      } else if ('node' in component) {
-        nodes.push(component.node);
+      if ($nodes in component) {
+        nodes.push(...component[$nodes]);
+      } else if ($node in component) {
+        nodes.push(component[$node]);
       }
     } else {
       nodes.push(component);
     }
   });
   return {
-    nodes,
-    slots: {},
+    [$nodes]: nodes,
+    [$slotsProp]: {},
     index: 0,
   };
 }
@@ -343,9 +343,9 @@ function slot(name: string, params: () => unknown[], $slot: Slots) {
         );
 
         renderElement(
-          slotPlaceholder.node.parentNode!,
+          slotPlaceholder[$node].parentNode!,
           nodes,
-          slotPlaceholder.node,
+          slotPlaceholder[$node],
         );
         destroyElement(slotPlaceholder);
         isRendered = true;
@@ -377,7 +377,7 @@ function withSlots(
   slots: Record<string, () => Array<ComponentReturnType | NodeReturnType>>,
 ) {
   Object.keys(slots).forEach((slotName) => {
-    component.slots[slotName] = slots[slotName];
+    component[$slotsProp][slotName] = slots[slotName];
   });
   return component;
 }
@@ -498,12 +498,12 @@ export function $_fin(
     HTMLElement | ComponentReturnType | NodeReturnType | Text | Comment
   > = [];
   roots.forEach((root) => {
-    if ('nodes' in root) {
+    if ($nodes in root) {
       nodes.push(
-        ...(root.nodes as unknown as Array<HTMLElement | Text | Comment>),
+        ...(root[$nodes] as unknown as Array<HTMLElement | Text | Comment>),
       );
     } else {
-      nodes.push(root.node as unknown as HTMLElement | Text | Comment);
+      nodes.push(root[$node] as unknown as HTMLElement | Text | Comment);
     }
   });
   if (!isStable) {
@@ -532,8 +532,8 @@ export function $_fin(
   }
 
   return {
-    nodes,
-    slots,
+    [$nodes]: nodes,
+    [$slotsProp]: slots,
     index: 0,
   };
 }

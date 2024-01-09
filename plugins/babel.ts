@@ -36,12 +36,13 @@ export function processTemplate(
           if (path.node.key.name === '$static') {
             path.replaceWith(
               t.classProperty(
-                t.identifier('template'),
+                t.identifier(SYMBOLS.$template),
                 // hbs literal
                 t.taggedTemplateExpression(
                   t.identifier('hbs'),
                   path.node.body.body[0].expression.arguments[0],
                 ),
+                null, null, true
               ),
             );
           }

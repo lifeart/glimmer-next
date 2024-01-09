@@ -4,7 +4,7 @@ import { preprocess } from '@glimmer/syntax';
 import { ComplexJSType, convert } from './converter';
 import { ASTv1 } from '@glimmer/syntax';
 import { HBSControlExpression, HBSNode } from './utils';
-import { EVENT_TYPE } from './symbols';
+import { EVENT_TYPE, SYMBOLS } from './symbols';
 import { flags } from './flags';
 
 function $glimmerCompat(str: string) {
@@ -57,7 +57,7 @@ describe('convert function builder', () => {
   describe('basic element helper support', () => {
     test('it return kinda valid component-like code', () => {
       expect($t<ASTv1.BlockStatement>(`{{(element "tag")}}`)).toEqual(
-        `$:() => $:function(args,props){const $slots={};return{nodes:[$_tag("tag",[props.props,props.attrs,props.events],[()=>$_slot('default',()=>[],$slots)]).node],slots:$slots,index:0};}`,
+        `$:() => $:function(args,props){const $slots={};return{${SYMBOLS.$nodes}:[${SYMBOLS.TAG}("tag",[props[${SYMBOLS.$propsProp}],props[${SYMBOLS.$attrsProp}],props[${SYMBOLS.$eventsProp}]],[()=>$_slot('default',()=>[],$slots)])[${SYMBOLS.$node}]],${SYMBOLS.$slotsProp}:$slots,index:0};}`,
       );
     });
   });

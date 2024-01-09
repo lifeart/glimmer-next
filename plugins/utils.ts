@@ -44,7 +44,7 @@ export function isPath(str: string) {
 }
 
 export function resolvePath(str: string) {
-  return str.replace('$:', '').replace('@', 'this.args.');
+  return str.replace('$:', '').replace('@', `this[${SYMBOLS.$args}].`);
 }
 
 export function serializePath(
@@ -212,14 +212,14 @@ export function serializeNode(
     });
     const props = node.properties;
     let secondArg = hasSplatAttrs
-      ? `{props: [...$fw.props, ...${toArray(
+      ? `{[${SYMBOLS.$propsProp}]: [...$fw[${SYMBOLS.$propsProp}], ...${toArray(
           props,
-        )}], attrs: [...$fw.attrs, ...${toArray(
+        )}], [${SYMBOLS.$attrsProp}]: [...$fw[${SYMBOLS.$attrsProp}], ...${toArray(
           attrs,
-        )}], events: [...$fw.events,...${toArray(node.events)}]}`
-      : `{props: ${toArray(props)}, attrs: ${toArray(
+        )}], [${SYMBOLS.$eventsProp}]: [...$fw[${SYMBOLS.$eventsProp}],...${toArray(node.events)}]}`
+      : `{[${SYMBOLS.$propsProp}]: ${toArray(props)}, [${SYMBOLS.$attrsProp}]: ${toArray(
           attrs,
-        )},  events: ${toArray(node.events)}}`;
+        )},  [${SYMBOLS.$eventsProp}]: ${toArray(node.events)}}`;
 
     let isSecondArgEmpty = secondArg.split('[]').length === 4;
     if (isSecondArgEmpty) {
