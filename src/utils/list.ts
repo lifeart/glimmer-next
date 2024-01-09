@@ -164,6 +164,15 @@ class BasicListComponent<T extends { id: number }> {
       if (!maybeRow) {
         // @ts-expect-error
         const row = this.ItemComponent(item, index, this);
+        /* @todo - fix here 
+          Assigning destructors to row works just fine if it's  not a dynamic component.
+          if it's a dynamic component, it's not possible to associate destructors to it
+          and we end up having nested child binded to list class itself, instead of list-item.
+          It happens because list item does not have instance with proper context.
+
+          May be a case where we need compiler-created dynamic component wrapper to solve this issue.
+        */
+
         row.forEach((item) => {
           // @ts-expect-error
           if (item.ctx) {
