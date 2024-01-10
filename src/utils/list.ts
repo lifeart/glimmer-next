@@ -50,7 +50,7 @@ class BasicListComponent<T extends { id: number }> {
   nodes: Node[] = [];
   index = 0;
   parentCtx!: Component<any>;
-  ItemComponent: (item: T, index?: number) => GenericReturnType;
+  ItemComponent: (item: T, index: number, ctx: Component<any>) => GenericReturnType;
   bottomMarker!: Comment;
   key: string = '@identity';
   tag!: Cell<T[]> | MergedCell;
@@ -165,26 +165,7 @@ class BasicListComponent<T extends { id: number }> {
       const key = this.keyForItem(item);
       const maybeRow = this.keyMap.get(key);
       if (!maybeRow) {
-        // @ts-expect-error
-        const row = this.ItemComponent(item, index, this);
-        /* @todo - fix here 
-          Assigning destructors to row works just fine if it's  not a dynamic component.
-          if it's a dynamic component, it's not possible to associate destructors to it
-          and we end up having nested child binded to list class itself, instead of list-item.
-          It happens because list item does not have instance with proper context.
-
-          May be a case where we need compiler-created dynamic component wrapper to solve this issue.
-        */
-
-        // We expect that child component will be registered as a child of list component.
-
-        // row.forEach((item) => {
-        //   // @ts-expect-error
-        //   if (item.ctx) {
-        //     // @ts-expect-error
-        //     addToTree(this, item.ctx);
-        //   }
-        // });
+        const row = this.ItemComponent(item, index, this as unknown as Component<any>);
         this.keyMap.set(key, row);
         row.forEach((item) => {
           renderElement(targetNode.parentNode!, item, targetNode);
@@ -288,7 +269,7 @@ export class AsyncListComponent<
       };
       associateDestroyable(this.parentCtx, [destroyFn]);
       removePromise.then(() => {
-        removeDestructor(this, destroyFn);
+        removeDestructor(this.parentCtx, destroyFn);
       });
     }
     this.updateItems(items, amountOfKeys, keysToRemove, removedIndexes);
