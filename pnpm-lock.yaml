@@ -10,6 +10,9 @@ dependencies:
   '@glimmer/syntax':
     specifier: ^0.87.1
     version: 0.87.1
+  backburner.js:
+    specifier: ^2.8.0
+    version: 2.8.0
   content-tag:
     specifier: ^1.2.2
     version: 1.2.2
@@ -2518,6 +2521,10 @@ packages:
     transitivePeerDependencies:
       - supports-color
     dev: true
+
+  /backburner.js@2.8.0:
+    resolution: {integrity: sha512-zYXY0KvpD7/CWeOLF576mV8S+bQsaIoj/GNLXXB+Eb8SJcQy5lqSjkRrZ0MZhdKUs9QoqmGNIEIe3NQfGiiscQ==}
+    dev: false
 
   /balanced-match@1.0.2:
     resolution: {integrity: sha512-3oSeUO0TMV67hN1AmbXsK4yaqU7tjiHlbxRDZOpH0KW9+CeX4bRAaX0Anxt0tx2MrpRpWwQaPwIlISEJhYU5Pw==}

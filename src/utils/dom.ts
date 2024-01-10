@@ -43,6 +43,10 @@ const $_className = 'className';
 
 let ROOT: Component<any> | null = null;
 
+export function getRoot() {
+  return ROOT;
+}
+
 type ModifierFn = (
   element: HTMLElement,
   ...args: unknown[]
@@ -583,7 +587,28 @@ const ArgProxyHandler = {
 };
 export function $_args(args: Record<string, unknown>) {
   if (IS_GLIMMER_COMPAT_MODE) {
-    return new Proxy(args, ArgProxyHandler);
+    if (import.meta.env.DEV) {
+      const newArgs: Record<string, () => unknown> = {};
+      Object.keys(args).forEach((key) => {
+        try {
+          Object.defineProperty(newArgs, key, {
+            get() {
+              if (!isFn(args[key])) {
+                return args[key];
+              }
+              // @ts-expect-error function signature
+              return args[key]();
+            },
+            enumerable: true,
+          });
+        } catch(e) {
+          console.error(e);
+        }
+      });
+      return newArgs;
+    } else {
+      return new Proxy(args, ArgProxyHandler);
+    }
   } else {
     return args;
   }

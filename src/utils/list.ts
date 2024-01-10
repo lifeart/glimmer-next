@@ -11,7 +11,7 @@ import {
 import { api } from '@/utils/dom-api';
 import { Cell, MergedCell, formula, deepFnValue } from '@/utils/reactive';
 import { opcodeFor } from '@/utils/vm';
-import { $node, $nodes, isFn, isTagLike } from './shared';
+import { $_debug_args, $node, $nodes, isFn, isTagLike } from './shared';
 
 function setIndex(item: GenericReturnType, index: number) {
   item.forEach((item) => {
@@ -74,6 +74,16 @@ class BasicListComponent<T extends { id: number }> {
       this.key = key;
     }
     this.setupKeyForItem();
+    if (import.meta.env.DEV) {
+      Object.defineProperty(this, $_debug_args, {
+        get() {
+          return {
+            list: this.tag,
+            key: this.key,
+          };
+        },
+      });
+    }
     // "list bottom marker"
     if (import.meta.env.DEV) {
       this.bottomMarker = api.comment('list bottom marker');

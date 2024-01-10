@@ -17,6 +17,16 @@ export const tagsToRevalidate: Set<Cell> = new Set();
 // List of derived tags for each cell
 export const relatedTags: WeakMap<Cell, Set<MergedCell>> = new WeakMap();
 
+const DEBUG_MERGED_CELLS = new Set<MergedCell>();
+const DEBUG_CELLS = new Set<Cell>();
+
+export function getCells() {
+  return Array.from(DEBUG_CELLS);
+}
+export function getMergedCells() {
+  return Array.from(DEBUG_MERGED_CELLS);
+}
+
 window['getVM'] = () => ({
   relatedTags,
   tagsToRevalidate,
@@ -58,6 +68,7 @@ export class Cell<T extends unknown = unknown> {
     this._value = value;
     if (import.meta.env.DEV) {
       this._debugName = debugName;
+      DEBUG_CELLS.add(this);
     }
   }
   get value() {
@@ -125,6 +136,7 @@ export class MergedCell {
     this.fn = fn;
     if (import.meta.env.DEV) {
       this._debugName = debugName;
+      DEBUG_MERGED_CELLS.add(this);
     }
   }
   destroy() {

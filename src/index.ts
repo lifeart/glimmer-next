@@ -1,5 +1,6 @@
 import '@glint/environment-glimmerx';
 import '@glint/environment-ember-template-imports';
+import '@/utils/ember-inspector';
 
 import './style.css';
 

@@ -70,6 +70,7 @@
     "@babel/core": "^7.23.6",
     "@babel/preset-typescript": "^7.23.3",
     "@glimmer/syntax": "^0.87.1",
+    "backburner.js": "^2.8.0",
     "content-tag": "^1.2.2"
   }
 }

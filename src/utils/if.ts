@@ -15,7 +15,7 @@ import {
 import { opcodeFor } from '@/utils/vm';
 import { associateDestroyable } from './component';
 import { api } from '@/utils/dom-api';
-import { addToTree, isFn, isPrimitive } from './shared';
+import { $_debug_args, addToTree, isFn, isPrimitive } from './shared';
 
 export function ifCondition(
   ctx: Component<any>,
@@ -49,10 +49,25 @@ export function ifCondition(
   }
   let runNumber = 0;
   let throwedError: Error | null = null;
+  let lastValue: unknown = undefined;
+
+  if (import.meta.env.DEV) {
+    // @ts-expect-error this any type
+    Object.defineProperty(this, $_debug_args, {
+      get() {
+        return {
+          "if": lastValue,
+        }
+      }
+    });
+  }
 
   associateDestroyable(ctx, [
     runExistingDestructors,
     opcodeFor(cell, (value) => {
+      if (import.meta.env.DEV) {
+        lastValue = value;
+      }
       if (throwedError) {
         Promise.resolve().then(() => {
           const newPlaceholder = api.comment();
@@ -70,7 +85,8 @@ export function ifCondition(
             if (prevComponent) {
               throw new Error(`Component should be destroyed`);
             }
-            const el2 = ifCondition(
+            // @ts-expect-error this any type
+            const el2 = new ifCondition(
               ctx,
               cell,
               outlet,
