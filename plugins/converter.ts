@@ -85,9 +85,9 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
           SYMBOLS.$propsProp
         }],props[${SYMBOLS.$attrsProp}],props[${SYMBOLS.$eventsProp}]],[()=>${
           SYMBOLS.SLOT
-        }('default',()=>[],$slots)])[${SYMBOLS.$node}]],[${
+        }('default',()=>[],$slots)], this)[${SYMBOLS.$node}]],[${
           SYMBOLS.$slotsProp
-        }]:$slots,index:0};}`;
+        }]:$slots,index:0, ctx: this};}`;
       } else if (node.path.original === SYMBOLS.$__hash) {
         const hashArgs: [string, PrimitiveJSType][] = node.hash.pairs.map(
           (pair) => {
@@ -245,6 +245,7 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
           '',
         )}return [${serializeChildren(
           children as unknown as [string | HBSNode | HBSControlExpression],
+          'this', // @todo - fix possible context floating here
         )}]})()`;
         return result;
       }

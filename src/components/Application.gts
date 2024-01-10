@@ -1,4 +1,4 @@
-import { renderComponent, runDestructors, Component, cell } from '@lifeart/gxt';
+import { renderComponent, runDestructors, Component } from '@lifeart/gxt';
 import { PageOne } from './pages/PageOne.gts';
 import { PageTwo } from './pages/PageTwo.gts';
 import { PageThree } from './pages/PageThree.gts';
@@ -15,7 +15,7 @@ export class Application extends Component {
     benchmark: Benchmark,
   };
   async destroy() {
-    await Promise.all(runDestructors(this.rootNode));
+    await Promise.all(runDestructors(this));
     this.rootNode.innerHTML = '';
     this.rootNode = null!;
   }

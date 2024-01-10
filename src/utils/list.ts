@@ -1,10 +1,12 @@
 import {
   ComponentReturnType,
   NodeReturnType,
-  addDestructors,
+  associateDestroyable,
   destroyElement,
   destroyElementSync,
+  removeDestructor,
   renderElement,
+  type Component,
 } from '@/utils/component';
 import { api } from '@/utils/dom-api';
 import { Cell, MergedCell, formula, deepFnValue } from '@/utils/reactive';
@@ -39,6 +41,7 @@ type GenericReturnType = Array<ComponentReturnType | NodeReturnType>;
 type ListComponentArgs<T> = {
   tag: Cell<T[]> | MergedCell;
   key: string | null;
+  ctx: Component<any>;
   ItemComponent: (item: T, index?: number) => GenericReturnType;
 };
 type RenderTarget = HTMLElement | DocumentFragment;
@@ -46,16 +49,21 @@ class BasicListComponent<T extends { id: number }> {
   keyMap: Map<string, GenericReturnType> = new Map();
   nodes: Node[] = [];
   index = 0;
-  ItemComponent: (item: T, index?: number) => GenericReturnType;
+  parentCtx!: Component<any>;
+  ItemComponent: (item: T, index: number, ctx: Component<any>) => GenericReturnType;
   bottomMarker!: Comment;
   key: string = '@identity';
   tag!: Cell<T[]> | MergedCell;
   isSync = false;
+  get ctx() {
+    return this;
+  }
   constructor(
-    { tag, key, ItemComponent }: ListComponentArgs<T>,
+    { tag, ctx, key, ItemComponent }: ListComponentArgs<T>,
     outlet: RenderTarget,
   ) {
     this.ItemComponent = ItemComponent;
+    this.parentCtx = ctx;
     const mainNode = outlet;
     this[$nodes] = [];
     if (key) {
@@ -157,7 +165,7 @@ class BasicListComponent<T extends { id: number }> {
       const key = this.keyForItem(item);
       const maybeRow = this.keyMap.get(key);
       if (!maybeRow) {
-        const row = this.ItemComponent(item, index);
+        const row = this.ItemComponent(item, index, this as unknown as Component<any>);
         this.keyMap.set(key, row);
         row.forEach((item) => {
           renderElement(targetNode.parentNode!, item, targetNode);
@@ -199,14 +207,11 @@ export class SyncListComponent<
 > extends BasicListComponent<T> {
   constructor(params: ListComponentArgs<T>, outlet: RenderTarget) {
     super(params, outlet);
-    addDestructors(
-      [
-        opcodeFor(this.tag, () => {
-          this.syncList(this.tag.value);
-        }),
-      ],
-      this.bottomMarker,
-    );
+    associateDestroyable(params.ctx, [
+      opcodeFor(this.tag, () => {
+        this.syncList(this.tag.value);
+      }),
+    ]);
   }
   syncList(items: T[]) {
     const existingKeys = Array.from(this.keyMap.keys());
@@ -234,14 +239,11 @@ export class AsyncListComponent<
 > extends BasicListComponent<T> {
   constructor(params: ListComponentArgs<any>, outlet: RenderTarget) {
     super(params, outlet);
-    addDestructors(
-      [
-        opcodeFor(this.tag, async () => {
-          await this.syncList(this.tag.value);
-        }),
-      ],
-      this.bottomMarker,
-    );
+    associateDestroyable(params.ctx, [
+      opcodeFor(this.tag, async () => {
+        await this.syncList(this.tag.value);
+      }),
+    ]);
   }
   async syncList(items: T[]) {
     const existingKeys = Array.from(this.keyMap.keys());
@@ -260,18 +262,16 @@ export class AsyncListComponent<
     const amountOfKeys = existingKeys.length;
 
     const removePromise = Promise.all(removeQueue);
-    const rmDist = addDestructors(
-      [
-        async () => {
-          await removePromise;
-        },
-      ],
-      this.bottomMarker,
-    );
-    removePromise.then(() => {
-      rmDist?.();
-    });
 
+    if (removeQueue.length) {
+      const destroyFn = async () => {
+        await removePromise;
+      };
+      associateDestroyable(this.parentCtx, [destroyFn]);
+      removePromise.then(() => {
+        removeDestructor(this.parentCtx, destroyFn);
+      });
+    }
     this.updateItems(items, amountOfKeys, keysToRemove, removedIndexes);
   }
   async destroyItem(row: GenericReturnType, key: string) {

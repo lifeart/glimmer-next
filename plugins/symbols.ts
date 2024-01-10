@@ -18,6 +18,7 @@ export const SYMBOLS = {
   $slotsProp: '$slotsProp',
   $propsProp: '$propsProp',
   $attrsProp: '$attrsProp',
+  $_unstableChildComponentWrapper: '$_unstableChildComponentWrapper',
   $eventsProp: '$eventsProp',
   $__if: '$__if',
   $__eq: '$__eq',

@@ -1,10 +1,10 @@
 import {
   addEventListener,
-  addDestructors,
-  NodeReturnType,
+  associateDestroyable,
+  type NodeReturnType,
   type ComponentReturnType,
-  Slots,
-  Component,
+  type Slots,
+  type Component,
   renderElement,
   destroyElement,
 } from '@/utils/component';
@@ -31,11 +31,17 @@ import {
   $attrsProp,
   $propsProp,
   $eventsProp,
+  addToTree,
+  RENDER_TREE,
 } from './shared';
 
 // EMPTY DOM PROPS
 export const $_edp = [[], [], []] as Props;
+export const $_emptySlot = Object.seal(Object.freeze({}));
+
 const $_className = 'className';
+
+let ROOT: Component<any> | null = null;
 
 type ModifierFn = (
   element: HTMLElement,
@@ -137,6 +143,7 @@ function resolveRenderable(
 function addChild(
   element: HTMLElement,
   child: RenderableType | Cell | MergedCell | Function,
+  destructors: Destructors = [],
 ) {
   if (child === null || child === undefined) {
     return;
@@ -151,9 +158,9 @@ function addChild(
     // @ts-expect-error number to string type casting
     api.append(element, api.text(child));
   } else if (isTagLike(child)) {
-    api.append(element, cellToText(child));
+    api.append(element, cellToText(child, destructors));
   } else if (isFn(child)) {
-    addChild(element, resolveRenderable(child));
+    addChild(element, resolveRenderable(child), destructors);
   }
 }
 
@@ -215,6 +222,7 @@ function _DOM(
     | MergedCell
     | Function
   )[],
+  ctx: any,
 ): NodeReturnType {
   const element = api.element(tag);
   const destructors: Destructors = [];
@@ -276,18 +284,83 @@ function _DOM(
     }
   }
   children.forEach((child) => {
-    addChild(element, child);
+    addChild(element, child, destructors);
   });
-
-  addDestructors(destructors, element);
+  associateDestroyable(ctx, destructors);
   return def(element);
 }
+let unstableWrapperId = 0;
+export function $_unstableChildComponentWrapper(
+  roots: (context: Component<any>) => (NodeReturnType | ComponentReturnType)[],
+  ctx: any,
+) {
+  return component(
+    function UnstableChildWrapper(this: Component<any>) {
+      if (import.meta.env.DEV) {
+        // @ts-expect-error construct signature
+        this.debugName = `UnstableChildWrapper-${unstableWrapperId++}`;
+      }
+      return $_fin(roots(this), {}, false, this);
+    } as unknown as Component<any>,
+    {},
+    { attrs: [], props: [], events: [] },
+    ctx,
+  );
+}
 
-function component(comp: ComponentReturnType | Component) {
-  if ($template in comp) {
-    return (comp[$template] as unknown as () => ComponentReturnType)();
+function buildGraph(obj: Record<string, unknown>, root: any, children: any[]) {
+  const name =
+    root.debugName || root?.constructor?.name || root?.tagName || 'unknown';
+  if (children.length === 0) {
+    obj[name] = null;
+    return obj;
   }
-  return comp;
+  obj[name] = children.map((child) => {
+    return buildGraph({}, child, RENDER_TREE.get(child) ?? []);
+  });
+  return obj;
+}
+
+function drawTreeToConsole() {
+  const ref = buildGraph(
+    {} as Record<string, unknown>,
+    ROOT,
+    RENDER_TREE.get(ROOT!) ?? [],
+  );
+  console.log(JSON.stringify(ref, null, 2));
+  console.log(RENDER_TREE);
+}
+window.drawTreeToConsole = drawTreeToConsole;
+// hello, basic component manager
+function component(
+  comp: ComponentReturnType | Component,
+  args: Record<string, unknown>,
+  fw: FwType,
+  ctx: Component<any>,
+) {
+  if (ROOT === null) {
+    // @todo - move it to 'renderComponent'
+    ROOT = ctx;
+  }
+  // @ts-expect-error construct signature
+  const instance = new (comp as unknown as Component<any>)(args, fw);
+  // todo - fix typings here
+  if ($template in instance) {
+    const result = (
+      instance[$template] as unknown as () => ComponentReturnType
+    )();
+    if (result.ctx !== null) {
+      // here is workaround for simple components @todo - figure out how to show context-less components in tree
+      // for now we don't adding it
+      addToTree(ctx, result.ctx);
+    }
+    return result;
+  }
+  if (instance.ctx !== null) {
+    // for now we adding only components with context
+    addToTree(ctx, instance.ctx);
+  }
+  return instance;
 }
 type Fn = () => unknown;
 function def(node: Node) {
@@ -303,6 +376,7 @@ function mergeComponents(
   >,
 ) {
   const nodes: Array<Node> = [];
+  const contexts: Array<Component> = [];
   components.forEach((component) => {
     if (import.meta.env.DEV) {
       if (typeof component === 'boolean' || typeof component === 'undefined') {
@@ -316,6 +390,9 @@ function mergeComponents(
       nodes.push(api.text(String(component)));
     } else if ('index' in component) {
       if ($nodes in component) {
+        if (component.ctx !== null) {
+          contexts.push(component.ctx);
+        }
         nodes.push(...component[$nodes]);
       } else if ($node in component) {
         nodes.push(component[$node]);
@@ -326,8 +403,10 @@ function mergeComponents(
   });
   return {
     [$nodes]: nodes,
-    [$slotsProp]: {},
+    [$slotsProp]: $_emptySlot,
     index: 0,
+    // @todo - fix proper ctx merging here;
+    ctx: contexts.length > 0 ? contexts[0] : null,
   };
 }
 
@@ -340,6 +419,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots) {
         if (isRendered) {
           throw new Error(`Slot ${name} is already rendered`);
         }
+        // @todo - figure out destructors for slot (shoud work, bu need to be tested)
         const elements = value(...params());
         const nodes = mergeComponents(
           elements.map((el) => {
@@ -350,7 +430,8 @@ function slot(name: string, params: () => unknown[], $slot: Slots) {
               if (isPrimitive(value)) {
                 return api.text(String(value));
               } else if (isTagLike(value)) {
-                return cellToText(value);
+                // @todo - fix destructors in slots;
+                return cellToText(value, []);
               } else {
                 return value;
               }
@@ -400,33 +481,31 @@ function withSlots(
   return component;
 }
 
-function cellToText(cell: Cell | MergedCell) {
+function cellToText(cell: Cell | MergedCell, destructors: Destructors) {
   const textNode = api.text('');
-  addDestructors(
-    [
-      opcodeFor(cell, (value) => {
-        api.textContent(textNode, String(value ?? ''));
-      }),
-    ],
-    textNode,
+  destructors.push(
+    opcodeFor(cell, (value) => {
+      api.textContent(textNode, String(value ?? ''));
+    }),
   );
   return textNode;
 }
 function text(
   text: string | number | null | Cell | MergedCell | Fn,
+  destructors: Destructors,
 ): NodeReturnType {
   if (isPrimitive(text)) {
     // @ts-expect-error number to string type casting
     return def(api.text(text));
   } else if (text !== null && isTagLike(text)) {
-    return def(cellToText(text as AnyCell));
+    return def(cellToText(text as AnyCell, destructors));
   } else if (isFn(text)) {
     // @todo update is const check here
     const maybeFormula = resolveRenderable(text as Fn);
     if (isPrimitive(maybeFormula)) {
       return def(api.text(String(maybeFormula)));
     } else if (isTagLike(maybeFormula)) {
-      return def(cellToText(maybeFormula));
+      return def(cellToText(maybeFormula, destructors));
     } else {
       // @ts-expect-error 'ComponentReturnType | NodeReturnType' is not assignable to type 'string | number | null'
       return $_text(maybeFormula);
@@ -442,41 +521,50 @@ function ifCond(
   cell: Cell<boolean>,
   trueBranch: BranchCb,
   falseBranch: BranchCb,
+  ctx: Component<any>,
 ) {
   const outlet = api.fragment();
-  ifCondition(cell, outlet, trueBranch, falseBranch);
+  // @ts-expect-error new
+  const instance = new ifCondition(ctx, cell, outlet, trueBranch, falseBranch);
+  addToTree(ctx, instance);
   return def(outlet);
 }
 export function $_eachSync<T extends { id: number }>(
   items: Cell<T[]> | MergedCell,
   fn: (item: T) => Array<ComponentReturnType | NodeReturnType>,
   key: string | null = null,
+  ctx: Component<any>,
 ) {
   const outlet = api.fragment();
-  new SyncListComponent(
+  const instance = new SyncListComponent(
     {
       tag: items as Cell<T[]>,
       ItemComponent: fn,
+      ctx,
       key,
     },
     outlet,
   );
+  addToTree(ctx, instance as unknown as Component<any>);
   return def(outlet);
 }
 export function $_each<T extends { id: number }>(
   items: Cell<T[]> | MergedCell,
   fn: (item: T) => Array<ComponentReturnType | NodeReturnType>,
   key: string | null = null,
+  ctx: Component<any>,
 ) {
   const outlet = api.fragment();
-  new AsyncListComponent(
+  const instance = new AsyncListComponent(
     {
       tag: items as Cell<T[]>,
       ItemComponent: fn,
       key,
+      ctx,
     },
     outlet,
   );
+  addToTree(ctx, instance as unknown as Component<any>);
   return def(outlet);
 }
 const ArgProxyHandler = {
@@ -510,7 +598,7 @@ export function $_fin(
   roots: Array<ComponentReturnType | NodeReturnType>,
   slots: Slots,
   isStable: boolean,
-  ctx: unknown,
+  ctx: Component<any> | null,
 ) {
   const nodes: Array<
     HTMLElement | ComponentReturnType | NodeReturnType | Text | Comment
@@ -539,19 +627,18 @@ export function $_fin(
   }
   if (ctx !== null) {
     // no need to add destructors because component seems template-only and should not have `registerDestructor` flow.
-    addDestructors(
-      [
-        () => {
-          executeDestructors(ctx as unknown as object);
-        },
-      ],
-      nodes[0],
-    );
+
+    associateDestroyable(ctx, [
+      () => {
+        executeDestructors(ctx as unknown as object);
+      },
+    ]);
   }
 
   return {
     [$nodes]: nodes,
     [$slotsProp]: slots,
+    ctx,
     index: 0,
   };
 }

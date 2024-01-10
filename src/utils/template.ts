@@ -5,6 +5,7 @@ export function hbs(tpl: TemplateStringsArray) {
     [$nodes]: [],
     [$slotsProp]: {},
     index: 0,
+    ctx: null,
     tpl,
   };
 }

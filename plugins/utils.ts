@@ -7,8 +7,8 @@ export type HBSControlExpression = {
   isControl: true;
   condition: string;
   blockParams: string[];
-  children: Array<HBSNode | string>;
-  inverse: Array<HBSNode | string> | null;
+  children: Array<HBSNode | HBSControlExpression | string>;
+  inverse: Array<HBSNode | HBSControlExpression | string> | null;
   key: string | null;
   isSync: boolean;
 };
@@ -23,6 +23,11 @@ export type HBSNode = {
   events: [string, string][];
   children: (string | HBSNode | HBSControlExpression)[];
 };
+
+let ctxIndex = 0;
+export function nextCtxName() {
+  return `ctx${ctxIndex++}`;
+}
 
 export function escapeString(str: string) {
   const lines = str.split('\n');
@@ -79,6 +84,7 @@ export function resolvedChildren(els: ASTv1.Node[]) {
 
 export function serializeChildren(
   children: Array<string | HBSNode | HBSControlExpression>,
+  ctxName: string,
 ) {
   if (children.length === 0) {
     return '';
@@ -91,17 +97,20 @@ export function serializeChildren(
         }
         return `${SYMBOLS.TEXT}(${escapeString(child)})`;
       }
-      return serializeNode(child);
+      return serializeNode(child, ctxName);
     })
     .join(', ')}`;
 }
 
-function toChildArray(childs: Array<HBSNode | string> | null): string {
+function toChildArray(
+  childs: Array<HBSNode | HBSControlExpression | string> | null,
+  ctxName = 'this',
+): string {
   if (!childs) {
     return '[]';
   }
   return `[${childs
-    .map((child) => serializeNode(child))
+    .map((child) => serializeNode(child, ctxName))
     .filter((el) => el)
     .join(', ')}]`;
 }
@@ -160,8 +169,30 @@ function toArray(
     .join(', ')}]`;
 }
 
+function hasStableChildsForControlNode(
+  childs: null | (null | string | HBSNode | HBSControlExpression)[],
+) {
+  if (childs === null) {
+    return true;
+  }
+  let hasStableChild = false;
+  if (childs.length === 1 && typeof childs[0] === 'object') {
+    const child = childs[0];
+    if (child === null) {
+      return true;
+    }
+    if ('isControl' in child) {
+      hasStableChild = false;
+    } else {
+      hasStableChild = true;
+    }
+  }
+  return hasStableChild;
+}
+
 export function serializeNode(
   node: string | null | HBSNode | HBSControlExpression,
+  ctxName = 'this',
 ): string | undefined | null {
   if (node === null) {
     return null;
@@ -182,16 +213,61 @@ export function serializeNode(
       eachKey = '@identity';
     }
 
+    const newCtxName = nextCtxName();
+
     if (key === '@each') {
-      return `${
-        isSync ? SYMBOLS.EACH_SYNC : SYMBOLS.EACH
-      }(${arrayName}, (${paramNames.join(',')}) => ${toChildArray(childs)}, ${
-        eachKey ? escapeString(eachKey) : null
-      })`;
+      if (paramNames.length === 1) {
+        paramNames.push('index');
+      }
+      let hasStableChild = hasStableChildsForControlNode(childs);
+      const FN_NAME = isSync ? SYMBOLS.EACH_SYNC : SYMBOLS.EACH;
+      const EACH_KEY = eachKey ? escapeString(eachKey) : null;
+      const FN_FN_ARGS = `${paramNames.join(',')},${newCtxName}`;
+      // unstable childs need to be wrapped in a component function
+      if (hasStableChild) {
+        return `${FN_NAME}(${arrayName}, (${FN_FN_ARGS}) => ${toChildArray(
+          childs,
+          newCtxName,
+        )}, ${EACH_KEY}, ${ctxName})`;
+      } else {
+        const extraContextName = nextCtxName();
+        return `${FN_NAME}(${arrayName}, (${FN_FN_ARGS}) => [${
+          SYMBOLS.$_unstableChildComponentWrapper
+        }((${extraContextName}) => ${toChildArray(
+          childs,
+          extraContextName,
+        )}, ${newCtxName})], ${EACH_KEY}, ${ctxName})`;
+      }
     } else if (key === '@if') {
-      return `${SYMBOLS.IF}(${arrayName}, () => ${toChildArray(
-        childs,
-      )}, () => ${toChildArray(inverses)} )`;
+      let hasStableTrueChild = hasStableChildsForControlNode(childs);
+      let hasStableFalseChild = hasStableChildsForControlNode(inverses);
+      // @todo - figure out cases where we could avoid wrapping in a component
+      hasStableTrueChild = false;
+      hasStableFalseChild = false;
+      let trueBranch = `(${newCtxName}) => ${toChildArray(childs, newCtxName)}`;
+      let extraContextName = nextCtxName();
+      if (!hasStableTrueChild) {
+        trueBranch = `(${newCtxName}) => ${
+          SYMBOLS.$_unstableChildComponentWrapper
+        }((${extraContextName}) => ${toChildArray(
+          childs,
+          extraContextName,
+        )}, ${newCtxName})`;
+      }
+
+      let falseBranch = `(${newCtxName}) => ${toChildArray(
+        inverses,
+        newCtxName,
+      )}`;
+      if (!hasStableFalseChild) {
+        falseBranch = `(${newCtxName}) => ${
+          SYMBOLS.$_unstableChildComponentWrapper
+        }((${extraContextName}) => ${toChildArray(
+          inverses,
+          extraContextName,
+        )}, ${newCtxName})`;
+      }
+      return `${SYMBOLS.IF}(${arrayName}, ${trueBranch}, ${falseBranch}, ${ctxName})`;
     }
   } else if (
     typeof node === 'object' &&
@@ -229,7 +305,7 @@ export function serializeNode(
     if (isSecondArgEmpty) {
       if (!secondArg.includes('...')) {
         isSecondArgEmpty = true;
-        secondArg = '';
+        secondArg = 'void 0';
       } else {
         isSecondArgEmpty = false;
       }
@@ -238,13 +314,13 @@ export function serializeNode(
     if (node.selfClosing) {
       // @todo - we could pass `hasStableChild` ans hasBlock / hasBlockParams to the DOM helper
       if (flags.IS_GLIMMER_COMPAT_MODE === false) {
-        return `${SYMBOLS.COMPONENT}(new ${node.tag}(${toObject(
+        return `${SYMBOLS.COMPONENT}(${node.tag},${toObject(
           args,
-        )}, ${secondArg}))`;
+        )}, ${secondArg}, ${ctxName})`;
       } else {
-        return `${SYMBOLS.COMPONENT}(new ${node.tag}(${SYMBOLS.ARGS}(${toObject(
+        return `${SYMBOLS.COMPONENT}(${node.tag},${SYMBOLS.ARGS}(${toObject(
           args,
-        )}), ${secondArg}))`;
+        )}), ${secondArg}, ${ctxName})`;
       }
     } else {
       const slots: HBSNode[] = node.children.filter((child) => {
@@ -260,7 +336,7 @@ export function serializeNode(
         slots.push(node);
       }
       const serializedSlots = slots.map((slot) => {
-        const slotChildren = serializeChildren(slot.children);
+        const slotChildren = serializeChildren(slot.children, ctxName);
         const slotName = slot.tag.startsWith(':')
           ? slot.tag.slice(1)
           : 'default';
@@ -268,9 +344,9 @@ export function serializeNode(
           ',',
         )}) => [${slotChildren}]`;
       });
-      let fn = `new ${node.tag}(${SYMBOLS.ARGS}(${toObject(
+      let fn = `${node.tag},${SYMBOLS.ARGS}(${toObject(
         args,
-      )}), ${secondArg})`;
+      )}), ${secondArg}, ${ctxName}`;
       if (flags.IS_GLIMMER_COMPAT_MODE === false) {
         fn = `new ${node.tag}(${toObject(args)}, ${secondArg})`;
       }
@@ -294,7 +370,8 @@ export function serializeNode(
     }
     return `${SYMBOLS.TAG}('${node.tag}', ${tagProps}, [${serializeChildren(
       node.children,
-    )}])`;
+      ctxName,
+    )}], ${ctxName})`;
   } else {
     if (typeof node === 'string') {
       if (isPath(node)) {
