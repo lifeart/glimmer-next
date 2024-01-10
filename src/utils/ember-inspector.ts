@@ -89,9 +89,10 @@ const dataAdapter = {
     }
   },
   acceptsModelName: true,
+  // @ts-expect-error
   getRecordFilterValues(item: Cell | MergedCell) {
     return {
-      isNew: true && item,
+      isNew: true,
       isModified: true,
       isClean: true,
     };
@@ -151,7 +152,9 @@ const dataAdapter = {
     if (modelName === 'Cell') {
       recordsAdded(getCells().map((c) => this.toRecord(c)));
     } else if (modelName === 'MergedCell') {
-      recordsAdded(getMergedCells().map((c) => this.toRecord(c)));
+      recordsAdded(getMergedCells().filter((c) => {
+        return !c.isDestroyed;
+      }).map((c) => this.toRecord(c)));
     }
 
     console.log('watchRecords', recordsUpdated, recordsRemoved);
@@ -574,6 +577,7 @@ let requireModule = undefined;
       };
     } else if (name === '@ember/-internals/metal') {
       return {
+        // @ts-expect-error
         tagForProperty(obj: Record<string, unknown>, key: string) {
           if (obj instanceof Cell || obj instanceof MergedCell) {
             return obj;
