@@ -50,7 +50,11 @@ class BasicListComponent<T extends { id: number }> {
   nodes: Node[] = [];
   index = 0;
   parentCtx!: Component<any>;
-  ItemComponent: (item: T, index: number, ctx: Component<any>) => GenericReturnType;
+  ItemComponent: (
+    item: T,
+    index: number,
+    ctx: Component<any>,
+  ) => GenericReturnType;
   bottomMarker!: Comment;
   key: string = '@identity';
   tag!: Cell<T[]> | MergedCell;
@@ -165,7 +169,11 @@ class BasicListComponent<T extends { id: number }> {
       const key = this.keyForItem(item);
       const maybeRow = this.keyMap.get(key);
       if (!maybeRow) {
-        const row = this.ItemComponent(item, index, this as unknown as Component<any>);
+        const row = this.ItemComponent(
+          item,
+          index,
+          this as unknown as Component<any>,
+        );
         this.keyMap.set(key, row);
         row.forEach((item) => {
           renderElement(targetNode.parentNode!, item, targetNode);
