@@ -60,9 +60,19 @@ export function addToTree(
     });
   }
 
-  if (!node) {
-    throw new Error('invalid node');
+  if (import.meta.env.DEV) {
+    if (!node) {
+      throw new Error('invalid node');
+    }
+    if (!ctx) {
+      throw new Error('invalid ctx');
+    }
+  } else {
+    if (!ctx) {
+      console.error('Unable to set child for unknown parent');
+    }
   }
+
   if (!RENDER_TREE.has(ctx)) {
     RENDER_TREE.set(ctx, []);
   }

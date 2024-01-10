@@ -18,11 +18,7 @@ import {
 import { evaluateOpcode, opcodeFor } from '@/utils/vm';
 import { SyncListComponent, AsyncListComponent } from '@/utils/list';
 import { ifCondition } from '@/utils/if';
-import {
-  DestructorFn,
-  Destructors,
-  executeDestructors,
-} from './destroyable';
+import { DestructorFn, Destructors, executeDestructors } from './destroyable';
 import { api } from '@/utils/dom-api';
 import {
   isFn,
