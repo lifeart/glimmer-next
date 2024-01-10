@@ -241,6 +241,7 @@ export function serializeNode(
     } else if (key === '@if') {
       let hasStableTrueChild = hasStableChildsForControlNode(childs);
       let hasStableFalseChild = hasStableChildsForControlNode(inverses);
+      // @todo - figure out cases where we could avoid wrapping in a component
       hasStableTrueChild = false;
       hasStableFalseChild = false;
       let trueBranch = `(${newCtxName}) => ${toChildArray(childs, newCtxName)}`;
