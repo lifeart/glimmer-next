@@ -21,16 +21,16 @@ const Row = <template>
   <tr class='bg-white border-b dark:bg-gray-800 dark:border-gray-700'>
     <th
       scope='row'
-      class='py-4 px-6 font-medium text-gray-900 whitespace-nowrap dark:text-white'
+      class='py-2 px-6 font-medium text-gray-900 whitespace-nowrap dark:text-white'
     >{{@label}}</th>
-    <td class='bg-red-100 py-4 px-6'>
+    <td class='bg-red-100 py-2 px-6'>
       {{withDiff @gxt @vanila}}
     </td>
-    <td class='bg-red-100 py-4 px-6'>
+    <td class='bg-red-100 py-2 px-6'>
       {{withDiff @gxt @svelte}}
     </td>
-    <td class='bg-red-100 py-4 px-6 text-green-500'>{{withDiff @gxt @gxt}}</td>
-    <td class='bg-red-100 py-4 px-6 text-red-500'>{{withDiff
+    <td class='bg-red-100 py-2 px-6 text-green-500'>{{withDiff @gxt @gxt}}</td>
+    <td class='bg-red-100 py-2 px-6 text-red-500'>{{withDiff
         @gxt
         @glimmer
       }}</td>
