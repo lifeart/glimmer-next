@@ -624,7 +624,7 @@ let requireModule = undefined;
           // if (tag && tag.value) {
           //   return tag.value;
           // }
-          console.log('valueForTag', tag);
+          // console.log('valueForTag', tag);
           // return undefined;
         },
         validateTag() {
