@@ -2,7 +2,6 @@ import { PluginOption, defineConfig } from "vite";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { compiler } from "./plugins/compiler.ts";
-import { flags } from "./plugins/flags.ts";
 import circleDependency from "vite-plugin-circular-dependency";
 import dts from "vite-plugin-dts";
 import babel from "vite-plugin-babel";
@@ -16,6 +15,8 @@ const currentPath = path.dirname(fileURLToPath(self));
 const plugins: PluginOption[] = [];
 
 if (isLibBuild) {
+  // this section responsible for @lifeart/gxt build itself
+  // @todo - move to compiler plugin
   plugins.push(
     babel({
       filter: /\.ts$/,
@@ -49,17 +50,13 @@ if (isLibBuild) {
 
 export default defineConfig(({ mode }) => ({
   plugins: [...plugins, compiler(mode), circleDependency({})],
-  define: {
-    IS_GLIMMER_COMPAT_MODE: flags.IS_GLIMMER_COMPAT_MODE,
-    RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES:
-      flags.RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES,
-  },
   build: {
     lib: isLibBuild
       ? {
           entry: [
             path.join(currentPath, "src", "utils", "index.ts"),
             path.join(currentPath, "plugins", "compiler.ts"),
+            path.join(currentPath, "src", "utils", "ember-inspector.ts"),
           ],
           name: "gxt",
           formats: ["es"],
@@ -68,7 +65,7 @@ export default defineConfig(({ mode }) => ({
       : undefined,
     modulePreload: false,
     target: "esnext",
-    minify: "terser",
+    minify: mode === "production" ? "terser" : false,
     rollupOptions: {
       treeshake: "recommended",
       input: !isLibBuild
@@ -86,29 +83,38 @@ export default defineConfig(({ mode }) => ({
           ]
         : [],
     },
-    terserOptions: {
-      module: true,
-      compress: {
-        hoist_funs: true,
-        inline: 1,
-        passes: 3,
-        unsafe: true,
-        unsafe_symbols: true,
-        computed_props: true,
-      },
-      mangle: {
-        module: true,
-        toplevel: true,
-        properties: false,
-      },
-    },
+    terserOptions:
+      mode === "production"
+        ? {
+            module: true,
+            compress: {
+              hoist_funs: true,
+              inline: 1,
+              passes: 3,
+              unsafe: true,
+              unsafe_symbols: true,
+              computed_props: true,
+            },
+            mangle: {
+              module: true,
+              toplevel: true,
+              properties: false,
+            },
+          }
+        : {},
   },
   resolve: {
     alias: {
       "@/components": path.join(currentPath, "src", "components"),
       "@/utils": path.join(currentPath, "src", "utils"),
-      "@lifeart/gxt": path.join(currentPath, "src", "utils", "index.ts"),
       "@/tests": path.join(currentPath, "src", "tests"),
+      "@lifeart/gxt/ember-inspector": path.join(
+        currentPath,
+        "src",
+        "utils",
+        "ember-inspector.ts",
+      ),
+      "@lifeart/gxt": path.join(currentPath, "src", "utils", "index.ts"),
     },
   },
 }));

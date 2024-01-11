@@ -1,6 +1,5 @@
 import '@glint/environment-glimmerx';
 import '@glint/environment-ember-template-imports';
-
 import './style.css';
 
 import { createBenchmark } from '@/utils/benchmark';
@@ -17,6 +16,9 @@ import {
 // https://github.com/glimmerjs/glimmer-vm/issues/1540
 
 export default async function render() {
+  if (IS_DEV_MODE) {
+    await import('@lifeart/gxt/ember-inspector');
+  }
   const benchmark = createBenchmark();
 
   // starting app

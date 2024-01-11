@@ -15,7 +15,8 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "tsc && vite build --mode development",
+    "build:prod": "tsc && vite build",
     "build-lib": "tsc && vite build -- --lib",
     "preview": "vite preview",
     "prepublishOnly": "npm run build-lib && node ./utils/write-compiler-types.js",
@@ -28,6 +29,7 @@
     "dist/index.d.ts",
     "dist/gxt.index.es.js",
     "dist/gxt.compiler.es.js",
+    "dist/gxt.ember-inspector.es.js",
     "compiler.d.ts"
   ],
   "module": "./dist/gxt.index.es.js",
@@ -40,6 +42,10 @@
     "./compiler": {
       "import": "./dist/gxt.compiler.es.js",
       "types": "./dist/compiler.d.ts"
+    },
+    "./ember-inspector": {
+      "import": "./dist/gxt.ember-inspector.es.js",
+      "types": "./dist/src/utils/ember-inspector.d.ts"
     }
   },
   "devDependencies": {
@@ -70,6 +76,7 @@
     "@babel/core": "^7.23.6",
     "@babel/preset-typescript": "^7.23.3",
     "@glimmer/syntax": "^0.87.1",
+    "backburner.js": "^2.8.0",
     "content-tag": "^1.2.2"
   }
 }

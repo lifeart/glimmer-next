@@ -2,13 +2,24 @@ import { type Plugin } from 'vite';
 import { Preprocessor } from 'content-tag';
 import { transform } from './test';
 import { MAIN_IMPORT } from './symbols';
+import { flags } from './flags.ts';
+
 const p = new Preprocessor();
 
 export function compiler(mode: string): Plugin {
   return {
     enforce: 'pre',
     name: 'glimmer-next',
-
+    config(config, mode) {
+      const isLibBuild = config.build?.lib !== undefined;
+      const defineValues: Record<string, boolean> = flags;
+      if (!isLibBuild) {
+        defineValues['IS_DEV_MODE'] = mode.mode === 'development';
+      }
+      return {
+        define: defineValues,
+      };
+    },
     transform(code: string, file: string) {
       const ext = file.split('.').pop();
       if (ext === 'gjs' || ext === 'gts') {

@@ -16,7 +16,7 @@ type maybePromise = undefined | Promise<void>;
 function runEffectDestructor(destructor: maybeDestructor) {
   if (destructor !== undefined) {
     const result = destructor() as unknown as maybePromise;
-    if (import.meta.env.DEV) {
+    if (IS_DEV_MODE) {
       if (result && result instanceof Promise) {
         throw new Error(
           `Effect destructor can't be a promise: ${destructor.toString()}`,
@@ -36,7 +36,7 @@ export function effect(cb: () => void): () => void {
     return sourceTag.value;
   }, 'effect');
   const destroyOpcode = opcodeFor(tag, (value: unknown) => {
-    if (import.meta.env.DEV) {
+    if (IS_DEV_MODE) {
       if (value instanceof Promise) {
         throw new Error(`Effect can't be a promise: ${cb.toString()}`);
       }

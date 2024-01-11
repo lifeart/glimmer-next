@@ -17,11 +17,23 @@ export const tagsToRevalidate: Set<Cell> = new Set();
 // List of derived tags for each cell
 export const relatedTags: WeakMap<Cell, Set<MergedCell>> = new WeakMap();
 
-window['getVM'] = () => ({
-  relatedTags,
-  tagsToRevalidate,
-  opsForTag,
-});
+const DEBUG_MERGED_CELLS = new Set<MergedCell>();
+const DEBUG_CELLS = new Set<Cell>();
+
+export function getCells() {
+  return Array.from(DEBUG_CELLS);
+}
+export function getMergedCells() {
+  return Array.from(DEBUG_MERGED_CELLS);
+}
+
+if (IS_DEV_MODE) {
+  window['getVM'] = () => ({
+    relatedTags,
+    tagsToRevalidate,
+    opsForTag,
+  });
+}
 
 // console.info({
 //   opsForTag,
@@ -56,8 +68,9 @@ export class Cell<T extends unknown = unknown> {
   [isTag] = true;
   constructor(value: T, debugName?: string) {
     this._value = value;
-    if (import.meta.env.DEV) {
+    if (IS_DEV_MODE) {
       this._debugName = debugName;
+      DEBUG_CELLS.add(this);
     }
   }
   get value() {
@@ -123,8 +136,9 @@ export class MergedCell {
   [isTag] = true;
   constructor(fn: Fn | Function, debugName?: string) {
     this.fn = fn;
-    if (import.meta.env.DEV) {
+    if (IS_DEV_MODE) {
       this._debugName = debugName;
+      DEBUG_MERGED_CELLS.add(this);
     }
   }
   destroy() {
@@ -135,6 +149,9 @@ export class MergedCell {
         relatedTags.get(cell)?.delete(this);
       });
       this.relatedCells.clear();
+    }
+    if (IS_DEV_MODE) {
+      DEBUG_MERGED_CELLS.delete(this);
     }
   }
   get value() {
@@ -183,7 +200,7 @@ export async function executeTag(tag: Cell | MergedCell) {
       }
     }
   } catch (e: any) {
-    if (import.meta.env.DEV) {
+    if (IS_DEV_MODE) {
       console.error({
         message: 'Error executing tag',
         error: e,

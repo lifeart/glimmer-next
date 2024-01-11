@@ -7,6 +7,7 @@ declare global {
     getVM: () => any;
   }
 
+  const IS_DEV_MODE: boolean;
   const IS_GLIMMER_COMPAT_MODE: boolean;
   const RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES: boolean;
 }

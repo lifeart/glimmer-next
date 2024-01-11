@@ -33,6 +33,7 @@ import {
   $eventsProp,
   addToTree,
   RENDER_TREE,
+  setBounds,
 } from './shared';
 
 // EMPTY DOM PROPS
@@ -42,6 +43,10 @@ export const $_emptySlot = Object.seal(Object.freeze({}));
 const $_className = 'className';
 
 let ROOT: Component<any> | null = null;
+
+export function getRoot() {
+  return ROOT;
+}
 
 type ModifierFn = (
   element: HTMLElement,
@@ -296,7 +301,7 @@ export function $_unstableChildComponentWrapper(
 ) {
   return component(
     function UnstableChildWrapper(this: Component<any>) {
-      if (import.meta.env.DEV) {
+      if (IS_DEV_MODE) {
         // @ts-expect-error construct signature
         this.debugName = `UnstableChildWrapper-${unstableWrapperId++}`;
       }
@@ -308,29 +313,36 @@ export function $_unstableChildComponentWrapper(
   );
 }
 
-function buildGraph(obj: Record<string, unknown>, root: any, children: any[]) {
-  const name =
-    root.debugName || root?.constructor?.name || root?.tagName || 'unknown';
-  if (children.length === 0) {
-    obj[name] = null;
+if (IS_DEV_MODE) {
+  function buildGraph(
+    obj: Record<string, unknown>,
+    root: any,
+    children: any[],
+  ) {
+    const name =
+      root.debugName || root?.constructor?.name || root?.tagName || 'unknown';
+    if (children.length === 0) {
+      obj[name] = null;
+      return obj;
+    }
+    obj[name] = children.map((child) => {
+      return buildGraph({}, child, RENDER_TREE.get(child) ?? []);
+    });
     return obj;
   }
-  obj[name] = children.map((child) => {
-    return buildGraph({}, child, RENDER_TREE.get(child) ?? []);
-  });
-  return obj;
+
+  function drawTreeToConsole() {
+    const ref = buildGraph(
+      {} as Record<string, unknown>,
+      ROOT,
+      RENDER_TREE.get(ROOT!) ?? [],
+    );
+    console.log(JSON.stringify(ref, null, 2));
+    console.log(RENDER_TREE);
+  }
+  window.drawTreeToConsole = drawTreeToConsole;
 }
 
-function drawTreeToConsole() {
-  const ref = buildGraph(
-    {} as Record<string, unknown>,
-    ROOT,
-    RENDER_TREE.get(ROOT!) ?? [],
-  );
-  console.log(JSON.stringify(ref, null, 2));
-  console.log(RENDER_TREE);
-}
-window.drawTreeToConsole = drawTreeToConsole;
 // hello, basic component manager
 function component(
   comp: ComponentReturnType | Component,
@@ -353,12 +365,18 @@ function component(
       // here is workaround for simple components @todo - figure out how to show context-less components in tree
       // for now we don't adding it
       addToTree(ctx, result.ctx);
+      if (IS_DEV_MODE) {
+        setBounds(result);
+      }
     }
     return result;
   }
   if (instance.ctx !== null) {
     // for now we adding only components with context
     addToTree(ctx, instance.ctx);
+    if (IS_DEV_MODE) {
+      setBounds(instance);
+    }
   }
   return instance;
 }
@@ -378,7 +396,7 @@ function mergeComponents(
   const nodes: Array<Node> = [];
   const contexts: Array<Component> = [];
   components.forEach((component) => {
-    if (import.meta.env.DEV) {
+    if (IS_DEV_MODE) {
       if (typeof component === 'boolean' || typeof component === 'undefined') {
         throw new Error(`
           Woops, looks like we trying to render boolean or undefined to template, check used helpers.
@@ -583,7 +601,28 @@ const ArgProxyHandler = {
 };
 export function $_args(args: Record<string, unknown>) {
   if (IS_GLIMMER_COMPAT_MODE) {
-    return new Proxy(args, ArgProxyHandler);
+    if (IS_DEV_MODE) {
+      const newArgs: Record<string, () => unknown> = {};
+      Object.keys(args).forEach((key) => {
+        try {
+          Object.defineProperty(newArgs, key, {
+            get() {
+              if (!isFn(args[key])) {
+                return args[key];
+              }
+              // @ts-expect-error function signature
+              return args[key]();
+            },
+            enumerable: true,
+          });
+        } catch (e) {
+          console.error(e);
+        }
+      });
+      return newArgs;
+    } else {
+      return new Proxy(args, ArgProxyHandler);
+    }
   } else {
     return args;
   }
@@ -613,7 +652,7 @@ export function $_fin(
     }
   });
   if (!isStable) {
-    if (import.meta.env.DEV) {
+    if (IS_DEV_MODE) {
       nodes.unshift(
         api.comment(`unstable root enter node: ${ctx?.constructor.name}`),
       );
