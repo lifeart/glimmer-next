@@ -54,14 +54,14 @@ export function addToTree(
       }
     },
   ]);
-  if (debugName) {
-    Object.defineProperty(node, 'debugName', {
-      value: debugName,
-      enumerable: false,
-    });
-  }
 
   if (import.meta.env.DEV) {
+    if (debugName) {
+      Object.defineProperty(node, 'debugName', {
+        value: debugName,
+        enumerable: false,
+      });
+    }
     if (!node) {
       throw new Error('invalid node');
     }

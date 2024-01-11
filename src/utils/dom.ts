@@ -312,29 +312,36 @@ export function $_unstableChildComponentWrapper(
   );
 }
 
-function buildGraph(obj: Record<string, unknown>, root: any, children: any[]) {
-  const name =
-    root.debugName || root?.constructor?.name || root?.tagName || 'unknown';
-  if (children.length === 0) {
-    obj[name] = null;
+if (import.meta.env.DEV) {
+  function buildGraph(
+    obj: Record<string, unknown>,
+    root: any,
+    children: any[],
+  ) {
+    const name =
+      root.debugName || root?.constructor?.name || root?.tagName || 'unknown';
+    if (children.length === 0) {
+      obj[name] = null;
+      return obj;
+    }
+    obj[name] = children.map((child) => {
+      return buildGraph({}, child, RENDER_TREE.get(child) ?? []);
+    });
     return obj;
   }
-  obj[name] = children.map((child) => {
-    return buildGraph({}, child, RENDER_TREE.get(child) ?? []);
-  });
-  return obj;
+
+  function drawTreeToConsole() {
+    const ref = buildGraph(
+      {} as Record<string, unknown>,
+      ROOT,
+      RENDER_TREE.get(ROOT!) ?? [],
+    );
+    console.log(JSON.stringify(ref, null, 2));
+    console.log(RENDER_TREE);
+  }
+  window.drawTreeToConsole = drawTreeToConsole;
 }
 
-function drawTreeToConsole() {
-  const ref = buildGraph(
-    {} as Record<string, unknown>,
-    ROOT,
-    RENDER_TREE.get(ROOT!) ?? [],
-  );
-  console.log(JSON.stringify(ref, null, 2));
-  console.log(RENDER_TREE);
-}
-window.drawTreeToConsole = drawTreeToConsole;
 // hello, basic component manager
 function component(
   comp: ComponentReturnType | Component,
@@ -601,7 +608,7 @@ export function $_args(args: Record<string, unknown>) {
             },
             enumerable: true,
           });
-        } catch(e) {
+        } catch (e) {
           console.error(e);
         }
       });

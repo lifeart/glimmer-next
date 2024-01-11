@@ -248,7 +248,9 @@ export async function destroyElement(
 
 var $newDestructors = new WeakMap<any, Destructors>();
 
-window['getDestructors'] = () => $newDestructors;
+if (import.meta.env.DEV) {
+  window['getDestructors'] = () => $newDestructors;
+}
 
 export function associateDestroyable(ctx: any, destructors: Destructors) {
   if (destructors.length === 0) {

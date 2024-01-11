@@ -35,7 +35,11 @@ export function inspect(this: any, obj: any | null | undefined): string {
   return inspectValue(obj, 0);
 }
 
-function inspectValue(value: any | null | undefined, depth: number, seen?: WeakSet<object>) {
+function inspectValue(
+  value: any | null | undefined,
+  depth: number,
+  seen?: WeakSet<object>,
+) {
   let valueIsArray = false;
   switch (typeof value) {
     case 'undefined':
@@ -82,7 +86,11 @@ function inspectKey(key: string) {
   return SAFE_KEY.test(key) ? key : stringify(key);
 }
 
-function inspectObject<T extends object>(obj: T, depth: number, seen: WeakSet<object>) {
+function inspectObject<T extends object>(
+  obj: T,
+  depth: number,
+  seen: WeakSet<object>,
+) {
   if (depth > DEPTH_LIMIT) {
     return '[Object]';
   }

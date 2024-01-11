@@ -56,9 +56,9 @@ export function ifCondition(
     Object.defineProperty(this, $_debug_args, {
       get() {
         return {
-          "if": lastValue,
-        }
-      }
+          if: lastValue,
+        };
+      },
     });
   }
 

@@ -152,9 +152,13 @@ const dataAdapter = {
     if (modelName === 'Cell') {
       recordsAdded(getCells().map((c) => this.toRecord(c)));
     } else if (modelName === 'MergedCell') {
-      recordsAdded(getMergedCells().filter((c) => {
-        return !c.isDestroyed;
-      }).map((c) => this.toRecord(c)));
+      recordsAdded(
+        getMergedCells()
+          .filter((c) => {
+            return !c.isDestroyed;
+          })
+          .map((c) => this.toRecord(c)),
+      );
     }
 
     console.log('watchRecords', recordsUpdated, recordsRemoved);

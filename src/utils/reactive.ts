@@ -27,11 +27,13 @@ export function getMergedCells() {
   return Array.from(DEBUG_MERGED_CELLS);
 }
 
-window['getVM'] = () => ({
-  relatedTags,
-  tagsToRevalidate,
-  opsForTag,
-});
+if (import.meta.env.DEV) {
+  window['getVM'] = () => ({
+    relatedTags,
+    tagsToRevalidate,
+    opsForTag,
+  });
+}
 
 // console.info({
 //   opsForTag,
@@ -147,6 +149,9 @@ export class MergedCell {
         relatedTags.get(cell)?.delete(this);
       });
       this.relatedCells.clear();
+    }
+    if (import.meta.env.DEV) {
+      DEBUG_MERGED_CELLS.delete(this);
     }
   }
   get value() {
