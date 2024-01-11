@@ -536,12 +536,14 @@ const EmberProxy: any = new Proxy(
           },
         };
       }
-      console.log('EmberProxy', key);
+      // console.log('EmberProxy', key);
       return new Proxy(
         {},
         {
+          // @ts-expect-error
           get(_, key1) {
-            console.log('EmberProxy', key, key1);
+            // backburner
+            // console.log('EmberProxy', key, key1);
           },
         },
       );
@@ -696,7 +698,7 @@ let requireModule = undefined;
 
   // @ts-expect-error
   requireModule.has = function (name) {
-    if (name !== 'ember') {
+    if (name !== 'ember' && name !== '@glimmer/runtime') {
       console.log('requireModule.has', name);
     }
     return true;
