@@ -6,6 +6,7 @@ export const SYMBOLS = {
   EACH_SYNC: '$_eachSync',
   SLOT: '$_slot',
   EMPTY_DOM_PROPS: '$_edp',
+  EMPTY_ARRAY: '$_ea',
   ARGS: '$_args',
   TEXT: '$_text',
   COMPONENT: '$_c',

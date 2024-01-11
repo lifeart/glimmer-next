@@ -369,11 +369,14 @@ export function serializeNode(
     )},${toArray(node.events)}${hasSplatAttrs ? `,$fw` : ''}]`;
     if (tagProps === '[[],[],[]]') {
       tagProps = SYMBOLS.EMPTY_DOM_PROPS;
+    } else {
+      tagProps = tagProps.split('[]').join(SYMBOLS.EMPTY_ARRAY);
     }
-    return `${SYMBOLS.TAG}('${node.tag}', ${tagProps}, [${serializeChildren(
-      node.children,
-      ctxName,
-    )}], ${ctxName})`;
+    let children = `[${serializeChildren(node.children, ctxName)}]`;
+    if (children === '[]') {
+      children = SYMBOLS.EMPTY_ARRAY;
+    }
+    return `${SYMBOLS.TAG}('${node.tag}', ${tagProps}, ${children}, ${ctxName})`;
   } else {
     if (typeof node === 'string' || typeof node === 'number') {
       if (typeof node === 'number') {
