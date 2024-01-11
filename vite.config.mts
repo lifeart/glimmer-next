@@ -56,6 +56,7 @@ export default defineConfig(({ mode }) => ({
           entry: [
             path.join(currentPath, "src", "utils", "index.ts"),
             path.join(currentPath, "plugins", "compiler.ts"),
+            path.join(currentPath, "src", "utils", "ember-inspector.ts"),
           ],
           name: "gxt",
           formats: ["es"],
@@ -106,8 +107,14 @@ export default defineConfig(({ mode }) => ({
     alias: {
       "@/components": path.join(currentPath, "src", "components"),
       "@/utils": path.join(currentPath, "src", "utils"),
-      "@lifeart/gxt": path.join(currentPath, "src", "utils", "index.ts"),
       "@/tests": path.join(currentPath, "src", "tests"),
+      "@lifeart/gxt/ember-inspector": path.join(
+        currentPath,
+        "src",
+        "utils",
+        "ember-inspector.ts",
+      ),
+      "@lifeart/gxt": path.join(currentPath, "src", "utils", "index.ts"),
     },
   },
 }));
