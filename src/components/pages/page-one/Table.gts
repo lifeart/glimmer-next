@@ -1,3 +1,15 @@
+const originalValue = (value: string) => {
+  return value.split(' ')[0] + ' ';
+};
+const colorForDiff = (diff: string) => {
+  if (diff.includes('+')) {
+    return 'text-red-500';
+  } else if (diff.includes('-')) {
+    return 'text-green-500';
+  } else {
+    return '';
+  }
+};
 const withDiff = (gxtValue: string, glimmerValue: string) => {
   const gxt = parseFloat(gxtValue.split(' ')[0]);
   const glimmer = parseFloat(glimmerValue.split(' ')[0]);
@@ -13,8 +25,7 @@ const withDiff = (gxtValue: string, glimmerValue: string) => {
     tail = '';
   }
 
-  const renderValue = glimmerValue.split(' ')[0];
-  return `${renderValue} ${tail}`;
+  return `${tail}`;
 };
 
 const Row = <template>
@@ -23,23 +34,35 @@ const Row = <template>
       scope='row'
       class='py-2 px-6 font-medium text-gray-900 whitespace-nowrap dark:text-white'
     >{{@label}}</th>
-    <td class='bg-red-100 py-2 px-6'>
-      {{withDiff @gxt @vanila}}
+    <td class='bg-red-100 py-2 px-6'>{{originalValue @vanila}}
+      <span class={{colorForDiff (withDiff @gxt @vanila)}}>
+        {{withDiff @gxt @vanila}}
+      </span>
     </td>
-    <td class='bg-red-100 py-2 px-6'>
-      {{withDiff @gxt @svelte}}
+    <td class='bg-red-100 py-2 px-6'>{{originalValue @svelte}}
+      <span class={{colorForDiff (withDiff @gxt @svelte)}}>
+        {{withDiff @gxt @svelte}}
+      </span>
     </td>
-    <td class='bg-red-100 py-2 px-6'>
-      {{withDiff @gxt @react}}
+    <td class='bg-red-100 py-2 px-6'>{{originalValue @react}}
+      <span class={{colorForDiff (withDiff @gxt @react)}}>
+        {{withDiff @gxt @react}}
+      </span>
     </td>
-    <td class='bg-red-100 py-2 px-6'>
-      {{withDiff @gxt @vue}}
+    <td class='bg-red-100 py-2 px-6'>{{originalValue @vue}}
+      <span class={{colorForDiff (withDiff @gxt @vue)}}>
+        {{withDiff @gxt @vue}}
+      </span>
     </td>
-    <td class='bg-red-100 py-2 px-6 text-green-500'>{{withDiff @gxt @gxt}}</td>
-    <td class='bg-red-100 py-2 px-6 text-red-500'>{{withDiff
+    <td class='bg-red-100 py-2 px-6 text-blue-500 font-bold'>{{originalValue
         @gxt
-        @glimmer
-      }}</td>
+      }}{{withDiff @gxt @gxt}}</td>
+    <td class='bg-red-100 py-2 px-6'>{{originalValue @glimmer}}
+
+      <span class={{colorForDiff (withDiff @gxt @glimmer)}}>
+        {{withDiff @gxt @glimmer}}
+      </span>
+    </td>
   </tr>
 </template>;
 export const Table = <template>
