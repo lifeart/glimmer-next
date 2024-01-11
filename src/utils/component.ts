@@ -120,7 +120,7 @@ export class Component<T extends Props = any>
   template!: ComponentReturnType;
 }
 async function destroyNode(node: Node) {
-  if (import.meta.env.DEV) {
+  if (IS_DEV_MODE) {
     if (node === undefined) {
       console.warn(`Trying to destroy undefined`);
       return;
@@ -248,7 +248,7 @@ export async function destroyElement(
 
 var $newDestructors = new WeakMap<any, Destructors>();
 
-if (import.meta.env.DEV) {
+if (IS_DEV_MODE) {
   window['getDestructors'] = () => $newDestructors;
 }
 
@@ -257,7 +257,7 @@ export function associateDestroyable(ctx: any, destructors: Destructors) {
     return;
   }
 
-  if (import.meta.env.DEV) {
+  if (IS_DEV_MODE) {
     if (ctx.ctx && ctx.ctx !== ctx) {
       throw new Error(`Invalid context`);
     }
@@ -268,7 +268,7 @@ export function associateDestroyable(ctx: any, destructors: Destructors) {
 }
 
 export function removeDestructor(ctx: any, destructor: DestructorFn) {
-  if (import.meta.env.DEV) {
+  if (IS_DEV_MODE) {
     if (ctx.ctx && ctx.ctx !== ctx) {
       throw new Error(`Invalid context`);
     }

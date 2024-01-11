@@ -300,7 +300,7 @@ export function $_unstableChildComponentWrapper(
 ) {
   return component(
     function UnstableChildWrapper(this: Component<any>) {
-      if (import.meta.env.DEV) {
+      if (IS_DEV_MODE) {
         // @ts-expect-error construct signature
         this.debugName = `UnstableChildWrapper-${unstableWrapperId++}`;
       }
@@ -312,7 +312,7 @@ export function $_unstableChildComponentWrapper(
   );
 }
 
-if (import.meta.env.DEV) {
+if (IS_DEV_MODE) {
   function buildGraph(
     obj: Record<string, unknown>,
     root: any,
@@ -389,7 +389,7 @@ function mergeComponents(
   const nodes: Array<Node> = [];
   const contexts: Array<Component> = [];
   components.forEach((component) => {
-    if (import.meta.env.DEV) {
+    if (IS_DEV_MODE) {
       if (typeof component === 'boolean' || typeof component === 'undefined') {
         throw new Error(`
           Woops, looks like we trying to render boolean or undefined to template, check used helpers.
@@ -594,7 +594,7 @@ const ArgProxyHandler = {
 };
 export function $_args(args: Record<string, unknown>) {
   if (IS_GLIMMER_COMPAT_MODE) {
-    if (import.meta.env.DEV) {
+    if (IS_DEV_MODE) {
       const newArgs: Record<string, () => unknown> = {};
       Object.keys(args).forEach((key) => {
         try {
@@ -645,7 +645,7 @@ export function $_fin(
     }
   });
   if (!isStable) {
-    if (import.meta.env.DEV) {
+    if (IS_DEV_MODE) {
       nodes.unshift(
         api.comment(`unstable root enter node: ${ctx?.constructor.name}`),
       );

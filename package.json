@@ -15,7 +15,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "tsc && vite build --mode development",
     "build-lib": "tsc && vite build -- --lib",
     "preview": "vite preview",
     "prepublishOnly": "npm run build-lib && node ./utils/write-compiler-types.js",

@@ -27,7 +27,7 @@ export function getMergedCells() {
   return Array.from(DEBUG_MERGED_CELLS);
 }
 
-if (import.meta.env.DEV) {
+if (IS_DEV_MODE) {
   window['getVM'] = () => ({
     relatedTags,
     tagsToRevalidate,
@@ -68,7 +68,7 @@ export class Cell<T extends unknown = unknown> {
   [isTag] = true;
   constructor(value: T, debugName?: string) {
     this._value = value;
-    if (import.meta.env.DEV) {
+    if (IS_DEV_MODE) {
       this._debugName = debugName;
       DEBUG_CELLS.add(this);
     }
@@ -136,7 +136,7 @@ export class MergedCell {
   [isTag] = true;
   constructor(fn: Fn | Function, debugName?: string) {
     this.fn = fn;
-    if (import.meta.env.DEV) {
+    if (IS_DEV_MODE) {
       this._debugName = debugName;
       DEBUG_MERGED_CELLS.add(this);
     }
@@ -150,7 +150,7 @@ export class MergedCell {
       });
       this.relatedCells.clear();
     }
-    if (import.meta.env.DEV) {
+    if (IS_DEV_MODE) {
       DEBUG_MERGED_CELLS.delete(this);
     }
   }
@@ -200,7 +200,7 @@ export async function executeTag(tag: Cell | MergedCell) {
       }
     }
   } catch (e: any) {
-    if (import.meta.env.DEV) {
+    if (IS_DEV_MODE) {
       console.error({
         message: 'Error executing tag',
         error: e,

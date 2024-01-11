@@ -31,7 +31,7 @@ export function addToTree(
   node: Component<any>,
   debugName?: string,
 ) {
-  if (import.meta.env.DEV) {
+  if (IS_DEV_MODE) {
     if (node instanceof Node) {
       throw new Error('invalid node');
     } else if ('ctx' in node && node.ctx === null) {
@@ -55,7 +55,7 @@ export function addToTree(
     },
   ]);
 
-  if (import.meta.env.DEV) {
+  if (IS_DEV_MODE) {
     if (debugName) {
       Object.defineProperty(node, 'debugName', {
         value: debugName,

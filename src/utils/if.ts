@@ -51,7 +51,7 @@ export function ifCondition(
   let throwedError: Error | null = null;
   let lastValue: unknown = undefined;
 
-  if (import.meta.env.DEV) {
+  if (IS_DEV_MODE) {
     // @ts-expect-error this any type
     Object.defineProperty(this, $_debug_args, {
       get() {
@@ -65,7 +65,7 @@ export function ifCondition(
   associateDestroyable(ctx, [
     runExistingDestructors,
     opcodeFor(cell, (value) => {
-      if (import.meta.env.DEV) {
+      if (IS_DEV_MODE) {
         lastValue = value;
       }
       if (throwedError) {
@@ -128,7 +128,7 @@ export function ifCondition(
         if (localRunNumber !== runNumber) {
           // @todo: run -re-inicialization logic here,
           // because it may broke form overall syncLogic delay.
-          if (import.meta.env.DEV) {
+          if (IS_DEV_MODE) {
             throwedError = new Error(`
               Woops, error in ifCondition, managed by ${cell._debugName}: 
                 Run number mismatch, looks like some modifier is removed longer than re-rendering takes. 
