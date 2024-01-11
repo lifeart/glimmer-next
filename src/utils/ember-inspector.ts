@@ -470,7 +470,7 @@ const EmberProxy: any = new Proxy(
               parentElement: possibleBounds[0].parentNode!,
             };
           }
-    
+
           return {
             id: Math.random().toString(36).substr(2, 9),
             args: {

@@ -1,4 +1,9 @@
-import { associateDestroyable, Component, ComponentReturnType, relatedRoots } from '@/utils/component';
+import {
+  associateDestroyable,
+  Component,
+  ComponentReturnType,
+  relatedRoots,
+} from '@/utils/component';
 import { type AnyCell } from './reactive';
 
 export const isTag = Symbol('isTag');
@@ -25,7 +30,10 @@ export function isTagLike(child: unknown): child is AnyCell {
 }
 
 export const RENDER_TREE = new WeakMap<Component<any>, Array<Component>>();
-export const BOUNDS = new WeakMap<Component<any>, Array<HTMLElement|Comment>>();
+export const BOUNDS = new WeakMap<
+  Component<any>,
+  Array<HTMLElement | Comment>
+>();
 export function getBounds(ctx: Component<any>) {
   return BOUNDS.get(ctx) ?? [];
 }
@@ -34,31 +42,35 @@ export function setBounds(component: ComponentReturnType) {
   if (!ctx) {
     return;
   }
-  const maybeBounds: Array<HTMLElement|Comment> = component[$nodes].map((node) => {
-    const isHTMLElement = node instanceof HTMLElement;
-    if (!isHTMLElement) {
-      if (node instanceof Comment) {
-        return [node, node.nextSibling];
-      } else if (node instanceof DocumentFragment) {
-        const roots = relatedRoots.get(node);
-        if (roots && !Array.isArray(roots) && ($nodes in roots)) {
-          return roots[$nodes].map((node) => {
-            if (node instanceof Comment) {
-              return [node, node.nextSibling];
-            } else {
-              return node;
-            }
-          });
+  const maybeBounds: Array<HTMLElement | Comment> = component[$nodes].map(
+    (node) => {
+      const isHTMLElement = node instanceof HTMLElement;
+      if (!isHTMLElement) {
+        if (node instanceof Comment) {
+          return [node, node.nextSibling];
+        } else if (node instanceof DocumentFragment) {
+          const roots = relatedRoots.get(node);
+          if (roots && !Array.isArray(roots) && $nodes in roots) {
+            return roots[$nodes].map((node) => {
+              if (node instanceof Comment) {
+                return [node, node.nextSibling];
+              } else {
+                return node;
+              }
+            });
+          }
         }
       }
-    }
-    if (isHTMLElement) {
-      return [node];
-    }
-    return [];
-  }) as unknown as HTMLElement[];
+      if (isHTMLElement) {
+        return [node];
+      }
+      return [];
+    },
+  ) as unknown as HTMLElement[];
 
-  const flattenBounds = maybeBounds.flat(Infinity).filter(node => node !== null);
+  const flattenBounds = maybeBounds
+    .flat(Infinity)
+    .filter((node) => node !== null);
   if (flattenBounds.length === 0) {
     return;
   }
