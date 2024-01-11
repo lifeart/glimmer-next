@@ -1,7 +1,7 @@
 {
   "name": "@lifeart/gxt",
   "private": false,
-  "version": "0.0.20",
+  "version": "0.0.21",
   "type": "module",
   "license": "MIT",
   "keywords": [
@@ -68,13 +68,13 @@
     "vite-plugin-babel": "^1.2.0",
     "vite-plugin-circular-dependency": "^0.2.1",
     "vite-plugin-dts": "^3.7.0",
+    "backburner.js": "^2.8.0",
     "vitest": "^1.1.1"
   },
   "dependencies": {
     "@babel/core": "^7.23.6",
     "@babel/preset-typescript": "^7.23.3",
     "@glimmer/syntax": "^0.87.1",
-    "backburner.js": "^2.8.0",
     "content-tag": "^1.2.2"
   }
 }
