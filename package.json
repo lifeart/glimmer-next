@@ -1,7 +1,7 @@
 {
   "name": "@lifeart/gxt",
   "private": false,
-  "version": "0.0.19",
+  "version": "0.0.20",
   "type": "module",
   "license": "MIT",
   "keywords": [
@@ -27,9 +27,7 @@
     "dist/src",
     "dist/plugins/compiler.d.ts",
     "dist/index.d.ts",
-    "dist/gxt.index.es.js",
-    "dist/gxt.compiler.es.js",
-    "dist/gxt.ember-inspector.es.js",
+    "dist/*.js",
     "compiler.d.ts"
   ],
   "module": "./dist/gxt.index.es.js",
