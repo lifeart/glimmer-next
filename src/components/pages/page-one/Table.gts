@@ -29,6 +29,12 @@ const Row = <template>
     <td class='bg-red-100 py-2 px-6'>
       {{withDiff @gxt @svelte}}
     </td>
+    <td class='bg-red-100 py-2 px-6'>
+      {{withDiff @gxt @react}}
+    </td>
+    <td class='bg-red-100 py-2 px-6'>
+      {{withDiff @gxt @vue}}
+    </td>
     <td class='bg-red-100 py-2 px-6 text-green-500'>{{withDiff @gxt @gxt}}</td>
     <td class='bg-red-100 py-2 px-6 text-red-500'>{{withDiff
         @gxt
@@ -45,6 +51,8 @@ export const Table = <template>
         <th scope='col' class='py-3 px-6'>Name</th>
         <th scope='col' class='py-3 px-6'>vanillajs</th>
         <th scope='col' class='py-3 px-6'>svelte-v5</th>
+        <th scope='col' class='py-3 px-6'>react-v18</th>
+        <th scope='col' class='py-3 px-6'>vue-v3</th>
         <th scope='col' class='py-3 px-6 text-yellow-500'><b
           >glimmer-next</b></th>
         <th scope='col' class='py-3 px-6'>glimmer-2</th>
@@ -55,6 +63,8 @@ export const Table = <template>
         @label='Create rows'
         @vanila='39.0 ± 0.3'
         @svelte='39.4 ± 0.4'
+        @react='45.6 ± 0.3'
+        @vue='44.4 ± 0.5'
         @gxt='48.3 ± 0.6'
         @glimmer='69.1 ± 1.4'
       />
@@ -62,6 +72,8 @@ export const Table = <template>
         @label='Replace all rows'
         @vanila='42.5 ± 0.4'
         @svelte='45.3 ± 0.4'
+        @react='59.2 ± 0.3'
+        @vue='52.6 ± 0.3'
         @gxt='59.2 ± 0.4'
         @glimmer='86.4 ± 0.4'
       />
@@ -70,6 +82,8 @@ export const Table = <template>
         @label='Partial update'
         @vanila='18.3 ± 0.2'
         @svelte='18.4 ± 0.3'
+        @react='23.3 ± 0.3'
+        @vue='21.7 ± 0.3'
         @gxt='19.5 ± 0.6'
         @glimmer='26.0 ± 4.1'
       />
@@ -77,6 +91,8 @@ export const Table = <template>
         @label='Select row'
         @vanila='3.2 ± 0.2'
         @svelte='4.0 ± 0.3'
+        @react='6.1 ± 0.2'
+        @vue='4.9 ± 0.2'
         @gxt='6.4 ± 0.2'
         @glimmer='22.5 ± 0.2'
       />
@@ -85,6 +101,8 @@ export const Table = <template>
         @label='Swap rows'
         @vanila='21.6 ± 0.2'
         @svelte='22.7 ± 0.6'
+        @react='181.3 ± 1.5'
+        @vue='23.2 ± 0.6'
         @gxt='22.5 ± 0.5'
         @glimmer='30.7 ± 5.1'
       />
@@ -93,6 +111,8 @@ export const Table = <template>
         @label='Remove row'
         @vanila='17.4 ± 0.3'
         @svelte='17.8 ± 0.3'
+        @react='19.3 ± 0.4'
+        @vue='20.8 ± 0.3'
         @gxt='18.2 ± 0.3'
         @glimmer='28.4 ± 0.8'
       />
@@ -101,6 +121,8 @@ export const Table = <template>
         @label='Create many rows'
         @vanila='397.0 ± 1.6'
         @svelte='396.2 ± 1.8'
+        @react='631.7 ± 2.9'
+        @vue='464.7 ± 2.5'
         @gxt='514.9 ± 3.1'
         @glimmer='636.9 ± 4.2'
       />
@@ -109,6 +131,8 @@ export const Table = <template>
         @label='Append rows to large table'
         @vanila='44.3 ± 0.4'
         @svelte='46.6 ± 0.3'
+        @react='55.4 ± 0.6'
+        @vue='53.0 ± 0.3'
         @gxt='57.3 ± 0.4'
         @glimmer='84.8 ± 0.4'
       />
@@ -117,6 +141,8 @@ export const Table = <template>
         @label='Clear rows'
         @vanila='13.2 ± 0.2'
         @svelte='14.3 ± 0.3'
+        @react='29.5 ± 0.4'
+        @vue='16.0 ± 0.3'
         @gxt='24.1 ± 0.5'
         @glimmer='30.7 ± 0.8'
       />
@@ -125,6 +151,8 @@ export const Table = <template>
         @label='Ready memory'
         @vanila='0.5'
         @svelte='0.5'
+        @react='1.0'
+        @vue='0.7'
         @gxt='0.5'
         @glimmer='5.2'
       />
@@ -133,6 +161,8 @@ export const Table = <template>
         @label='Run memory'
         @vanila='1.8'
         @svelte='2.7'
+        @react='4.4'
+        @vue='3.7'
         @gxt='4.2'
         @glimmer='11.5'
       />
@@ -141,6 +171,8 @@ export const Table = <template>
         @label='Update row memory'
         @vanila='1.7'
         @svelte='2.6'
+        @react='4.9'
+        @vue='3.7'
         @gxt='4.2'
         @glimmer='11.6'
       />
@@ -149,6 +181,8 @@ export const Table = <template>
         @label='Create/Clear 1k rows memory'
         @vanila='0.6'
         @svelte='0.9'
+        @react='1.8'
+        @vue='1.1'
         @gxt='1.2'
         @glimmer='6.6'
       />
@@ -157,6 +191,8 @@ export const Table = <template>
         @label='Run memory 10k'
         @vanila='12.2'
         @svelte='19.3'
+        @react='32.2'
+        @vue='28.2'
         @gxt='34.1'
         @glimmer='61.2'
       />
@@ -165,6 +201,8 @@ export const Table = <template>
         @label='Compressed size'
         @vanila='2kb'
         @svelte='6.4kb'
+        @react='40.1kb'
+        @vue='21.1kb'
         @gxt='4.7kb'
         @glimmer='27.9kb'
       />
