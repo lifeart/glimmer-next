@@ -1,6 +1,6 @@
 import * as backburner from 'backburner.js';
 import { getRoot } from './dom';
-import { $_debug_args, RENDER_TREE } from './shared';
+import { $_debug_args, RENDER_TREE, getBounds } from './shared';
 import { Component } from '.';
 import { Cell, MergedCell, getCells, getMergedCells } from './reactive';
 import { $args } from './shared';
@@ -451,6 +451,26 @@ const EmberProxy: any = new Proxy(
           // if (component && !isUnstableChildWrapper && !hasArgs && !hasDebugArgs) {
           //   debugger;
           // }
+          const possibleBounds = component ? getBounds(component) : [];
+          let bounds: null | {
+            firstNode: Node;
+            lastNode: Node;
+            parentElement: Node;
+          } = null;
+          if (possibleBounds.length === 1) {
+            bounds = {
+              firstNode: possibleBounds[0],
+              lastNode: possibleBounds[0],
+              parentElement: possibleBounds[0].parentNode!,
+            };
+          } else if (possibleBounds.length > 1) {
+            bounds = {
+              firstNode: possibleBounds[0],
+              lastNode: possibleBounds[possibleBounds.length - 1],
+              parentElement: possibleBounds[0].parentNode!,
+            };
+          }
+    
           return {
             id: Math.random().toString(36).substr(2, 9),
             args: {
@@ -475,11 +495,7 @@ const EmberProxy: any = new Proxy(
             children: childs
               ? childs.map((child) => componentToRenderTree(child))
               : [],
-            bounds: {
-              firstNode: document.getElementById('app'),
-              lastNode: document.getElementById('app'),
-              parentElement: document.body,
-            },
+            bounds,
             template: 'string',
           };
         }

@@ -33,6 +33,7 @@ import {
   $eventsProp,
   addToTree,
   RENDER_TREE,
+  setBounds,
 } from './shared';
 
 // EMPTY DOM PROPS
@@ -364,12 +365,18 @@ function component(
       // here is workaround for simple components @todo - figure out how to show context-less components in tree
       // for now we don't adding it
       addToTree(ctx, result.ctx);
+      if (IS_DEV_MODE) {
+        setBounds(result);
+      }
     }
     return result;
   }
   if (instance.ctx !== null) {
     // for now we adding only components with context
     addToTree(ctx, instance.ctx);
+    if (IS_DEV_MODE) {
+      setBounds(instance);
+    }
   }
   return instance;
 }
