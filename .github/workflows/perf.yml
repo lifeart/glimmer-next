@@ -49,6 +49,14 @@ jobs:
         uses: mshick/add-pr-comment@v2
         with:
           message-path: "tracerbench-results/msg.txt"
-          update-only: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: add artifact links to pull request and related issues step
+        uses: tonyhallett/artifacts-url-comments@v1.1.0
+        env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+            prefix: Here are the artifacts 
+            format: name
+            addTo: pull-request
