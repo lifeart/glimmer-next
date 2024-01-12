@@ -127,7 +127,7 @@ function $attr(
 }
 
 type RenderableType = ComponentReturnType | NodeReturnType | string | number;
-
+type ShadowRootMode = 'open' | 'closed' | null;
 function resolveRenderable(
   child: Function,
   debugName = 'resolveRenderable',
@@ -264,13 +264,14 @@ function _DOM(
     $attr(element, key, value, destructors);
   });
   const classNameModifiers: Attr[] = [];
-  let hasShadowMode: 'open' | 'closed' | null = null;
+  let hasShadowMode: ShadowRootMode = null;
   properties.forEach(([key, value]) => {
     if (key === $_className) {
       classNameModifiers.push(value);
       return;
     } else if (key === 'shadowrootmode') {
-      hasShadowMode = value as 'open' | 'closed';
+      hasShadowMode = value as NonNullable<ShadowRootMode>;
+      return;
     }
     if (seenKeys.has(key)) {
       return;
@@ -299,7 +300,10 @@ function _DOM(
       );
     }
   }
-  const appendRef = hasShadowMode !== null ? (element.attachShadow({mode: hasShadowMode}) || element.shadowRoot) : element;
+  const appendRef =
+    hasShadowMode !== null
+      ? element.attachShadow({ mode: hasShadowMode }) || element.shadowRoot
+      : element;
   children.forEach((child) => {
     addChild(appendRef, child, destructors);
   });
