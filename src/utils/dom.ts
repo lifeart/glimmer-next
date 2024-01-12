@@ -18,7 +18,7 @@ import {
 import { evaluateOpcode, opcodeFor } from '@/utils/vm';
 import { SyncListComponent, AsyncListComponent } from '@/utils/list';
 import { ifCondition } from '@/utils/if';
-import { DestructorFn, Destructors, executeDestructors } from './destroyable';
+import { DestructorFn, Destructors, executeDestructors, registerDestructor } from './destroyable';
 import { api } from '@/utils/dom-api';
 import {
   isFn,
@@ -401,11 +401,15 @@ function component(
     if (IS_DEV_MODE) {
       // @ts-expect-error new
       instance.debugName = comp.name;
-      COMPONENTS_HMR.get(comp)?.add({
+      const bucket = {
         parent: ctx,
         instance: result,
         args,
         fw,
+      };
+      COMPONENTS_HMR.get(comp)?.add(bucket);
+      registerDestructor(ctx, () => {
+        COMPONENTS_HMR.get(comp)?.delete(bucket);
       });
     }
     if (result.ctx !== null) {
