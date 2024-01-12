@@ -18,9 +18,9 @@ export function defaultFlags() {
     TRY_CATCH_ERROR_HANDLING: true,
     SUPPORT_SHADOW_DOM: true,
     REACTIVE_MODIFIERS: true,
-    WITH_HELPER_MANAGER: false,
-    WITH_MODIFIER_MANAGER: false,
-    WITH_EMBER_INTEGRATION: false,
+    WITH_HELPER_MANAGER: true,
+    WITH_MODIFIER_MANAGER: true,
+    WITH_EMBER_INTEGRATION: true,
     WITH_CONTEXT_API: true,
     ASYNC_COMPILE_TRANSFORMS: true,
   } as Flags;

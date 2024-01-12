@@ -54,6 +54,9 @@ import { CONSTANTS } from '../../plugins/symbols';
 import { initDOM, provideContext, ROOT_CONTEXT } from './context';
 import { SVGProvider, HTMLProvider, MathMLProvider } from './provider';
 import { IfCondition, type IfFunction } from './control-flow/if';
+import { modifierManagers } from '../ember-compat/ember__modifier';
+import { EmberFunctionalModifiers } from '../ember-compat/ember-modifier';
+import { EmberFunctionalHelpers } from '../ember-compat/ember__component__helper';
 
 type RenderableType = Node | ComponentReturnType | string | number;
 type ShadowRootMode = 'open' | 'closed' | null;
@@ -200,7 +203,6 @@ export function $_componentHelper(params: any, hash: any) {
 }
 export function $_modifierHelper(params: any, hash: any) {
   const modifierFn = params.shift();
-  // @ts-expect-error undefined
   if (EmberFunctionalModifiers.has(modifierFn)) {
     function wrappedModifier(node: any, _params: any, _hash: any) {
       console.log('callingWrapperModifier', {
@@ -214,17 +216,53 @@ export function $_modifierHelper(params: any, hash: any) {
         ..._hash,
       });
     }
-    // @ts-expect-error undefined
     EmberFunctionalModifiers.add(wrappedModifier);
     return wrappedModifier;
   } else {
+    if (modifierManagers.has(modifierFn)) {
+      let manager = modifierManagers.get(modifierFn);
+      const state = {};
+      if (isFn(manager)) {
+        manager = manager();
+      }
+      console.log(manager);
+      // debugger;
+      return (
+        element: HTMLElement,
+        args: any[] = [],
+        hash: Record<string, unknown> = {},
+      ) => {
+        return manager.installModifier(state, element, {
+          positional: args,
+          named: hash,
+        });
+      };
+    } else if (modifierFn.emberModifier) {
+      class Modifier extends modifierFn {
+        modify(
+          element: Fn,
+          named: Record<string, unknown> = {},
+          positional: any[] = [],
+        ) {
+          super.modify(element, { ...hash, ...named }, [
+            ...params,
+            ...positional,
+          ]);
+        }
+      }
+      return Modifier;
+    } else {
+      return function wrappedModifier(node: HTMLElement, ...args: unknown[]) {
+        return modifierFn(node, ...[...params, ...args]);
+      };
+    }
+    console.log(modifierFn);
     throw new Error('Unable to use modifier helper with non-ember modifiers');
   }
 }
 export function $_helperHelper(params: any, hash: any) {
   const helperFn = params.shift();
   console.log('helper-helper', params, hash);
-  // @ts-expect-error undefined
   if (EmberFunctionalHelpers.has(helperFn)) {
     function wrappedHelper(_params: any, _hash: any) {
       console.log('callingWrapperHelper', {
@@ -238,7 +276,6 @@ export function $_helperHelper(params: any, hash: any) {
         ..._hash,
       });
     }
-    // @ts-expect-error undefined
     EmberFunctionalHelpers.add(wrappedHelper);
     return wrappedHelper;
   } else {
@@ -393,6 +430,9 @@ export function resolveRenderable(
   debugName = 'resolveRenderable',
 ): RenderableType | MergedCell | Cell {
   const f = formula(() => deepFnValue(child), debugName);
+  if (EmberFunctionalHelpers.has(f)) {
+    debugger;
+  }
   let componentProps: RenderableType = '';
   checkOpcode(f, (value) => {
     componentProps = value as unknown as RenderableType;
@@ -835,17 +875,12 @@ export const $_maybeHelper = (
     }
     // @ts-expect-error
   } else if (EmberFunctionalHelpers.has(value)) {
-    return (...args: any[]) => {
-      return value(args, hash);
-    };
+    return value(args, hash);
   } else if (value.helperType === 'ember') {
     const helper = new value();
-    return (...args: any[]) => {
-      return helper.compute.call(helper, args, hash);
-    };
+    return helper.compute.call(helper, args, hash);
   }
-
-  return value;
+  return value(...args);
 };
 
 // Component context stack - tracks parent component hierarchy
@@ -894,6 +929,7 @@ function component(
         comp.debugName || comp.name || comp.constructor.name
       }`
     : '';
+  let originalLabel = label;
   if (TRY_CATCH_ERROR_HANDLING) {
     try {
       if (IS_DEV_MODE) {
@@ -912,7 +948,6 @@ function component(
         };
         label = `<${label} ${JSON.stringify(args, getCircularReplacer)} />`;
       }
-      // @ts-expect-error uniqSymbol as index
       const fw = args[$PROPS_SYMBOL] as unknown as FwType;
       setParentContext(ctx);
       return _component(comp, args, fw, ctx);
@@ -928,7 +963,9 @@ function component(
         let ErrorOverlayClass = customElements.get('vite-error-overlay');
         let errorOverlay!: HTMLElement;
         // @ts-expect-error message may not exit
-        e.message = `${label}\n${e.message}`;
+        const msg = e.message;
+        // @ts-expect-error message may not exit
+        e.message = `${label}\n${msg}`;
         if (!ErrorOverlayClass) {
           errorOverlay = document.createElement('pre');
           // @ts-expect-error stack may not exit
@@ -957,7 +994,6 @@ function component(
       }
     }
   } else {
-    // @ts-expect-error uniqSymbol as index
     const fw = args[$PROPS_SYMBOL] as unknown as FwType;
     try {
       setParentContext(ctx);
@@ -1005,6 +1041,12 @@ function _component(
   if (isFn(instance)) {
     instance = new instance(args, fw);
   }
+  // Support willDestroy for Glimmer components
+  if ('willDestroy' in instance) {
+    registerDestructor(ctx, () => {
+      instance.willDestroy();
+    });
+  }
   // todo - fix typings here
   if ($template in instance) {
     addToTree(ctx, instance, 'from $template');
@@ -1032,12 +1074,14 @@ function _component(
     return result;
   } else if (instance) {
     // for now we adding only components with context
-    // debugger;
     addToTree(ctx, instance, 'from !$template');
-    // addToTree(ctx, instance);
 
     if (IS_DEV_MODE) {
-      setBounds(instance);
+      COMPONENTS_HMR.get(comp)?.add({
+        parent: ctx,
+        instance: instance,
+        args,
+      });
     }
   } else {
     if (IS_DEV_MODE) {
@@ -1266,9 +1310,24 @@ export function $_GET_ARGS(ctx: Component<any>, args: IArguments) {
   }
 }
 export function $_GET_SLOTS(ctx: any, args: any) {
+  if (ctx === undefined) {
+    // inside let value
+    /*
+    
+      let SButtonElement_4k0gzo = function(args) {
+        const $fw = $_GET_FW(this, arguments);
+        const $slots = $_GET_SLOTS(this, arguments);
+      }
+
+    */
+    return {};
+  }
   return (args[0] || {})[$SLOTS_SYMBOL] || ctx[$args]?.[$SLOTS_SYMBOL] || {};
 }
 export function $_GET_FW(ctx: any, args: any) {
+  if (ctx === undefined) {
+    return $_edp;
+  }
   return (
     (args[0] || {})[$PROPS_SYMBOL] || ctx[$args]?.[$PROPS_SYMBOL] || undefined
   );
@@ -1281,17 +1340,20 @@ export function $_args(
   if (IS_GLIMMER_COMPAT_MODE) {
     if (IS_DEV_MODE) {
       const newArgs: Record<string, () => unknown> = {
+        // @ts-expect-error
         [$SLOTS_SYMBOL]: slots ?? {},
+        // @ts-expect-error
         [$PROPS_SYMBOL]: props ?? {},
       };
       Object.keys(args).forEach((key) => {
         try {
           Object.defineProperty(newArgs, key, {
             get() {
-              if (!isFn(args[key])) {
-                return args[key];
+              if (isFn(args[key])) {
+                // @ts-expect-error function signature
+                return args[key]();
               }
-              return (args[key] as () => unknown)();
+              return args[key];
             },
             enumerable: true,
           });
@@ -1398,66 +1460,74 @@ export function $_dc(
 export const $_component = (component: any) => {
   return component;
 };
+
 export const $_maybeModifier = (
   modifier: any,
   element: HTMLElement,
   props: any[],
-  hashArgs: () => Record<string, unknown>,
+  hashArgs: Record<string, unknown>,
 ) => {
   if (WITH_EMBER_INTEGRATION) {
     if ($_MANAGERS.modifier.canHandle(modifier)) {
       return $_MANAGERS.modifier.handle(modifier, element, props, hashArgs);
     }
   }
+  if (modifierManagers.has(modifier)) {
+    // Use modifier manager
+    let manager = modifierManagers.get(modifier);
+    const state = {};
+    if (isFn(manager)) {
+      manager = manager();
+    }
+    return manager.installModifier(state, element, {
+      positional: props,
+      named: hashArgs,
+    });
+  }
   if ('emberModifier' in modifier) {
     const instance = new modifier();
     instance.modify = instance.modify.bind(instance);
     const destructors: Destructors = [];
+    console.log('running class-based  modifier');
+    requestAnimationFrame(() => {
+      const f = formula(() => {
+        instance.modify(element, props, hashArgs);
+      }, 'class-based modifier');
+      destructors.push(
+        opcodeFor(f, () => {
+          console.log('opcode executed for modifier');
+        }),
+      );
+    });
     return () => {
-      console.log('running class-based  modifier');
-      requestAnimationFrame(() => {
-        const f = formula(() => {
-          instance.modify(element, props, hashArgs());
-        }, 'class-based modifier');
-        destructors.push(
-          opcodeFor(f, () => {
-            console.log('opcode executed for modifier');
-          }),
-        );
-      });
-      return () => {
-        destructors.forEach((fn) => fn());
-        console.log('destroing class-based modifier');
-        if ('willDestroy' in instance) {
-          instance.willDestroy();
-        }
-        runDestructors(instance);
-      };
+      destructors.forEach((fn) => fn());
+      console.log('destroing class-based modifier');
+      if ('willDestroy' in instance) {
+        instance.willDestroy();
+      }
+      runDestructors(instance);
     };
   } else {
     // console.log(modifier);
-    // @ts-expect-error
     if (EmberFunctionalModifiers.has(modifier)) {
-      return (element: HTMLElement) => {
-        console.log('ember-functional-modifier', props, hashArgs());
-        const args = hashArgs();
-        const newArgs = {};
-        Object.keys(args).forEach((key) => {
-          Object.defineProperty(newArgs, key, {
-            enumerable: true,
-            get() {
-              if (typeof args[key] === 'function') {
-                return (args[key] as () => unknown)();
-              } else {
-                return args[key];
-              }
-            },
-          });
+      console.log('ember-functional-modifier', props, hashArgs);
+      const args = hashArgs as Record<string, unknown>;
+      const newArgs: Record<string, unknown> = {};
+      Object.keys(args).forEach((key) => {
+        Object.defineProperty(newArgs, key, {
+          enumerable: true,
+          get() {
+            if (typeof args[key] === 'function') {
+              return (args[key] as () => unknown)();
+            } else {
+              return args[key];
+            }
+          },
         });
-        return modifier(element, props, newArgs);
-      };
+      });
+      return modifier(element, props, newArgs);
     }
-    return modifier;
+    return modifier(element, ...props);
   }
 };
 export const $_helper = (helper: any) => {

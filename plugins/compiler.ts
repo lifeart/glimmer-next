@@ -1,7 +1,7 @@
 import { type Plugin } from 'vite';
 import { Preprocessor } from 'content-tag';
 import { transform } from './test';
-import { MAIN_IMPORT } from './symbols';
+// import { MAIN_IMPORT } from './symbols';
 import { type Flags, defaultFlags } from './flags.ts';
 import { HMR, fixExportsForHMR, shouldHotReloadFile } from './hmr.ts';
 
@@ -50,6 +50,7 @@ export function compiler(mode: string, options: Options = {}): Plugin {
       } else {
         defineValues = {};
       }
+      defineValues['process.env.BABEL_TYPES_8_BREAKING'] = false;
 
       return {
         define: defineValues,
@@ -87,12 +88,15 @@ export function compiler(mode: string, options: Options = {}): Plugin {
           );
         }
       }
-      if (!code.includes(MAIN_IMPORT)) {
-        return;
-      }
+      // if (!code.includes(MAIN_IMPORT)) {
+      //   return;
+      // }
       let result: string | undefined = undefined;
       if (scriptFileRegex.test(file)) {
         const source = code;
+        // if (code.includes('precompileTemplate')) {
+        //   console.log(code);
+        // }
         const result = transform(
           source,
           file,

@@ -15,6 +15,10 @@ import {
 } from './utils';
 import { processTemplate, type ResolvedHBS } from './babel';
 import { convert } from './converter';
+// @ts-expect-error
+import tsPreset from '@babel/preset-typescript';
+import dT from './decorator-transforms/index';
+// console.table(dT);
 
 import { SYMBOLS } from './symbols';
 import type { Flags } from './flags';

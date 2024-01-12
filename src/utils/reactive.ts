@@ -133,6 +133,10 @@ export class Cell<T extends unknown = unknown> {
     this.update(value);
   }
   update(value: T) {
+    if (this._value === value) {
+      return;
+    }
+    console.log('invalidating', this._debugName, this._value, value);
     this._value = value;
     tagsToRevalidate.add(this);
     scheduleRevalidate();
