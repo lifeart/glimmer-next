@@ -55,6 +55,7 @@
     "@types/babel__core": "^7.20.5",
     "@types/qunit": "^2.19.9",
     "autoprefixer": "^10.4.16",
+    "backburner.js": "^2.8.0",
     "postcss": "^8.4.33",
     "prettier": "^3.1.1",
     "prettier-plugin-ember-template-tag": "^2.0.0",
@@ -68,13 +69,13 @@
     "vite-plugin-babel": "^1.2.0",
     "vite-plugin-circular-dependency": "^0.2.1",
     "vite-plugin-dts": "^3.7.0",
-    "backburner.js": "^2.8.0",
     "vitest": "^1.1.1"
   },
   "dependencies": {
     "@babel/core": "^7.23.6",
     "@babel/preset-typescript": "^7.23.3",
     "@glimmer/syntax": "^0.87.1",
-    "content-tag": "^1.2.2"
+    "content-tag": "^1.2.2",
+    "tracerbench": "^8.0.1"
   }
 }
