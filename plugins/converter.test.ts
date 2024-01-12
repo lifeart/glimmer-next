@@ -4,7 +4,7 @@ import { preprocess } from '@glimmer/syntax';
 import { ComplexJSType, convert } from './converter';
 import { ASTv1 } from '@glimmer/syntax';
 import { HBSControlExpression, HBSNode } from './utils';
-import { EVENT_TYPE, SYMBOLS } from './symbols';
+import { EVENT_TYPE } from './symbols';
 import { flags } from './flags';
 
 function $glimmerCompat(str: string) {
