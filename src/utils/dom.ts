@@ -151,7 +151,7 @@ function resolveRenderable(
 }
 
 export function addChild(
-  element: HTMLElement,
+  element: HTMLElement | ShadowRoot,
   child: RenderableType | Cell | MergedCell | Function,
   destructors: Destructors = [],
 ) {
@@ -264,10 +264,13 @@ function _DOM(
     $attr(element, key, value, destructors);
   });
   const classNameModifiers: Attr[] = [];
+  let hasShadowMode: 'open' | 'closed' | null = null;
   properties.forEach(([key, value]) => {
     if (key === $_className) {
       classNameModifiers.push(value);
       return;
+    } else if (key === 'shadowrootmode') {
+      hasShadowMode = value as 'open' | 'closed';
     }
     if (seenKeys.has(key)) {
       return;
@@ -296,8 +299,9 @@ function _DOM(
       );
     }
   }
+  const appendRef = hasShadowMode !== null ? (element.attachShadow({mode: hasShadowMode}) || element.shadowRoot) : element;
   children.forEach((child) => {
-    addChild(element, child, destructors);
+    addChild(appendRef, child, destructors);
   });
   associateDestroyable(ctx, destructors);
   return def(element);

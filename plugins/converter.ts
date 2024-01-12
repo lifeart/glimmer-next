@@ -285,6 +285,7 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
 
   const propertyKeys = [
     'class',
+    'shadowrootmode',
     // boolean attributes (https://meiert.com/en/blog/boolean-attributes-of-html/)
     'checked',
     'readonly',
