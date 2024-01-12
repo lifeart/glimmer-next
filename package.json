@@ -19,6 +19,7 @@
     "build:prod": "tsc && vite build",
     "build-lib": "tsc && vite build -- --lib",
     "preview": "vite preview",
+    "benchmark": "zx ./bin/setup-bench.mjs",
     "prepublishOnly": "npm run build-lib && node ./utils/write-compiler-types.js",
     "test": "vitest",
     "fix": "prettier --write ."
@@ -64,18 +65,19 @@
     "qunit-theme-ember": "^0.2.0",
     "tailwindcss": "^3.4.1",
     "terser": "^5.26.0",
+    "tracerbench": "^8.0.1",
     "typescript": "^5.2.2",
     "vite": "^5.0.8",
     "vite-plugin-babel": "^1.2.0",
     "vite-plugin-circular-dependency": "^0.2.1",
     "vite-plugin-dts": "^3.7.0",
-    "vitest": "^1.1.1"
+    "vitest": "^1.1.1",
+    "zx": "^7.2.3"
   },
   "dependencies": {
     "@babel/core": "^7.23.6",
     "@babel/preset-typescript": "^7.23.3",
     "@glimmer/syntax": "^0.87.1",
-    "content-tag": "^1.2.2",
-    "tracerbench": "^8.0.1"
+    "content-tag": "^1.2.2"
   }
 }
