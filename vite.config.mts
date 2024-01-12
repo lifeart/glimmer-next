@@ -99,7 +99,7 @@ export default defineConfig(({ mode }) => ({
         }
       : undefined,
     modulePreload: false,
-    target: "esnext",
+    target: "es2015", // esnext
     minify: mode === "production" ? "terser" : false,
     rollupOptions: {
       treeshake: "recommended",
