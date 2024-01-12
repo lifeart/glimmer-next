@@ -1,4 +1,4 @@
-import { ComponentReturnType, renderComponent } from '@/utils/component';
+import { type ComponentReturnType, renderComponent } from '@/utils/component';
 
 export async function render(component: ComponentReturnType) {
   const targetElement = document.getElementById('ember-testing')!;
