@@ -67,10 +67,12 @@ if (isLibBuild) {
       },
     }),
   );
+  plugins.push(
+    circleDependency({}))
 }
 
 export default defineConfig(({ mode }) => ({
-  plugins: [...plugins, compiler(mode), circleDependency({})],
+  plugins: [...plugins, compiler(mode)],
   build: {
     lib: isLibBuild
       ? {
