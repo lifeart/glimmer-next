@@ -12,10 +12,21 @@ module('Integration | bare values rendering', function () {
     await render(<template>{{value}}</template>);
     assert.dom().hasText(String(value));
   });
-  test('renders boolean', async function (assert) {
+  test('renders bigint number', async function (assert) {
+    const value = BigInt(42);
+    // @glint-expect-error BigInt is not supported in glint environments
+    await render(<template>{{value}}</template>);
+    assert.dom().hasText(String(value));
+  });
+  test('renders boolean: true', async function (assert) {
     const value = true;
     await render(<template>{{value}}</template>);
-    assert.dom().hasText('');
+    assert.dom().hasText('true');
+  });
+  test('renders boolean: false', async function (assert) {
+    const value = false;
+    await render(<template>{{value}}</template>);
+    assert.dom().hasText('false');
   });
   test('renders null', async function (assert) {
     const value = null;

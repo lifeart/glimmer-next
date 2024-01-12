@@ -714,8 +714,10 @@ export function $_fin(
       nodes.push(
         ...(root[$nodes] as unknown as Array<HTMLElement | Text | Comment>),
       );
-    } else {
+    } else if ($node in root) {
       nodes.push(root[$node] as unknown as HTMLElement | Text | Comment);
+    } else {
+      nodes.push(root);
     }
   });
   if (!isStable) {

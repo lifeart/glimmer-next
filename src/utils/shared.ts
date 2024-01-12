@@ -22,7 +22,8 @@ export function isFn(value: unknown): value is Function {
   return typeof value === 'function';
 }
 export function isPrimitive(value: unknown): value is string | number {
-  return typeof value === 'string' || typeof value === 'number';
+  const vType = typeof value;
+  return vType === 'string' || vType === 'number' || vType === 'boolean' || vType === 'bigint' || vType === 'undefined';
 }
 
 export function isTagLike(child: unknown): child is AnyCell {

@@ -285,7 +285,7 @@ export function deepFnValue(fn: Function | Fn) {
   const cell = fn();
   if (isFn(cell)) {
     return deepFnValue(cell);
-  } else if (cell !== null && isTagLike(cell)) {
+  } else if (typeof cell === 'object' && cell !== null && isTagLike(cell)) {
     return deepFnValue(() => cell.value);
   } else {
     return cell;
