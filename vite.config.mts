@@ -67,8 +67,7 @@ if (isLibBuild) {
       },
     }),
   );
-  plugins.push(
-    circleDependency({}))
+  plugins.push(circleDependency({}));
 }
 
 export default defineConfig(({ mode }) => ({
@@ -93,8 +92,8 @@ export default defineConfig(({ mode }) => ({
       treeshake: "recommended",
       onwarn(warning, warn) {
         // suppress eval warnings (we use it for HMR)
-        if (warning.code === 'EVAL') return
-        warn(warning)
+        if (warning.code === "EVAL") return;
+        warn(warning);
       },
       input: !isLibBuild
         ? {

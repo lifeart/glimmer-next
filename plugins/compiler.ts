@@ -35,13 +35,15 @@ export function compiler(mode: string): Plugin {
           return transform(
             fixExportsForHMR(intermediate) + HMR,
             file,
-            mode as 'development' | 'production', isLibBuild,
+            mode as 'development' | 'production',
+            isLibBuild,
           );
         } else {
           return transform(
             intermediate,
             file,
-            mode as 'development' | 'production', isLibBuild,
+            mode as 'development' | 'production',
+            isLibBuild,
           );
         }
       }
