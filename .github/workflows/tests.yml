@@ -1,4 +1,4 @@
-name: PerformanceCheck
+name: VitestTestsCheck
 
 on:
   workflow_dispatch:
