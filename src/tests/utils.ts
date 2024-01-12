@@ -21,3 +21,12 @@ export function click(selector: string) {
   });
   element!.dispatchEvent(event);
 }
+
+export function step(message: string) {
+  QUnit.assert.pushResult({
+    message: `[Step] ${message}`,
+    result: true,
+    expected: true,
+    actual: true,
+  });
+}
