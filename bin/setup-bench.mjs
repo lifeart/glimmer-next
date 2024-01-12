@@ -63,6 +63,9 @@ await $`rm -rf ${EXPERIMENT_DIR}`;
 await $`mkdir -p ${CONTROL_DIR}`;
 await $`mkdir -p ${EXPERIMENT_DIR}`;
 
+const CONTROL_BENCH_DIR = CONTROL_DIR;
+const EXPERIMENT_BENCH_DIR = EXPERIMENT_DIR;
+
 const rawUpstreamUrl = await $`git ls-remote --get-url upstream`;
 const rawOriginUrl = await $`git ls-remote --get-url origin`;
 let originUrlStr = rawOriginUrl.toString().trim();
