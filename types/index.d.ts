@@ -1,10 +1,15 @@
-import { ComponentLike } from '@glint/template';
+import { type ComponentReturnType, type Component } from '@/utils/component';
+import type { ComponentLike } from '@glint/template';
 
 declare global {
   interface Window {
     getDestructors: () => WeakSet<Node, Array<() => void>>;
     drawTreeToConsole: () => void;
     getVM: () => any;
+    hotReload: (
+      oldComponent: Component | ComponentReturnType,
+      newComponent: Component | ComponentReturnType,
+    ) => void;
   }
 
   const IS_DEV_MODE: boolean;

@@ -492,7 +492,8 @@ const EmberProxy: any = new Proxy(
             name: componentName,
             type: 'component',
             isInRemote: false,
-            children: childs?.map((child) => componentToRenderTree(child)) ?? [],
+            children:
+              childs?.map((child) => componentToRenderTree(child)) ?? [],
             bounds,
             template: 'string',
           };

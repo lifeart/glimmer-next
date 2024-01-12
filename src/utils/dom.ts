@@ -343,6 +343,38 @@ if (IS_DEV_MODE) {
   window.drawTreeToConsole = drawTreeToConsole;
 }
 
+const COMPONENTS_HMR = new WeakMap<
+  Component | ComponentReturnType,
+  Set<{
+    parent: any;
+    instance: ComponentReturnType;
+    args: Record<string, unknown>;
+    fw: FwType;
+  }>
+>();
+
+if (IS_DEV_MODE) {
+  window.hotReload = function hotReload(
+    oldklass: Component | ComponentReturnType,
+    newKlass: Component | ComponentReturnType,
+  ) {
+    const renderedInstances = COMPONENTS_HMR.get(oldklass);
+    if (!renderedInstances) {
+      return;
+    }
+    const renderedBuckets = Array.from(renderedInstances);
+    // we need to append new instances before first element of rendered bucket and later remove all rendered buckets;
+
+    renderedBuckets.forEach(({ parent, instance, args, fw }) => {
+      const newCmp = component(newKlass, args, fw, parent);
+      const firstElement = instance[$nodes][0];
+      const parentElement = firstElement.parentNode!;
+      renderElement(parentElement, newCmp, firstElement);
+      destroyElement(instance);
+    });
+    COMPONENTS_HMR.delete(oldklass);
+  };
+}
 // hello, basic component manager
 function component(
   comp: ComponentReturnType | Component,
@@ -354,6 +386,11 @@ function component(
     // @todo - move it to 'renderComponent'
     ROOT = ctx;
   }
+  if (IS_DEV_MODE) {
+    if (!COMPONENTS_HMR.has(comp)) {
+      COMPONENTS_HMR.set(comp, new Set());
+    }
+  }
   // @ts-expect-error construct signature
   const instance = new (comp as unknown as Component<any>)(args, fw);
   // todo - fix typings here
@@ -361,6 +398,16 @@ function component(
     const result = (
       instance[$template] as unknown as () => ComponentReturnType
     )();
+    if (IS_DEV_MODE) {
+      // @ts-expect-error new
+      instance.debugName = comp.name;
+      COMPONENTS_HMR.get(comp)?.add({
+        parent: ctx,
+        instance: result,
+        args,
+        fw,
+      });
+    }
     if (result.ctx !== null) {
       // here is workaround for simple components @todo - figure out how to show context-less components in tree
       // for now we don't adding it
@@ -377,6 +424,14 @@ function component(
     if (IS_DEV_MODE) {
       setBounds(instance);
     }
+  }
+  if (IS_DEV_MODE) {
+    COMPONENTS_HMR.get(comp)?.add({
+      parent: ctx,
+      instance: instance,
+      args,
+      fw,
+    });
   }
   return instance;
 }
