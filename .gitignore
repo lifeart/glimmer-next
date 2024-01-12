@@ -131,6 +131,10 @@ dist
 .yarn/install-state.gz
 .pnp.*
 
-
+playwright-report/
+playwright-report
 tracerbench-results
 tmp
+coverage
+.eslintcache
+.nyc_output

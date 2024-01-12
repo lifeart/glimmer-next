@@ -22,7 +22,10 @@
     "benchmark": "zx ./bin/setup-bench.mjs",
     "prepublishOnly": "npm run build-lib && node ./utils/write-compiler-types.js",
     "test": "vitest",
-    "fix": "prettier --write ."
+    "fix": "prettier --write .",
+    "nyc:merge:playwright": "nyc merge .nyc_output ./coverage/playwright-final.json && rm -rf .nyc_output",
+    "nyc:report": "nyc report --reporter=html --reporter=lcov --temp-dir ./coverage",
+    "test:playwright": "playwright test"
   },
   "files": [
     "dist/src",
@@ -61,6 +64,7 @@
     "@types/qunit": "^2.19.9",
     "autoprefixer": "^10.4.16",
     "backburner.js": "^2.8.0",
+    "decorator-transforms": "^1.0.3",
     "postcss": "^8.4.33",
     "prettier": "^3.1.1",
     "prettier-plugin-ember-template-tag": "^2.0.0",
@@ -77,7 +81,9 @@
     "vite-plugin-dts": "^3.7.0",
     "vitest": "^1.1.1",
     "zx": "^7.2.3",
-    "decorator-transforms": "^1.0.3"
+    "@playwright/test": "^1.40.1",
+    "nyc": "^15.1.0",
+    "v8-to-istanbul": "^9.2.0"
   },
   "dependencies": {
     "@babel/core": "^7.23.6",
