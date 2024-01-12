@@ -52,9 +52,6 @@ export function effect(cb: () => void): () => void {
     }
     isDestroyCalled = true;
     runEffectDestructor(destructor);
-    // remove sourceTag and tag from tracking chain
-    sourceTag.destroy();
-    tag.destroy();
     destroyOpcode();
   };
 }
@@ -91,9 +88,6 @@ export function opcodeFor(tag: AnyCell, op: tagOp) {
     }
     if (ops.length === 0) {
       opsForTag.delete(tag);
-      if ('destroy' in tag) {
-        tag.destroy();
-      }
     }
   };
 }

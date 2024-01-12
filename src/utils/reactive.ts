@@ -163,26 +163,12 @@ export class MergedCell {
     return this.value;
   }
   _debugName?: string | undefined;
-  relatedCells: Set<Cell> | null = null;
   [isTag] = true;
   constructor(fn: Fn | Function, debugName?: string) {
     this.fn = fn;
     if (IS_DEV_MODE) {
       this._debugName = debugName;
       DEBUG_MERGED_CELLS.add(this);
-    }
-  }
-  destroy() {
-    this.isDestroyed = true;
-    opsForTag.delete(this);
-    if (this.relatedCells !== null) {
-      this.relatedCells.forEach((cell) => {
-        relatedTags.get(cell)?.delete(this);
-      });
-      this.relatedCells.clear();
-    }
-    if (IS_DEV_MODE) {
-      DEBUG_MERGED_CELLS.delete(this);
     }
   }
   get value() {
@@ -200,7 +186,6 @@ export class MergedCell {
         } else {
           this.isConst = true;
         }
-        this.relatedCells = currentTracker;
         currentTracker = null;
       }
     } else {

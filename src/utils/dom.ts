@@ -138,7 +138,6 @@ function resolveRenderable(
     componentProps = value as unknown as RenderableType;
   });
   if (f.isConst) {
-    f.destroy();
     return componentProps;
   } else {
     if (isPrimitive(componentProps)) {
