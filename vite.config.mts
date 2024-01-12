@@ -91,6 +91,11 @@ export default defineConfig(({ mode }) => ({
     minify: mode === "production" ? "terser" : false,
     rollupOptions: {
       treeshake: "recommended",
+      onwarn(warning, warn) {
+        // suppress eval warnings (we use it for HMR)
+        if (warning.code === 'EVAL') return
+        warn(warning)
+      },
       input: !isLibBuild
         ? {
             main: "index.html",
