@@ -31,4 +31,14 @@ module('Integration | InternalComponent | unless', function () {
       .dom('[data-test-true-branch]')
       .doesNotExist('true branch does not exist for initial true value');
   });
+  test('it could be used as helper [false]', async function (assert) {
+    const value = false;
+    await render(<template>{{unless value '1' '2'}}</template>);
+    assert.dom().hasText('1');
+  });
+  test('it could be used as helper [true]', async function (assert) {
+    const value = true;
+    await render(<template>{{unless value '1' '2'}}</template>);
+    assert.dom().hasText('2');
+  });
 });

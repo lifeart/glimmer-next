@@ -65,14 +65,14 @@ test('QUnit', async ({ page }) => {
       (_, values: QUnitTestResults) => {
         resolveTestResults(values);
       },
-      { handle: false }
+      { handle: false },
     ),
     page.exposeBinding(
       'onQunitTestDone',
       (_, values: QUnitTestDone) => {
         testsDoneResults.push(values);
       },
-      { handle: false }
+      { handle: false },
     ),
   ]);
 
@@ -102,7 +102,7 @@ test('QUnit', async ({ page }) => {
     });
     // we need this asserts for better reporting
     expect(tInfo.assertions.length, `${tInfo.module} >> ${tInfo.name}`).toBe(
-      tInfo.assertions.length
+      tInfo.assertions.length,
     );
   });
 

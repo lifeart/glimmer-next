@@ -11,7 +11,14 @@ import {
 import { api } from '@/utils/dom-api';
 import { Cell, MergedCell, formula, deepFnValue } from '@/utils/reactive';
 import { opcodeFor } from '@/utils/vm';
-import { $_debug_args, $node, $nodes, isFn, isTagLike } from './shared';
+import {
+  $_debug_args,
+  $node,
+  $nodes,
+  isFn,
+  isPrimitive,
+  isTagLike,
+} from './shared';
 
 function setIndex(item: GenericReturnType, index: number) {
   item.forEach((item) => {
@@ -110,6 +117,12 @@ class BasicListComponent<T extends { id: number }> {
       let cnt = 0;
       const map: WeakMap<T, string> = new WeakMap();
       this.keyForItem = (item: T) => {
+        if (IS_DEV_MODE) {
+          if (isPrimitive(item)) {
+            console.warn(`Iteration over primitives is not supported yet`);
+            return String(item);
+          }
+        }
         const key = map.get(item);
         if (typeof key === 'string') {
           return key;

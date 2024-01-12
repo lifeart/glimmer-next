@@ -117,4 +117,14 @@ module('Integration | InternalComponent | if', function () {
       .dom('[data-test-false-branch]')
       .doesNotExist('false branch does not exist for updated to true value');
   });
+  test('it could be used as helper [false]', async function (assert) {
+    const value = false;
+    await render(<template>{{if value '1' '2'}}</template>);
+    assert.dom().hasText('2');
+  });
+  test('it could be used as helper [true]', async function (assert) {
+    const value = true;
+    await render(<template>{{if value '1' '2'}}</template>);
+    assert.dom().hasText('1');
+  });
 });

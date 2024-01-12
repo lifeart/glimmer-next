@@ -21,7 +21,7 @@ function filePathFromUrl(url: string) {
   return path.join(
     ROOT,
     'src',
-    (url.split('/src/')[1] as string).split('?')[0] as string
+    (url.split('/src/')[1] as string).split('?')[0] as string,
   );
 }
 
@@ -35,7 +35,7 @@ function saveCoverage(result: string) {
   }
   fs.writeFileSync(
     path.join(coverageResultsTempDir, `playwright-${UUID()}-coverage.json`),
-    result
+    result,
   );
 }
 
@@ -49,7 +49,7 @@ export function captureCoverage(
   options = {
     reportAnonymousScripts: false,
     resetOnNavigation: false,
-  }
+  },
 ) {
   // console.log('process.env.CI', process.env.CI);
 
@@ -80,7 +80,7 @@ export function captureCoverage(
         }
       } catch (e) {
         console.error(
-          `Unable to process coverage for ${entry.scriptId}:${entry.url}`
+          `Unable to process coverage for ${entry.scriptId}:${entry.url}`,
         );
       }
     }

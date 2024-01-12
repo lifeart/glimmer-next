@@ -13,7 +13,14 @@ export async function allSettled() {
 }
 
 export function click(selector: string) {
-  const element = document.querySelector(selector);
+  const element = document
+    .getElementById('ember-testing')!
+    .querySelector(selector);
+  if (!element) {
+    throw new Error(
+      `Unable to find DOM element matching selector: ${selector}`,
+    );
+  }
   const event = new MouseEvent('click', {
     view: window,
     bubbles: true,

@@ -8,7 +8,8 @@ import babel from "vite-plugin-babel";
 import { processSource } from "./plugins/babel.ts";
 
 const isLibBuild = process.env["npm_lifecycle_script"]?.includes("--lib");
-const withSourcemaps = process.env["npm_lifecycle_script"]?.includes("--with-sourcemaps");
+const withSourcemaps =
+  process.env["npm_lifecycle_script"]?.includes("--with-sourcemaps");
 const self = import.meta.url;
 const currentPath = path.dirname(fileURLToPath(self));
 
@@ -73,10 +74,17 @@ if (isLibBuild) {
 export default defineConfig(({ mode }) => ({
   plugins: [...plugins, compiler(mode)],
   test: {
-    exclude: ['**/node_modules/**', '**/dist/**', '**/e2e/**', '**/cypress/**', '**/.{idea,git,cache,output,temp}/**', '**/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build}.config.*']
+    exclude: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/e2e/**",
+      "**/cypress/**",
+      "**/.{idea,git,cache,output,temp}/**",
+      "**/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build}.config.*",
+    ],
   },
   build: {
-    sourcemap: withSourcemaps ? 'inline' : undefined,
+    sourcemap: withSourcemaps ? "inline" : undefined,
     lib: isLibBuild
       ? {
           entry: [

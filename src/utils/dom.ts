@@ -201,7 +201,8 @@ function $ev(
           }),
         );
       } else {
-        throw new Error('invalid textContent value');
+        return value; // objet
+        // throw new Error('invalid textContent value');
       }
     } else {
       api.textContent(element, fn);
