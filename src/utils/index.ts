@@ -1,6 +1,7 @@
 export {
   cell,
   cellFor,
+  tracked,
   type Cell,
   type MergedCell,
   formula,

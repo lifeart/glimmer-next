@@ -15,6 +15,7 @@ import {
   $fwProp,
   RENDER_TREE,
 } from './shared';
+import { addChild } from './dom';
 
 const FRAGMENT_TYPE = 11; // Node.DOCUMENT_FRAGMENT_NODE
 
@@ -79,15 +80,24 @@ export function renderElement(
 export function renderComponent(
   component: ComponentReturnType,
   target: ComponentRenderTarget,
+  ctx?: any,
 ): ComponentReturnType {
   const targetElement = targetFor(target);
 
   if ($template in component && isFn(component[$template])) {
-    return renderComponent(component[$template](), targetElement);
+    return renderComponent(component[$template](), targetElement, component);
   }
-  component[$nodes].forEach((node) => {
-    api.append(targetElement, node);
+
+  const destructors: Destructors = [];
+  const children = component[$nodes];
+  children.forEach((child) => {
+    addChild(
+      targetElement as unknown as HTMLElement,
+      child as any,
+      destructors,
+    );
   });
+  associateDestroyable(ctx || component, destructors);
   return component;
 }
 

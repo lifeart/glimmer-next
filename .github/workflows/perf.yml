@@ -14,7 +14,7 @@ concurrency:
 
 env:
   EXPERIMENT_BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
-  CONTROL_BRANCH_NAME: 'master'
+  CONTROL_BRANCH_NAME: "master"
   FIDELITY: 100
   THROTTLE: 4
   FORK_NAME: ${{ github.event.pull_request.head.repo.full_name }}
@@ -30,7 +30,7 @@ jobs:
           fetch-depth: 0
       - uses: wyvox/action-setup-pnpm@v3
         with:
-          node-version: '20.1.0'
+          node-version: "20.1.0"
 
       - name: RUN
         run: pnpm run benchmark
