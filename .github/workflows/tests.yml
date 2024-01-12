@@ -1,0 +1,29 @@
+name: PerformanceCheck
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches: [master]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vitest:
+    name: Vitest
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: wyvox/action-setup-pnpm@v3
+        with:
+          node-version: "20.1.0"
+
+      - name: RUN
+        run: pnpm run test

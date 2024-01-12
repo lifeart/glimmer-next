@@ -57,7 +57,7 @@ describe('convert function builder', () => {
   describe('basic element helper support', () => {
     test('it return kinda valid component-like code', () => {
       expect($t<ASTv1.BlockStatement>(`{{(element "tag")}}`)).toEqual(
-        `$:() => $:function(args,props){const $slots={};return{${SYMBOLS.$nodes}:[${SYMBOLS.TAG}("tag",[props[${SYMBOLS.$propsProp}],props[${SYMBOLS.$attrsProp}],props[${SYMBOLS.$eventsProp}]],[()=>$_slot('default',()=>[],$slots)])[${SYMBOLS.$node}]],${SYMBOLS.$slotsProp}:$slots,index:0};}`,
+        `$:() => $:function(args,props){const $slots={};return{[$nodes]:[$_tag("tag",[props[$propsProp],props[$attrsProp],props[$eventsProp]],[()=>$_slot('default',()=>[],$slots)], this)[$node]],[$slotsProp]:$slots,index:0, ctx: this};}`,
       );
     });
   });
