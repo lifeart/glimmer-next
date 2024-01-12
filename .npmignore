@@ -3,5 +3,7 @@ public
 src
 types
 .vscode
+tracerbench-results
+tmp
 dist/logo.png
 !compiler.d.ts
