@@ -42,7 +42,7 @@ type ListComponentArgs<T> = {
   tag: Cell<T[]> | MergedCell;
   key: string | null;
   ctx: Component<any>;
-  ItemComponent: (item: T, index?: number) => GenericReturnType;
+  ItemComponent: (item: T, index?: number | MergedCell) => GenericReturnType;
 };
 type RenderTarget = HTMLElement | DocumentFragment;
 class BasicListComponent<T extends { id: number }> {
@@ -52,7 +52,7 @@ class BasicListComponent<T extends { id: number }> {
   parentCtx!: Component<any>;
   ItemComponent: (
     item: T,
-    index: number,
+    index: number | MergedCell,
     ctx: Component<any>,
   ) => GenericReturnType;
   bottomMarker!: Comment;
@@ -122,6 +122,25 @@ class BasicListComponent<T extends { id: number }> {
       };
     } else {
       this.keyForItem = (item: T) => {
+        if (IS_DEV_MODE) {
+          if (this.key.split('.').length > 1) {
+            console.warn(
+              'Nested keys are not supported yet, likely you need to specify custom keyForItem function',
+            );
+            const resolvedKeyValue = this.key.split('.').reduce((acc, key) => {
+              // @ts-expect-error unknown key
+              return acc[key];
+            }, item);
+            console.log({ resolvedKeyValue, key: this.key, item });
+            return String(resolvedKeyValue);
+          }
+          // @ts-expect-error unknown key
+          if (typeof item[this.key] === 'undefined') {
+            throw new Error(
+              `Key for item not found, ${JSON.stringify(item)} ${this.key}`,
+            );
+          }
+        }
         // @ts-expect-error unknown key
         return String(item[this.key]);
       };
@@ -179,9 +198,24 @@ class BasicListComponent<T extends { id: number }> {
       const key = this.keyForItem(item);
       const maybeRow = this.keyMap.get(key);
       if (!maybeRow) {
+        let idx: number | MergedCell = index;
+        if (IS_DEV_MODE) {
+          // @todo - add `hasIndex` argument to compiler to tree-shake this
+          // for now reactive indexes works only in dev mode
+          idx = formula(() => {
+            const values = this.tag.value;
+            const itemIndex = values.indexOf(item);
+            if (itemIndex === -1) {
+              return values.findIndex((value: T) => {
+                return this.keyForItem(value) === key;
+              });
+            }
+            return itemIndex;
+          });
+        }
         const row = this.ItemComponent(
           item,
-          index,
+          idx,
           this as unknown as Component<any>,
         );
         this.keyMap.set(key, row);
@@ -196,7 +230,9 @@ class BasicListComponent<T extends { id: number }> {
         }
       }
     });
+
     // iterate over rows to move and move them
+
     rowsToMove.forEach(([row, index]) => {
       const nextItem = items[index + 1];
       setIndex(row, index);
@@ -212,6 +248,7 @@ class BasicListComponent<T extends { id: number }> {
         }
       }
     });
+
     if (targetNode !== this.bottomMarker) {
       const parent = targetNode.parentNode!;
       parent.removeChild(targetNode);

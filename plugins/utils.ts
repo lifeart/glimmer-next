@@ -217,7 +217,9 @@ export function serializeNode(
 
     if (key === '@each') {
       if (paramNames.length === 1) {
-        paramNames.push('index');
+        // @todo - add compiler param to mark there is no index here
+        // likely we  need to import $getIndex function and pass it as a param for each constructor
+        paramNames.push('$index'); // dummy param
       }
       let hasStableChild = hasStableChildsForControlNode(childs);
       const FN_NAME = isSync ? SYMBOLS.EACH_SYNC : SYMBOLS.EACH;

@@ -136,6 +136,7 @@ module('Integration | InternalComponent | each', function (hooks) {
 
     step('Mutating the array: same elements, new order');
     users.update([users.value[1], users.value[0]]);
+
     await allSettled();
 
     assert.dom('[data-test-user]').exists({ count: 2 }, 'Number of elements');
@@ -155,7 +156,7 @@ module('Integration | InternalComponent | each', function (hooks) {
     await render(
       <template>
         <ul data-test-users>
-          {{#each users key='name' as |user i|}}
+          {{#each users key='name.value' as |user i|}}
             <li data-test-user={{i}}>
               {{user.name}}
             </li>
