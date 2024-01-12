@@ -17,7 +17,7 @@ import { join } from 'node:path';
 
 const experimentBranchName =
   process.env['EXPERIMENT_BRANCH_NAME'] || (await $`git rev-parse --abbrev-ref HEAD`).stdout.trim();
-const controlBranchName = process.env['CONTROL_BRANCH_NAME'] || 'main';
+const controlBranchName = process.env['CONTROL_BRANCH_NAME'] || 'master';
 
 // same order as in benchmark/benchmarks/krausest/lib/index.ts
 const appMarkers = [
