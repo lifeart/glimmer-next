@@ -33,7 +33,7 @@ jobs:
           node-version: '20.1.0'
 
       - name: RUN
-        run: pnpm run benchmark:setup
+        run: pnpm run benchmark
 
       - name: Remove unused artifacts
         run: rm -rf ./tracerbench-results/traces && rm -rf ./tracerbench-results/traces.zip
