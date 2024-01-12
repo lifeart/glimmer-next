@@ -1,5 +1,5 @@
 import { module, test } from 'qunit';
-import { render, allSettled } from '@/tests/utils';
+import { render, allSettled } from '@lfieart/gxt/test-utils';
 import { cell } from '@lifeart/gxt';
 
 module('Integration | InternalComponent | if', function () {

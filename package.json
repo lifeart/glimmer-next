@@ -1,7 +1,7 @@
 {
   "name": "@lifeart/gxt",
   "private": false,
-  "version": "0.0.22",
+  "version": "0.0.23",
   "type": "module",
   "license": "MIT",
   "keywords": [
@@ -45,6 +45,10 @@
     "./ember-inspector": {
       "import": "./dist/gxt.ember-inspector.es.js",
       "types": "./dist/src/utils/ember-inspector.d.ts"
+    },
+    "./test-utils": {
+      "import": "./dist/gxt.utils.es.js",
+      "types": "./dist/src/tests/utils.d.ts"
     }
   },
   "devDependencies": {

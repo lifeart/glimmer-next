@@ -1,5 +1,5 @@
 import { module, test } from 'qunit';
-import { render } from '@/tests/utils';
+import { render } from '@lfieart/gxt/test-utils';
 
 module('Integration | InternalComponent | element', function () {
   test('it works', async function (assert) {

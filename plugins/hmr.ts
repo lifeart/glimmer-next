@@ -3,7 +3,8 @@ export function fixExportsForHMR(code: string) {
 }
 
 export function shouldHotReloadFile(fileName: string) {
-  const isProperExtension = fileName.endsWith('.gts') || fileName.endsWith('.gjs');
+  const isProperExtension =
+    fileName.endsWith('.gts') || fileName.endsWith('.gjs');
   const isNotTest = !fileName.includes('-test');
   return isProperExtension && isNotTest;
 }

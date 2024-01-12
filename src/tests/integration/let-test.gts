@@ -1,5 +1,5 @@
 import { module, test } from 'qunit';
-import { render } from '@/tests/utils';
+import { render } from '@lfieart/gxt/test-utils';
 
 module('Integration | InternalComponent | let', function () {
   test('support strings as args', async function (assert) {
