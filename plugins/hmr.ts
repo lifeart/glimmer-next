@@ -2,6 +2,12 @@ export function fixExportsForHMR(code: string) {
   return code.split('export const ').join('export let ');
 }
 
+export function shouldHotReloadFile(fileName: string) {
+  const isProperExtension = fileName.endsWith('.gts') || fileName.endsWith('.gjs');
+  const isNotTest = !fileName.includes('-test');
+  return isProperExtension && isNotTest;
+}
+
 export const HMR = `
 if (import.meta.hot) {
   const existingTokensToReload: string[] = [];

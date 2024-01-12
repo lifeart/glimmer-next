@@ -3,7 +3,7 @@ import { Preprocessor } from 'content-tag';
 import { transform } from './test';
 import { MAIN_IMPORT } from './symbols';
 import { flags } from './flags.ts';
-import { HMR, fixExportsForHMR } from './hmr.ts';
+import { HMR, fixExportsForHMR, shouldHotReloadFile } from './hmr.ts';
 
 const p = new Preprocessor();
 
@@ -32,8 +32,9 @@ export function compiler(mode: string): Plugin {
         const intermediate = fixContentTagOutput(p.process(code, file));
 
         if (mode === 'development') {
+          const shouldHotRelaod = shouldHotReloadFile(file);
           return transform(
-            fixExportsForHMR(intermediate) + HMR,
+            fixExportsForHMR(intermediate) + (shouldHotRelaod ? HMR : ''),
             file,
             mode as 'development' | 'production',
             isLibBuild,
