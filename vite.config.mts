@@ -28,10 +28,11 @@ if (isLibBuild) {
             "@babel/preset-typescript",
             {
               allowDeclareFields: true,
+              allExtensions: false,
             },
           ],
         ],
-        plugins: [["decorator-transforms"], processSource],
+        plugins: [processSource],
       },
     }),
     dts({
