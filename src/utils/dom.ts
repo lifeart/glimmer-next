@@ -205,7 +205,19 @@ function $ev(
         // throw new Error('invalid textContent value');
       }
     } else {
-      api.textContent(element, fn);
+      if (IS_GLIMMER_COMPAT_MODE) {
+        api.textContent(element, fn);
+      } else {
+        if (isPrimitive(fn)) {
+          api.textContent(element, String(fn));
+        } else if (isTagLike(fn)) {
+          destructors.push(
+            opcodeFor(fn, (value) => {
+              api.textContent(element, String(value));
+            }),
+          );
+        }
+      }
     }
     // modifier case
   } else if (eventName === EVENT_TYPE.ON_CREATED) {
@@ -406,6 +418,13 @@ function component(
   if (IS_DEV_MODE) {
     if (!COMPONENTS_HMR.has(comp)) {
       COMPONENTS_HMR.set(comp, new Set());
+    }
+  }
+  if (IS_GLIMMER_COMPAT_MODE) {
+
+  } else {
+    if (isTagLike(comp)) {
+      comp = comp.value;
     }
   }
   // @ts-expect-error construct signature
@@ -719,14 +738,31 @@ export function $_fin(
     HTMLElement | ComponentReturnType | NodeReturnType | Text | Comment
   > = [];
   roots.forEach((root) => {
-    if ($nodes in root) {
-      nodes.push(
-        ...(root[$nodes] as unknown as Array<HTMLElement | Text | Comment>),
-      );
-    } else if ($node in root) {
-      nodes.push(root[$node] as unknown as HTMLElement | Text | Comment);
+    if (IS_GLIMMER_COMPAT_MODE) {
+      // with glimmer compat mode no primitives allowed as template nodes
+      if ($nodes in root) {
+        nodes.push(
+          ...(root[$nodes] as unknown as Array<HTMLElement | Text | Comment>),
+        );
+      } else if ($node in root) {
+        nodes.push(root[$node] as unknown as HTMLElement | Text | Comment);
+      } else {
+        nodes.push(root);
+      }
     } else {
-      nodes.push(root);
+      if (root === null) {
+        return;
+      } else if (isPrimitive(root)) {
+        nodes.push(api.text(String(root)));
+      } else if ($nodes in root) {
+        nodes.push(
+          ...(root[$nodes] as unknown as Array<HTMLElement | Text | Comment>),
+        );
+      } else if ($node in root) {
+        nodes.push(root[$node] as unknown as HTMLElement | Text | Comment);
+      } else {
+        nodes.push(root);
+      }
     }
   });
   if (!isStable) {

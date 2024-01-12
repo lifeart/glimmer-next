@@ -350,7 +350,7 @@ export function serializeNode(
         args,
       )}), ${secondArg}, ${ctxName}`;
       if (flags.IS_GLIMMER_COMPAT_MODE === false) {
-        fn = `new ${node.tag}(${toObject(args)}, ${secondArg})`;
+        fn = `${node.tag},${toObject(args)}, ${secondArg}, ${ctxName}`;
       }
       const slotsObj = `{${serializedSlots.join(',')}}`;
       // @todo - we could pass `hasStableChild` ans hasBlock / hasBlockParams to the DOM helper

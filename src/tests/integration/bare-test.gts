@@ -40,6 +40,6 @@ module('Integration | bare values rendering', function () {
   test('renders undefined', async function (assert) {
     const value = undefined;
     await render(<template>{{value}}</template>);
-    assert.dom().hasText('');
+    assert.dom().hasText(IS_GLIMMER_COMPAT_MODE ? '' : 'undefined');
   });
 });

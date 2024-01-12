@@ -6,7 +6,7 @@ import type { ModifierReturn } from '@glint/template/-private/integration';
 type RowArgs = {
   Args: {
     item: Item;
-    selected: number;
+    selected: () => number | number;
     onRemove: (item: Item) => void;
     onSelect: (item: Item) => void;
   };
@@ -15,18 +15,24 @@ type RowArgs = {
 
 export class Row extends Component<RowArgs> {
   isClicked = false;
-  get labelCell() {
+  labelCell = () => {
+    // formulat can't return bare cell because it don't have tracked chain;
     return cellFor(this.args.item, 'label');
-  }
+  };
   get id() {
     return this.args.item.id;
   }
   get isSelected() {
-    return this.args.selected === this.id;
+    const selected = this.args.selected;
+    if (IS_GLIMMER_COMPAT_MODE) {
+      return (selected as unknown as number) === this.id;
+    } else {
+      return selected() === this.id;
+    }
   }
-  get className() {
+  className = () => {
     return this.isSelected ? 'bg-blue-500' : '';
-  }
+  };
   onClick = () => {
     this.args.onSelect(this.args.item);
   };
