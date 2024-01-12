@@ -479,9 +479,9 @@ const EmberProxy: any = new Proxy(
                   ? {
                       get __ARGS__() {
                         if ($_debug_args in component) {
-                          return component[$_debug_args];
+                          return component[$_debug_args] ?? {};
                         } else {
-                          return component[$args];
+                          return component[$args] ?? {};
                         }
                       },
                     }
@@ -492,9 +492,8 @@ const EmberProxy: any = new Proxy(
             name: componentName,
             type: 'component',
             isInRemote: false,
-            children: childs
-              ? childs.map((child) => componentToRenderTree(child))
-              : [],
+            children:
+              childs?.map((child) => componentToRenderTree(child)) ?? [],
             bounds,
             template: 'string',
           };

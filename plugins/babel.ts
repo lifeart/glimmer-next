@@ -14,10 +14,54 @@ export function processTemplate(
 ) {
   return function babelPlugin(babel: { types: typeof Babel.types }) {
     const { types: t } = babel;
-    type Context = Record<string, boolean | string | undefined>;
+    type Context = Record<string, boolean | string | undefined | string[]>;
     return {
       name: 'ast-transform', // not required
       visitor: {
+        VariableDeclarator(path: any, context: Context) {
+          if (mode !== 'development') {
+            return;
+          }
+          if (!context.tokensForHotReload) {
+            return;
+          }
+          const tokensForHotReload = context.tokensForHotReload as string[];
+          if (path.node.id.type === 'Identifier') {
+            if (path.node.id.name === 'existingTokensToReload') {
+              path.node.init = t.arrayExpression(
+                tokensForHotReload.map((token: string) => {
+                  return t.stringLiteral(token);
+                }),
+              );
+            }
+          }
+        },
+        ExportNamedDeclaration(path: any, context: Context) {
+          if (mode !== 'development') {
+            return;
+          }
+          if (!context.tokensForHotReload) {
+            context.tokensForHotReload = [];
+          }
+          if (path.node.declaration) {
+            if (path.node.declaration.type === 'VariableDeclaration') {
+              const declarations = path.node.declaration.declarations;
+              if (declarations.length === 1) {
+                const declaration = declarations[0];
+                if (declaration.id.type === 'Identifier') {
+                  const existingTokens = context.tokensForHotReload as string[];
+                  existingTokens.push(declaration.id.name);
+                }
+              }
+            } else if (path.node.declaration.type === 'ClassDeclaration') {
+              const declaration = path.node.declaration;
+              if (declaration.id.type === 'Identifier') {
+                const existingTokens = context.tokensForHotReload as string[];
+                existingTokens.push(declaration.id.name);
+              }
+            }
+          }
+        },
         ClassBody: {
           enter(_: any, context: Context) {
             // here we assume that class is extends from our Component
