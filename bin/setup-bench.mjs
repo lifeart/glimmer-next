@@ -58,6 +58,11 @@ const tempDir = os.tmpdir();
 const CONTROL_DIR = join(tempDir, 'control');
 const EXPERIMENT_DIR = join(tempDir, 'experiment');
 
+await $`rm -rf ${CONTROL_DIR}`;
+await $`rm -rf ${EXPERIMENT_DIR}`;
+await $`mkdir -p ${CONTROL_DIR}`;
+await $`mkdir -p ${EXPERIMENT_DIR}`;
+
 const rawUpstreamUrl = await $`git ls-remote --get-url upstream`;
 const rawOriginUrl = await $`git ls-remote --get-url origin`;
 let originUrlStr = rawOriginUrl.toString().trim();
