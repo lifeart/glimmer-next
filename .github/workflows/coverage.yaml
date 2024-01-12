@@ -6,8 +6,10 @@ on:
     branches: [ master ]
 jobs:
   wait_for_data:
-    timeout-minutes: 60
+    timeout-minutes: 10
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
     steps:
     - name: Checkout repo
       uses: actions/checkout@v4
