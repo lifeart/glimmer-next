@@ -80,5 +80,8 @@
     "@babel/preset-typescript": "^7.23.3",
     "@glimmer/syntax": "^0.87.1",
     "content-tag": "^1.2.2"
+  },
+  "volta": {
+    "node": "20.11.0"
   }
 }
