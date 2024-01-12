@@ -70,7 +70,7 @@ export default defineConfig({
 
   /* Run your local dev server before starting the tests */
   webServer: {
-    command: 'vite dev --port 5174',
+    command: 'tsc && vite --port 5174 -- --with-sourcemaps',
     url: 'http://localhost:5174',
     // @ts-ignore missing types
     reuseExistingServer: !process.env.CI,

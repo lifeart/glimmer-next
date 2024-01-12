@@ -42,10 +42,10 @@ jobs:
       run: node ./bin/fix-paths-in-coverage-reports.cjs
 
     - name: Merge all reported JSONs into one
-      run: node ./node_modules/.bin/nyc merge ./coverage-artifacts ./merged-coverage/coverage.json
+      run: pnpm run ci:nyc:merge
 
     - name: Generate report
-      run: node ./node_modules/.bin/nyc report --reporter=html --reporter=lcov --temp-dir ./merged-coverage
+      run: pnpm run ci:nyc:report
 
     - name: Archive coverage report
       uses: vimtor/action-zip@v1
