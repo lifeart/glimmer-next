@@ -31,7 +31,7 @@ if (isLibBuild) {
             },
           ],
         ],
-        plugins: [processSource],
+        plugins: [["decorator-transforms"], processSource],
       },
     }),
     dts({
@@ -44,6 +44,26 @@ if (isLibBuild) {
         "src/utils/data.ts",
         "src/utils/measure-render.ts",
       ],
+    }),
+  );
+} else {
+  plugins.push(
+    babel({
+      filter: /\.ts$/,
+      babelConfig: {
+        babelrc: false,
+        configFile: false,
+        presets: [
+          [
+            "@babel/preset-typescript",
+            {
+              allowDeclareFields: true,
+              allExtensions: true,
+            },
+          ],
+        ],
+        plugins: [["module:decorator-transforms"]],
+      },
     }),
   );
 }

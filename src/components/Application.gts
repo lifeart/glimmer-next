@@ -1,12 +1,20 @@
-import { renderComponent, runDestructors, Component } from '@lifeart/gxt';
+import {
+  renderComponent,
+  runDestructors,
+  Component,
+  tracked,
+} from '@lifeart/gxt';
 import { PageOne } from './pages/PageOne.gts';
 import { PageTwo } from './pages/PageTwo.gts';
 import { PageThree } from './pages/PageThree.gts';
 import { Benchmark } from './pages/Benchmark.gts';
 import { NestedRouter } from './pages/NestedRouter.gts';
 import { router } from './../services/router';
+
 export class Application extends Component {
   router = router;
+  @tracked
+  now = Date.now();
   rootNode!: HTMLElement;
   components = {
     pageOne: PageOne,
@@ -22,6 +30,7 @@ export class Application extends Component {
   constructor(rootNode: HTMLElement) {
     super({});
     this.rootNode = rootNode;
+    // @ts-ignore
     renderComponent(this, this.rootNode);
     // router init
     requestAnimationFrame(() => {

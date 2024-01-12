@@ -18,7 +18,12 @@ import {
 import { evaluateOpcode, opcodeFor } from '@/utils/vm';
 import { SyncListComponent, AsyncListComponent } from '@/utils/list';
 import { ifCondition } from '@/utils/if';
-import { DestructorFn, Destructors, executeDestructors, registerDestructor } from './destroyable';
+import {
+  DestructorFn,
+  Destructors,
+  executeDestructors,
+  registerDestructor,
+} from './destroyable';
 import { api } from '@/utils/dom-api';
 import {
   isFn,
@@ -145,7 +150,7 @@ function resolveRenderable(
   }
 }
 
-function addChild(
+export function addChild(
   element: HTMLElement,
   child: RenderableType | Cell | MergedCell | Function,
   destructors: Destructors = [],
@@ -166,6 +171,9 @@ function addChild(
     api.append(element, cellToText(child, destructors));
   } else if (isFn(child)) {
     addChild(element, resolveRenderable(child), destructors);
+  } else {
+    // renderComponent case
+    api.append(element, child);
   }
 }
 

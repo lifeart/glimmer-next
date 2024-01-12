@@ -64,7 +64,10 @@ export function transform(
   const programResults: string[] = [];
 
   const babelResult = transformSync(rawTxt, {
-    plugins: [processTemplate(hbsToProcess, mode)],
+    plugins: [
+      processTemplate(hbsToProcess, mode),
+      'module:decorator-transforms',
+    ],
     filename: fileName.replace('.gts', '.ts').replace('.gjs', '.js'),
     presets: [
       [

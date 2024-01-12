@@ -1,6 +1,6 @@
-import 'zx/globals';
-import os from 'node:os';
-import { join } from 'node:path';
+import "zx/globals";
+import os from "node:os";
+import { join } from "node:path";
 
 /*
 
@@ -16,47 +16,48 @@ import { join } from 'node:path';
 */
 
 const experimentBranchName =
-  process.env['EXPERIMENT_BRANCH_NAME'] || (await $`git rev-parse --abbrev-ref HEAD`).stdout.trim();
-const controlBranchName = process.env['CONTROL_BRANCH_NAME'] || 'master';
+  process.env["EXPERIMENT_BRANCH_NAME"] ||
+  (await $`git rev-parse --abbrev-ref HEAD`).stdout.trim();
+const controlBranchName = process.env["CONTROL_BRANCH_NAME"] || "master";
 
 // same order as in benchmark/benchmarks/krausest/lib/index.ts
 const appMarkers = [
-  'render',
-  'render1000Items1',
-  'clearItems1',
-  'render1000Items2',
-  'clearItems2',
-  'render5000Items1',
-  'clearManyItems1',
-  'render5000Items2',
-  'clearManyItems2',
-  'render1000Items3',
-  'append1000Items1',
-  'append1000Items2',
-  'updateEvery10thItem1',
-  'updateEvery10thItem2',
-  'selectFirstRow1',
-  'selectSecondRow1',
-  'removeFirstRow1',
-  'removeSecondRow1',
-  'swapRows1',
-  'swapRows2',
-  'clearItems4',
+  "render",
+  "render1000Items1",
+  "clearItems1",
+  "render1000Items2",
+  "clearItems2",
+  "render5000Items1",
+  "clearManyItems1",
+  "render5000Items2",
+  "clearManyItems2",
+  "render1000Items3",
+  "append1000Items1",
+  "append1000Items2",
+  "updateEvery10thItem1",
+  "updateEvery10thItem2",
+  "selectFirstRow1",
+  "selectSecondRow1",
+  "removeFirstRow1",
+  "removeSecondRow1",
+  "swapRows1",
+  "swapRows2",
+  "clearItems4",
 ].reduce((acc, marker) => {
-  return acc + ',' + marker + 'Start,' + marker + 'End';
-}, '');
-const markers = (process.env['MARKERS'] || appMarkers)
-  .split(',')
+  return acc + "," + marker + "Start," + marker + "End";
+}, "");
+const markers = (process.env["MARKERS"] || appMarkers)
+  .split(",")
   .filter((el) => el.length)
-  .join(',');
-const fidelity = process.env['FIDELITY'] || '20';
-const throttleRate = process.env['THROTTLE'] || '2';
-const FORK_NAME = process.env['FORK_NAME'] || '';
+  .join(",");
+const fidelity = process.env["FIDELITY"] || "20";
+const throttleRate = process.env["THROTTLE"] || "2";
+const FORK_NAME = process.env["FORK_NAME"] || "";
 
 const tempDir = os.tmpdir();
 
-const CONTROL_DIR = join(tempDir, 'control');
-const EXPERIMENT_DIR = join(tempDir, 'experiment');
+const CONTROL_DIR = join(tempDir, "control");
+const EXPERIMENT_DIR = join(tempDir, "experiment");
 
 await $`rm -rf ${CONTROL_DIR}`;
 await $`rm -rf ${EXPERIMENT_DIR}`;
@@ -71,14 +72,14 @@ const rawOriginUrl = await $`git ls-remote --get-url origin`;
 let originUrlStr = rawOriginUrl.toString().trim();
 let upstreamUrlStr = rawUpstreamUrl.toString().trim();
 
-if (upstreamUrlStr === 'upstream') {
+if (upstreamUrlStr === "upstream") {
   // if we not inside fork, falling back to origin
   upstreamUrlStr = originUrlStr;
 }
 
-if (FORK_NAME && FORK_NAME !== 'lifeart/glimmer-next') {
+if (FORK_NAME && FORK_NAME !== "lifeart/glimmer-next") {
   // if PR from fork, we need to resolve fork's commit
-  originUrlStr = originUrlStr.replace('lifeart/glimmer-next', FORK_NAME);
+  originUrlStr = originUrlStr.replace("lifeart/glimmer-next", FORK_NAME);
 }
 
 const CONTROL_PORT = 4020;
@@ -94,9 +95,9 @@ await within(async () => {
   await $`git clone ${originUrlStr} .`;
   await $`git checkout ${experimentBranchName}`;
 
-  console.info('installing experiment source');
+  console.info("installing experiment source");
   await $`pnpm install --no-frozen-lockfile`.quiet();
-  console.info('building experiment source, may take a while');
+  console.info("building experiment source, may take a while");
   await $`pnpm build:prod`.quiet();
 });
 
@@ -106,9 +107,9 @@ await within(async () => {
   await $`git clone ${upstreamUrlStr} .`;
   await $`git checkout ${controlBranchName}`;
 
-  console.info('installing control source');
+  console.info("installing control source");
   await $`pnpm install --no-frozen-lockfile`.quiet();
-  console.info('building control source, may take a while');
+  console.info("building control source, may take a while");
   await $`pnpm build:prod`.quiet();
 });
 
@@ -134,8 +135,8 @@ try {
 
   try {
     fs.writeFileSync(
-      'tracerbench-results/msg.txt',
-      output.stdout.split('Benchmark Results Summary').pop() ?? ''
+      "tracerbench-results/msg.txt",
+      output.stdout.split("Benchmark Results Summary").pop() ?? "",
     );
   } catch (e) {
     // fine
