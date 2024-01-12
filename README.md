@@ -131,7 +131,6 @@ function helper(...args: Args): string | boolean | number | null {
 
 ### Reactive primitives
 
-
 - `@tracked` - decorator to mark class property as reactive primitive. It's autotrack dependencies and update when any of them changed. Note, to use it you need to add `import 'decorator-transforms/globals';` in top-level file.
 
 - `cell<T>(value)` - reactive primitive, for mutable state. We could update cel calling `cell.update(value)`, to get cell value we could use `cell.value`.
