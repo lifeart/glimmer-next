@@ -1,7 +1,7 @@
 // https://astexplorer.net/#/gist/c2f0f7e4bf505471c94027c580af8329/c67119639ba9e8fd61a141e8e2f4cbb6f3a31de9
 // https://astexplorer.net/#/gist/4e3b4c288e176bb7ce657f9dea95f052/8dcabe8144c7dc337d21e8c771413db30ca5d397
 import { preprocess, traverse, ASTv1 } from '@glimmer/syntax';
-import { transformSync } from '@babel/core';
+import { type PluginItem, transformSync } from '@babel/core';
 import { HBSControlExpression, HBSNode, serializeNode } from './utils';
 import { processTemplate, type ResolvedHBS } from './babel';
 import { convert } from './converter';
@@ -53,6 +53,7 @@ export function transform(
   source: string,
   fileName: string,
   mode: 'development' | 'production',
+  isLibBuild: boolean = false,
 ) {
   const programs: {
     meta: ResolvedHBS['flags'];
@@ -63,11 +64,13 @@ export function transform(
   const hbsToProcess: ResolvedHBS[] = [];
   const programResults: string[] = [];
 
+  const plugins: PluginItem[] = [processTemplate(hbsToProcess, mode)];
+  if (!isLibBuild) {
+    plugins.push('module:decorator-transforms');
+  }
+
   const babelResult = transformSync(rawTxt, {
-    plugins: [
-      processTemplate(hbsToProcess, mode),
-      'module:decorator-transforms',
-    ],
+    plugins,
     filename: fileName.replace('.gts', '.ts').replace('.gjs', '.js'),
     presets: [
       [

@@ -28,10 +28,11 @@ if (isLibBuild) {
             "@babel/preset-typescript",
             {
               allowDeclareFields: true,
+              allExtensions: false,
             },
           ],
         ],
-        plugins: [["decorator-transforms"], processSource],
+        plugins: [processSource],
       },
     }),
     dts({
@@ -66,10 +67,12 @@ if (isLibBuild) {
       },
     }),
   );
+  plugins.push(
+    circleDependency({}))
 }
 
 export default defineConfig(({ mode }) => ({
-  plugins: [...plugins, compiler(mode), circleDependency({})],
+  plugins: [...plugins, compiler(mode)],
   build: {
     lib: isLibBuild
       ? {
@@ -88,6 +91,11 @@ export default defineConfig(({ mode }) => ({
     minify: mode === "production" ? "terser" : false,
     rollupOptions: {
       treeshake: "recommended",
+      onwarn(warning, warn) {
+        // suppress eval warnings (we use it for HMR)
+        if (warning.code === 'EVAL') return
+        warn(warning)
+      },
       input: !isLibBuild
         ? {
             main: "index.html",

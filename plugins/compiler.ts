@@ -12,11 +12,12 @@ function fixContentTagOutput(code: string): string {
 }
 
 export function compiler(mode: string): Plugin {
+  let isLibBuild = false;
   return {
     enforce: 'pre',
     name: 'glimmer-next',
     config(config, mode) {
-      const isLibBuild = config.build?.lib !== undefined;
+      isLibBuild = config.build?.lib !== undefined;
       const defineValues: Record<string, boolean> = flags;
       if (!isLibBuild) {
         defineValues['IS_DEV_MODE'] = mode.mode === 'development';
@@ -34,13 +35,13 @@ export function compiler(mode: string): Plugin {
           return transform(
             fixExportsForHMR(intermediate) + HMR,
             file,
-            mode as 'development' | 'production',
+            mode as 'development' | 'production', isLibBuild,
           );
         } else {
           return transform(
             intermediate,
             file,
-            mode as 'development' | 'production',
+            mode as 'development' | 'production', isLibBuild,
           );
         }
       }
