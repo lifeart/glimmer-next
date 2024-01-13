@@ -1,6 +1,6 @@
 import { RemoveIcon } from './RemoveIcon.gts';
 import type { Item } from '@/utils/data';
-import { Component, cellFor } from '@lifeart/gxt';
+import { Component, cellFor, formula } from '@lifeart/gxt';
 import type { ModifierReturn } from '@glint/template/-private/integration';
 
 type RowArgs = {
@@ -15,10 +15,13 @@ type RowArgs = {
 
 export class Row extends Component<RowArgs> {
   isClicked = false;
-  labelCell = () => {
-    // formulat can't return bare cell because it don't have tracked chain;
-    return cellFor(this.args.item, 'label');
-  };
+  get labelCell() {
+    if (IS_GLIMMER_COMPAT_MODE) {
+      return this.args.item.label;
+    } else {
+      return cellFor(this.args.item, 'label');
+    }
+  }
   get id() {
     return this.args.item.id;
   }
@@ -30,9 +33,16 @@ export class Row extends Component<RowArgs> {
       return selected() === this.id;
     }
   }
-  className = () => {
-    return this.isSelected ? 'bg-blue-500' : '';
-  };
+  get className() {
+    if (IS_GLIMMER_COMPAT_MODE) {
+      return this.isSelected ? 'bg-blue-500' : '';
+    } else {
+      return formula(
+        () => (this.isSelected ? 'bg-blue-500' : ''),
+        'isSelected',
+      );
+    }
+  }
   onClick = () => {
     this.args.onSelect(this.args.item);
   };
