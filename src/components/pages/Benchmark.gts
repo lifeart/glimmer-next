@@ -1,5 +1,5 @@
 import { buildData, swapRows, updateData, type Item } from '@/utils/data';
-import { Component, tracked } from '@lifeart/gxt';
+import { Component, tracked, cellFor, type Cell } from '@lifeart/gxt';
 import { Header } from './benchmark/Header.gts';
 import { Row } from './benchmark/Row.gts';
 
@@ -8,22 +8,22 @@ export class Benchmark extends Component {
   _items: Item[] = [];
   @tracked
   _selected = 0;
-  get items(): Item[] | (() => Item[]) {
+  get items(): Item[] | Cell<Item[]> {
     if (IS_GLIMMER_COMPAT_MODE) {
       return this._items;
     } else {
-      return () => this._items;
+      return cellFor(this, '_items') as Cell<Item[]>;
     }
   }
   set items(value: Item[]) {
     this._items = value;
     this.selected = 0;
   }
-  get selected(): number | (() => number) {
+  get selected(): number | Cell<number> {
     if (IS_GLIMMER_COMPAT_MODE) {
       return this._selected;
     } else {
-      return () => this._selected;
+      return cellFor(this, '_selected') as Cell<number>;
     }
   }
   set selected(value: number) {

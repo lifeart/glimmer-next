@@ -421,7 +421,6 @@ function component(
     }
   }
   if (IS_GLIMMER_COMPAT_MODE) {
-
   } else {
     if (isTagLike(comp)) {
       comp = comp.value;
