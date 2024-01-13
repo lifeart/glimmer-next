@@ -16,11 +16,7 @@ type RowArgs = {
 export class Row extends Component<RowArgs> {
   isClicked = false;
   get labelCell() {
-    if (IS_GLIMMER_COMPAT_MODE) {
-      return this.args.item.label;
-    } else {
-      return cellFor(this.args.item, 'label');
-    }
+    return cellFor(this.args.item, 'label');
   }
   get id() {
     return this.args.item.id;
