@@ -1,8 +1,9 @@
 import { module, test } from 'qunit';
-import { render, allSettled } from '@/tests/utils';
+import { render, allSettled, click } from '@/tests/utils';
 import { cell } from '@lifeart/gxt';
-import { Cell } from '@/utils/reactive';
+import { type Cell } from '@/utils/reactive';
 import { step } from '../utils';
+import type { ModifierReturn } from '@glint/template/-private/integration';
 
 module('Integration | InternalComponent | each', function (hooks) {
   type User = { name: Cell<string> };
@@ -10,6 +11,134 @@ module('Integration | InternalComponent | each', function (hooks) {
 
   hooks.beforeEach(() => {
     users = cell([{ name: cell('Uef') }, { name: cell('Bi') }]);
+  });
+
+  test('it runs async element destructors for Components with context', async function (assert) {
+    const animationDelay = 100;
+    const items = cell([{ id: '1' }, { id: '2' }]);
+    const removeItem = (item: { id: string }) => {
+      items.update(items.value.filter((i) => i.id !== item.id));
+    };
+    const fadeOut = (node: HTMLLIElement) => {
+      node.style.opacity = '1';
+      const destructor = async () => {
+        node.style.opacity = '0.1';
+        await new Promise((resolve) => setTimeout(resolve, animationDelay));
+      };
+      return destructor as unknown as ModifierReturn;
+    };
+    const Li = <template>
+      <li
+        data-test-user={{@item.id}}
+        data-this-hack-is-needed-to-create-child-with-context
+        {{fadeOut}}
+        {{on 'click' (fn removeItem @item)}}
+      >
+        {{@item.id}}
+      </li>
+    </template>;
+    await render(
+      <template>
+        <ul data-test-users>
+          {{#each items as |item|}}
+            <Li @item={{item}} />
+          {{/each}}
+        </ul>
+      </template>,
+    );
+    assert.dom('[data-test-user]').exists({ count: 2 }, 'Initially 2 elements');
+    await click('[data-test-user="1"]');
+    await allSettled();
+    assert
+      .dom('[data-test-user]')
+      .exists({ count: 2 }, 'After click we should be able to see 2 elements');
+    await new Promise((resolve) => setTimeout(resolve, animationDelay));
+    assert
+      .dom('[data-test-user]')
+      .exists(
+        { count: 1 },
+        'After async destructors, list items are removed from the DOM',
+      );
+  });
+  test('it runs async element destructors for unstable nodes', async function (assert) {
+    const animationDelay = 100;
+    const items = cell([{ id: '1' }, { id: '2' }]);
+    const removeItem = (item: { id: string }) => {
+      items.update(items.value.filter((i) => i.id !== item.id));
+    };
+    const fadeOut = (node: HTMLLIElement) => {
+      node.style.opacity = '1';
+      const destructor = async () => {
+        node.style.opacity = '0.1';
+        await new Promise((resolve) => setTimeout(resolve, animationDelay));
+      };
+      return destructor as unknown as ModifierReturn;
+    };
+    await render(
+      <template>
+        <ul data-test-users>
+          {{#each items as |item|}}
+            123 321 123 321
+            {{! need this ^ to create unstable child wrapper to be able to run async destructors }}
+            <li
+              data-test-user={{item.id}}
+              {{fadeOut}}
+              {{on 'click' (fn removeItem item)}}
+            >
+              {{item.id}}
+            </li>
+          {{/each}}
+        </ul>
+      </template>,
+    );
+    assert.dom('[data-test-user]').exists({ count: 2 }, 'Number of elements');
+    await click('[data-test-user="1"]');
+    await allSettled();
+    assert.dom('[data-test-user]').exists({ count: 2 }, 'Number of elements');
+    await new Promise((resolve) => setTimeout(resolve, animationDelay));
+    assert.dom('[data-test-user]').exists({ count: 1 }, 'Number of elements');
+  });
+  test('it wait for async element destructors before destroying', async function (assert) {
+    const animationDelay = 100;
+    const items = cell([{ id: '1' }, { id: '2' }]);
+    const isExpended = cell(true);
+    const fadeOut = (node: HTMLLIElement) => {
+      node.style.opacity = '1';
+      const destructor = async () => {
+        node.style.opacity = '0.1';
+        await new Promise((resolve) => setTimeout(resolve, animationDelay));
+      };
+      return destructor as unknown as ModifierReturn;
+    };
+    await render(
+      <template>
+        {{#if isExpended}}
+          <ul data-test-users>
+            {{#each items as |item|}}
+              <li {{fadeOut}}>{{item.id}}</li>
+            {{/each}}
+          </ul>
+        {{/if}}
+      </template>,
+    );
+    assert.dom('li').exists({ count: 2 }, '2 list items visible on the screen');
+    isExpended.update(false);
+    await allSettled();
+    assert
+      .dom('li')
+      .exists(
+        { count: 2 },
+        'After toggling isExpended, 2 list items still visible on the screen',
+      );
+    await new Promise((resolve) => setTimeout(resolve, animationDelay));
+    assert
+      .dom('li')
+      .doesNotExist(
+        'After async destructors, list items are removed from the DOM',
+      );
+    assert
+      .dom('ul')
+      .doesNotExist('After async destructors, list is removed from the DOM');
   });
 
   test('it renders the list', async function (assert) {

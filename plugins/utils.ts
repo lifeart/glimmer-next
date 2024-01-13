@@ -375,7 +375,10 @@ export function serializeNode(
       ctxName,
     )}], ${ctxName})`;
   } else {
-    if (typeof node === 'string') {
+    if (typeof node === 'string' || typeof node === 'number') {
+      if (typeof node === 'number') {
+        node = String(node);
+      }
       if (isPath(node)) {
         return serializePath(node);
       } else {

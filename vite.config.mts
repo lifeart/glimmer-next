@@ -2,7 +2,7 @@ import { PluginOption, defineConfig } from "vite";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { compiler } from "./plugins/compiler.ts";
-import circleDependency from "vite-plugin-circular-dependency";
+// import circleDependency from "vite-plugin-circular-dependency";
 import dts from "vite-plugin-dts";
 import babel from "vite-plugin-babel";
 import { processSource } from "./plugins/babel.ts";
@@ -68,7 +68,7 @@ if (isLibBuild) {
       },
     }),
   );
-  plugins.push(circleDependency({}));
+  // plugins.push(circleDependency({}));
 }
 
 export default defineConfig(({ mode }) => ({
@@ -120,8 +120,11 @@ export default defineConfig(({ mode }) => ({
             "@babel/preset-typescript",
             "@glimmer/syntax",
             "content-tag",
+            "happy-dom",
+            "express",
+            "vite",
           ]
-        : [],
+        : ["happy-dom", "express", "vite"],
     },
     terserOptions:
       mode === "production"
@@ -147,6 +150,7 @@ export default defineConfig(({ mode }) => ({
     alias: {
       "@/components": path.join(currentPath, "src", "components"),
       "@/utils": path.join(currentPath, "src", "utils"),
+      "@/services": path.join(currentPath, "src", "services"),
       "@/tests": path.join(currentPath, "src", "tests"),
       "@lifeart/gxt/ember-inspector": path.join(
         currentPath,

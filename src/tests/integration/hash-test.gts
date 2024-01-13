@@ -13,7 +13,7 @@ module('Integration | InternalHelper | hash', function () {
       <template>
         <ul>
           {{#each (array (hash id=1) (hash id=2) (hash id=3)) as |item|}}
-            <li data-id={{item.id}}>{{item}}</li>
+            <li data-id={{item.id}}>{{item.id}}</li>
           {{/each}}
         </ul>
       </template>,

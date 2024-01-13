@@ -32,10 +32,6 @@ export class Application extends Component {
     this.rootNode = rootNode;
     // @ts-ignore
     renderComponent(this, this.rootNode);
-    // router init
-    requestAnimationFrame(() => {
-      router.mount(window.location.pathname);
-    });
   }
   <template>
     {{#if IS_GLIMMER_COMPAT_MODE}}

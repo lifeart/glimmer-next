@@ -26,7 +26,8 @@ export function ifCondition(
   existingPlaceholder?: Comment,
 ) {
   // "if-placeholder"
-  const placeholder = existingPlaceholder || api.comment();
+  const placeholder =
+    existingPlaceholder || api.comment('if-general-placeholder');
   const target = outlet;
   if (!placeholder.isConnected) {
     api.append(target, placeholder);
@@ -70,7 +71,7 @@ export function ifCondition(
       }
       if (throwedError) {
         Promise.resolve().then(() => {
-          const newPlaceholder = api.comment();
+          const newPlaceholder = api.comment('if-error-placeholder');
           if (!placeholder.isConnected) {
             // placeholder is disconnected, it means whole `if` is removed from DOM, no need to recover;
             return;

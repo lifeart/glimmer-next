@@ -68,6 +68,9 @@ export class Router extends Component {
     }
     this.renderCount++;
     let coords!: DOMRect;
+    if (import.meta.env.SSR) {
+      return;
+    }
     requestAnimationFrame(() => {
       coords = element.getBoundingClientRect();
       element.style.position = 'absolute';

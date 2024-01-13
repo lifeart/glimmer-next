@@ -45,6 +45,9 @@ export function getBounds(ctx: Component<any>) {
   return BOUNDS.get(ctx) ?? [];
 }
 export function setBounds(component: ComponentReturnType) {
+  if (import.meta.env.SSR) {
+    return;
+  }
   const ctx = component.ctx;
   if (!ctx) {
     return;
@@ -94,7 +97,7 @@ export function addToTree(
   debugName?: string,
 ) {
   if (IS_DEV_MODE) {
-    if (node instanceof Node) {
+    if ('nodeType' in node) {
       throw new Error('invalid node');
     } else if ('ctx' in node && node.ctx === null) {
       // if it's simple node without context, no needs to add it to the tree as well

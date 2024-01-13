@@ -1,7 +1,13 @@
 import { cell } from '@lifeart/gxt';
 
-const isMobileDialogVisible = cell(window.innerWidth < 1024);
-const isMobile = () => window.innerWidth < 1024;
+let isMobileDialogVisible = false;
+let isMobile = () => false;
+
+if (!import.meta.env.SSR) {
+  // @ts-ignore
+  isMobileDialogVisible = cell(window.innerWidth < 1024);
+  isMobile = () => window.innerWidth < 1024;
+}
 
 // window.addEventListener('resize', () => {
 //   if (window.innerWidth < 1024) {

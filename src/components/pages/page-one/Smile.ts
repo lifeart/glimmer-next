@@ -4,25 +4,33 @@ export function Smile(this: object) {
   const isVisible = cell(true, 'isVisible');
 
   const interval = setInterval(() => {
+    if (import.meta.env.SSR) {
+      return;
+    }
     isVisible.update(!isVisible.value);
   }, 1000);
 
   let ticker = 0;
 
-  const destroyEffect = effect(() => {
-    ticker++;
-    let localTicker = ticker;
-    return () => {
-      console.log(`destroying effect: ${localTicker}`);
-    };
-  });
+  if (!import.meta.env.SSR) {
+    const destroyEffect = effect(() => {
+      ticker++;
+      let localTicker = ticker;
+      return () => {
+        console.log(`destroying effect: ${localTicker}`);
+      };
+    });
 
-  setTimeout(() => {
-    console.log('destroying effect before component is destroyed:');
-    destroyEffect();
-  }, 5000);
+    setTimeout(() => {
+      console.log('destroying effect before component is destroyed:');
+      destroyEffect();
+    }, 5000);
+  }
 
   const fadeOut = (element: HTMLSpanElement) => {
+    if (import.meta.env.SSR) {
+      return;
+    }
     element.style.opacity = '0.1';
     element.style.transition = 'opacity 0.2s linear';
 

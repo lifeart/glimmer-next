@@ -4,14 +4,14 @@ import { Table } from './page-one/Table.gts';
 
 export class PageOne extends Component {
   <template>
-    <p class='text-white p-3'>
+    <div class='text-white p-3'>
       <h1><q>Compilers are the New Frameworks</q> - Tom Dale &copy;</h1>
       <br />
 
-      <p>Imagine a world where the robust, mature ecosystems of development
+      <div>Imagine a world where the robust, mature ecosystems of development
         tools meet the cutting-edge performance of modern compilers. That's what
         we're building here! Our platform takes the best of established
-        technologies and infuses them with a new, state-of-the-art compiler.</p>
+        technologies and infuses them with a new, state-of-the-art compiler.</div>
       <br />
 
       <div class='overflow-x-auto relative'>
@@ -37,6 +37,6 @@ export class PageOne extends Component {
       <i>Join us in shaping the future of development, where power meets
         efficiency. Get ready to elevate your coding experience!</i>
       <br /><br />
-      <a href='/pageTwo'>Go to page two <Smile /></a></p>
+      <a href='/pageTwo'>Go to page two <Smile /></a></div>
   </template>
 }

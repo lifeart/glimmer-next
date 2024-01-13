@@ -17,8 +17,8 @@ export const tagsToRevalidate: Set<Cell> = new Set();
 // List of derived tags for each cell
 export const relatedTags: WeakMap<Cell, Set<MergedCell>> = new WeakMap();
 
-const DEBUG_MERGED_CELLS = new Set<MergedCell>();
-const DEBUG_CELLS = new Set<Cell>();
+export const DEBUG_MERGED_CELLS = new Set<MergedCell>();
+export const DEBUG_CELLS = new Set<Cell>();
 
 export function getCells() {
   return Array.from(DEBUG_CELLS);
@@ -28,11 +28,13 @@ export function getMergedCells() {
 }
 
 if (IS_DEV_MODE) {
-  window['getVM'] = () => ({
-    relatedTags,
-    tagsToRevalidate,
-    opsForTag,
-  });
+  if (!import.meta.env.SSR) {
+    window['getVM'] = () => ({
+      relatedTags,
+      tagsToRevalidate,
+      opsForTag,
+    });
+  }
 }
 
 export function tracked(

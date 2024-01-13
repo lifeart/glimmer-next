@@ -24,6 +24,7 @@
       "@/components/*": ["./src/components/*"],
       "@/tests/*": ["./src/tests/*"],
       "@/utils/*": ["./src/utils/*"],
+      "@/services/*": ["./src/services/*"],
       "@lfieart/gxt/test-utils": ["./src/tests/utils"],
       "@lifeart/gxt/ember-inspector": ["./src/utils/ember-inspector"],
       "@lifeart/gxt": ["./src/utils/index"]

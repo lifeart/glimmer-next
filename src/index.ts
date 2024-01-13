@@ -1,10 +1,9 @@
 import '@glint/environment-glimmerx';
 import '@glint/environment-ember-template-imports';
 import 'decorator-transforms/globals';
-import './style.css';
 
 import { createBenchmark } from '@/utils/benchmark';
-
+import { router } from '@/services/router';
 import {
   enforcePaintEvent,
   ButtonSelectors,
@@ -20,6 +19,7 @@ export default async function render() {
   if (IS_DEV_MODE) {
     await import('@lifeart/gxt/ember-inspector');
   }
+  await router.mount(window.location.pathname);
   const benchmark = createBenchmark();
 
   // starting app

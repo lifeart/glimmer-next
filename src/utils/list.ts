@@ -19,6 +19,7 @@ import {
   isPrimitive,
   isTagLike,
 } from './shared';
+import { isRehydrationScheduled } from './rehydration';
 
 function setIndex(item: GenericReturnType, index: number) {
   item.forEach((item) => {
@@ -169,10 +170,15 @@ class BasicListComponent<T extends { id: number }> {
     if (amountOfKeys > 0) {
       return this.bottomMarker;
     } else {
-      const fragment = api.fragment();
+      let fragment!: DocumentFragment;
       // list fragment marker
-      const marker = api.comment();
-      api.append(fragment, marker);
+      const marker = api.comment('list fragment target marker');
+      if (isRehydrationScheduled()) {
+        fragment = marker.parentElement as unknown as DocumentFragment;
+      } else {
+        fragment = api.fragment();
+        api.append(fragment, marker);
+      }
       return marker;
     }
   }
@@ -264,8 +270,11 @@ class BasicListComponent<T extends { id: number }> {
 
     if (targetNode !== this.bottomMarker) {
       const parent = targetNode.parentNode!;
-      parent.removeChild(targetNode);
-      api.insert(this.bottomMarker.parentNode!, parent, this.bottomMarker);
+      const trueParent = this.bottomMarker.parentNode!;
+      // parent.removeChild(targetNode);
+      if (trueParent !== parent) {
+        api.insert(trueParent, parent, this.bottomMarker);
+      }
     }
   }
 }
