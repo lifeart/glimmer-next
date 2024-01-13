@@ -1,48 +1,62 @@
 import { buildData, swapRows, updateData, type Item } from '@/utils/data';
-import { Component, cell } from '@lifeart/gxt';
+import { Component, tracked, cellFor, type Cell } from '@lifeart/gxt';
 import { Header } from './benchmark/Header.gts';
 import { Row } from './benchmark/Row.gts';
 
 export class Benchmark extends Component {
-  itemsCell = cell<Item[]>([], 'items');
-  selectedCell = cell(0, 'selectedCell');
-  rootNode!: HTMLElement;
-  get items() {
-    return this.itemsCell.value;
+  @tracked
+  _items: Item[] = [];
+  @tracked
+  _selected = 0;
+  get items(): Item[] | Cell<Item[]> {
+    if (IS_GLIMMER_COMPAT_MODE) {
+      return this._items;
+    } else {
+      return cellFor(this, '_items') as Cell<Item[]>;
+    }
   }
   set items(value: Item[]) {
-    this.itemsCell.value = value;
+    this._items = value;
+    this.selected = 0;
   }
-  get selected() {
-    return this.selectedCell.value;
+  get selected(): number | Cell<number> {
+    if (IS_GLIMMER_COMPAT_MODE) {
+      return this._selected;
+    } else {
+      return cellFor(this, '_selected') as Cell<number>;
+    }
   }
+  set selected(value: number) {
+    this._selected = value;
+  }
+  rootNode!: HTMLElement;
   removeItem = (item: Item) => {
-    this.items = this.items.filter((i) => i.id !== item.id);
+    this._items = this._items.filter((i) => i.id !== item.id);
   };
   onSelect = (item: Item) => {
-    if (this.selectedCell.value === item.id) {
-      this.selectedCell.value = 0;
+    if (this._selected === item.id) {
+      this._selected = 0;
       return;
     }
-    this.selectedCell.value = item.id;
+    this._selected = item.id;
   };
   create_1_000itemsCell() {
-    this.items = buildData(1000);
+    this._items = buildData(1000);
   }
   append_1_000itemsCell() {
-    this.items = [...this.items, ...buildData(1000)];
+    this._items = [...this._items, ...buildData(1000)];
   }
   create_5_000itemsCell() {
-    this.items = buildData(5000);
+    this._items = buildData(5000);
   }
   swapRows() {
-    this.items = swapRows(this.items);
+    this._items = swapRows(this._items);
   }
   clear() {
-    this.items = [];
+    this._items = [];
   }
   updateEvery_10th_row() {
-    updateData(this.items, 10);
+    updateData(this._items, 10);
   }
   actions = {
     run: () => this.create_1_000itemsCell(),

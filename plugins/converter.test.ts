@@ -343,7 +343,9 @@ describe('convert function builder', () => {
           `{{#let foo "name" as |bar k|}}p{{bar}}{{k}}{{/let}}`,
         ),
       ).toEqual(
-        `$:...(() => {let bar = $:() => $:foo;let k = "name";return [$_text("p"), () => bar, () => k]})()`,
+        `$:...(() => {let bar = $:() => $:foo;let k = "name";return [$_text("p"), ${
+          flags.IS_GLIMMER_COMPAT_MODE ? '() => bar' : 'bar'
+        }, ${flags.IS_GLIMMER_COMPAT_MODE ? '() => k' : 'k'}]})()`,
       );
     });
   });

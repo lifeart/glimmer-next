@@ -38,9 +38,13 @@ export class Application extends Component {
     });
   }
   <template>
-    <NestedRouter
-      @components={{this.components}}
-      @stack={{this.router.stack}}
-    />
+    {{#if IS_GLIMMER_COMPAT_MODE}}
+      <NestedRouter
+        @components={{this.components}}
+        @stack={{this.router.stack}}
+      />
+    {{else}}
+      <Benchmark />
+    {{/if}}
   </template>
 }

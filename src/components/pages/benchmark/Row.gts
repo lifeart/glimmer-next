@@ -1,12 +1,12 @@
 import { RemoveIcon } from './RemoveIcon.gts';
 import type { Item } from '@/utils/data';
-import { Component, cellFor } from '@lifeart/gxt';
+import { type Cell, Component, cellFor, formula } from '@lifeart/gxt';
 import type { ModifierReturn } from '@glint/template/-private/integration';
 
 type RowArgs = {
   Args: {
     item: Item;
-    selected: number;
+    selected: number | Cell<number>;
     onRemove: (item: Item) => void;
     onSelect: (item: Item) => void;
   };
@@ -22,10 +22,22 @@ export class Row extends Component<RowArgs> {
     return this.args.item.id;
   }
   get isSelected() {
-    return this.args.selected === this.id;
+    const selected = this.args.selected;
+    if (IS_GLIMMER_COMPAT_MODE) {
+      return (selected as unknown as number) === this.id;
+    } else {
+      return (selected as unknown as Cell<number>).value === this.id;
+    }
   }
   get className() {
-    return this.isSelected ? 'bg-blue-500' : '';
+    if (IS_GLIMMER_COMPAT_MODE) {
+      return this.isSelected ? 'bg-blue-500' : '';
+    } else {
+      return formula(
+        () => (this.isSelected ? 'bg-blue-500' : ''),
+        'isSelected',
+      );
+    }
   }
   onClick = () => {
     this.args.onSelect(this.args.item);
