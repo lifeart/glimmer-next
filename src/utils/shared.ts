@@ -1,8 +1,7 @@
 import {
   associateDestroyable,
-  Component,
-  ComponentReturnType,
-  relatedRoots,
+  type Component,
+  type ComponentReturnType,
 } from '@/utils/component';
 import { type AnyCell } from './reactive';
 
@@ -59,16 +58,7 @@ export function setBounds(component: ComponentReturnType) {
         if (node instanceof Comment) {
           return [node, node.nextSibling];
         } else if (node instanceof DocumentFragment) {
-          const roots = relatedRoots.get(node);
-          if (roots && !Array.isArray(roots) && $nodes in roots) {
-            return roots[$nodes].map((node) => {
-              if (node instanceof Comment) {
-                return [node, node.nextSibling];
-              } else {
-                return node;
-              }
-            });
-          }
+          return [];
         }
       }
       if (isHTMLElement) {

@@ -2,7 +2,6 @@ import {
   type Component,
   destroyElement,
   type GenericReturnType,
-  relatedRoots,
   removeDestructor,
   renderElement,
 } from '@/utils/component';
@@ -34,7 +33,6 @@ export function ifCondition(
       await destroyElement(prevComponent);
       prevComponent = null;
     }
-    relatedRoots.delete(outlet);
   };
   const originalCell = cell;
   if (isFn(originalCell)) {
@@ -99,8 +97,6 @@ export function ifCondition(
         let nextBranch = value ? trueBranch : falseBranch;
         // @ts-expect-error this any type
         prevComponent = nextBranch(this as unknown as Component<any>);
-        // console.log('renderedComponent for parent', ctx, prevComponent);
-        relatedRoots.set(outlet, prevComponent);
         renderElement(
           placeholder.parentNode || target,
           prevComponent,
@@ -140,9 +136,6 @@ export function ifCondition(
         }
         // @ts-expect-error this any type
         prevComponent = nextBranch(this);
-        // console.log('renderedComponent for parent', ctx, prevComponent);
-
-        relatedRoots.set(outlet, prevComponent);
         renderElement(
           placeholder.parentNode || target,
           prevComponent,

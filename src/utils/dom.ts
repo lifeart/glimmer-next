@@ -7,6 +7,7 @@ import {
   type Component,
   renderElement,
   destroyElement,
+  runDestructors,
 } from '@/utils/component';
 import {
   AnyCell,
@@ -16,7 +17,11 @@ import {
   deepFnValue,
 } from '@/utils/reactive';
 import { evaluateOpcode, opcodeFor } from '@/utils/vm';
-import { SyncListComponent, AsyncListComponent } from '@/utils/list';
+import {
+  SyncListComponent,
+  AsyncListComponent,
+  getFirstNode,
+} from '@/utils/list';
 import { ifCondition } from '@/utils/if';
 import {
   DestructorFn,
@@ -138,7 +143,12 @@ function $attr(
   }
 }
 
-type RenderableType = ComponentReturnType | NodeReturnType | string | number;
+type RenderableType =
+  | Node
+  | ComponentReturnType
+  | NodeReturnType
+  | string
+  | number;
 type ShadowRootMode = 'open' | 'closed' | null;
 function resolveRenderable(
   child: Function,
@@ -171,11 +181,12 @@ export function addChild(
   if (child === null || child === undefined) {
     return;
   }
-  if (typeof child === 'object' && $nodes in child) {
+  const isObject = typeof child === 'object';
+  if (isObject && $nodes in child) {
     child[$nodes].forEach((node, i) => {
-      api.append(element, node, index + i);
+      addChild(element, node, destructors, index + i);
     });
-  } else if (typeof child === 'object' && $node in child) {
+  } else if (isObject && $node in child) {
     api.append(element, child[$node], index);
   } else if (isPrimitive(child)) {
     // @ts-expect-error number to string type casting
@@ -426,6 +437,11 @@ const COMPONENTS_HMR = new WeakMap<
 
 if (!import.meta.env.SSR) {
   if (IS_DEV_MODE) {
+    // @ts-expect-error global
+    window.utils = {
+      getRoot,
+      runDestructors,
+    };
     window.hotReload = function hotReload(
       oldklass: Component | ComponentReturnType,
       newKlass: Component | ComponentReturnType,
@@ -439,7 +455,7 @@ if (!import.meta.env.SSR) {
 
       renderedBuckets.forEach(({ parent, instance, args, fw }) => {
         const newCmp = component(newKlass, args, fw, parent);
-        const firstElement = instance[$nodes][0];
+        const firstElement = getFirstNode(instance);
         const parentElement = firstElement.parentNode!;
         renderElement(parentElement, newCmp, firstElement);
         destroyElement(instance);
@@ -565,7 +581,7 @@ function mergeComponents(
 function slot(name: string, params: () => unknown[], $slot: Slots) {
   if (!(name in $slot)) {
     const slotPlaceholder: NodeReturnType = def(
-      api.comment(`slot-${name}-placeholder`),
+      api.comment(`slot-{{${name}}}-placeholder`),
     );
     let isRendered = false;
     Object.defineProperty($slot, name, {
@@ -803,34 +819,6 @@ export function $_fin(
   const nodes: Array<
     HTMLElement | ComponentReturnType | NodeReturnType | Text | Comment
   > = [];
-  roots.forEach((root) => {
-    if (IS_GLIMMER_COMPAT_MODE) {
-      // with glimmer compat mode no primitives allowed as template nodes
-      if ($nodes in root) {
-        nodes.push(
-          ...(root[$nodes] as unknown as Array<HTMLElement | Text | Comment>),
-        );
-      } else if ($node in root) {
-        nodes.push(root[$node] as unknown as HTMLElement | Text | Comment);
-      } else {
-        nodes.push(root);
-      }
-    } else {
-      if (root === null) {
-        return;
-      } else if (isPrimitive(root)) {
-        nodes.push(api.text(String(root)));
-      } else if ($nodes in root) {
-        nodes.push(
-          ...(root[$nodes] as unknown as Array<HTMLElement | Text | Comment>),
-        );
-      } else if ($node in root) {
-        nodes.push(root[$node] as unknown as HTMLElement | Text | Comment);
-      } else {
-        nodes.push(root);
-      }
-    }
-  });
   if (!isStable) {
     if (IS_DEV_MODE) {
       nodes.unshift(
@@ -855,7 +843,7 @@ export function $_fin(
   }
 
   return {
-    [$nodes]: nodes,
+    [$nodes]: roots,
     [$slotsProp]: slots,
     ctx,
     index: 0,

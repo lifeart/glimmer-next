@@ -31,12 +31,6 @@ export type GenericReturnType =
   | null
   | null[];
 
-// this is workaround for `if` case, where we don't have stable root, and to remove it properly we need to look into last rendered part
-export const relatedRoots: WeakMap<
-  DocumentFragment | HTMLElement,
-  GenericReturnType
-> = new WeakMap();
-
 function renderNode(parent: Node, target: Node, placeholder: Node | Comment) {
   if (import.meta.env.DEV) {
     if (target === undefined || target === null) {
@@ -48,35 +42,26 @@ function renderNode(parent: Node, target: Node, placeholder: Node | Comment) {
       return;
     }
   }
-  if (target.nodeType === FRAGMENT_TYPE) {
-    if (target.childNodes.length) {
-      api.insert(parent, target, placeholder);
-    } else {
-      const roots = relatedRoots.get(target as DocumentFragment);
-      if (roots !== undefined) {
-        renderElement(parent, roots, placeholder);
-      }
-    }
-  } else {
-    api.insert(parent, target, placeholder);
-  }
+  api.insert(parent, target, placeholder);
 }
 
 export function renderElement(
   target: Node,
-  el: GenericReturnType,
+  el: GenericReturnType | Node,
   placeholder: Comment | Node,
 ) {
   if (!Array.isArray(el)) {
     if (el === null) {
       return;
     }
-    if ($nodes in el) {
+    if ($node in el) {
+      renderNode(target, el[$node], placeholder);
+    } else if ($nodes in el) {
       el[$nodes].forEach((node) => {
-        renderNode(target, node, placeholder);
+        renderElement(target, node, placeholder);
       });
     } else {
-      renderNode(target, el[$node], placeholder);
+      renderNode(target, el, placeholder);
     }
   } else {
     el.forEach((item) => {
@@ -162,15 +147,13 @@ export class Component<T extends Props = any>
   }
   template!: ComponentReturnType;
 }
-async function destroyNode(node: Node) {
+
+function destroyNode(node: Node) {
   if (IS_DEV_MODE) {
     if (node === undefined) {
       console.warn(`Trying to destroy undefined`);
       return;
     } else if (node.nodeType === FRAGMENT_TYPE) {
-      const roots = relatedRoots.get(node as DocumentFragment) ?? [];
-      await destroyElement(roots);
-      relatedRoots.delete(node as DocumentFragment);
       return;
     }
     const parent = node.parentNode;
@@ -185,9 +168,6 @@ async function destroyNode(node: Node) {
     }
   } else {
     if (node.nodeType === FRAGMENT_TYPE) {
-      const roots = relatedRoots.get(node as DocumentFragment) ?? [];
-      await destroyElement(roots);
-      relatedRoots.delete(node as DocumentFragment);
       return;
     }
     node.parentNode!.removeChild(node);
@@ -213,24 +193,8 @@ export function destroyElementSync(
       if (component.ctx !== null) {
         runDestructorsSync(component.ctx);
       }
-      const nodes = component[$nodes];
-      let startNode: null | Node = nodes[0];
-      const endNode =
-        nodes.length === 1 ? null : nodes[nodes.length - 1] || null;
-      const nodesToDestroy = new Set(nodes);
-      while (true && endNode !== null) {
-        startNode = startNode.nextSibling;
-        if (startNode === null) {
-          break;
-        } else if (startNode === endNode) {
-          nodesToDestroy.add(endNode);
-          break;
-        } else {
-          nodesToDestroy.add(startNode);
-        }
-      }
       try {
-        Array.from(nodesToDestroy).map(destroyNode);
+        destroyNodes(component[$nodes]);
       } catch (e) {
         console.warn(
           `Woops, looks like node we trying to destroy no more in DOM`,
@@ -243,6 +207,32 @@ export function destroyElementSync(
   }
 }
 
+function internalDestroyNode(el: Node | ComponentReturnType | NodeReturnType) {
+  if ('nodeType' in el) {
+    destroyNode(el);
+  } else if ($nodes in el) {
+    destroyNodes(el[$nodes]);
+  } else {
+    destroyNode(el[$node]);
+  }
+}
+
+function destroyNodes(
+  roots:
+    | Node
+    | ComponentReturnType
+    | NodeReturnType
+    | Array<Node | ComponentReturnType | NodeReturnType>,
+) {
+  if (Array.isArray(roots)) {
+    for (let i = 0; i < roots.length; i++) {
+      internalDestroyNode(roots[i]);
+    }
+  } else {
+    internalDestroyNode(roots);
+  }
+}
+
 export async function destroyElement(
   component:
     | ComponentReturnType
@@ -252,35 +242,22 @@ export async function destroyElement(
     | null[],
 ) {
   if (Array.isArray(component)) {
+    if (import.meta.env.DEV) {
+      // console.info('destroyElements', component.length);
+    }
     await Promise.all(component.map((component) => destroyElement(component)));
   } else {
     if (component === null) {
       return;
     }
     if ($nodes in component) {
-      const destructors: Array<Promise<void>> = [];
       if (component.ctx) {
+        const destructors: Array<Promise<void>> = [];
         runDestructors(component.ctx, destructors);
+        await Promise.all(destructors);
       }
-      const nodes = component[$nodes];
-      let startNode: null | Node = nodes[0];
-      const endNode =
-        nodes.length === 1 ? null : nodes[nodes.length - 1] || null;
-      const nodesToDestroy = new Set(nodes);
-      while (true && endNode !== null) {
-        startNode = startNode.nextSibling;
-        if (startNode === null) {
-          break;
-        } else if (startNode === endNode) {
-          nodesToDestroy.add(endNode);
-          break;
-        } else {
-          nodesToDestroy.add(startNode);
-        }
-      }
-      await Promise.all(destructors);
       try {
-        await Promise.all(Array.from(nodesToDestroy).map(destroyNode));
+        destroyNodes(component[$nodes]);
       } catch (e) {
         console.warn(
           `Woops, looks like node we trying to destroy no more in DOM`,
