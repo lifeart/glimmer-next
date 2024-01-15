@@ -1,11 +1,11 @@
-import { render as renderSSR } from '@/utils/ssr';
 import '@glint/environment-glimmerx';
 import '@glint/environment-ember-template-imports';
 import 'decorator-transforms/globals';
 
+import { URL } from 'node:url';
 import { router } from '@/services/router';
 import { Application } from '@/components/Application.gts';
-import { URL } from 'node:url';
+import { render as renderSSR } from '@/utils/ssr';
 
 export async function render(url: string) {
   const urlInstance = new URL(url);
