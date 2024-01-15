@@ -335,7 +335,7 @@ function runDestructorsSync(targetNode: Component<any>) {
       @todo - case 42 (associateDestroyable)
       tldr list may be mutated during removal and forEach is stopped
     */
-    nodesToRemove.slice().forEach((node) => {
+    Array.from(nodesToRemove).forEach((node) => {
       runDestructorsSync(node);
       // RENDER_TREE.delete(node as any);
     });
@@ -364,7 +364,7 @@ export function runDestructors(
       @todo - case 42 (associateDestroyable)
       tldr list may be mutated during removal and forEach is stopped
     */
-    nodesToRemove.slice().forEach((node) => {
+    Array.from(nodesToRemove).forEach((node) => {
       runDestructors(node, promises);
       // RENDER_TREE.delete(node as any);
     });

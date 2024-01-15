@@ -36,7 +36,7 @@ export function isTagLike(child: unknown): child is AnyCell {
   return (child as AnyCell)[isTag];
 }
 
-export const RENDER_TREE = new WeakMap<Component<any>, Array<Component>>();
+export const RENDER_TREE = new WeakMap<Component<any>, Set<Component>>();
 export const BOUNDS = new WeakMap<
   Component<any>,
   Array<HTMLElement | Comment>
@@ -110,12 +110,9 @@ export function addToTree(
   associateDestroyable(node, [
     () => {
       const tree = RENDER_TREE.get(ctx)!;
-      const index = tree.indexOf(node);
-      if (index !== -1) {
-        tree.splice(index, 1);
-        if (tree.length === 0) {
-          RENDER_TREE.delete(ctx);
-        }
+      tree.delete(node);
+      if (tree.size === 0) {
+        RENDER_TREE.delete(ctx);
       }
     },
   ]);
@@ -140,7 +137,7 @@ export function addToTree(
   }
 
   if (!RENDER_TREE.has(ctx)) {
-    RENDER_TREE.set(ctx, []);
+    RENDER_TREE.set(ctx, new Set());
   }
-  RENDER_TREE.get(ctx)!.push(node);
+  RENDER_TREE.get(ctx)!.add(node);
 }
