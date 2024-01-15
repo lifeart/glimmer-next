@@ -20,17 +20,12 @@ import { $_debug_args, addToTree, isFn, isPrimitive } from './shared';
 export function ifCondition(
   ctx: Component<any>,
   cell: Cell<boolean> | MergedCell,
-  outlet: DocumentFragment,
+  outlet: DocumentFragment | HTMLElement,
   trueBranch: (ifContext: Component<any>) => GenericReturnType,
   falseBranch: (ifContext: Component<any>) => GenericReturnType,
-  existingPlaceholder?: Comment,
+  placeholder: Comment,
 ) {
-  // "if-placeholder"
-  const placeholder = existingPlaceholder || api.comment();
   const target = outlet;
-  if (!placeholder.isConnected) {
-    api.append(target, placeholder);
-  }
   let prevComponent: GenericReturnType = null;
   let isDestructorRunning = false;
   const runExistingDestructors = async () => {
@@ -70,7 +65,7 @@ export function ifCondition(
       }
       if (throwedError) {
         Promise.resolve().then(() => {
-          const newPlaceholder = api.comment();
+          const newPlaceholder = api.comment('if-error-placeholder');
           if (!placeholder.isConnected) {
             // placeholder is disconnected, it means whole `if` is removed from DOM, no need to recover;
             return;

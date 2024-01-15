@@ -70,7 +70,7 @@ export default defineConfig({
 
   /* Run your local dev server before starting the tests */
   webServer: {
-    command: 'tsc && vite --port 5174 -- --with-sourcemaps',
+    command: 'pnpm dev:playwright',
     url: 'http://localhost:5174',
     // @ts-ignore missing types
     reuseExistingServer: !process.env.CI,

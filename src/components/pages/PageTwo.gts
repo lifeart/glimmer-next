@@ -3,6 +3,9 @@ import { Clock } from './page-two/Clock';
 
 export class PageTwo extends Component {
   get nextLink() {
+    if (import.meta.env.SSR) {
+      return '/';
+    }
     if (window.location.pathname === '/') {
       return '/pageOne';
     } else {

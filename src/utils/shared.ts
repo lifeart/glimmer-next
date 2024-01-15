@@ -36,7 +36,7 @@ export function isTagLike(child: unknown): child is AnyCell {
   return (child as AnyCell)[isTag];
 }
 
-export const RENDER_TREE = new WeakMap<Component<any>, Array<Component>>();
+export const RENDER_TREE = new WeakMap<Component<any>, Set<Component>>();
 export const BOUNDS = new WeakMap<
   Component<any>,
   Array<HTMLElement | Comment>
@@ -45,6 +45,9 @@ export function getBounds(ctx: Component<any>) {
   return BOUNDS.get(ctx) ?? [];
 }
 export function setBounds(component: ComponentReturnType) {
+  if (import.meta.env.SSR) {
+    return;
+  }
   const ctx = component.ctx;
   if (!ctx) {
     return;
@@ -94,7 +97,7 @@ export function addToTree(
   debugName?: string,
 ) {
   if (IS_DEV_MODE) {
-    if (node instanceof Node) {
+    if ('nodeType' in node) {
       throw new Error('invalid node');
     } else if ('ctx' in node && node.ctx === null) {
       // if it's simple node without context, no needs to add it to the tree as well
@@ -107,12 +110,9 @@ export function addToTree(
   associateDestroyable(node, [
     () => {
       const tree = RENDER_TREE.get(ctx)!;
-      const index = tree.indexOf(node);
-      if (index !== -1) {
-        tree.splice(index, 1);
-        if (tree.length === 0) {
-          RENDER_TREE.delete(ctx);
-        }
+      tree.delete(node);
+      if (tree.size === 0) {
+        RENDER_TREE.delete(ctx);
       }
     },
   ]);
@@ -137,7 +137,7 @@ export function addToTree(
   }
 
   if (!RENDER_TREE.has(ctx)) {
-    RENDER_TREE.set(ctx, []);
+    RENDER_TREE.set(ctx, new Set());
   }
-  RENDER_TREE.get(ctx)!.push(node);
+  RENDER_TREE.get(ctx)!.add(node);
 }

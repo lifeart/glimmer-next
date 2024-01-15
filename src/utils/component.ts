@@ -15,7 +15,7 @@ import {
   $fwProp,
   RENDER_TREE,
 } from './shared';
-import { addChild } from './dom';
+import { addChild, getRoot, setRoot } from './dom';
 
 const FRAGMENT_TYPE = 11; // Node.DOCUMENT_FRAGMENT_NODE
 
@@ -32,13 +32,21 @@ export type GenericReturnType =
   | null[];
 
 // this is workaround for `if` case, where we don't have stable root, and to remove it properly we need to look into last rendered part
-export const relatedRoots: WeakMap<DocumentFragment, GenericReturnType> =
-  new WeakMap();
+export const relatedRoots: WeakMap<
+  DocumentFragment | HTMLElement,
+  GenericReturnType
+> = new WeakMap();
 
 function renderNode(parent: Node, target: Node, placeholder: Node | Comment) {
-  if (target === undefined) {
-    console.warn(`Trying to render undefined`);
-    return;
+  if (import.meta.env.DEV) {
+    if (target === undefined || target === null) {
+      console.warn(`Trying to render ${typeof target}`);
+      return;
+    }
+    if (parent === null) {
+      console.warn(`Trying to render null parent`);
+      return;
+    }
   }
   if (target.nodeType === FRAGMENT_TYPE) {
     if (target.childNodes.length) {
@@ -82,22 +90,47 @@ export function renderComponent(
   target: ComponentRenderTarget,
   ctx?: any,
 ): ComponentReturnType {
+  if (import.meta.env.DEV) {
+    if (target === undefined) {
+      throw new Error(`Trying to render undefined`);
+    }
+  }
   const targetElement = targetFor(target);
 
   if ($template in component && isFn(component[$template])) {
     return renderComponent(component[$template](), targetElement, component);
   }
+  if (getRoot() !== null) {
+    if (import.meta.env.DEV) {
+      throw new Error(`Root already exists, it may lead to memory leaks, 
+        at the moment we allow only one root. Let us know if you need more.
+        To manually fix this issue you may save existing root reference and cleanup root.
+        try "getRoot()" to resolve root reference for last rendered root component,
+        and once you get it, call "resetRoot", and try to re-render component one more time.
+      `);
+    }
+  } else {
+    setRoot(component.ctx || (component as any));
+  }
 
   const destructors: Destructors = [];
   const children = component[$nodes];
-  children.forEach((child) => {
-    addChild(
-      targetElement as unknown as HTMLElement,
-      child as any,
-      destructors,
-    );
-  });
-  associateDestroyable(ctx || component, destructors);
+  try {
+    children.forEach((child, i) => {
+      addChild(
+        targetElement as unknown as HTMLElement,
+        child as any,
+        destructors,
+        i,
+      );
+    });
+    associateDestroyable(ctx || component, destructors);
+  } catch (e) {
+    destructors.forEach((fn) => fn());
+    runDestructorsSync(ctx || component);
+    throw e;
+  }
+
   return component;
 }
 
@@ -144,6 +177,10 @@ async function destroyNode(node: Node) {
     if (parent !== null) {
       parent.removeChild(node);
     } else {
+      if (import.meta.env.SSR) {
+        console.warn(`Node is not in DOM`, node.nodeType, node.nodeName);
+        return;
+      }
       throw new Error(`Node is not in DOM`);
     }
   } else {
@@ -180,20 +217,20 @@ export function destroyElementSync(
       let startNode: null | Node = nodes[0];
       const endNode =
         nodes.length === 1 ? null : nodes[nodes.length - 1] || null;
-      const nodesToDestroy = [startNode];
+      const nodesToDestroy = new Set(nodes);
       while (true && endNode !== null) {
         startNode = startNode.nextSibling;
         if (startNode === null) {
           break;
         } else if (startNode === endNode) {
-          nodesToDestroy.push(endNode);
+          nodesToDestroy.add(endNode);
           break;
         } else {
-          nodesToDestroy.push(startNode);
+          nodesToDestroy.add(startNode);
         }
       }
       try {
-        nodesToDestroy.map(destroyNode);
+        Array.from(nodesToDestroy).map(destroyNode);
       } catch (e) {
         console.warn(
           `Woops, looks like node we trying to destroy no more in DOM`,
@@ -229,21 +266,21 @@ export async function destroyElement(
       let startNode: null | Node = nodes[0];
       const endNode =
         nodes.length === 1 ? null : nodes[nodes.length - 1] || null;
-      const nodesToDestroy = [startNode];
+      const nodesToDestroy = new Set(nodes);
       while (true && endNode !== null) {
         startNode = startNode.nextSibling;
         if (startNode === null) {
           break;
         } else if (startNode === endNode) {
-          nodesToDestroy.push(endNode);
+          nodesToDestroy.add(endNode);
           break;
         } else {
-          nodesToDestroy.push(startNode);
+          nodesToDestroy.add(startNode);
         }
       }
       await Promise.all(destructors);
       try {
-        await Promise.all(nodesToDestroy.map(destroyNode));
+        await Promise.all(Array.from(nodesToDestroy).map(destroyNode));
       } catch (e) {
         console.warn(
           `Woops, looks like node we trying to destroy no more in DOM`,
@@ -258,8 +295,10 @@ export async function destroyElement(
 
 var $newDestructors = new WeakMap<any, Destructors>();
 
-if (IS_DEV_MODE) {
-  window['getDestructors'] = () => $newDestructors;
+if (!import.meta.env.SSR) {
+  if (IS_DEV_MODE) {
+    window['getDestructors'] = () => $newDestructors;
+  }
 }
 
 export function associateDestroyable(ctx: any, destructors: Destructors) {
@@ -304,7 +343,7 @@ function runDestructorsSync(targetNode: Component<any>) {
       @todo - case 42 (associateDestroyable)
       tldr list may be mutated during removal and forEach is stopped
     */
-    nodesToRemove.slice().forEach((node) => {
+    Array.from(nodesToRemove).forEach((node) => {
       runDestructorsSync(node);
       // RENDER_TREE.delete(node as any);
     });
@@ -333,7 +372,7 @@ export function runDestructors(
       @todo - case 42 (associateDestroyable)
       tldr list may be mutated during removal and forEach is stopped
     */
-    nodesToRemove.slice().forEach((node) => {
+    Array.from(nodesToRemove).forEach((node) => {
       runDestructors(node, promises);
       // RENDER_TREE.delete(node as any);
     });
@@ -345,7 +384,7 @@ export function runDestructors(
 export function targetFor(
   outlet: ComponentRenderTarget,
 ): HTMLElement | DocumentFragment {
-  if (outlet instanceof HTMLElement || outlet instanceof DocumentFragment) {
+  if ('nodeType' in outlet) {
     return outlet;
   } else {
     return outlet[$nodes][0] as HTMLElement;

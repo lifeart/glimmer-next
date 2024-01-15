@@ -40,6 +40,7 @@ import {
   RENDER_TREE,
   setBounds,
 } from './shared';
+import { isRehydrationScheduled } from './rehydration';
 
 // EMPTY DOM PROPS
 export const $_edp = [[], [], []] as Props;
@@ -49,6 +50,12 @@ const $_className = 'className';
 
 let ROOT: Component<any> | null = null;
 
+export function resetRoot() {
+  ROOT = null;
+}
+export function setRoot(root: Component<any>) {
+  ROOT = root;
+}
 export function getRoot() {
   return ROOT;
 }
@@ -95,8 +102,13 @@ function $prop(
       }),
     );
   } else {
-    // @ts-expect-error never ever
-    element[key] = value;
+    if (isRehydrationScheduled()) {
+      // we should have all static keys settled
+      return;
+    } else {
+      // @ts-expect-error never ever
+      element[key] = value;
+    }
   }
 }
 
@@ -154,26 +166,27 @@ export function addChild(
   element: HTMLElement | ShadowRoot,
   child: RenderableType | Cell | MergedCell | Function,
   destructors: Destructors = [],
+  index = 0,
 ) {
   if (child === null || child === undefined) {
     return;
   }
   if (typeof child === 'object' && $nodes in child) {
-    child[$nodes].forEach((node) => {
-      api.append(element, node);
+    child[$nodes].forEach((node, i) => {
+      api.append(element, node, index + i);
     });
   } else if (typeof child === 'object' && $node in child) {
-    api.append(element, child[$node]);
+    api.append(element, child[$node], index);
   } else if (isPrimitive(child)) {
     // @ts-expect-error number to string type casting
-    api.append(element, api.text(child));
+    api.append(element, api.text(child), index);
   } else if (isTagLike(child)) {
-    api.append(element, cellToText(child, destructors));
+    api.append(element, cellToText(child, destructors), index);
   } else if (isFn(child)) {
-    addChild(element, resolveRenderable(child), destructors);
+    addChild(element, resolveRenderable(child), destructors, index);
   } else {
     // renderComponent case
-    api.append(element, child);
+    api.append(element, child, index);
   }
 }
 
@@ -237,6 +250,21 @@ function $ev(
   }
 }
 
+let NODE_COUNTER = 0;
+
+export function incrementNodeCounter() {
+  NODE_COUNTER++;
+}
+
+export function resetNodeCounter() {
+  NODE_COUNTER = 0;
+}
+
+export function getNodeCounter() {
+  return NODE_COUNTER;
+}
+const IN_SSR_ENV = import.meta.env.SSR || location.pathname === '/tests.html';
+
 function _DOM(
   tag: string,
   tagProps: Props,
@@ -250,7 +278,14 @@ function _DOM(
   )[],
   ctx: any,
 ): NodeReturnType {
+  NODE_COUNTER++;
   const element = api.element(tag);
+  if (IN_SSR_ENV) {
+    // todo - ssr mode here, we need to do it only in 2 cases:
+    // 1. We running SSR tests in QUNIT
+    // 1. We inside SSR mode
+    element.setAttribute('data-node-id', String(NODE_COUNTER));
+  }
   const destructors: Destructors = [];
   const props = tagProps[0];
   const attrs = tagProps[1];
@@ -317,9 +352,10 @@ function _DOM(
     hasShadowMode !== null
       ? element.attachShadow({ mode: hasShadowMode }) || element.shadowRoot
       : element;
-  children.forEach((child) => {
-    addChild(appendRef, child, destructors);
+  children.forEach((child, index) => {
+    addChild(appendRef, child, destructors, index);
   });
+
   associateDestroyable(ctx, destructors);
   return def(element);
 }
@@ -346,16 +382,20 @@ if (IS_DEV_MODE) {
   function buildGraph(
     obj: Record<string, unknown>,
     root: any,
-    children: any[],
+    children: Set<any>,
   ) {
+    if (root === null) {
+      console.info('root is null', RENDER_TREE);
+      return obj;
+    }
     const name =
       root.debugName || root?.constructor?.name || root?.tagName || 'unknown';
-    if (children.length === 0) {
+    if (children.size === 0) {
       obj[name] = null;
       return obj;
     }
-    obj[name] = children.map((child) => {
-      return buildGraph({}, child, RENDER_TREE.get(child) ?? []);
+    obj[name] = Array.from(children).map((child) => {
+      return buildGraph({}, child, RENDER_TREE.get(child) ?? new Set());
     });
     return obj;
   }
@@ -364,12 +404,14 @@ if (IS_DEV_MODE) {
     const ref = buildGraph(
       {} as Record<string, unknown>,
       ROOT,
-      RENDER_TREE.get(ROOT!) ?? [],
+      RENDER_TREE.get(ROOT!) ?? new Set(),
     );
     console.log(JSON.stringify(ref, null, 2));
     console.log(RENDER_TREE);
   }
-  window.drawTreeToConsole = drawTreeToConsole;
+  if (!import.meta.env.SSR) {
+    window.drawTreeToConsole = drawTreeToConsole;
+  }
 }
 
 const COMPONENTS_HMR = new WeakMap<
@@ -382,27 +424,29 @@ const COMPONENTS_HMR = new WeakMap<
   }>
 >();
 
-if (IS_DEV_MODE) {
-  window.hotReload = function hotReload(
-    oldklass: Component | ComponentReturnType,
-    newKlass: Component | ComponentReturnType,
-  ) {
-    const renderedInstances = COMPONENTS_HMR.get(oldklass);
-    if (!renderedInstances) {
-      return;
-    }
-    const renderedBuckets = Array.from(renderedInstances);
-    // we need to append new instances before first element of rendered bucket and later remove all rendered buckets;
+if (!import.meta.env.SSR) {
+  if (IS_DEV_MODE) {
+    window.hotReload = function hotReload(
+      oldklass: Component | ComponentReturnType,
+      newKlass: Component | ComponentReturnType,
+    ) {
+      const renderedInstances = COMPONENTS_HMR.get(oldklass);
+      if (!renderedInstances) {
+        return;
+      }
+      const renderedBuckets = Array.from(renderedInstances);
+      // we need to append new instances before first element of rendered bucket and later remove all rendered buckets;
 
-    renderedBuckets.forEach(({ parent, instance, args, fw }) => {
-      const newCmp = component(newKlass, args, fw, parent);
-      const firstElement = instance[$nodes][0];
-      const parentElement = firstElement.parentNode!;
-      renderElement(parentElement, newCmp, firstElement);
-      destroyElement(instance);
-    });
-    COMPONENTS_HMR.delete(oldklass);
-  };
+      renderedBuckets.forEach(({ parent, instance, args, fw }) => {
+        const newCmp = component(newKlass, args, fw, parent);
+        const firstElement = instance[$nodes][0];
+        const parentElement = firstElement.parentNode!;
+        renderElement(parentElement, newCmp, firstElement);
+        destroyElement(instance);
+      });
+      COMPONENTS_HMR.delete(oldklass);
+    };
+  }
 }
 // hello, basic component manager
 function component(
@@ -411,10 +455,6 @@ function component(
   fw: FwType,
   ctx: Component<any>,
 ) {
-  if (ROOT === null) {
-    // @todo - move it to 'renderComponent'
-    ROOT = ctx;
-  }
   if (IS_DEV_MODE) {
     if (!COMPONENTS_HMR.has(comp)) {
       COMPONENTS_HMR.set(comp, new Set());
@@ -524,7 +564,9 @@ function mergeComponents(
 
 function slot(name: string, params: () => unknown[], $slot: Slots) {
   if (!(name in $slot)) {
-    const slotPlaceholder: NodeReturnType = def(api.comment());
+    const slotPlaceholder: NodeReturnType = def(
+      api.comment(`slot-${name}-placeholder`),
+    );
     let isRendered = false;
     Object.defineProperty($slot, name, {
       set(value: Slots[string]) {
@@ -558,7 +600,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots) {
           nodes,
           slotPlaceholder[$node],
         );
-        destroyElement(slotPlaceholder);
+        // destroyElement(slotPlaceholder);
         isRendered = true;
       },
       get() {
@@ -635,9 +677,22 @@ function ifCond(
   falseBranch: BranchCb,
   ctx: Component<any>,
 ) {
-  const outlet = api.fragment();
+  const ifPlaceholder = api.comment('if-entry-placeholder');
+  const outlet = isRehydrationScheduled()
+    ? ifPlaceholder.parentElement!
+    : api.fragment();
+  if (!ifPlaceholder.isConnected) {
+    api.append(outlet, ifPlaceholder);
+  }
   // @ts-expect-error new
-  const instance = new ifCondition(ctx, cell, outlet, trueBranch, falseBranch);
+  const instance = new ifCondition(
+    ctx,
+    cell,
+    outlet,
+    trueBranch,
+    falseBranch,
+    ifPlaceholder,
+  );
   addToTree(ctx, instance);
   return def(outlet);
 }
@@ -647,7 +702,13 @@ export function $_eachSync<T extends { id: number }>(
   key: string | null = null,
   ctx: Component<any>,
 ) {
-  const outlet = api.fragment();
+  const eachPlaceholder = api.comment('sync-each-placeholder');
+  const outlet = isRehydrationScheduled()
+    ? eachPlaceholder.parentElement!
+    : api.fragment();
+  if (!eachPlaceholder.isConnected) {
+    api.append(outlet, eachPlaceholder);
+  }
   const instance = new SyncListComponent(
     {
       tag: items as Cell<T[]>,
@@ -666,7 +727,13 @@ export function $_each<T extends { id: number }>(
   key: string | null = null,
   ctx: Component<any>,
 ) {
-  const outlet = api.fragment();
+  const eachPlaceholder = api.comment('async-each-placeholder');
+  const outlet = isRehydrationScheduled()
+    ? eachPlaceholder.parentElement!
+    : api.fragment();
+  if (!eachPlaceholder.isConnected) {
+    api.append(outlet, eachPlaceholder);
+  }
   const instance = new AsyncListComponent(
     {
       tag: items as Cell<T[]>,

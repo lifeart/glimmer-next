@@ -5,6 +5,7 @@ import {
   executeTag,
   relatedTags,
 } from '@/utils/reactive';
+import { isRehydrationScheduled } from './rehydration';
 
 let revalidateScheduled = false;
 type voidFn = () => void;
@@ -16,6 +17,11 @@ export function setResolveRender(value: () => void) {
 
 export function scheduleRevalidate() {
   if (!revalidateScheduled) {
+    if (IS_DEV_MODE) {
+      if (isRehydrationScheduled()) {
+        throw new Error('You can not schedule revalidation during rehydration');
+      }
+    }
     revalidateScheduled = true;
     Promise.resolve().then(async () => {
       await syncDom();
