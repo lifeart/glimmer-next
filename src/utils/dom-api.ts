@@ -21,7 +21,11 @@ export const api = {
       incrementNodeCounter();
       return $doc.createComment(`${text} $[${getNodeCounter()}]`);
     } else {
-      return $doc.createComment('');
+      if (IS_DEV_MODE) {
+        return $doc.createComment(text);
+      } else {
+        return $doc.createComment('');
+      }
     }
   },
   text(text = '') {

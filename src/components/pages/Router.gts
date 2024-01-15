@@ -71,11 +71,11 @@ export class Router extends Component {
     if (import.meta.env.SSR) {
       return;
     }
+    element.style.top = `80px`;
     requestAnimationFrame(() => {
       coords = element.getBoundingClientRect();
       element.style.position = 'absolute';
       element.style.opacity = '1';
-      element.style.top = `${coords.top}px`;
       element.style.transform = 'translateX(0)';
     });
     element.style.zIndex = String(this.renderCount);
@@ -87,10 +87,7 @@ export class Router extends Component {
         return;
       }
       element.style.position = 'absolute';
-      // console.log('element.style.zIndex', );
       element.style.zIndex = String(parseInt(element.style.zIndex) - 2);
-      element.style.top = `${coords.top}px`;
-      // debugger;
       element.style.opacity = '0.01';
       element.style.transform = 'translateX(-20%)';
       await new Promise((resolve) => setTimeout(resolve, this.animationTime));

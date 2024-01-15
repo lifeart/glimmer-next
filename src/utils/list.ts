@@ -29,12 +29,22 @@ function setIndex(item: GenericReturnType, index: number) {
 function getIndex(item: GenericReturnType) {
   return item[0].index;
 }
-function getFirstNode(rawItem: GenericReturnType) {
-  const item = rawItem[0];
-  if ($nodes in item) {
-    return item[$nodes][0];
+export function getFirstNode(
+  rawItem:
+    | Node
+    | ComponentReturnType
+    | NodeReturnType
+    | GenericReturnType
+    | Array<Node | ComponentReturnType | NodeReturnType | GenericReturnType>,
+): Node {
+  if (Array.isArray(rawItem)) {
+    return getFirstNode(rawItem[0]);
+  } else if ('nodeType' in rawItem) {
+    return rawItem;
+  } else if ($nodes in rawItem) {
+    return getFirstNode(rawItem[$nodes]);
   } else {
-    return item[$node];
+    return getFirstNode(rawItem[$node]);
   }
 }
 
