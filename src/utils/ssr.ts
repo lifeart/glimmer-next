@@ -1,4 +1,8 @@
-import { renderComponent, runDestructors, type ComponentReturnType } from '@/utils/component';
+import {
+  renderComponent,
+  runDestructors,
+  type ComponentReturnType,
+} from '@/utils/component';
 import { setDocument, getDocument } from './dom-api';
 import { getRoot, resetNodeCounter, resetRoot } from '@/utils/dom';
 
