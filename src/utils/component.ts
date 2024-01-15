@@ -242,9 +242,6 @@ export async function destroyElement(
     | null[],
 ) {
   if (Array.isArray(component)) {
-    if (import.meta.env.DEV) {
-      // console.info('destroyElements', component.length);
-    }
     await Promise.all(component.map((component) => destroyElement(component)));
   } else {
     if (component === null) {
