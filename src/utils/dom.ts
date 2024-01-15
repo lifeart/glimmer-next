@@ -397,7 +397,7 @@ export function $_inElement(
         addChild(appendRef, child, destructors, index);
       });
       associateDestroyable(this, destructors);
-      return $_fin(roots(this), {}, false, this);
+      return $_fin([], {}, false, this);
     } as unknown as Component<any>,
     {},
     { attrs: [], props: [], events: [] },
