@@ -1,6 +1,6 @@
-import { renderComponent, type ComponentReturnType } from '@/utils/component';
+import { renderComponent, runDestructors, type ComponentReturnType } from '@/utils/component';
 import { setDocument, getDocument } from './dom-api';
-import { resetNodeCounter } from '@/utils/dom';
+import { getRoot, resetNodeCounter, resetRoot } from '@/utils/dom';
 
 type EnvironmentParams = {
   url: string;
@@ -24,7 +24,6 @@ export async function render(
 ) {
   const { Window } = await import('happy-dom');
   const win = new Window({ url: params.url });
-  const originalDocument = getDocument();
   const doc = win.document;
   setDocument(doc as unknown as Document);
 
@@ -40,10 +39,11 @@ export async function render(
 
   const html = rootNode.innerHTML;
 
-  // @ts-expect-error
-  await el.destroy();
-  resetNodeCounter();
-
-  setDocument(originalDocument as unknown as Document);
+  const oldRoot = getRoot();
+  if (oldRoot) {
+    await runDestructors(oldRoot);
+    resetRoot();
+  }
+  win.close();
   return html;
 }

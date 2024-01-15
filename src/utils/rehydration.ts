@@ -16,7 +16,7 @@ export function lastItemInStack(target: 'text' | 'node' | 'comment') {
     ) as HTMLElement;
     if (maybeNextNode) {
       // remove data attribute
-      maybeNextNode.dataset.nodeId = '';
+      maybeNextNode.removeAttribute('data-node-id');
       // remove from stack
       const indexInStack = withRehydrationStack.indexOf(maybeNextNode);
       if (indexInStack > -1) {

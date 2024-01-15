@@ -32,10 +32,8 @@ export type GenericReturnType =
   | null[];
 
 // this is workaround for `if` case, where we don't have stable root, and to remove it properly we need to look into last rendered part
-export const relatedRoots: WeakMap<
-  DocumentFragment | HTMLElement,
-  GenericReturnType
-> = new WeakMap();
+export const relatedRoots: WeakMap<DocumentFragment, GenericReturnType> =
+  new WeakMap();
 
 function renderNode(parent: Node, target: Node, placeholder: Node | Comment) {
   if (import.meta.env.DEV) {
@@ -177,6 +175,10 @@ async function destroyNode(node: Node) {
     if (parent !== null) {
       parent.removeChild(node);
     } else {
+      if (import.meta.env.SSR) {
+        console.warn(`Node is not in DOM`, node.nodeType, node.nodeName);
+        return;
+      }
       throw new Error(`Node is not in DOM`);
     }
   } else {
