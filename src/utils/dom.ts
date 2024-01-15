@@ -360,6 +360,40 @@ function _DOM(
   return def(element);
 }
 let unstableWrapperId = 0;
+
+type InElementFnArg = () => HTMLElement;
+export function $_inElement(
+  elementRef: HTMLElement | Cell<HTMLElement> | InElementFnArg,
+  roots: (context: Component<any>) => (NodeReturnType | ComponentReturnType)[],
+  ctx: any,
+) {
+  return component(
+    function UnstableChildWrapper(this: Component<any>) {
+      if (IS_DEV_MODE) {
+        // @ts-expect-error construct signature
+        this.debugName = `InElement-${unstableWrapperId++}`;
+      }
+      let appendRef!: HTMLElement;
+      if (isFn(elementRef)) {
+        appendRef = elementRef();
+      } else if (isTagLike(elementRef)) {
+        appendRef = elementRef.value;
+      } else {
+        appendRef = elementRef;
+      }
+      const destructors: Destructors = [];
+      roots(this).forEach((child, index) => {
+        addChild(appendRef, child, destructors, index);
+      });
+      associateDestroyable(this, destructors);
+      return $_fin(roots(this), {}, false, this);
+    } as unknown as Component<any>,
+    {},
+    { attrs: [], props: [], events: [] },
+    ctx,
+  );
+}
+
 export function $_unstableChildComponentWrapper(
   roots: (context: Component<any>) => (NodeReturnType | ComponentReturnType)[],
   ctx: any,
