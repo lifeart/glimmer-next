@@ -245,46 +245,44 @@ export async function destroyElement(
     | null
     | null[],
 ) {
-  if (Array.isArray(component)) {
-    await Promise.all(component.map((component) => destroyElement(component)));
-  } else {
-    if (component === null) {
-      return;
-    }
-    if ($nodes in component) {
-      const destructors: Array<Promise<void>> = [];
-      if (component.ctx) {
-        runDestructors(component.ctx, destructors);
+  // Flatten the array if it's an array of components
+  const components = Array.isArray(component) ? component.flat() : [component];
+
+  const destructors: Array<Promise<void>> = [];
+  const nodesToDestroy: Set<Node> = new Set();
+
+  for (const item of components) {
+    if (item === null) continue;
+
+    if ($nodes in item) {
+      if (item.ctx) {
+        runDestructors(item.ctx, destructors);
       }
-      const nodes = component[$nodes];
+
+      const nodes = item[$nodes];
       let startNode: null | Node = nodes[0];
-      const endNode =
-        nodes.length === 1 ? null : nodes[nodes.length - 1] || null;
-      const nodesToDestroy = new Set(nodes);
-      while (true && endNode !== null) {
-        startNode = startNode.nextSibling;
-        if (startNode === null) {
-          break;
-        } else if (startNode === endNode) {
-          nodesToDestroy.add(endNode);
-          break;
-        } else {
+      const endNode = nodes.length > 1 ? nodes[nodes.length - 1] : null;
+      if (endNode !== null) {
+        // Collect nodes to destroy
+        while (startNode && startNode !== endNode) {
           nodesToDestroy.add(startNode);
+          startNode = startNode.nextSibling;
         }
-      }
-      await Promise.all(destructors);
-      try {
-        await Promise.all(Array.from(nodesToDestroy).map(destroyNode));
-      } catch (e) {
-        console.warn(
-          `Woops, looks like node we trying to destroy no more in DOM`,
-          e,
-        );
+        if (endNode !== null) {
+          nodesToDestroy.add(endNode);
+        }
+      } else {
+        nodesToDestroy.add(startNode);
       }
     } else {
-      await destroyNode(component[$node]);
+      nodesToDestroy.add(item[$node]);
     }
   }
+
+  // Await all destructors
+  await Promise.all(destructors);
+  // Destroy all nodes
+  await Promise.all(Array.from(nodesToDestroy).map(destroyNode));
 }
 
 var $newDestructors = new WeakMap<any, Destructors>();
