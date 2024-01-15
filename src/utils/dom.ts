@@ -263,7 +263,7 @@ export function resetNodeCounter() {
 export function getNodeCounter() {
   return NODE_COUNTER;
 }
-const IN_SSR_ENV = import.meta.env.SSR || typeof QUnit !== 'undefined';
+const IN_SSR_ENV = import.meta.env.SSR || location.pathname === '/tests.html';
 
 function _DOM(
   tag: string,

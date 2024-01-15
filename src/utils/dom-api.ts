@@ -10,7 +10,7 @@ export function setDocument(newDocument: Document) {
 export function getDocument() {
   return $doc;
 }
-const IN_SSR_ENV = import.meta.env.SSR || typeof QUnit !== 'undefined';
+const IN_SSR_ENV = import.meta.env.SSR || location.pathname === '/tests.html';
 
 export const api = {
   attr(element: HTMLElement, name: string, value: string | null) {
@@ -39,7 +39,7 @@ export const api = {
   append(
     parent: HTMLElement | Node,
     child: HTMLElement | Node,
-    // @ts-expect-error
+    // @ts-ignore
     targetIndex: number = 0,
   ) {
     this.insert(parent, child, null);
