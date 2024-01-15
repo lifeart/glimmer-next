@@ -685,7 +685,14 @@ function ifCond(
     api.append(outlet, ifPlaceholder);
   }
   // @ts-expect-error new
-  const instance = new ifCondition(ctx, cell, outlet, trueBranch, falseBranch);
+  const instance = new ifCondition(
+    ctx,
+    cell,
+    outlet,
+    trueBranch,
+    falseBranch,
+    ifPlaceholder,
+  );
   addToTree(ctx, instance);
   return def(outlet);
 }

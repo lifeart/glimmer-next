@@ -32,8 +32,10 @@ export type GenericReturnType =
   | null[];
 
 // this is workaround for `if` case, where we don't have stable root, and to remove it properly we need to look into last rendered part
-export const relatedRoots: WeakMap<DocumentFragment, GenericReturnType> =
-  new WeakMap();
+export const relatedRoots: WeakMap<
+  DocumentFragment | HTMLElement,
+  GenericReturnType
+> = new WeakMap();
 
 function renderNode(parent: Node, target: Node, placeholder: Node | Comment) {
   if (import.meta.env.DEV) {

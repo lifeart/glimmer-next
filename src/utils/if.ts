@@ -20,18 +20,12 @@ import { $_debug_args, addToTree, isFn, isPrimitive } from './shared';
 export function ifCondition(
   ctx: Component<any>,
   cell: Cell<boolean> | MergedCell,
-  outlet: DocumentFragment,
+  outlet: DocumentFragment | HTMLElement,
   trueBranch: (ifContext: Component<any>) => GenericReturnType,
   falseBranch: (ifContext: Component<any>) => GenericReturnType,
-  existingPlaceholder?: Comment,
+  placeholder: Comment,
 ) {
-  // "if-placeholder"
-  const placeholder =
-    existingPlaceholder || api.comment('if-general-placeholder');
   const target = outlet;
-  if (!placeholder.isConnected) {
-    api.append(target, placeholder);
-  }
   let prevComponent: GenericReturnType = null;
   let isDestructorRunning = false;
   const runExistingDestructors = async () => {
