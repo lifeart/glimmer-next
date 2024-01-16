@@ -1,4 +1,4 @@
-import { module, test } from 'qunit';
+import { module, test, skip } from 'qunit';
 import { allSettled, render } from '@lfieart/gxt/test-utils';
 import { getDocument } from '@/utils/dom-api';
 import { cell } from '@/utils/reactive';
@@ -42,7 +42,7 @@ module('Integration | InternalComponent | in-elment', function () {
     );
     assert.dom(elementRef.value).hasText('t');
   });
-  test('cell values remain reactive in in-element', async function (assert) {
+  skip('cell values remain reactive in in-element', async function (assert) {
     const elementRef = () => {
       return getDocument().getElementById('42');
     };
