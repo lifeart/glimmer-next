@@ -62,7 +62,7 @@ export async function render(component: ComponentReturnType) {
   }
   // @ts-expect-error typings mismatch
   const cmp = new component();
-  let renderResult = renderComponent(cmp, targetElement);
+  let renderResult = renderComponent(cmp, targetElement, cmp.ctx);
   // TODO: figure out what is root, at the moment it return node instance, not node.ctx
   if (!getRoot()) {
     throw new Error('Root does not exist');
