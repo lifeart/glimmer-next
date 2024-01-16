@@ -1,10 +1,28 @@
-# gNext [![Netlify Status](https://api.netlify.com/api/v1/badges/43af359b-56a7-4607-9e01-04ca3a545470/deploy-status)](https://app.netlify.com/sites/g-next/deploys)
+# GXT [![Netlify Status](https://api.netlify.com/api/v1/badges/43af359b-56a7-4607-9e01-04ca3a545470/deploy-status)](https://app.netlify.com/sites/g-next/deploys)
 
 <img align="right" width="95" height="95"
      alt="Philosopher’s stone, logo of PostCSS"
      src="./public/logo.png">
 
-`gNext` is a cutting-edge, compilable runtime environment designed as `glimmer-vm` experiment, showcasing the power and flexibility of modern web component development. This runtime is a live example of how Glimmer-VM can be used in real-world applications, providing developers with a practical and interactive experience. Explore our [sample](https://g-next.netlify.app/) at netlify.
+`GXT` is a cutting-edge, compilable runtime environment designed as `glimmer-vm` alternative, showcasing the power and flexibility of modern web component development. This repo includes a live example of how `GXT` can be used in real-world applications, providing developers with a practical and interactive experience. Explore our [sample](https://g-next.netlify.app/) at netlify.
+
+
+## Benefits
+
+- 🔥 Hot Module Replacement (Reloading)
+- 🌑 Native shadow-dom support
+- ⌛ Async element destructors support
+- 🖥️ Server Side Rendering
+- 💧 Rehydration
+- 🔧 Ember Developer Tools support
+- 🍃 Runtime code tree-shaking
+- 📦 Small Bundle Size
+- ✍️ Typed Templates with Glint
+- 🤝 Ember syntax compatibility
+- 🚀 40% performance improvement compared to GlimmerVM
+- 💾 2x less memory usage compared to GlimmerVM
+- 🧹 Template linting support via Ember Template Lint
+- ⚛️ Built-in reactivity system
 
 ## Quick Links
 
