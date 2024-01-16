@@ -120,4 +120,92 @@ module('Integration | InternalComponent | slots', function () {
     await allSettled();
     assert.dom('[data-test-slot="body"]').hasText('2');
   });
+  test('conditional slots', async function (assert) {
+    const isEnabled = cell(true);
+    const Slotted = <template>
+      {{#if isEnabled}}
+        <div data-test-enabled>{{yield to='body'}}</div>
+      {{else}}
+        <div data-test-disabled>{{yield to='body'}}</div>
+      {{/if}}
+    </template>;
+    await render(
+      <template>
+        <Slotted>
+          <:body>
+            <span data-test-slot='body'>{{isEnabled}}</span>
+          </:body>
+        </Slotted>
+      </template>,
+    );
+    assert.dom('[data-test-enabled] > [data-test-slot="body"]').hasText('true');
+    assert.dom('[data-test-disabled]').doesNotExist();
+    isEnabled.update(false);
+    await allSettled();
+    assert
+      .dom('[data-test-disabled] > [data-test-slot="body"]')
+      .hasText('false');
+    assert.dom('[data-test-enabled]').doesNotExist();
+  });
+  test('different slots may appear on different conditions', async function (assert) {
+    const isEnabled = cell(true);
+    const Slotted = <template>
+      {{#if isEnabled}}
+        <div data-test-head>{{yield to='head'}}</div>
+      {{else}}
+        <div data-test-body>{{yield to='body'}}</div>
+      {{/if}}
+    </template>;
+    await render(
+      <template>
+        <Slotted>
+          <:head>
+            <span data-test-slot='head'>{{isEnabled}}</span>
+          </:head>
+          <:body>
+            <span data-test-slot='body'>{{isEnabled}}</span>
+          </:body>
+        </Slotted>
+      </template>,
+    );
+    assert.dom('[data-test-head] > [data-test-slot="head"]').hasText('true');
+    assert.dom('[data-test-body]').doesNotExist();
+    isEnabled.update(false);
+    await allSettled();
+    assert.dom('[data-test-body] > [data-test-slot="body"]').hasText('false');
+    assert.dom('[data-test-head]').doesNotExist();
+  });
+  test(':default slot works as well', async function (assert) {
+    const Slotted = <template>
+      <div>{{yield}}</div>
+    </template>;
+    await render(
+      <template>
+        <Slotted>
+          <:default>
+            <span data-test-slot='body'></span>
+          </:default>
+        </Slotted>
+      </template>,
+    );
+    assert.dom('[data-test-slot="body"]').exists();
+  });
+  test('we can not render into one slot multiple times', async function (assert) {
+    const Slotted = <template>
+      <div>{{yield to='body'}}</div>
+    </template>;
+    await render(
+      <template>
+        <Slotted>
+          <:body>
+            <span data-test-slot='body'>1</span>
+          </:body>
+          <:body>
+            <span data-test-slot='body'>2</span>
+          </:body>
+        </Slotted>
+      </template>,
+    );
+    assert.dom('[data-test-slot="body"]').exists({ count: 1 });
+  });
 });

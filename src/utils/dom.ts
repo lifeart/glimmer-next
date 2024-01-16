@@ -612,67 +612,67 @@ function mergeComponents(
   };
 }
 
+function createSlot(
+  value: Slots[string],
+  params: () => unknown[],
+  name: string,
+) {
+  // @todo - figure out destructors for slot (shoud work, bu need to be tested)
+  const elements = value(...params());
+  const nodes = mergeComponents(
+    elements.map((el) => {
+      if (isPrimitive(el)) {
+        return api.text(String(el));
+      } else if (isFn(el)) {
+        const value = resolveRenderable(el, `slot ${name} element fn`);
+        if (isPrimitive(value)) {
+          return api.text(String(value));
+        } else if (isTagLike(value)) {
+          // @todo - fix destructors in slots;
+          return cellToText(value, []);
+        } else {
+          return value;
+        }
+      } else {
+        return el;
+      }
+    }),
+  );
+  return nodes;
+}
+
 function slot(name: string, params: () => unknown[], $slot: Slots) {
   if (!(name in $slot)) {
     const slotPlaceholder: NodeReturnType = def(
       api.comment(`slot-{{${name}}}-placeholder`),
     );
     let isRendered = false;
+    let isSettled = false;
+    let slotValue: Slots[string] = () => [];
     Object.defineProperty($slot, name, {
       set(value: Slots[string]) {
+        isSettled = true;
         if (isRendered) {
           throw new Error(`Slot ${name} is already rendered`);
         }
-        // @todo - figure out destructors for slot (shoud work, bu need to be tested)
-        const elements = value(...params());
-        const nodes = mergeComponents(
-          elements.map((el) => {
-            if (isPrimitive(el)) {
-              return api.text(String(el));
-            } else if (isFn(el)) {
-              const value = resolveRenderable(el, `slot ${name} element fn`);
-              if (isPrimitive(value)) {
-                return api.text(String(value));
-              } else if (isTagLike(value)) {
-                // @todo - fix destructors in slots;
-                return cellToText(value, []);
-              } else {
-                return value;
-              }
-            } else {
-              return el;
-            }
-          }),
-        );
-
+        slotValue = value;
         renderElement(
           slotPlaceholder[$node].parentNode!,
-          nodes,
+          createSlot(slotValue, params, name),
           slotPlaceholder[$node],
         );
-        // destroyElement(slotPlaceholder);
         isRendered = true;
       },
       get() {
+        if (isSettled) {
+          return slotValue;
+        }
         throw new Error(`Slot ${name} is not set`);
       },
     });
     return slotPlaceholder;
   }
-  const elements = $slot[name](...params());
-  return mergeComponents(
-    elements.map((el) => {
-      if (isPrimitive(el)) {
-        return api.text(String(el));
-      } else if (isFn(el)) {
-        // here likely el is as slot constructor
-        // @ts-expect-error function signature
-        return el();
-      } else {
-        return el;
-      }
-    }),
-  );
+  return createSlot($slot[name], params, name);
 }
 
 function withSlots(
