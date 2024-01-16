@@ -1,5 +1,5 @@
 import { module, test } from 'qunit';
-import { render, click } from '@lfieart/gxt/test-utils';
+import { render, click } from '@lifeart/gxt/test-utils';
 
 module('Integration | InternalHelper | fn', function () {
   test('bind proper arguments in specified order', async function (assert) {

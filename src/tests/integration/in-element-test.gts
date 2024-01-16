@@ -1,5 +1,5 @@
 import { module, test, skip } from 'qunit';
-import { allSettled, render } from '@lfieart/gxt/test-utils';
+import { allSettled, render } from '@lifeart/gxt/test-utils';
 import { getDocument } from '@/utils/dom-api';
 import { cell } from '@/utils/reactive';
 

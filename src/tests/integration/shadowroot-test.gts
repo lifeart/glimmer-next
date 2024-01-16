@@ -1,5 +1,5 @@
 import { module, test } from 'qunit';
-import { render } from '@lfieart/gxt/test-utils';
+import { render } from '@lifeart/gxt/test-utils';
 
 module('Integration | InternalComponent | shadowroot', function () {
   test('it works for element helper [closed]', async function (assert) {

@@ -1,5 +1,5 @@
 import { module, test } from 'qunit';
-import { rehydrate, renderTarget, ssr } from '@lfieart/gxt/test-utils';
+import { rehydrate, renderTarget, ssr } from '@lifeart/gxt/test-utils';
 import { cell } from '@/utils/reactive';
 
 function qs(str: string) {

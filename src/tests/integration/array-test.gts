@@ -1,5 +1,5 @@
 import { module, test } from 'qunit';
-import { render } from '@lfieart/gxt/test-utils';
+import { render } from '@lifeart/gxt/test-utils';
 
 module('Integration | InternalHelper | array', function () {
   test('return array from args', async function (assert) {

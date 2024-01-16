@@ -1,5 +1,5 @@
 import { module, test } from 'qunit';
-import { render } from '@lfieart/gxt/test-utils';
+import { render } from '@lifeart/gxt/test-utils';
 
 module('Integration | InternalComponent | unless', function () {
   test('renders false branch if arg is false and only false branch exists', async function (assert) {

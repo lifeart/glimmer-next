@@ -1,5 +1,5 @@
 import { module, test } from 'qunit';
-import { allSettled } from '@lfieart/gxt/test-utils';
+import { allSettled } from '@lifeart/gxt/test-utils';
 import { cell, effect, formula } from '@lifeart/gxt';
 
 module('Integration | Internal | effect', function () {

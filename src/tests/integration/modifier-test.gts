@@ -1,7 +1,7 @@
 import { module, test } from 'qunit';
-import { render } from '@lfieart/gxt/test-utils';
+import { render } from '@lifeart/gxt/test-utils';
 import { cell } from '@lifeart/gxt';
-import { allSettled } from '@lfieart/gxt/test-utils';
+import { allSettled } from '@lifeart/gxt/test-utils';
 
 module('Integration | Internal | modifier', function () {
   test('modifiers executed during component creation, before it appears in DOM', async function (assert) {

@@ -1,6 +1,6 @@
 import { Button } from '@/components/Button.gts';
 import { module, test } from 'qunit';
-import { render, click } from '@lfieart/gxt/test-utils';
+import { render, click } from '@lifeart/gxt/test-utils';
 
 module('Integration | Component | Button', function () {
   // setupRenderingTest(hooks);

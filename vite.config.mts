@@ -158,7 +158,7 @@ export default defineConfig(({ mode }) => ({
         "utils",
         "ember-inspector.ts",
       ),
-      "@lfieart/gxt/test-utils": path.join(
+      "@lifeart/gxt/test-utils": path.join(
         currentPath,
         "src",
         "tests",
