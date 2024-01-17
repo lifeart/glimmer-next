@@ -3,7 +3,7 @@ import { SYMBOLS } from './symbols';
 import { flags } from './flags';
 
 export type HBSControlExpression = {
-  type: 'each' | 'if';
+  type: 'each' | 'if' | 'in-element';
   isControl: true;
   condition: string;
   blockParams: string[];
@@ -214,8 +214,14 @@ export function serializeNode(
     }
 
     const newCtxName = nextCtxName();
-
-    if (key === '@each') {
+    if (key === '@in-element') {
+      return `$:${
+        SYMBOLS.$_inElement
+      }(${arrayName}, $:(${newCtxName}) => [${serializeChildren(
+        childs as unknown as [string | HBSNode | HBSControlExpression],
+        newCtxName,
+      )}], ${ctxName})`;
+    } else if (key === '@each') {
       if (paramNames.length === 1) {
         // @todo - add compiler param to mark there is no index here
         // likely we  need to import $getIndex function and pass it as a param for each constructor

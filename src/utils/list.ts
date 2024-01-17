@@ -116,9 +116,9 @@ class BasicListComponent<T extends { id: number }> {
     if (!isTagLike(tag)) {
       if (Array.isArray(tag)) {
         console.warn('iterator for @each should be a cell');
-        tag = new Cell(tag);
+        tag = new Cell(tag, 'list tag');
       } else if (isFn(originalTag)) {
-        tag = formula(() => deepFnValue(originalTag));
+        tag = formula(() => deepFnValue(originalTag), 'list tag');
       }
     }
     this.tag = tag;

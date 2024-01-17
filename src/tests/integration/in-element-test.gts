@@ -1,4 +1,4 @@
-import { module, test, skip } from 'qunit';
+import { module, test } from 'qunit';
 import { allSettled, render } from '@lifeart/gxt/test-utils';
 import { getDocument } from '@/utils/dom-api';
 import { cell } from '@/utils/reactive';
@@ -8,14 +8,19 @@ module('Integration | InternalComponent | in-elment', function () {
     const elementRef = () => {
       return getDocument().getElementById('42');
     };
+    const isMainRootRendered = cell(false);
     await render(
       <template>
         <div id='42'></div>
-        {{#in-element elementRef}}
-          <div data-test-in-element>t</div>
-        {{/in-element}}
+        {{#if isMainRootRendered}}
+          {{#in-element elementRef}}
+            <div data-test-in-element>t</div>
+          {{/in-element}}
+        {{/if}}
       </template>,
     );
+    isMainRootRendered.value = true;
+    await allSettled();
     assert.dom('[id="42"]').hasText('t');
   });
   test('support strings as args and element as ref', async function (assert) {
@@ -42,23 +47,29 @@ module('Integration | InternalComponent | in-elment', function () {
     );
     assert.dom(elementRef.value).hasText('t');
   });
-  skip('cell values remain reactive in in-element', async function (assert) {
+  test('cell values remain reactive in in-element', async function (assert) {
     const elementRef = () => {
       return getDocument().getElementById('42');
     };
     const sideNode = () => {
       return getDocument().getElementById('43');
     };
+    const isMainRootRendered = cell(false);
     const value = cell('t');
     await render(
       <template>
         <div id='42'></div>
-        {{#in-element elementRef}}
-          <div data-test-in-element>{{value}}</div>
-        {{/in-element}}
+        {{#if isMainRootRendered}}
+          {{#in-element elementRef}}
+            <div data-test-in-element>{{value}}</div>
+          {{/in-element}}
+        {{/if}}
         <div id='43'>{{value}}</div>
       </template>,
     );
+
+    isMainRootRendered.value = true;
+    await allSettled();
     assert
       .dom(elementRef())
       .hasText(value.value, 'values should be rendered inside in-element');
@@ -76,5 +87,38 @@ module('Integration | InternalComponent | in-elment', function () {
     assert
       .dom(elementRef())
       .hasText(value.value, 'values should be reactive inside in-element');
+  });
+  test('it works inside conditions', async function (assert) {
+    const elementRef = () => {
+      return getDocument().getElementById('42');
+    };
+    const isExpended = cell(false);
+    const value = cell('t');
+    await render(
+      <template>
+        <div id='42'></div>
+        {{#if isExpended}}
+          {{#in-element elementRef}}
+            <div data-test-in-element>{{value}}</div>
+          {{/in-element}}
+        {{/if}}
+      </template>,
+    );
+    assert
+      .dom('[data-test-in-element]')
+      .doesNotExist('should not render, because if is hidden');
+    assert.dom(elementRef()).exists();
+    isExpended.value = true;
+    await allSettled();
+    assert
+      .dom('[data-test-in-element]')
+      .exists('should render, because if is visible');
+    isExpended.value = false;
+
+    await allSettled();
+    await allSettled();
+    assert
+      .dom('[data-test-in-element]')
+      .doesNotExist('should not render, because if is hidden');
   });
 });

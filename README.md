@@ -6,7 +6,6 @@
 
 `GXT` is a cutting-edge, compilable runtime environment designed as `glimmer-vm` alternative, showcasing the power and flexibility of modern web component development. This repo includes a live example of how `GXT` can be used in real-world applications, providing developers with a practical and interactive experience. Explore our [sample](https://g-next.netlify.app/) at netlify.
 
-
 ## Benefits
 
 - 🔥 Hot Module Replacement (Reloading)
