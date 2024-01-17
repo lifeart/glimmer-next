@@ -194,7 +194,12 @@ export function addChild(
   } else if (isTagLike(child)) {
     api.append(element, cellToText(child, destructors), index);
   } else if (isFn(child)) {
-    addChild(element, resolveRenderable(child), destructors, index);
+    addChild(
+      element,
+      resolveRenderable(child, `element.child[${index}]`),
+      destructors,
+      index,
+    );
   } else {
     // renderComponent case
     api.append(element, child, index);
@@ -344,7 +349,10 @@ function _DOM(
     } else {
       const formulas = classNameModifiers.map((modifier) => {
         if (isFn(modifier)) {
-          return formula(() => deepFnValue(modifier), 'functional modifier');
+          return formula(
+            () => deepFnValue(modifier),
+            'functional modifier for className',
+          );
         } else {
           return modifier;
         }
@@ -393,10 +401,13 @@ export function $_inElement(
         appendRef = elementRef;
       }
       const destructors: Destructors = [];
-      roots(this).forEach((child, index) => {
+      roots(ctx).forEach((child, index) => {
         addChild(appendRef, child, destructors, index);
       });
-      associateDestroyable(this, destructors);
+      destructors.push(() => {
+        appendRef.innerHTML = '';
+      });
+      associateDestroyable(ctx, destructors);
       return $_fin([], {}, false, this);
     } as unknown as Component<any>,
     {},

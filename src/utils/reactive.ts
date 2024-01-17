@@ -19,6 +19,8 @@ export const relatedTags: WeakMap<Cell, Set<MergedCell>> = new WeakMap();
 
 export const DEBUG_MERGED_CELLS = new Set<MergedCell>();
 export const DEBUG_CELLS = new Set<Cell>();
+var currentTracker: Set<Cell> | null = null;
+let _isRendering = false;
 
 export function getCells() {
   return Array.from(DEBUG_CELLS);
@@ -76,9 +78,6 @@ export function tracked(
 }
 // we have only 2 types of cells
 export type AnyCell = Cell | MergedCell;
-
-let currentTracker: Set<Cell> | null = null;
-let _isRendering = false;
 
 export function isRendering() {
   return _isRendering;
@@ -159,7 +158,7 @@ function bindAllCellsToTag(cells: Set<Cell>, tag: MergedCell) {
 export class MergedCell {
   fn: Fn | Function;
   declare toHTML: () => string;
-  isConst = false;
+  isConst: boolean = false;
   isDestroyed = false;
   [Symbol.toPrimitive]() {
     return this.value;
@@ -190,23 +189,20 @@ export class MergedCell {
   get value() {
     if (this.isDestroyed) {
       return;
-    } else if (this.isConst) {
+    }
+
+    if (this.isConst || !_isRendering || currentTracker !== null) {
       return this.fn();
-    } else if (null === currentTracker && _isRendering) {
+    }
+
+    try {
       currentTracker = tracker();
-      try {
-        return this.fn();
-      } finally {
-        if (currentTracker.size > 0) {
-          bindAllCellsToTag(currentTracker, this);
-        } else {
-          this.isConst = true;
-        }
-        this.relatedCells = currentTracker;
-        currentTracker = null;
-      }
-    } else {
       return this.fn();
+    } finally {
+      bindAllCellsToTag(currentTracker!, this);
+      this.isConst = currentTracker!.size === 0;
+      this.relatedCells = currentTracker;
+      currentTracker = null;
     }
   }
 }
@@ -288,7 +284,7 @@ export function deepFnValue(fn: Function | Fn) {
   if (isFn(cell)) {
     return deepFnValue(cell);
   } else if (typeof cell === 'object' && cell !== null && isTagLike(cell)) {
-    return deepFnValue(() => cell.value);
+    return cell.value;
   } else {
     return cell;
   }
@@ -296,4 +292,11 @@ export function deepFnValue(fn: Function | Fn) {
 
 export function cell<T>(value: T, debugName?: string) {
   return new Cell(value, debugName);
+}
+
+export function inNewTrackingFrame(callback: () => void) {
+  const existingTracker = currentTracker;
+  currentTracker = null;
+  callback();
+  currentTracker = existingTracker;
 }

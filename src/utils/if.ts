@@ -36,9 +36,9 @@ export function ifCondition(
   };
   const originalCell = cell;
   if (isFn(originalCell)) {
-    cell = formula(() => deepFnValue(originalCell));
+    cell = formula(() => deepFnValue(originalCell), 'if-condition-wrapper-fn');
   } else if (isPrimitive(originalCell)) {
-    cell = formula(() => originalCell);
+    cell = formula(() => originalCell, 'if-condition-primitive-wrapper');
   }
   let runNumber = 0;
   let throwedError: Error | null = null;

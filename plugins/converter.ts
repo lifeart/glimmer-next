@@ -206,12 +206,16 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
       const inverse = elseChildElements?.map((el) => ToJSType(el)) ?? null;
 
       if (name === 'in-element') {
-        return `$:${SYMBOLS.$_inElement}(${ToJSType(
-          node.params[0],
-        )}, $:() => [${serializeChildren(
-          children as unknown as [string | HBSNode | HBSControlExpression],
-          'this',
-        )}], this)`;
+        return {
+          type: 'in-element',
+          isControl: true,
+          condition: ToJSType(node.params[0]) as string,
+          blockParams: [],
+          children: children,
+          inverse: [],
+          isSync: true,
+          key: '',
+        } as HBSControlExpression;
       } else if (name === 'unless') {
         return {
           type: 'if',
