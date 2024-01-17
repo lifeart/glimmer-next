@@ -257,9 +257,9 @@ function $ev(
   } else {
     // event case (on modifier)
     if (RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES) {
-      destructors.push(
-        addEventListener(element, eventName, fn as EventListener),
-      );
+      // destructors.push(
+      //   addEventListener(element, eventName, fn as EventListener),
+      // );
     } else {
       addEventListener(element, eventName, fn as EventListener);
     }

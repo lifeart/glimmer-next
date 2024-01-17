@@ -381,19 +381,21 @@ export type NodeReturnType = {
   node: Node;
   index: number;
 };
-const noop = () => {};
+// const noop = () => {};
 
 export function addEventListener(
   node: Node,
   eventName: string,
   fn: EventListener,
 ) {
-  node.addEventListener(eventName, fn);
-  if (RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES) {
-    return () => {
-      node.removeEventListener(eventName, fn);
-    };
-  } else {
-    return noop;
-  }
+  // @ts-expect-error
+  node[`on${eventName}`] = fn;
+  // node.addEventListener(eventName, fn);
+  // if (RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES) {
+  //   return () => {
+  //     node.removeEventListener(eventName, fn);
+  //   };
+  // } else {
+  //   return noop;
+  // }
 }
