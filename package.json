@@ -1,10 +1,13 @@
 {
   "name": "@lifeart/gxt",
   "private": false,
-  "version": "0.0.25",
+  "version": "0.0.26",
   "type": "module",
   "license": "MIT",
+  "author": "Aleksandr Kanunnikov <lifeart92@gmail.com>",
   "keywords": [
+    "gxt",
+    "glimmer-next",
     "glimmerjs",
     "glimmer-vm",
     "web-framework"
@@ -69,7 +72,6 @@
     "@types/qunit": "^2.19.9",
     "autoprefixer": "^10.4.16",
     "backburner.js": "^2.8.0",
-    "decorator-transforms": "^1.0.3",
     "nyc": "^15.1.0",
     "postcss": "^8.4.33",
     "prettier": "^3.1.1",
@@ -93,6 +95,7 @@
   },
   "dependencies": {
     "@babel/core": "^7.23.6",
+    "decorator-transforms": "^1.0.3",
     "@babel/preset-typescript": "^7.23.3",
     "@glimmer/syntax": "^0.87.1",
     "content-tag": "^1.2.2"
