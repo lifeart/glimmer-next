@@ -60,6 +60,8 @@ export function renderElement(
       el[$nodes].forEach((node) => {
         renderElement(target, node, placeholder);
       });
+    } else if (isFn(el)) {
+      renderElement(target, el(), placeholder);
     } else {
       renderNode(target, el, placeholder);
     }

@@ -79,11 +79,13 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
       patchNodePath(node);
 
       if (node.path.original === 'element') {
-        return `$:function(args,props){const $slots={};return{[${
-          SYMBOLS.$nodes
-        }]:[${SYMBOLS.TAG}(${ToJSType(node.params[0])},[props[${
-          SYMBOLS.$propsProp
-        }],props[${SYMBOLS.$attrsProp}],props[${SYMBOLS.$eventsProp}]],[()=>${
+        return `$:function(args,props){const $slots = ${
+          SYMBOLS.$_GET_SLOTS
+        }(this, arguments);return{[${SYMBOLS.$nodes}]:[${
+          SYMBOLS.TAG
+        }(${ToJSType(node.params[0])},[props[${SYMBOLS.$propsProp}],props[${
+          SYMBOLS.$attrsProp
+        }],props[${SYMBOLS.$eventsProp}]],[()=>${
           SYMBOLS.SLOT
         }('default',()=>[],$slots)], this)[${SYMBOLS.$node}]],[${
           SYMBOLS.$slotsProp
@@ -139,9 +141,16 @@ export function convert(seenNodes: Set<ASTv1.Node>) {
         if (typeof slotName !== 'string') {
           slotName = ToJSType(slotName) as unknown as string;
         }
-        return `$:() => ${SYMBOLS.SLOT}(${escapeString(
-          slotName,
-        )}, () => [${node.params.map((p) => ToJSType(p)).join(',')}], $slots)`;
+        return {
+          type: 'yield',
+          isControl: true,
+          blockParams: node.params.map((p) => ToJSType(p)),
+          children: [],
+          inverse: [],
+          key: slotName,
+          condition: '',
+          isSync: true,
+        } as HBSControlExpression;
       }
       if (node.params.length === 0) {
         // hash case
