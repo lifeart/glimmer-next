@@ -16,7 +16,7 @@ import {
   formula,
   deepFnValue,
 } from '@/utils/reactive';
-import { evaluateOpcode, opcodeFor } from '@/utils/vm';
+import { checkOpcode, opcodeFor } from '@/utils/vm';
 import {
   SyncListComponent,
   AsyncListComponent,
@@ -44,6 +44,7 @@ import {
   addToTree,
   RENDER_TREE,
   setBounds,
+  $args,
 } from './shared';
 import { isRehydrationScheduled } from './rehydration';
 
@@ -156,7 +157,7 @@ function resolveRenderable(
 ): RenderableType | MergedCell | Cell {
   const f = formula(() => deepFnValue(child), debugName);
   let componentProps: RenderableType = '';
-  evaluateOpcode(f, (value) => {
+  checkOpcode(f, (value) => {
     componentProps = value as unknown as RenderableType;
   });
   if (f.isConst) {
@@ -280,6 +281,15 @@ export function getNodeCounter() {
   return NODE_COUNTER;
 }
 const IN_SSR_ENV = import.meta.env.SSR || location.pathname === '/tests.html';
+export function $_hasBlock(slots: Record<string, unknown>, name = 'default') {
+  return name in slots;
+}
+export function $_hasBlockParams(
+  slots: Record<string, unknown>,
+  slotName = 'default',
+) {
+  return slots[`${slotName}_`];
+}
 
 function _DOM(
   tag: string,
@@ -416,7 +426,8 @@ export function $_inElement(
   );
 }
 
-export function $_unstableChildComponentWrapper(
+// $_ unstableChildComponentWrapper
+export function $_ucw(
   roots: (context: Component<any>) => (NodeReturnType | ComponentReturnType)[],
   ctx: any,
 ) {
@@ -515,6 +526,7 @@ function component(
   args: Record<string, unknown>,
   fw: FwType,
   ctx: Component<any>,
+  // slots: false | Record<string, () => Array<ComponentReturnType | NodeReturnType>> = false,
 ) {
   if (IS_DEV_MODE) {
     if (!COMPONENTS_HMR.has(comp)) {
@@ -686,16 +698,6 @@ function slot(name: string, params: () => unknown[], $slot: Slots) {
   return createSlot($slot[name], params, name);
 }
 
-function withSlots(
-  component: ComponentReturnType,
-  slots: Record<string, () => Array<ComponentReturnType | NodeReturnType>>,
-) {
-  Object.keys(slots).forEach((slotName) => {
-    component[$slotsProp][slotName] = slots[slotName];
-  });
-  return component;
-}
-
 function cellToText(cell: Cell | MergedCell, destructors: Destructors) {
   const textNode = api.text('');
   destructors.push(
@@ -821,10 +823,21 @@ const ArgProxyHandler = {
     throw new Error('args are readonly');
   },
 };
-export function $_args(args: Record<string, unknown>) {
+export function $_GET_SLOTS(ctx: any, args: any) {
+  return (args[0] || {})[$SLOTS_SYMBOL] || ctx[$args][$SLOTS_SYMBOL] || {};
+}
+export const $SLOTS_SYMBOL = Symbol('slots');
+export function $_args(
+  args: Record<string, unknown>,
+  slots:
+    | Record<string, () => Array<ComponentReturnType | NodeReturnType>>
+    | false,
+) {
   if (IS_GLIMMER_COMPAT_MODE) {
     if (IS_DEV_MODE) {
-      const newArgs: Record<string, () => unknown> = {};
+      const newArgs: Record<string, () => unknown> = {
+        [$SLOTS_SYMBOL]: slots ?? {},
+      };
       Object.keys(args).forEach((key) => {
         try {
           Object.defineProperty(newArgs, key, {
@@ -846,13 +859,16 @@ export function $_args(args: Record<string, unknown>) {
       return new Proxy(args, ArgProxyHandler);
     }
   } else {
+    Object.defineProperty(args, $SLOTS_SYMBOL, {
+      value: slots ?? {},
+      enumerable: false,
+    });
     return args;
   }
 }
 export const $_if = ifCond;
 export const $_slot = slot;
 export const $_c = component;
-export const $_withSlots = withSlots;
 export const $_text = text;
 export const $_tag = _DOM;
 export function $_fin(

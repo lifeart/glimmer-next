@@ -155,12 +155,13 @@ export function transform(
     let finContext = program.meta.hasThisAccess ? 'this' : 'null';
     const hasFw = results.some((el) => el.includes('$fw'));
     const hasSlots = results.some((el) => el.includes('$slots'));
+    const slotsResolution = `const $slots = ${SYMBOLS.$_GET_SLOTS}(this, arguments);`;
 
     if (isTemplateTag) {
       result = `function () {
-      ${hasSlots ? `const $slots = {};` : ''}
       ${hasFw ? `const $fw = this[${SYMBOLS.$fwProp}] || arguments[1];` : ''}
-      this[${SYMBOLS.$args}] = this[${SYMBOLS.$args}] || arguments[0];
+      this[${SYMBOLS.$args}] = this[${SYMBOLS.$args}] || arguments[0] || {};
+      ${hasSlots ? slotsResolution : ''}
       const roots = [${results.join(', ')}];
       return ${SYMBOLS.FINALIZE_COMPONENT}(roots, ${
         hasSlots ? '$slots' : '{}'
@@ -171,7 +172,7 @@ export function transform(
     } else {
       result = isClass
         ? `() => {
-      ${hasSlots ? `const $slots = {};` : ''}
+      ${hasSlots ? slotsResolution : ''}
       ${hasFw ? `const $fw = arguments[1];` : ''}
       const roots = [${results.join(', ')}];
       return ${SYMBOLS.FINALIZE_COMPONENT}(roots, ${
@@ -179,7 +180,7 @@ export function transform(
       }, ${String(isNodeStable(results[0]))}, ${finContext});
     }`
         : `(() => {
-      ${hasSlots ? `const $slots = {};` : ''}
+      ${hasSlots ? slotsResolution : ''}
       ${hasFw ? `const $fw = arguments[1];` : ''}
       const roots = [${results.join(', ')}];
       return ${SYMBOLS.FINALIZE_COMPONENT}(roots, ${

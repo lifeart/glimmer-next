@@ -1,8 +1,39 @@
-import { module, test } from 'qunit';
+import { module, test, skip } from 'qunit';
 import { render, allSettled } from '@lifeart/gxt/test-utils';
 import { cell } from '@lifeart/gxt';
 
 module('Integration | InternalComponent | slots', function () {
+  test('is support inversion of block control (from inside)', async function (assert) {
+    // @todo - seems we need to change owner of slot to support it..
+    const showBlock = cell(false);
+    const Sample = <template>
+      {{#if showBlock}}
+        {{#if (has-block)}}
+          {{yield}}
+        {{else}}
+          no block
+        {{/if}}
+      {{else}}
+        closed
+      {{/if}}
+    </template>;
+    await render(
+      <template>
+        <Sample>content</Sample>
+      </template>,
+    );
+
+    assert.dom().hasText('closed', 'initially closed');
+    showBlock.value = true;
+    await allSettled();
+    assert.dom().doesNotHaveTextContaining('closed');
+    assert.dom().hasText('content', 'rendered content');
+    debugger;
+    showBlock.value = false;
+    await allSettled();
+    assert.dom().doesNotHaveTextContaining('content');
+    assert.dom().hasText('closed', 'initially closed');
+  });
   test('default yield is supported for tagless components', async function (assert) {
     const Sloted = <template>{{yield}}</template>;
     await render(

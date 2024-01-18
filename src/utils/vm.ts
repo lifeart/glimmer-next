@@ -7,6 +7,7 @@ import {
   isRendering,
   formula,
   opsFor,
+  inNewTrackingFrame,
 } from './reactive';
 import { isFn } from './shared';
 
@@ -69,13 +70,24 @@ function trackingTransaction(cb: () => void) {
   }
 }
 
+const executeOpcode = (tag: AnyCell, op: tagOp) => {
+  const value = op(tag.value) as unknown as void | Promise<void>;
+  if (value !== undefined) {
+    // console.info(`Adding Async Updating Opcode for ${tag._debugName}`);
+    asyncOpcodes.add(op);
+  }
+};
+
+export function checkOpcode(tag: AnyCell, op: tagOp) {
+  trackingTransaction(() => {
+    inNewTrackingFrame(() => {
+      executeOpcode(tag, op);
+    });
+  });
+}
 export function evaluateOpcode(tag: AnyCell, op: tagOp) {
   trackingTransaction(() => {
-    const value = op(tag.value) as unknown as void | Promise<void>;
-    if (value !== undefined) {
-      // console.info(`Adding Async Updating Opcode for ${tag._debugName}`);
-      asyncOpcodes.add(op);
-    }
+    executeOpcode(tag, op);
   });
 }
 

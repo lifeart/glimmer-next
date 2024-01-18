@@ -3,7 +3,7 @@ import { SYMBOLS } from './symbols';
 import { flags } from './flags';
 
 export type HBSControlExpression = {
-  type: 'each' | 'if' | 'in-element';
+  type: 'each' | 'if' | 'in-element' | 'yield';
   isControl: true;
   condition: string;
   blockParams: string[];
@@ -49,6 +49,14 @@ export function isPath(str: string) {
 }
 
 export function resolvePath(str: string) {
+  if (str.includes('has-block-params')) {
+    str = str.replace(
+      'has-block-params',
+      `${SYMBOLS.$_hasBlockParams}.bind(this, $slots)`,
+    );
+  } else if (str.includes('has-block')) {
+    str = str.replace('has-block', `${SYMBOLS.$_hasBlock}.bind(this, $slots)`);
+  }
   return str.replace('$:', '').replace('@', `this[${SYMBOLS.$args}].`);
 }
 
@@ -214,7 +222,11 @@ export function serializeNode(
     }
 
     const newCtxName = nextCtxName();
-    if (key === '@in-element') {
+    if (key === '@yield') {
+      return `$:${SYMBOLS.SLOT}(${escapeString(
+        eachKey as string,
+      )}, () => [${paramNames.join(',')}], $slots, ${ctxName})`;
+    } else if (key === '@in-element') {
       return `$:${
         SYMBOLS.$_inElement
       }(${arrayName}, $:(${newCtxName}) => [${serializeChildren(
@@ -240,7 +252,7 @@ export function serializeNode(
       } else {
         const extraContextName = nextCtxName();
         return `${FN_NAME}(${arrayName}, (${FN_FN_ARGS}) => [${
-          SYMBOLS.$_unstableChildComponentWrapper
+          SYMBOLS.$_ucw
         }((${extraContextName}) => ${toChildArray(
           childs,
           extraContextName,
@@ -256,7 +268,7 @@ export function serializeNode(
       let extraContextName = nextCtxName();
       if (!hasStableTrueChild) {
         trueBranch = `(${newCtxName}) => ${
-          SYMBOLS.$_unstableChildComponentWrapper
+          SYMBOLS.$_ucw
         }((${extraContextName}) => ${toChildArray(
           childs,
           extraContextName,
@@ -269,7 +281,7 @@ export function serializeNode(
       )}`;
       if (!hasStableFalseChild) {
         falseBranch = `(${newCtxName}) => ${
-          SYMBOLS.$_unstableChildComponentWrapper
+          SYMBOLS.$_ucw
         }((${extraContextName}) => ${toChildArray(
           inverses,
           extraContextName,
@@ -324,11 +336,11 @@ export function serializeNode(
       if (flags.IS_GLIMMER_COMPAT_MODE === false) {
         return `${SYMBOLS.COMPONENT}(${node.tag},${toObject(
           args,
-        )}, ${secondArg}, ${ctxName})`;
+        )}, ${secondArg}, ${ctxName}, false)`;
       } else {
         return `${SYMBOLS.COMPONENT}(${node.tag},${SYMBOLS.ARGS}(${toObject(
           args,
-        )}), ${secondArg}, ${ctxName})`;
+        )}), ${secondArg}, ${ctxName}, false)`;
       }
     } else {
       const slots: HBSNode[] = node.children.filter((child) => {
@@ -345,23 +357,24 @@ export function serializeNode(
       }
       const serializedSlots = slots.map((slot) => {
         const slotChildren = serializeChildren(slot.children, ctxName);
+        const hasBlockParams = slot.blockParams.length > 0;
         const slotName = slot.tag.startsWith(':')
           ? slot.tag.slice(1)
           : 'default';
-        return `${slotName}: (${slot.blockParams.join(
+        return `${slotName}_: ${hasBlockParams},${slotName}: (${slot.blockParams.join(
           ',',
         )}) => [${slotChildren}]`;
       });
+      const slotsObj = `{${serializedSlots.join(',')}}`;
       let fn = `${node.tag},${SYMBOLS.ARGS}(${toObject(
         args,
-      )}), ${secondArg}, ${ctxName}`;
+      )}, ${slotsObj}), ${secondArg}, ${ctxName}`;
       if (flags.IS_GLIMMER_COMPAT_MODE === false) {
         fn = `${node.tag},${toObject(args)}, ${secondArg}, ${ctxName}`;
       }
-      const slotsObj = `{${serializedSlots.join(',')}}`;
       // @todo - we could pass `hasStableChild` ans hasBlock / hasBlockParams to the DOM helper
       // including `has-block` helper
-      return `${SYMBOLS.WITH_SLOTS}(${SYMBOLS.COMPONENT}(${fn}), ${slotsObj})`;
+      return `${SYMBOLS.COMPONENT}(${fn})`;
     }
   } else if (typeof node === 'object' && node.tag) {
     const hasSplatAttrs = node.attributes.find((attr) => {
