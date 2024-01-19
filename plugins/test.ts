@@ -1,12 +1,13 @@
 // https://astexplorer.net/#/gist/c2f0f7e4bf505471c94027c580af8329/c67119639ba9e8fd61a141e8e2f4cbb6f3a31de9
 // https://astexplorer.net/#/gist/4e3b4c288e176bb7ce657f9dea95f052/8dcabe8144c7dc337d21e8c771413db30ca5d397
-import { preprocess, traverse, ASTv1 } from '@glimmer/syntax';
+import { preprocess, traverse, type ASTv1 } from '@glimmer/syntax';
 import { type PluginItem, transformSync } from '@babel/core';
-import { HBSControlExpression, HBSNode, serializeNode } from './utils';
+import { type HBSControlExpression, type HBSNode, serializeNode } from './utils';
 import { processTemplate, type ResolvedHBS } from './babel';
 import { convert } from './converter';
 
 import { SYMBOLS } from './symbols';
+import type { Flags } from './flags';
 
 function isNodeStable(node: string | undefined) {
   if (typeof node === 'undefined') {
@@ -57,6 +58,7 @@ export function transform(
   fileName: string,
   mode: 'development' | 'production',
   isLibBuild: boolean = false,
+  flags: Flags,
 ) {
   const programs: {
     meta: ResolvedHBS['flags'];
@@ -85,7 +87,7 @@ export function transform(
 
   const txt = babelResult?.code ?? '';
 
-  const { ToJSType, ElementToNode } = convert(seenNodes);
+  const { ToJSType, ElementToNode } = convert(seenNodes, flags);
 
   hbsToProcess.forEach((content) => {
     const flags = content.flags;

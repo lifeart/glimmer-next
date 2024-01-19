@@ -1,15 +1,17 @@
 import type { ASTv1 } from '@glimmer/syntax';
 import {
-  HBSControlExpression,
-  HBSNode,
+  type HBSControlExpression,
+  type HBSNode,
   escapeString,
   isPath,
   resolvedChildren,
   serializeChildren,
   serializePath,
   toObject,
+  setFlags,
 } from './utils';
 import { EVENT_TYPE, SYMBOLS } from './symbols';
+import type { Flags } from './flags';
 
 function patchNodePath(node: ASTv1.MustacheStatement | ASTv1.SubExpression) {
   if (node.path.type !== 'PathExpression') {
@@ -51,7 +53,8 @@ function patchNodePath(node: ASTv1.MustacheStatement | ASTv1.SubExpression) {
 export type PrimitiveJSType = null | number | string | boolean | undefined;
 export type ComplexJSType = PrimitiveJSType | HBSControlExpression | HBSNode;
 
-export function convert(seenNodes: Set<ASTv1.Node>) {
+export function convert(seenNodes: Set<ASTv1.Node>, flags: Flags) {
+  setFlags(flags);
   function ToJSType(node: ASTv1.Node, wrap = true): ComplexJSType {
     seenNodes.add(node);
     if (node.type === 'ConcatStatement') {
