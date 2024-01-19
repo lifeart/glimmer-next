@@ -8,7 +8,10 @@ import { convert } from './converter';
 
 import { SYMBOLS } from './symbols';
 
-function isNodeStable(node: string) {
+function isNodeStable(node: string | undefined) {
+  if (typeof node === 'undefined') {
+    return true;
+  }
   return (
     node.trim().startsWith(`${SYMBOLS.TAG}(`) ||
     node.trim().startsWith(`${SYMBOLS.TEXT}(`) ||
