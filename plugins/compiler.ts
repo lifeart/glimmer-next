@@ -2,7 +2,7 @@ import { type Plugin } from 'vite';
 import { Preprocessor } from 'content-tag';
 import { transform } from './test';
 import { MAIN_IMPORT } from './symbols';
-import { flags } from './flags.ts';
+import { type Flags, defaultFlags } from './flags.ts';
 import { HMR, fixExportsForHMR, shouldHotReloadFile } from './hmr.ts';
 
 const p = new Preprocessor();
@@ -28,10 +28,12 @@ const scriptFileRegex = /\.(ts|js)$/;
 type Options = {
   authorMode?: boolean;
   disableHMR?: boolean;
+  flags?: Partial<Flags>;
 };
 
 export function compiler(mode: string, options: Options = {}): Plugin {
   let isLibBuild = false;
+  let flags = defaultFlags();
   return {
     enforce: 'pre',
     name: 'glimmer-next',
@@ -39,6 +41,7 @@ export function compiler(mode: string, options: Options = {}): Plugin {
       if (options.authorMode === true) {
         isLibBuild = config.build?.lib !== undefined;
       }
+      flags = { ...flags, ...(options.flags ?? {}) };
       const defineValues: Record<string, boolean> = flags;
       if (!isLibBuild) {
         defineValues['IS_DEV_MODE'] = mode.mode === 'development';
@@ -63,6 +66,7 @@ export function compiler(mode: string, options: Options = {}): Plugin {
             file,
             mode as 'development' | 'production',
             isLibBuild,
+            flags,
           );
         } else {
           return transform(
@@ -70,6 +74,7 @@ export function compiler(mode: string, options: Options = {}): Plugin {
             file,
             mode as 'development' | 'production',
             isLibBuild,
+            flags,
           );
         }
       }
@@ -83,6 +88,8 @@ export function compiler(mode: string, options: Options = {}): Plugin {
           source,
           file,
           mode as 'development' | 'production',
+          false,
+          flags,
         );
         return result;
       }

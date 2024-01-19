@@ -1,6 +1,12 @@
 import type { ASTv1 } from '@glimmer/syntax';
 import { SYMBOLS } from './symbols';
-import { flags } from './flags';
+import type { Flags } from './flags';
+
+let flags!: Flags;
+
+export function setFlags(f: Flags) {
+  flags = f;
+}
 
 export type HBSControlExpression = {
   type: 'each' | 'if' | 'in-element' | 'yield';
@@ -370,7 +376,10 @@ export function serializeNode(
         args,
       )}, ${slotsObj}), ${secondArg}, ${ctxName}`;
       if (flags.IS_GLIMMER_COMPAT_MODE === false) {
-        fn = `${node.tag},${toObject(args)}, ${secondArg}, ${ctxName}`;
+        fn = `${node.tag},${toObject([
+          ...args,
+          [`$:[${SYMBOLS.$SLOTS_SYMBOL}]`, `$:${slotsObj}`],
+        ])}, ${secondArg}, ${ctxName}`;
       }
       // @todo - we could pass `hasStableChild` ans hasBlock / hasBlockParams to the DOM helper
       // including `has-block` helper

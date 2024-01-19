@@ -9,6 +9,7 @@ export const SYMBOLS = {
   ARGS: '$_args',
   TEXT: '$_text',
   COMPONENT: '$_c',
+  $SLOTS_SYMBOL: '$SLOTS_SYMBOL',
   $_GET_SLOTS: '$_GET_SLOTS',
   $template: '$template',
   $_hasBlockParams: '$_hasBlockParams',
