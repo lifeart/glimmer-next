@@ -6,6 +6,7 @@ import {
   destroyElementSync,
   removeDestructor,
   renderElement,
+  runDestructors,
   type Component,
 } from '@/utils/component';
 import { api } from '@/utils/dom-api';
@@ -80,6 +81,7 @@ class BasicListComponent<T extends { id: number }> {
   get ctx() {
     return this;
   }
+  destroyedElements: any[] = [];
   constructor(
     { tag, ctx, key, ItemComponent }: ListComponentArgs<T>,
     outlet: RenderTarget,
@@ -242,11 +244,19 @@ class BasicListComponent<T extends { id: number }> {
             return itemIndex;
           });
         }
-        const row = this.ItemComponent(
-          item,
-          idx,
-          this as unknown as Component<any>,
-        );
+        let row: any;
+        if (this.destroyedElements.length > 0) {
+          row = this.destroyedElements.pop();
+          getFirstNode(row).style.display = '';
+          const oldArgs = row[0].ctx['args'];
+          oldArgs.patchProperty('item', item);
+        } else {
+          row = this.ItemComponent(
+            item,
+            idx,
+            this as unknown as Component<any>,
+          );
+        }
         this.keyMap.set(key, row);
         row.forEach((item) => {
           renderElement(targetNode.parentNode!, item, targetNode);
@@ -363,6 +373,13 @@ export class AsyncListComponent<
   }
   async destroyItem(row: GenericReturnType, key: string) {
     this.keyMap.delete(key);
-    await destroyElement(row);
+   
+    // const destructors: Array<Promise<void>> = [];
+    // runDestructors(row[0].ctx, destructors);
+    // await Promise.all(destructors);
+    getFirstNode(row).setAttribute('style', '');
+    getFirstNode(row).style.display = 'none';
+    this.destroyedElements.push(row);
+    // await destroyElement(row);
   }
 }

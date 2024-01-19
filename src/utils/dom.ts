@@ -15,6 +15,7 @@ import {
   MergedCell,
   formula,
   deepFnValue,
+  cell,
 } from '@/utils/reactive';
 import { checkOpcode, opcodeFor } from '@/utils/vm';
 import {
@@ -838,15 +839,19 @@ export function $_args(
       const newArgs: Record<string, () => unknown> = {
         [$SLOTS_SYMBOL]: slots ?? {},
       };
+      let argsRef = args;
+      newArgs.patchProperty = (property: string, value: any) => {
+        argsRef[property] = value;
+      }
       Object.keys(args).forEach((key) => {
         try {
           Object.defineProperty(newArgs, key, {
-            get() {
-              if (!isFn(args[key])) {
-                return args[key];
+            get() {              
+              if (!isFn(argsRef[key])) {
+                return argsRef[key];
               }
               // @ts-expect-error function signature
-              return args[key]();
+              return argsRef[key]();
             },
             enumerable: true,
           });

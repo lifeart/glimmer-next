@@ -39,43 +39,6 @@ if (IS_DEV_MODE) {
   }
 }
 
-export function tracked(
-  klass: any,
-  key: string,
-  descriptor?: PropertyDescriptor & { initializer?: () => any },
-): void {
-  let value: any = cell(
-    descriptor?.value,
-    `${klass.constructor.name}.${key}.@tracked`,
-  );
-  let isInitialized = false;
-  let hasInitializer = typeof descriptor?.initializer === 'function';
-  return {
-    get() {
-      if (!isInitialized && hasInitializer) {
-        isInitialized = true;
-        const initValue = descriptor!.initializer?.();
-        const refs = cellsMap.get(this) || {};
-        refs[key] = value;
-        cellsMap.set(this, refs);
-        value.update(initValue);
-      } else if (!isInitialized) {
-        const refs = cellsMap.get(this) || {};
-        refs[key] = value;
-        cellsMap.set(this, refs);
-      }
-      return value.value;
-    },
-    set(newValue: any) {
-      if (newValue === value) {
-        return;
-      }
-      value.update(newValue);
-    },
-    enumerable: descriptor?.enumerable ?? true,
-    configurable: descriptor?.configurable ?? true,
-  } as unknown as void;
-}
 // we have only 2 types of cells
 export type AnyCell = Cell | MergedCell;
 
@@ -299,4 +262,42 @@ export function inNewTrackingFrame(callback: () => void) {
   currentTracker = null;
   callback();
   currentTracker = existingTracker;
+}
+
+export function tracked(
+  klass: any,
+  key: string,
+  descriptor?: PropertyDescriptor & { initializer?: () => any },
+): void {
+  let value: any = cell(
+    descriptor?.value,
+    `${klass.constructor.name}.${key}.@tracked`,
+  );
+  let isInitialized = false;
+  let hasInitializer = typeof descriptor?.initializer === 'function';
+  return {
+    get() {
+      if (!isInitialized && hasInitializer) {
+        isInitialized = true;
+        const initValue = descriptor!.initializer?.();
+        const refs = cellsMap.get(this) || {};
+        refs[key] = value;
+        cellsMap.set(this, refs);
+        value.update(initValue);
+      } else if (!isInitialized) {
+        const refs = cellsMap.get(this) || {};
+        refs[key] = value;
+        cellsMap.set(this, refs);
+      }
+      return value.value;
+    },
+    set(newValue: any) {
+      if (newValue === value) {
+        return;
+      }
+      value.update(newValue);
+    },
+    enumerable: descriptor?.enumerable ?? true,
+    configurable: descriptor?.configurable ?? true,
+  } as unknown as void;
 }

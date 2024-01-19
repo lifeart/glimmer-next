@@ -16,6 +16,7 @@ import {
   RENDER_TREE,
 } from './shared';
 import { addChild, getRoot, setRoot } from './dom';
+import { cell } from './reactive';
 
 const FRAGMENT_TYPE = 11; // Node.DOCUMENT_FRAGMENT_NODE
 
@@ -144,7 +145,15 @@ export class Component<T extends Props = any>
   slots!: Slots;
   $fw: unknown;
   constructor(props: Get<T, 'Args'>, fw?: unknown) {
-    this[$args] = props;
+    const argsCell = cell(props, 'Component.args');
+    Object.defineProperty(this, $args, {
+      get() {
+        return argsCell.value;
+      },
+      set(val) {
+        argsCell.update(val);
+      },
+    });
     this[$fwProp] = fw;
   }
   template!: ComponentReturnType;
