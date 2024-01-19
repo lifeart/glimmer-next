@@ -25,14 +25,20 @@ const extensionsToResolve = [
 
 const templateFileRegex = /\.(gts|gjs)$/;
 const scriptFileRegex = /\.(ts|js)$/;
+type Options = {
+  authorMode?: boolean;
+  disableHMR?: boolean;
+};
 
-export function compiler(mode: string): Plugin {
+export function compiler(mode: string, options: Options = {}): Plugin {
   let isLibBuild = false;
   return {
     enforce: 'pre',
     name: 'glimmer-next',
     config(config, mode) {
-      isLibBuild = config.build?.lib !== undefined;
+      if (options.authorMode === true) {
+        isLibBuild = config.build?.lib !== undefined;
+      }
       const defineValues: Record<string, boolean> = flags;
       if (!isLibBuild) {
         defineValues['IS_DEV_MODE'] = mode.mode === 'development';
@@ -49,7 +55,9 @@ export function compiler(mode: string): Plugin {
         const intermediate = fixContentTagOutput(p.process(code, file));
 
         if (mode === 'development') {
-          const shouldHotRelaod = shouldHotReloadFile(file);
+          const shouldHotRelaod = options.disableHMR
+            ? false
+            : shouldHotReloadFile(file);
           return transform(
             fixExportsForHMR(intermediate) + (shouldHotRelaod ? HMR : ''),
             file,

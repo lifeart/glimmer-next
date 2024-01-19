@@ -72,7 +72,12 @@ if (isLibBuild) {
 }
 
 export default defineConfig(({ mode }) => ({
-  plugins: [...plugins, compiler(mode)],
+  plugins: [
+    ...plugins,
+    compiler(mode, {
+      authorMode: true,
+    }),
+  ],
   test: {
     exclude: [
       "**/node_modules/**",
