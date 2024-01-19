@@ -23,6 +23,11 @@
 - 🧹 Template linting support via Ember Template Lint
 - ⚛️ Built-in reactivity system
 
+## Development tools for VS Code
+- [Stable Ember Language Server](https://marketplace.visualstudio.com/items?itemName=lifeart.vscode-ember-unstable)
+- [Glimmer Templates Syntax for VS Code](https://marketplace.visualstudio.com/items?itemName=lifeart.vscode-glimmer-syntax)
+- [Glint](https://marketplace.visualstudio.com/items?itemName=typed-ember.glint-vscode)
+
 ## Quick Links
 
 - Related issue: [glimmer-vm/issues/1540](https://github.com/glimmerjs/glimmer-vm/issues/1540)
