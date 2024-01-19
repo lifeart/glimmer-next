@@ -24,6 +24,7 @@
 - ⚛️ Built-in reactivity system
 
 ## Development tools for VS Code
+
 - [Language Server](https://marketplace.visualstudio.com/items?itemName=lifeart.vscode-ember-unstable)
 - [Template Syntax](https://marketplace.visualstudio.com/items?itemName=lifeart.vscode-glimmer-syntax)
 - [Templates Type checking](https://marketplace.visualstudio.com/items?itemName=typed-ember.glint-vscode)

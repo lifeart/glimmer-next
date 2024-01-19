@@ -11,11 +11,20 @@ function fixContentTagOutput(code: string): string {
   return code.split('static{').join('$static() {');
 }
 
-const extensionsToResolve = ['.mjs', '.js', '.mts', '.ts', '.jsx', '.tsx', '.json', '.gts', '.gjs'];
+const extensionsToResolve = [
+  '.mjs',
+  '.js',
+  '.mts',
+  '.ts',
+  '.jsx',
+  '.tsx',
+  '.json',
+  '.gts',
+  '.gjs',
+];
 
 const templateFileRegex = /\.(gts|gjs)$/;
 const scriptFileRegex = /\.(ts|js)$/;
-
 
 export function compiler(mode: string): Plugin {
   let isLibBuild = false;
@@ -31,8 +40,8 @@ export function compiler(mode: string): Plugin {
       return {
         define: defineValues,
         resolve: {
-          extensions: extensionsToResolve
-        }
+          extensions: extensionsToResolve,
+        },
       };
     },
     transform(code: string, file: string) {
