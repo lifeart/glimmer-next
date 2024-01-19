@@ -11,6 +11,12 @@ function fixContentTagOutput(code: string): string {
   return code.split('static{').join('$static() {');
 }
 
+const extensionsToResolve = ['.mjs', '.js', '.mts', '.ts', '.jsx', '.tsx', '.json', '.gts', '.gjs'];
+
+const templateFileRegex = /\.(gts|gjs)$/;
+const scriptFileRegex = /\.(ts|js)$/;
+
+
 export function compiler(mode: string): Plugin {
   let isLibBuild = false;
   return {
@@ -24,11 +30,13 @@ export function compiler(mode: string): Plugin {
       }
       return {
         define: defineValues,
+        resolve: {
+          extensions: extensionsToResolve
+        }
       };
     },
     transform(code: string, file: string) {
-      const ext = file.split('.').pop();
-      if (ext === 'gjs' || ext === 'gts') {
+      if (templateFileRegex.test(file)) {
         const intermediate = fixContentTagOutput(p.process(code, file));
 
         if (mode === 'development') {
@@ -52,7 +60,7 @@ export function compiler(mode: string): Plugin {
         return;
       }
       let result: string | undefined = undefined;
-      if (ext === 'ts' || ext === 'js') {
+      if (scriptFileRegex.test(file)) {
         const source = code;
         const result = transform(
           source,
