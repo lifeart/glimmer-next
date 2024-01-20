@@ -41,4 +41,9 @@ module('Integration | InternalComponent | unless', function () {
     await render(<template>{{unless value '1' '2'}}</template>);
     assert.dom().hasText('2');
   });
+  test('it could be used as helper with single argument', async function (assert) {
+    const value = false;
+    await render(<template>{{unless value '1'}}</template>);
+    assert.dom().hasText('1');
+  });
 });

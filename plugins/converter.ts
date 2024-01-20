@@ -20,10 +20,24 @@ function patchNodePath(node: ASTv1.MustacheStatement | ASTv1.SubExpression) {
   // replacing builtin helpers
   if (node.path.original === 'unless') {
     node.path.original = SYMBOLS.$__if;
-    const condTrue = node.params[1];
-    const condFalse = node.params[2];
-    node.params[1] = condFalse;
-    node.params[2] = condTrue;
+    if (node.params.length === 3) {
+      const condTrue = node.params[1];
+      const condFalse = node.params[2];
+      node.params[1] = condFalse;
+      node.params[2] = condTrue;
+    } else {
+      node.params.push();
+      const condTrue = node.params[1];
+      const condFalse = {
+        type: 'StringLiteral',
+        value: '',
+        original: '',
+        loc: node.loc,
+      };
+      // @ts-expect-error
+      node.params[1] = condFalse;
+      node.params[2] = condTrue;
+    }
   } else if (node.path.original === 'if') {
     node.path.original = SYMBOLS.$__if;
   } else if (node.path.original === 'eq') {
