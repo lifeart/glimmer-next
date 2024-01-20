@@ -54,7 +54,7 @@ export function tracked(
     get() {
       if (!isInitialized && hasInitializer) {
         isInitialized = true;
-        const initValue = descriptor!.initializer?.();
+        const initValue = descriptor!.initializer?.call(this);
         const refs = cellsMap.get(this) || {};
         refs[key] = value;
         cellsMap.set(this, refs);

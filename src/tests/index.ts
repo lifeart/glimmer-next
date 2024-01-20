@@ -1,3 +1,4 @@
+import 'decorator-transforms/globals';
 import 'qunit/qunit/qunit.css';
 import 'qunit-theme-ember/qunit.css';
 
