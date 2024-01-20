@@ -169,7 +169,7 @@ export function transform(
     if (isTemplateTag) {
       result = `function () {
       ${hasFw ? `const $fw = this[${SYMBOLS.$fwProp}] || arguments[1];` : ''}
-      this[${SYMBOLS.$args}] = this[${SYMBOLS.$args}] || arguments[0] || {};
+      ${SYMBOLS.$_GET_ARGS}(this, arguments);
       ${hasSlots ? slotsResolution : ''}
       const roots = [${results.join(', ')}];
       return ${SYMBOLS.FINALIZE_COMPONENT}(roots, ${

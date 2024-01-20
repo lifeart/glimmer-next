@@ -823,6 +823,9 @@ const ArgProxyHandler = {
     throw new Error('args are readonly');
   },
 };
+export function $_GET_ARGS(ctx: any, args: any) {
+  ctx[$args] = ctx[$args] || args[0] || {};
+}
 export function $_GET_SLOTS(ctx: any, args: any) {
   return (args[0] || {})[$SLOTS_SYMBOL] || ctx[$args][$SLOTS_SYMBOL] || {};
 }

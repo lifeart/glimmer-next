@@ -11,6 +11,7 @@ export const SYMBOLS = {
   COMPONENT: '$_c',
   $SLOTS_SYMBOL: '$SLOTS_SYMBOL',
   $_GET_SLOTS: '$_GET_SLOTS',
+  $_GET_ARGS: '$_GET_ARGS',
   $template: '$template',
   $_hasBlockParams: '$_hasBlockParams',
   $_hasBlock: '$_hasBlock',
