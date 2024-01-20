@@ -45,6 +45,7 @@ import {
   RENDER_TREE,
   setBounds,
   $args,
+  $fwProp,
 } from './shared';
 import { isRehydrationScheduled } from './rehydration';
 
@@ -828,6 +829,9 @@ export function $_GET_ARGS(ctx: any, args: any) {
 }
 export function $_GET_SLOTS(ctx: any, args: any) {
   return (args[0] || {})[$SLOTS_SYMBOL] || ctx[$args][$SLOTS_SYMBOL] || {};
+}
+export function $_GET_FW(ctx: any, args: any) {
+  return ctx[$fwProp] || args[1];
 }
 export const $SLOTS_SYMBOL = Symbol('slots');
 export function $_args(

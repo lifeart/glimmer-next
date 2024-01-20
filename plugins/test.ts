@@ -168,7 +168,7 @@ export function transform(
 
     if (isTemplateTag) {
       result = `function () {
-      ${hasFw ? `const $fw = this[${SYMBOLS.$fwProp}] || arguments[1];` : ''}
+      ${hasFw ? `const $fw = ${SYMBOLS.$_GET_FW}(this, arguments);` : ''}
       ${SYMBOLS.$_GET_ARGS}(this, arguments);
       ${hasSlots ? slotsResolution : ''}
       const roots = [${results.join(', ')}];
@@ -182,7 +182,7 @@ export function transform(
       result = isClass
         ? `() => {
       ${hasSlots ? slotsResolution : ''}
-      ${hasFw ? `const $fw = arguments[1];` : ''}
+      ${hasFw ? `const $fw = ${SYMBOLS.$_GET_FW}(this, arguments);` : ''}
       const roots = [${results.join(', ')}];
       return ${SYMBOLS.FINALIZE_COMPONENT}(roots, ${
         hasSlots ? '$slots' : '{}'
@@ -190,7 +190,7 @@ export function transform(
     }`
         : `(() => {
       ${hasSlots ? slotsResolution : ''}
-      ${hasFw ? `const $fw = arguments[1];` : ''}
+      ${hasFw ? `const $fw = ${SYMBOLS.$_GET_FW}(this, arguments);` : ''}
       const roots = [${results.join(', ')}];
       return ${SYMBOLS.FINALIZE_COMPONENT}(roots, ${
         hasSlots ? '$slots' : '{}'
