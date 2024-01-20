@@ -2,7 +2,11 @@
 // https://astexplorer.net/#/gist/4e3b4c288e176bb7ce657f9dea95f052/8dcabe8144c7dc337d21e8c771413db30ca5d397
 import { preprocess, traverse, type ASTv1 } from '@glimmer/syntax';
 import { type PluginItem, transformSync } from '@babel/core';
-import { type HBSControlExpression, type HBSNode, serializeNode } from './utils';
+import {
+  type HBSControlExpression,
+  type HBSNode,
+  serializeNode,
+} from './utils';
 import { processTemplate, type ResolvedHBS } from './babel';
 import { convert } from './converter';
 

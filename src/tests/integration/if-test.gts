@@ -3,6 +3,36 @@ import { render, allSettled } from '@lifeart/gxt/test-utils';
 import { cell } from '@lifeart/gxt';
 
 module('Integration | InternalComponent | if', function () {
+  test('it supports nested ifs', async function (assert) {
+    const value1 = cell(false);
+    const value2 = cell(false);
+    const value3 = cell(true);
+    await render(
+      <template>
+        {{#if value1}}
+          <div data-test-if='1'></div>
+        {{else if value2}}
+          <div data-test-if='2'></div>
+        {{else if value3}}
+          <div data-test-if='3'></div>
+        {{/if}}
+      </template>,
+    );
+    assert.dom('[data-test-if="1"]').doesNotExist();
+    assert.dom('[data-test-if="2"]').doesNotExist();
+    assert.dom('[data-test-if="3"]').exists('only true branch exists');
+    value1.update(true);
+    await allSettled();
+    assert.dom('[data-test-if="1"]').exists('only true branch exists');
+    assert.dom('[data-test-if="2"]').doesNotExist();
+    assert.dom('[data-test-if="3"]').doesNotExist();
+    value1.update(false);
+    value2.update(true);
+    await allSettled();
+    assert.dom('[data-test-if="1"]').doesNotExist();
+    assert.dom('[data-test-if="2"]').exists('only true branch exists');
+    assert.dom('[data-test-if="3"]').doesNotExist();
+  });
   test('renders true branch if arg is true and only true branch exists', async function (assert) {
     const value = true;
     await render(
