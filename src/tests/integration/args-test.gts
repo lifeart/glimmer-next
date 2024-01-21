@@ -2,6 +2,40 @@ import { module, test } from 'qunit';
 import { render } from '@lifeart/gxt/test-utils';
 
 module('Integration | Interal | @arguments', function () {
+  test('support args in subExpression control', async function (assert) {
+    const and = (a: any, b: any) => {
+      return a && b;
+    };
+    const Maybe = <template>
+      {{#if (@and @textAlign @color)}}
+        YES
+      {{else}}
+        NO
+      {{/if}}
+    </template>;
+    await render(
+      <template>
+        <Maybe @and={{and}} @textAlign='center' @color='red' />
+      </template>,
+    );
+    assert.dom().hasText('YES');
+  });
+  test('support args in control expressions', async function (assert) {
+    const and = (a: any, b: any) => {
+      return a && b;
+    };
+    const Maybe = <template>
+      {{#if (and @textAlign @color)}}
+        YES
+      {{else}}
+        NO
+      {{/if}}
+    </template>;
+    await render(
+      <template><Maybe @textAlign='center' @color='red' /></template>,
+    );
+    assert.dom().hasText('YES');
+  });
   test('support strings as arguments for textContent', async function (assert) {
     const Button = <template>
       <button>{{@name}}</button>
