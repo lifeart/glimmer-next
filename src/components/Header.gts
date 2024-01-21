@@ -48,6 +48,7 @@ export const Header = <template>
       <div class='flex lg:hidden'>
         <button
           type='button'
+          {{on 'click' onClick}}
           class='-m-2.5 inline-flex items-center justify-center rounded-md p-2.5 text-gray-700'
         >
           <span class='sr-only'>Open main menu</span>
