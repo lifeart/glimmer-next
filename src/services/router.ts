@@ -20,4 +20,21 @@ export const router = new GlimmerRouter({
   benchmark: '/benchmark',
   pageOne: '/pageOne',
   pageTwo: '/pageTwo',
+  isPolarisReady: '/is-polaris-ready',
 }) as RouterType;
+
+
+router.addResolver('isPolarisReady', async () => {
+  // preload css   <link rel="preload" href="style.css" as="style" />
+
+  const link = document.createElement('link');
+  link.rel = 'preload';
+  link.href = '/is-polaris-ready.css';
+  link.as = 'style';
+  document.head.appendChild(link);
+  // @ts-ignore import
+  const { IsPolarisReady } = await import('@/components/pages/IsPolarisReady.gts');
+  return {
+    component: IsPolarisReady,
+  }
+})

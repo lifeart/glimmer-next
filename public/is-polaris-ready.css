@@ -1,0 +1,103 @@
+/* Ember supports plain CSS out of the box. More info: https://cli.emberjs.com/release/advanced-use/stylesheets/ */
+
+:host {
+    --ember-brand: #e04e39;
+    --ember-black: #212121;
+    --ember-burnt-ember: #9b2918;
+    --ember-gray: #817f7f;
+    --ember-blue: #1e719b;
+    --ember-faint-gray: #efebea;
+    --ember-light-blue: #74b0ce;
+    --ember-linen: #fdf7f6;
+    --ember-yellow: #fbc840;
+    --ember-white: #fdfdfd;
+  
+    font-family: Helvetica, Arial, sans-serif;
+    background: var(--ember-black);
+    color: var(--ember-white);
+    padding: 2rem;
+  }
+  
+  h1 {
+    margin: 0 auto;
+    width: max-content;
+    font-size: 1.5rem;
+  
+    .title {
+      font-size: 2.5rem;
+    }
+  
+    .answer {
+      display: block;
+      font-size: 3.5rem;
+    }
+    .answer-no {
+      display: block;
+      font-size: 1.5rem;
+      color: var(--ember-linen);
+    }
+  }
+  
+  a {
+    color: var(--ember-light-blue);
+  }
+  
+  .progress {
+    font-size: 1rem;
+    font-weight: normal;
+    color: var(--ember-brand);
+  }
+  .get-started {
+    max-width: max-content;
+    margin: 0 auto;
+    margin-top: 2.5rem;
+  }
+  .filters {
+    max-width: max-content;
+    margin: 0 auto;
+    margin-top: 1.5rem;
+  }
+  
+  main {
+    width: 100%;
+  }
+  
+  form {
+    display: grid;
+  }
+  
+  section {
+    h3 {
+      font-size: 1rem;
+      font-weight: bold;
+    }
+  
+    ul.display-as-boxes {
+      list-style: none;
+      display: flex;
+      flex-wrap: wrap;
+      line-height: 0;
+      gap: 0.125rem;
+      margin: 0;
+      padding: 0;
+  
+      li a {
+        text-indent: -9999px;
+        height: 1rem;
+        width: 1rem;
+        display: inline-block;
+      }
+      li a.not-done {
+        background-color: white;
+      }
+      li a.done {
+        background-color: rgb(0, 200, 100);
+      }
+    }
+  
+    ul.display-as-list {
+      li:has(a.done) {
+        color: green;
+      }
+    }
+  }
