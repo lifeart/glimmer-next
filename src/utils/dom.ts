@@ -863,6 +863,10 @@ export function $_args(
       });
       return newArgs;
     } else {
+      Object.defineProperty(args, $SLOTS_SYMBOL, {
+        value: slots ?? {},
+        enumerable: false,
+      });
       return new Proxy(args, ArgProxyHandler);
     }
   } else {
