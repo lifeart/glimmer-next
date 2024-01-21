@@ -22,7 +22,7 @@
     "dev:playwright": "tsc && vite --port 5174 -- --with-sourcemaps",
     "build": "tsc && vite build --mode development && pnpm build:server && pnpm prerender:main",
     "build:prod": "tsc && vite build",
-    "build:server": "vite build --outDir dist/server --ssr src/server.ts",
+    "build:server": "vite build --mode development --outDir dist/server --ssr src/server.ts",
     "build-lib": "tsc && vite build -- --lib",
     "preview": "vite preview",
     "benchmark": "zx ./bin/setup-bench.mjs",
