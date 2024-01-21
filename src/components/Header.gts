@@ -36,7 +36,13 @@ export const Header = <template>
       <div class='flex lg:flex-1'>
         <a href='#' class='-m-1.5 p-1.5' {{on 'click' onClick}}>
           <span class='sr-only'>GXT</span>
-          <img class='h-8 w-auto' src='/logo.png' alt='' />
+          <img
+            class='h-8 w-auto'
+            width='32'
+            height='32'
+            src='/logo.png'
+            alt=''
+          />
         </a>
       </div>
       <div class='flex lg:hidden'>
@@ -90,7 +96,13 @@ export const Header = <template>
         <div class='flex items-center justify-between'>
           <a href='#' class='-m-1.5 p-1.5'>
             <span class='sr-only'>GXT</span>
-            <img class='h-8 w-auto' src='/logo.png' alt='' />
+            <img
+              class='h-8 w-auto'
+              src='/logo.png'
+              width='32'
+              height='32'
+              alt=''
+            />
           </a>
           <button type='button' class='-m-2.5 rounded-md p-2.5 text-gray-700'>
             <span class='sr-only'>Close menu</span>
