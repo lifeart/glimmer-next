@@ -5,7 +5,7 @@ let isMobile = () => false;
 
 if (!import.meta.env.SSR) {
   // @ts-ignore
-  isMobileDialogVisible = cell(window.innerWidth < 1024);
+  isMobileDialogVisible = cell(false);
   isMobile = () => window.innerWidth < 1024;
 }
 
