@@ -9,6 +9,7 @@ import {
   serializePath,
   toObject,
   setFlags,
+  resolvePath,
 } from './utils';
 import { EVENT_TYPE, SYMBOLS } from './symbols';
 import type { Flags } from './flags';
@@ -116,9 +117,9 @@ export function convert(seenNodes: Set<ASTv1.Node>, flags: Flags) {
             ];
           },
         );
-        return `$:${node.path.original}(${toObject(hashArgs)})`;
+        return `$:${SYMBOLS.$__hash}(${toObject(hashArgs)})`;
       }
-      return `$:${node.path.original}(${node.params
+      return `$:${resolvePath(node.path.original)}(${node.params
         .map((p) => ToJSType(p))
         .join(',')})`;
     } else if (node.type === 'NumberLiteral') {
@@ -134,7 +135,7 @@ export function convert(seenNodes: Set<ASTv1.Node>, flags: Flags) {
     } else if (node.type === 'ElementNode') {
       return ElementToNode(node);
     } else if (node.type === 'PathExpression') {
-      return `$:${node.original}`;
+      return `$:${resolvePath(node.original)}`;
     } else if (node.type === 'MustacheStatement') {
       if (node.path.type !== 'PathExpression') {
         if (
