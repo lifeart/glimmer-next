@@ -22,7 +22,7 @@ jobs:
           node-version: "20.1.0"
       
       - name: Install Glint env deps
-        run: cd glint-environment-gxt && pnpm instal && cd ..
+        run: cd glint-environment-gxt && pnpm install && cd ..
 
       - name: RUN
         run: pnpm run test
