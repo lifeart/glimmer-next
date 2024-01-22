@@ -20,6 +20,9 @@ jobs:
       - uses: wyvox/action-setup-pnpm@v3
         with:
           node-version: "20.1.0"
+      
+      - name: Install Glint env deps
+        run: cd glint-environment-gxt && pnpm instal && cd ..
 
       - name: RUN
         run: pnpm run test
