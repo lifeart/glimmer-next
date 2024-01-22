@@ -58,8 +58,9 @@
     "@types/ember__modifier": "^4.0.3",
     "@types/ember__routing": "^4.0.12",
     "ember-template-imports": "^3.0.0",
-    "vitest": "^0.22.0",
-    "typescript": "^5.2.2"
+    "common-tags": "^1.8.2",
+    "typescript": "^5.2.2",
+    "vitest": "^0.22.0"
   },
   "publishConfig": {
     "access": "public"

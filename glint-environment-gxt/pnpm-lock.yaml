@@ -27,6 +27,9 @@ devDependencies:
   '@types/ember__routing':
     specifier: ^4.0.12
     version: 4.0.12(@babel/core@7.23.7)
+  common-tags:
+    specifier: ^1.8.2
+    version: 1.8.2
   typescript:
     specifier: ^5.2.2
     version: 5.2.2
@@ -2069,6 +2072,11 @@ packages:
 
   /color-name@1.1.3:
     resolution: {integrity: sha512-72fSenhMw2HZMTVHeCA9KCmpEIbzWiQsjN+BHcBbS9vr1mtt+vJjPdksIBNUmKAW8TFUDPJK5SUU3QhE9NEXDw==}
+
+  /common-tags@1.8.2:
+    resolution: {integrity: sha512-gk/Z852D2Wtb//0I+kRFNKKE9dIIVirjoqPoA1wJU+XePVXZfGeBpk45+A1rKO4Q43prqWBNY/MiIeRLbPWUaA==}
+    engines: {node: '>=4.0.0'}
+    dev: true
 
   /concat-map@0.0.1:
     resolution: {integrity: sha512-/Srv4dswyQNBfohGpz9o6Yb3Gz3SrUDqBH5rTuhGR7ahtlbYKnVxw2bCFMRljaA7EXHaXZ8wsHdodFvbkhKmqg==}
