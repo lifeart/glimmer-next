@@ -26,8 +26,3 @@ declare module '@ember/component' {
   export interface Textarea extends EELTextarea {}
 }
 
-import '@ember/routing';
-type EELLinkTo = typeof Globals.LinkTo;
-declare module '@ember/routing' {
-  export interface LinkTo extends EELLinkTo {}
-}

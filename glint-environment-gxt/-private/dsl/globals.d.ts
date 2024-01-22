@@ -1,8 +1,9 @@
-import { Globals as EELGlobals } from '@glint/environment-ember-loose/-private/dsl';
-import Globals from '../../globals';
-import { EachKeyword } from '../intrinsics/each';
+import type { Globals as EELGlobals } from '@glint/environment-ember-loose/-private/dsl';
+import type Globals from '../../globals';
+import type { EachKeyword } from '../intrinsics/each';
 import type { ComponentLike } from '@glint/template';
-import { ModifierReturn } from '@glint/template/-private/integration';
+import type { ModifierReturn } from '@glint/template/-private/integration';
+import type { InElementKeyword } from '../intrinsics/in-element';
 
 interface Keywords
   extends Pick<
@@ -13,7 +14,6 @@ interface Keywords
     | 'has-block-params'
     | 'helper'
     | 'if'
-    | 'in-element'
     | 'let'
     | 'log'
     | 'modifier'
@@ -25,6 +25,7 @@ interface Keywords
 
 interface Internal {
   each: EachKeyword,
+  'in-element': InElementKeyword,
   on: (
     noop: unknown,
     event: string,
