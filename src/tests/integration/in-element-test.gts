@@ -90,7 +90,7 @@ module('Integration | InternalComponent | in-elment', function () {
   });
   test('it works inside conditions', async function (assert) {
     const elementRef = () => {
-      return getDocument().getElementById('42');
+      return getDocument().getElementById('42')!;
     };
     const isExpended = cell(false);
     const value = cell('t');

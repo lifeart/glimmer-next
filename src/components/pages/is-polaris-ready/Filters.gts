@@ -1,4 +1,4 @@
-import Component from '@lifeart/gxt';
+import { Component } from '@lifeart/gxt';
 
 const BOOLEAN = ['display-as-list', 'hide-done'];
 

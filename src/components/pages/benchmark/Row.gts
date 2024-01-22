@@ -1,7 +1,6 @@
 import { RemoveIcon } from './RemoveIcon.gts';
 import type { Item } from '@/utils/data';
 import { type Cell, Component, cellFor, formula } from '@lifeart/gxt';
-import type { ModifierReturn } from '@glint/template/-private/integration';
 
 type RowArgs = {
   Args: {
@@ -48,7 +47,7 @@ export class Row extends Component<RowArgs> {
     }
     this.args.onRemove(this.args.item);
   };
-  modifier = (element: HTMLDivElement): ModifierReturn => {
+  modifier = (element: HTMLDivElement) => {
     const result = async () => {
       if (!this.isClicked) {
         return;
@@ -78,7 +77,7 @@ export class Row extends Component<RowArgs> {
         await new Promise((resolve) => setTimeout(resolve, 1400));
       }
     };
-    return result as unknown as ModifierReturn;
+    return result;
   };
   <template>
     <tr ...attributes {{this.modifier}}>

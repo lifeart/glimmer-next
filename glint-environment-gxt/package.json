@@ -1,0 +1,69 @@
+{
+  "name": "glint-environment-gxt",
+  "version": "0.0.1",
+  "repository": "lifeart/glimmer-next",
+  "description": "A Glint environment to support template-imports projects",
+  "license": "MIT",
+  "author": "Aleksandr Kanunnikov (https://github.com/lifeart)",
+  "main": "-private/index.js",
+  "exports": {
+    ".": "./-private/index.js",
+    "./globals": "./globals/index.js",
+    "./glint-environment-definition": "./-private/environment/index.js",
+    "./-private/dsl": "./-private/dsl/index.js"
+  },
+  "keywords": [
+    "glint-environment"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest watch",
+    "build": "tsc --build",
+    "prepack": "yarn build"
+  },
+  "files": [
+    "README.md",
+    "-private/**/*.{js,d.ts}",
+    "globals/index.d.ts"
+  ],
+  "dependencies": {
+    "ember-template-imports": "^3.0.0"
+  },
+  "peerDependencies": {
+    "@glint/environment-ember-loose": "^1.3.0",
+    "@glint/template": "^1.3.0",
+    "@glint/core": "^1.3.0",
+    "@types/ember__component": "^4.0.10",
+    "@types/ember__helper": "^4.0.1",
+    "@types/ember__modifier": "^4.0.3",
+    "@types/ember__routing": "^4.0.12"
+  },
+  "peerDependenciesMeta": {
+    "@types/ember__component": {
+      "optional": true
+    },
+    "@types/ember__helper": {
+      "optional": true
+    },
+    "@types/ember__modifier": {
+      "optional": true
+    },
+    "@types/ember__routing": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/ember": "^4.0.0",
+    "@types/ember__component": "^4.0.10",
+    "@types/ember__helper": "^4.0.1",
+    "@types/ember__modifier": "^4.0.3",
+    "@types/ember__routing": "^4.0.12",
+    "ember-template-imports": "^3.0.0",
+    "common-tags": "^1.8.2",
+    "typescript": "^5.2.2",
+    "vitest": "^0.22.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

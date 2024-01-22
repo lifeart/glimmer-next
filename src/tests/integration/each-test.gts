@@ -3,7 +3,6 @@ import { render, allSettled, click } from '@/tests/utils';
 import { cell } from '@lifeart/gxt';
 import { type Cell } from '@/utils/reactive';
 import { step } from '../utils';
-import type { ModifierReturn } from '@glint/template/-private/integration';
 
 module('Integration | InternalComponent | each', function (hooks) {
   type User = { name: Cell<string> };
@@ -21,11 +20,10 @@ module('Integration | InternalComponent | each', function (hooks) {
     };
     const fadeOut = (node: HTMLLIElement) => {
       node.style.opacity = '1';
-      const destructor = async () => {
+      return async () => {
         node.style.opacity = '0.1';
         await new Promise((resolve) => setTimeout(resolve, animationDelay));
       };
-      return destructor as unknown as ModifierReturn;
     };
     const Li = <template>
       <li
@@ -68,11 +66,10 @@ module('Integration | InternalComponent | each', function (hooks) {
     };
     const fadeOut = (node: HTMLLIElement) => {
       node.style.opacity = '1';
-      const destructor = async () => {
+      return async () => {
         node.style.opacity = '0.1';
         await new Promise((resolve) => setTimeout(resolve, animationDelay));
       };
-      return destructor as unknown as ModifierReturn;
     };
     await render(
       <template>
@@ -104,11 +101,10 @@ module('Integration | InternalComponent | each', function (hooks) {
     const isExpended = cell(true);
     const fadeOut = (node: HTMLLIElement) => {
       node.style.opacity = '1';
-      const destructor = async () => {
+      return async () => {
         node.style.opacity = '0.1';
         await new Promise((resolve) => setTimeout(resolve, animationDelay));
       };
-      return destructor as unknown as ModifierReturn;
     };
     await render(
       <template>
