@@ -1,0 +1,32 @@
+{
+    "name": "glint-environment-gxt",
+    "version": "0.0.1",
+    "repository": "lifeart/glimmer-next",
+    "description": "A Glint environment to support gxt",
+    "license": "MIT",
+    "author": "Aleksandr Kanunnikov (https://github.com/lifeart)",
+    "main": "-private/index.js",
+    "exports": {
+      ".": "./-private/index.js",
+      "./registry": "./registry/index.js",
+      "./glint-environment-definition": "./-private/environment/index.js",
+      "./-private/dsl": "./-private/dsl/index.js"
+    },
+    "keywords": [
+      "glint-environment"
+    ],
+    "files": [
+      "README.md",
+      "-private/**/*.{js,d.ts}",
+      "registry/**/*.{js,d.ts}"
+    ],
+    "dependencies": {
+      "@glint/template": "1.3.0",
+      "@glint/core": "1.3.0",
+      "@lifeart/gxt": "*",
+      "ember-template-imports": "^3.0.0"
+    },
+    "publishConfig": {
+      "access": "public"
+    }
+  }

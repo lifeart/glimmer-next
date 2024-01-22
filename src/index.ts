@@ -1,5 +1,6 @@
 import '@glint/environment-glimmerx';
 import '@glint/environment-ember-template-imports';
+import 'glint-environment-gxt';
 import 'decorator-transforms/globals';
 
 import { createBenchmark } from '@/utils/benchmark';
