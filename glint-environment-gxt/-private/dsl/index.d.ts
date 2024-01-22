@@ -14,6 +14,7 @@ import {
   Invoke,
   InvokeDirect,
   TemplateContext,
+  ModifierReturn,
 } from '@glint/template/-private/integration';
 
 // Items that can be directly invoked by value
@@ -43,3 +44,7 @@ export declare function templateExpression<
   f: (𝚪: Context, χ: never) => void
 ): TemplateOnlyComponent<never> &
   (abstract new () => InvokableInstance<Signature> & HasContext<Context>);
+
+
+// We customize `applyModifier` to accept `void | () => void` as a valid modifier return type
+export declare function applyModifier(modifierResult: Promise<void> | ModifierReturn | void | (() => void)): void;
