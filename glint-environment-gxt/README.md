@@ -1,4 +1,4 @@
-# `glint-environment-gxts`
+# `glint-environment-gxt`
 
 This package contains the information necessary for glint to typecheck an `ember-template-imports` project.
 
@@ -11,7 +11,7 @@ in your Glint configuration in `tsconfig.json`:
   "glint": {
     "environment": [
       "ember-loose",
-      "ember-template-imports"
+      "glint-environment-gxt"
     ]
   }
 }
