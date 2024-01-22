@@ -3,7 +3,7 @@ export { Globals } from './globals';
 
 import './integration-declarations';
 
-import { ResolveOrReturn } from '@glint/template/-private/dsl';
+import { ElementForTagName, ResolveOrReturn } from '@glint/template/-private/dsl';
 import {
   ComponentReturn,
   AnyContext,
@@ -36,6 +36,7 @@ export declare const resolveOrReturn: ResolveOrReturn<typeof resolve>;
 // and likely comes from a more sensible path.
 
 import { TemplateOnlyComponent } from '@ember/component/template-only';
+import { AttrValue } from '@glint/template';
 
 export declare function templateExpression<
   Signature extends AnyFunction = () => ComponentReturn<{}>,
@@ -48,3 +49,17 @@ export declare function templateExpression<
 
 // We customize `applyModifier` to accept `void | () => void` as a valid modifier return type
 export declare function applyModifier(modifierResult: Promise<void> | ModifierReturn | void | (() => void)): void;
+
+
+/**
+ * Given a tag name, returns an appropriate `Element` subtype.
+ * NOTE: This will return a union for elements that exist both in HTML and SVG. Technically, this will be too permissive.
+ */
+type WithShadowRoot = { shadowrootmode?: 'open' | 'closed' };
+
+export declare function emitElement<Name extends string>(
+  name: Name
+): { element: ElementForTagName<Name> & WithShadowRoot };
+
+
+export declare function applyAttributes(element: Element, attrs: Record<string, AttrValue> & WithShadowRoot): void;
