@@ -1,19 +1,29 @@
-// import * as VM from '@glint/template/-private/keywords';
+import { Globals as EELGlobals } from '@glint/environment-ember-loose/-private/dsl';
+import Globals from '../../globals';
 
-import { EachKeyword } from '../intrinsics/each';
+interface Keywords
+  extends Pick<
+    EELGlobals,
+    | 'action'
+    | 'component'
+    | 'debugger'
+    | 'each'
+    | 'each-in'
+    | 'has-block'
+    | 'has-block-params'
+    | 'helper'
+    | 'if'
+    | 'in-element'
+    | 'let'
+    | 'log'
+    | 'modifier'
+    | 'mount'
+    | 'mut'
+    | 'outlet'
+    | 'unbound'
+    | 'unless'
+    | 'with'
+    | 'yield'
+  > {}
 
-import Registry from '../../registry';
-
-// The keyword vs global breakdown here is loosely matched with
-// the listing in http://emberjs.github.io/rfcs/0496-handlebars-strict-mode.html
-
-interface Keywords {
- 
-  each: EachKeyword;
-}
-
-export interface Globals extends Keywords, Registry {
-
-}
-
-export declare const Globals: Globals;
+export const Globals: Keywords & Globals;

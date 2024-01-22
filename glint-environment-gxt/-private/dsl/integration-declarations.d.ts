@@ -1,47 +1,33 @@
-// This module is responsible for augmenting the upstream definitions of entities that interact
-// with templates to include the information necessary for Glint to typecheck them.
-import { ComponentLike, HelperLike, ModifierLike } from '@glint/template';
-import {
-  Context,
-  FlattenBlockParams,
-  HasContext,
-  TemplateContext,
-} from '@glint/template/-private/integration';
-import {
-  ComponentSignatureArgs,
-  ComponentSignatureBlocks,
-  ComponentSignatureElement,
-} from '@glint/template/-private/signature';
+import { Globals } from '@glint/environment-ember-loose/-private/dsl';
 
-//////////////////////////////////////////////////////////////////////
-// Components
-
-import '@ember/component/template-only';
-// import '@lifeart/gxt';
-
-type ComponentContext<This, S> = TemplateContext<
-  This,
-  ComponentSignatureArgs<S>['Named'],
-  FlattenBlockParams<ComponentSignatureBlocks<S>>,
-  ComponentSignatureElement<S>
->;
-
-// declare module '@lifeart/gxt' {
-//   export interface Component<S> extends InstanceType<ComponentLike<S>> {
-//     [Context]: ComponentContext<this, S>;
-//   }
-// }
-
-
-interface TemplateOnlyComponentInstance<S> extends InstanceType<ComponentLike<S>> {
-  [Context]: ComponentContext<null, S>;
+import '@ember/modifier';
+type EELOn = typeof Globals.on;
+declare module '@ember/modifier' {
+  export interface OnModifier extends EELOn {}
 }
 
-// As with other abstract constructor types, this allows us to provide a class
-// and therefore have InstanceType work as needed, while forbidding construction
-// by end users.
-type TemplateOnlyConstructor<S> = abstract new () => TemplateOnlyComponentInstance<S>;
+import '@ember/helper';
+type EELConcat = typeof Globals.concat;
+type EELFn = typeof Globals.fn;
+type EELGet = typeof Globals.get;
+declare module '@ember/helper' {
+  // export interface ArrayHelper extends EELArray {}
+  export interface ConcatHelper extends EELConcat {}
+  export interface FnHelper extends EELFn {}
+  export interface GetHelper extends EELGet {}
+  // export interface HashHelper extends EELHash {}
+}
 
-declare module '@ember/component/template-only' {
-  export interface TemplateOnlyComponent<S> extends TemplateOnlyConstructor<S> {}
+import '@ember/component';
+type EELInput = typeof Globals.Input;
+type EELTextarea = typeof Globals.Textarea;
+declare module '@ember/component' {
+  export interface Input extends EELInput {}
+  export interface Textarea extends EELTextarea {}
+}
+
+import '@ember/routing';
+type EELLinkTo = typeof Globals.LinkTo;
+declare module '@ember/routing' {
+  export interface LinkTo extends EELLinkTo {}
 }

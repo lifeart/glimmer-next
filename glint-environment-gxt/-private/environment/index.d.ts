@@ -1,2 +1,2 @@
-import { GlintEnvironmentConfig } from '@glint/core/lib/config/types.cjs';
+import { GlintEnvironmentConfig } from '@glint/core/config-types';
 export default function gxtEnvironment(options: Record<string, unknown>): GlintEnvironmentConfig;
