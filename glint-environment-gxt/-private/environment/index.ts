@@ -54,6 +54,8 @@ export default function gxtEnvironment(
             'modifier',
             'unless',
             'yield',
+            // new:
+            "on", "array", "hash", "fn", "eq", "element",
             ...Object.keys(additionalGlobalSpecialForms),
             ...additionalGlobals,
           ],

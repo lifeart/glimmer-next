@@ -48,6 +48,8 @@ function gxtEnvironment(options) {
                         'modifier',
                         'unless',
                         'yield',
+                        // new:
+                        "on", "array", "hash", "fn", "eq", "element",
                         ...Object.keys(additionalGlobalSpecialForms),
                         ...additionalGlobals,
                     ],

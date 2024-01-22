@@ -1,5 +1,4 @@
 import { type ComponentReturnType, type Component } from '@/utils/component';
-import type { ComponentLike } from '@glint/template';
 
 declare global {
   interface Window {
@@ -20,21 +19,7 @@ declare global {
 declare module 'glint-environment-gxt/globals' {
   export default interface Globals {
     // used to hang any macros off of that are provided by config.additionalGlobals
-    on: (
-      noop: unknown,
-      event: string,
-      callback: (e: Event, element: Element) => void,
-    ) => ModifierReturn;
-    array: <T extends unknown>(...params: T[]) => T[];
-    hash: <T extends Record<string, unknown>>(obj: T) => T;
-    fn: (...args: any) => (...args: any) => void;
-    eq: (...args: any) => boolean;
-    element: (tagName: string) => ComponentLike<{
-      Element: Element;
-      Blocks: {
-        default: [];
-      };
-    }>;
+
   }
 }
 

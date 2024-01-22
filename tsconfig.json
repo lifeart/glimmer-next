@@ -36,7 +36,7 @@
     "environment": {
       "glimmerx": {},
       "gxt": {
-        "additionalGlobals": ["on", "array", "hash", "fn", "eq", "element"],
+        "additionalGlobals": [],
       },
     }
   }
