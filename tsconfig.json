@@ -35,7 +35,6 @@
   "glint": {
     "environment": {
       "glimmerx": {},
-      "ember-template-imports": {},
       "gxt": {
         "additionalGlobals": ["on", "array", "hash", "fn", "eq", "element"],
       },

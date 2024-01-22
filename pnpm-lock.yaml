@@ -21,9 +21,6 @@ devDependencies:
   '@glint/core':
     specifier: ^1.3.0
     version: 1.3.0(typescript@5.2.2)
-  '@glint/environment-ember-template-imports':
-    specifier: 1.3.0
-    version: 1.3.0(@glint/environment-ember-loose@1.3.0)(@glint/template@1.3.0)
   '@glint/environment-glimmerx':
     specifier: ^1.3.0
     version: 1.3.0(@glint/template@1.3.0)
@@ -53,7 +50,7 @@ devDependencies:
     version: 4.18.2
   glint-environment-gxt:
     specifier: file:./glint-environment-gxt
-    version: file:glint-environment-gxt(typescript@5.2.2)
+    version: file:glint-environment-gxt(@glint/environment-ember-loose@1.3.0)(@glint/template@1.3.0)
   happy-dom:
     specifier: ^13.0.6
     version: 13.0.6
@@ -567,6 +564,7 @@ packages:
     dependencies:
       '@babel/core': 7.23.6
       '@babel/helper-plugin-utils': 7.22.5
+    dev: false
 
   /@babel/plugin-syntax-logical-assignment-operators@7.10.4(@babel/core@7.23.6):
     resolution: {integrity: sha512-d8waShlpFDinQ5MtvGU9xDAOzKH47+FFoney2baFIoMr952hKOLp1HR7VszoZvOsV/4+RRszNY7D17ba0te0ig==}
@@ -1356,6 +1354,7 @@ packages:
       '@babel/plugin-syntax-jsx': 7.23.3(@babel/core@7.23.6)
       '@babel/plugin-transform-modules-commonjs': 7.23.3(@babel/core@7.23.6)
       '@babel/plugin-transform-typescript': 7.23.6(@babel/core@7.23.6)
+    dev: false
 
   /@babel/regjsgen@0.8.0:
     resolution: {integrity: sha512-x/rqGMdzj+fWZvCOYForTghzbtqPDZ5gPwaoNGHdgDfF2QA/XZbCBp4Moo5scrkAMPhB7z26XM/AaHuIJdgauA==}
@@ -1665,6 +1664,7 @@ packages:
     resolution: {integrity: sha512-2lbwLY4Bt9i2SvwT4hhY0TgEYKhOMQBgYvRiraq2BYHwO8iLKh3lC8iO3d+rQ3VgDtQ9i/sP6HG848VNRyVHxA==}
     dependencies:
       '@simple-dom/interface': 1.4.0
+    dev: false
 
   /@glimmer/syntax@0.84.3:
     resolution: {integrity: sha512-ioVbTic6ZisLxqTgRBL2PCjYZTFIwobifCustrozRU2xGDiYvVIL0vt25h2c1ioDsX59UgVlDkIK4YTAQQSd2A==}
@@ -1683,6 +1683,7 @@ packages:
       '@glimmer/wire-format': 0.87.1
       '@handlebars/parser': 2.0.0
       simple-html-tokenizer: 0.5.11
+    dev: false
 
   /@glimmer/util@0.44.0:
     resolution: {integrity: sha512-duAsm30uVK9jSysElCbLyU6QQYO2X9iLDLBIBUcCqck9qN1o3tK2qWiHbGK5d6g8E2AJ4H88UrfElkyaJlGrwg==}
@@ -1701,12 +1702,14 @@ packages:
     dependencies:
       '@glimmer/env': 0.1.7
       '@glimmer/interfaces': 0.87.1
+    dev: false
 
   /@glimmer/wire-format@0.87.1:
     resolution: {integrity: sha512-O3W1HDfRGX7wHZqvP8UzI/nWyZ2GIMFolU7l6WcLGU9HIdzqfxsc7ae2Icob/fq2kV9meHti4yDEdTMlBVK9AQ==}
     dependencies:
       '@glimmer/interfaces': 0.87.1
       '@glimmer/util': 0.87.1
+    dev: false
 
   /@glint/core@1.3.0(typescript@5.2.2):
     resolution: {integrity: sha512-R5Y1QmkZs6lJHQ0LTRRcTKDI1EdeM32YuR2J67LG4qKT+WUNZhmetkqPiAMW9hQAOdrG/PqDZWV+J7Jf3xOlAg==}
@@ -1758,32 +1761,6 @@ packages:
     dependencies:
       '@glimmer/component': 1.1.2(@babel/core@7.23.6)
       '@glint/template': 1.3.0
-    dev: true
-
-  /@glint/environment-ember-template-imports@1.3.0(@glint/environment-ember-loose@1.3.0)(@glint/template@1.3.0):
-    resolution: {integrity: sha512-ynSc3AeFE4ZocvjI4rTS55L5sSrMexMvRtOYbVuY/u9t0PGXDjFuH/OiRiSCbHIL/jYH5Ie5uASZxs7TTCT8dw==}
-    peerDependencies:
-      '@glint/environment-ember-loose': ^1.3.0
-      '@glint/template': ^1.3.0
-      '@types/ember__component': ^4.0.10
-      '@types/ember__helper': ^4.0.1
-      '@types/ember__modifier': ^4.0.3
-      '@types/ember__routing': ^4.0.12
-    peerDependenciesMeta:
-      '@types/ember__component':
-        optional: true
-      '@types/ember__helper':
-        optional: true
-      '@types/ember__modifier':
-        optional: true
-      '@types/ember__routing':
-        optional: true
-    dependencies:
-      '@glint/environment-ember-loose': 1.3.0(@glimmer/component@1.1.2)(@glint/template@1.3.0)
-      '@glint/template': 1.3.0
-      ember-template-imports: 3.4.2
-    transitivePeerDependencies:
-      - supports-color
     dev: true
 
   /@glint/environment-glimmerx@1.3.0(@glint/template@1.3.0):
@@ -1883,18 +1860,6 @@ packages:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.1
       '@jridgewell/sourcemap-codec': 1.4.15
-    dev: true
-
-  /@lifeart/gxt@0.0.28:
-    resolution: {integrity: sha512-dV4P+mQBBExdz/I/BreFKIJQVRCdY/JH44lKCjnBrHKkEa3okaOBBLo/wc1essq6ZeeEyfpT/nRh+0bfAOZjVg==}
-    dependencies:
-      '@babel/core': 7.23.6
-      '@babel/preset-typescript': 7.23.3(@babel/core@7.23.6)
-      '@glimmer/syntax': 0.87.1
-      content-tag: 1.2.2
-      decorator-transforms: 1.0.3(@babel/core@7.23.6)
-    transitivePeerDependencies:
-      - supports-color
     dev: true
 
   /@lifeart/tiny-router@0.0.8:
@@ -3002,6 +2967,7 @@ packages:
   /babel-import-util@2.0.1:
     resolution: {integrity: sha512-N1ZfNprtf/37x0R05J0QCW/9pCAcuI+bjZIK9tlu0JEkwEST7ssdD++gxHRbD58AiG5QE5OuNYhRoEFsc1wESw==}
     engines: {node: '>= 12.*'}
+    dev: false
 
   /babel-plugin-debug-macros@0.2.0(@babel/core@7.23.6):
     resolution: {integrity: sha512-Wpmw4TbhR3Eq2t3W51eBAQSdKlr+uAyF0GI4GtPfMCD12Y4cIdpKC9l0RjNTH/P9isFypSqqewMPm7//fnZlNA==}
@@ -3838,6 +3804,7 @@ packages:
       babel-import-util: 2.0.1
     transitivePeerDependencies:
       - '@babel/core'
+    dev: false
 
   /deep-eql@4.1.3:
     resolution: {integrity: sha512-WaEtAOpRA1MQ0eohqZjpGD8zdI0Ovsm8mmFhaDN8dvDZzyoUMcYDnf5Y6iu7HTXxf8JDS23qWa4a+hKCDyOPzw==}
@@ -8329,16 +8296,31 @@ packages:
       yaml: 2.3.4
     dev: true
 
-  file:glint-environment-gxt(typescript@5.2.2):
+  file:glint-environment-gxt(@glint/environment-ember-loose@1.3.0)(@glint/template@1.3.0):
     resolution: {directory: glint-environment-gxt, type: directory}
     id: file:glint-environment-gxt
     name: glint-environment-gxt
     version: 0.0.1
+    peerDependencies:
+      '@glint/environment-ember-loose': ^1.3.0
+      '@glint/template': ^1.3.0
+      '@types/ember__component': ^4.0.10
+      '@types/ember__helper': ^4.0.1
+      '@types/ember__modifier': ^4.0.3
+      '@types/ember__routing': ^4.0.12
+    peerDependenciesMeta:
+      '@types/ember__component':
+        optional: true
+      '@types/ember__helper':
+        optional: true
+      '@types/ember__modifier':
+        optional: true
+      '@types/ember__routing':
+        optional: true
     dependencies:
-      '@glint/core': 1.3.0(typescript@5.2.2)
+      '@glint/environment-ember-loose': 1.3.0(@glimmer/component@1.1.2)(@glint/template@1.3.0)
       '@glint/template': 1.3.0
-      '@lifeart/gxt': 0.0.28
+      ember-template-imports: 3.4.2
     transitivePeerDependencies:
       - supports-color
-      - typescript
     dev: true

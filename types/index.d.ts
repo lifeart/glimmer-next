@@ -17,7 +17,7 @@ declare global {
   const RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES: boolean;
 }
 
-declare module '@glint/environment-ember-template-imports/globals' {
+declare module 'glint-environment-gxt/globals' {
   export default interface Globals {
     // used to hang any macros off of that are provided by config.additionalGlobals
     on: (
