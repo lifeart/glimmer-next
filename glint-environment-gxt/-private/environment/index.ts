@@ -1,9 +1,13 @@
-import { GlintEnvironmentConfig, GlintSpecialFormConfig, GlintTagConfig } from '@glint/core/config-types';
+import {
+  GlintEnvironmentConfig,
+  GlintSpecialFormConfig,
+  GlintTagConfig,
+} from '@glint/core/config-types';
 import { preprocess } from './preprocess';
 import { transform } from './transform';
 
 export default function gxtEnvironment(
-  options: Record<string, unknown>
+  options: Record<string, unknown>,
 ): GlintEnvironmentConfig {
   let additionalSpecialForms =
     typeof options['additionalSpecialForms'] === 'object'
@@ -52,7 +56,12 @@ export default function gxtEnvironment(
       'unless',
       'yield',
       // new:
-      "on", "array", "hash", "fn", "eq", "element",
+      'on',
+      'array',
+      'hash',
+      'fn',
+      'eq',
+      'element',
       ...Object.keys(additionalGlobalSpecialForms),
       ...additionalGlobals,
     ],

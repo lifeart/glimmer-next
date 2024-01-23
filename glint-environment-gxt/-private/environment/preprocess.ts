@@ -5,10 +5,13 @@ import { GLOBAL_TAG, PreprocessData, TemplateLocation } from './common';
 const TEMPLATE_START = `[${GLOBAL_TAG}\``;
 const TEMPLATE_END = '`]';
 
-export const preprocess: GlintExtensionPreprocess<PreprocessData> = (source, path) => {
-  let templates = parseTemplates(source, path, { templateTag: 'template' }).filter(
-    (match) => match.type === 'template-tag'
-  );
+export const preprocess: GlintExtensionPreprocess<PreprocessData> = (
+  source,
+  path,
+) => {
+  let templates = parseTemplates(source, path, {
+    templateTag: 'template',
+  }).filter((match) => match.type === 'template-tag');
 
   let templateLocations: Array<TemplateLocation> = [];
   let segments: Array<string> = [];

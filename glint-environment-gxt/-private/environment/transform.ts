@@ -6,7 +6,7 @@ type TSLib = typeof ts;
 
 export const transform: GlintExtensionTransform<PreprocessData> = (
   data,
-  { ts, context, setEmitMetadata }
+  { ts, context, setEmitMetadata },
 ) => {
   let f = ts.factory;
   let { templateLocations } = data;
@@ -82,7 +82,10 @@ function repairAncestry(node: ts.Node, parent: ts.Node = node.parent): ts.Node {
   return node;
 }
 
-function addTagImport(f: ts.NodeFactory, sourceFile: ts.SourceFile): ts.SourceFile {
+function addTagImport(
+  f: ts.NodeFactory,
+  sourceFile: ts.SourceFile,
+): ts.SourceFile {
   return f.updateSourceFile(sourceFile, [
     f.createImportDeclaration(
       [],
@@ -90,10 +93,14 @@ function addTagImport(f: ts.NodeFactory, sourceFile: ts.SourceFile): ts.SourceFi
         false,
         undefined,
         f.createNamedImports([
-          f.createImportSpecifier(false, f.createIdentifier('hbs'), f.createIdentifier(GLOBAL_TAG)),
-        ])
+          f.createImportSpecifier(
+            false,
+            f.createIdentifier('hbs'),
+            f.createIdentifier(GLOBAL_TAG),
+          ),
+        ]),
       ),
-      f.createStringLiteral('glint-environment-gxt/-private/tag')
+      f.createStringLiteral('glint-environment-gxt/-private/tag'),
     ),
     ...sourceFile.statements,
   ]);
@@ -115,11 +122,19 @@ type ETIDefaultTemplate = ts.ExpressionStatement & {
   expression: ETITemplateLiteral;
 };
 
-function isETIDefaultTemplate(ts: TSLib, node: ts.Node): node is ETIDefaultTemplate {
-  return ts.isExpressionStatement(node) && isETITemplateLiteral(ts, node.expression);
+function isETIDefaultTemplate(
+  ts: TSLib,
+  node: ts.Node,
+): node is ETIDefaultTemplate {
+  return (
+    ts.isExpressionStatement(node) && isETITemplateLiteral(ts, node.expression)
+  );
 }
 
-function isETITemplateProperty(ts: TSLib, node: ts.Node): node is ETITemplateProperty {
+function isETITemplateProperty(
+  ts: TSLib,
+  node: ts.Node,
+): node is ETITemplateProperty {
   return (
     ts.isPropertyDeclaration(node) &&
     ts.isComputedPropertyName(node.name) &&
@@ -127,7 +142,10 @@ function isETITemplateProperty(ts: TSLib, node: ts.Node): node is ETITemplatePro
   );
 }
 
-function isETITemplateExpression(ts: TSLib, node: ts.Node): node is ETITemplateExpression {
+function isETITemplateExpression(
+  ts: TSLib,
+  node: ts.Node,
+): node is ETITemplateExpression {
   return (
     ts.isArrayLiteralExpression(node) &&
     node.elements.length === 1 &&
@@ -135,7 +153,10 @@ function isETITemplateExpression(ts: TSLib, node: ts.Node): node is ETITemplateE
   );
 }
 
-function isETITemplateLiteral(ts: TSLib, node: ts.Node): node is ETITemplateLiteral {
+function isETITemplateLiteral(
+  ts: TSLib,
+  node: ts.Node,
+): node is ETITemplateLiteral {
   return (
     ts.isTaggedTemplateExpression(node) &&
     ts.isNoSubstitutionTemplateLiteral(node.template) &&
@@ -146,9 +167,11 @@ function isETITemplateLiteral(ts: TSLib, node: ts.Node): node is ETITemplateLite
 
 function findTemplateLocation(
   locations: Array<TemplateLocation>,
-  node: ETITemplateExpression | ETITemplateProperty
+  node: ETITemplateExpression | ETITemplateProperty,
 ): TemplateLocation {
-  let location = locations.find((loc) => loc.transformedStart === node.getStart());
+  let location = locations.find(
+    (loc) => loc.transformedStart === node.getStart(),
+  );
 
   if (!location) {
     throw new Error('Internal error: missing location info for template');
@@ -159,9 +182,9 @@ function findTemplateLocation(
 
 function buildStaticBlockForTemplate(
   f: ts.NodeFactory,
-  template: ts.TaggedTemplateExpression
+  template: ts.TaggedTemplateExpression,
 ): ts.Node {
   return f.createClassStaticBlockDeclaration(
-    f.createBlock([f.createExpressionStatement(template)])
+    f.createBlock([f.createExpressionStatement(template)]),
   );
 }

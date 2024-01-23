@@ -46,7 +46,12 @@ function gxtEnvironment(options) {
             'unless',
             'yield',
             // new:
-            "on", "array", "hash", "fn", "eq", "element",
+            'on',
+            'array',
+            'hash',
+            'fn',
+            'eq',
+            'element',
             ...Object.keys(additionalGlobalSpecialForms),
             ...additionalGlobals,
         ],

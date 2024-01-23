@@ -19,13 +19,11 @@ interface Keywords
     | 'modifier'
     | 'unless'
     | 'yield'
-  > {
-    
-  }
+  > {}
 
 interface Internal {
-  each: EachKeyword,
-  'in-element': InElementKeyword,
+  each: EachKeyword;
+  'in-element': InElementKeyword;
   on: (
     noop: unknown,
     event: string,

@@ -3,7 +3,10 @@ export { Globals } from './globals';
 
 import './integration-declarations';
 
-import { ElementForTagName, ResolveOrReturn } from '@glint/template/-private/dsl';
+import {
+  ElementForTagName,
+  ResolveOrReturn,
+} from '@glint/template/-private/dsl';
 import {
   ComponentReturn,
   AnyContext,
@@ -18,15 +21,22 @@ import {
 } from '@glint/template/-private/integration';
 
 // Items that can be directly invoked by value
-export declare function resolve<T extends DirectInvokable>(item: T): T[typeof InvokeDirect];
+export declare function resolve<T extends DirectInvokable>(
+  item: T,
+): T[typeof InvokeDirect];
 // Items whose instance type can be invoked
-export declare function resolve<Args extends unknown[], Instance extends InvokableInstance>(
-  item: (abstract new (...args: Args) => Instance) | null | undefined
-): (...args: Parameters<Instance[typeof Invoke]>) => ReturnType<Instance[typeof Invoke]>;
+export declare function resolve<
+  Args extends unknown[],
+  Instance extends InvokableInstance,
+>(
+  item: (abstract new (...args: Args) => Instance) | null | undefined,
+): (
+  ...args: Parameters<Instance[typeof Invoke]>
+) => ReturnType<Instance[typeof Invoke]>;
 // Plain functions
-export declare function resolve<T extends ((...params: any) => any) | null | undefined>(
-  item: T
-): NonNullable<T>;
+export declare function resolve<
+  T extends ((...params: any) => any) | null | undefined,
+>(item: T): NonNullable<T>;
 
 export declare const resolveOrReturn: ResolveOrReturn<typeof resolve>;
 
@@ -40,16 +50,16 @@ import { AttrValue } from '@glint/template';
 
 export declare function templateExpression<
   Signature extends AnyFunction = () => ComponentReturn<{}>,
-  Context extends AnyContext = TemplateContext<void, {}, {}, void>
+  Context extends AnyContext = TemplateContext<void, {}, {}, void>,
 >(
-  f: (𝚪: Context, χ: never) => void
+  f: (𝚪: Context, χ: never) => void,
 ): TemplateOnlyComponent<never> &
   (abstract new () => InvokableInstance<Signature> & HasContext<Context>);
 
-
 // We customize `applyModifier` to accept `void | () => void` as a valid modifier return type
-export declare function applyModifier(modifierResult: Promise<void> | ModifierReturn | void | (() => void)): void;
-
+export declare function applyModifier(
+  modifierResult: Promise<void> | ModifierReturn | void | (() => void),
+): void;
 
 /**
  * Given a tag name, returns an appropriate `Element` subtype.
@@ -58,8 +68,10 @@ export declare function applyModifier(modifierResult: Promise<void> | ModifierRe
 type WithShadowRoot = { shadowrootmode?: 'open' | 'closed' };
 
 export declare function emitElement<Name extends string>(
-  name: Name
+  name: Name,
 ): { element: ElementForTagName<Name> & WithShadowRoot };
 
-
-export declare function applyAttributes(element: Element, attrs: Record<string, AttrValue> & WithShadowRoot): void;
+export declare function applyAttributes(
+  element: Element,
+  attrs: Record<string, AttrValue> & WithShadowRoot,
+): void;

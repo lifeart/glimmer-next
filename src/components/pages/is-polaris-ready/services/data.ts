@@ -12,5 +12,5 @@ export const data = {
   },
   get percent() {
     return Math.round((this.finished / this.total) * 100);
-  }
-}
+  },
+};

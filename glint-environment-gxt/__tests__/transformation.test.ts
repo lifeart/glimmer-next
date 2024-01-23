@@ -69,8 +69,12 @@ describe('Environment: ETI', () => {
             startTagLength: '<template>'.length,
             endTagOffset: source.indexOf('</template>', sourceClassOffset),
             endTagLength: '</template>'.length,
-            transformedStart: transformed.indexOf('[___T', transformedClassOffset),
-            transformedEnd: transformed.indexOf(']', transformedClassOffset) + 1,
+            transformedStart: transformed.indexOf(
+              '[___T',
+              transformedClassOffset,
+            ),
+            transformedEnd:
+              transformed.indexOf(']', transformedClassOffset) + 1,
           },
         ],
       });
@@ -83,11 +87,19 @@ describe('Environment: ETI', () => {
       sourceFile: ts.SourceFile;
     } {
       let meta = new Map<ts.Node, GlintEmitMetadata>();
-      let setEmitMetadata = (node: ts.TaggedTemplateExpression, newMeta: GlintEmitMetadata): void =>
+      let setEmitMetadata = (
+        node: ts.TaggedTemplateExpression,
+        newMeta: GlintEmitMetadata,
+      ): void =>
         void meta.set(node, Object.assign(meta.get(node) ?? {}, newMeta));
 
       let { contents, data } = preprocess(source, 'index.gts');
-      let ast = ts.createSourceFile('index.gts', contents, ts.ScriptTarget.Latest, true);
+      let ast = ts.createSourceFile(
+        'index.gts',
+        contents,
+        ts.ScriptTarget.Latest,
+        true,
+      );
       let { transformed } = ts.transform(ast, [
         (context) => transform(data!, { ts, context, setEmitMetadata }),
       ]);
@@ -101,7 +113,8 @@ describe('Environment: ETI', () => {
     test('single template', () => {
       let source = '<template>hi</template>\n';
       let { meta, sourceFile } = applyTransform(source);
-      let templateNode = (sourceFile.statements[1] as ts.ExpressionStatement).expression;
+      let templateNode = (sourceFile.statements[1] as ts.ExpressionStatement)
+        .expression;
 
       let start = source.indexOf('<template>');
       let contentStart = start + '<template>'.length;
@@ -122,7 +135,7 @@ describe('Environment: ETI', () => {
               },
             },
           ],
-        ])
+        ]),
       );
     });
 
@@ -139,7 +152,8 @@ describe('Environment: ETI', () => {
 
       let classStart = source.indexOf('class');
       let { meta, sourceFile } = applyTransform(source);
-      let firstTemplate = (sourceFile.statements[1] as ts.ExpressionStatement).expression;
+      let firstTemplate = (sourceFile.statements[1] as ts.ExpressionStatement)
+        .expression;
       let secondTemplate = (
         (
           (sourceFile.statements[2] as ts.ClassDeclaration)
@@ -184,7 +198,7 @@ describe('Environment: ETI', () => {
               },
             },
           ],
-        ])
+        ]),
       );
     });
   });

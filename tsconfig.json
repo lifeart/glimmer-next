@@ -35,8 +35,8 @@
   "glint": {
     "environment": {
       "gxt": {
-        "additionalGlobals": [],
-      },
+        "additionalGlobals": []
+      }
     }
   }
 }
