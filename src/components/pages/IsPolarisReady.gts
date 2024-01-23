@@ -20,7 +20,7 @@ const GetStarted = <template>
 </template>;
 
 function pageTitle(text: string) {
-  window.title = text;
+  document.title = text;
 }
 
 export class IsPolarisReady extends Component {

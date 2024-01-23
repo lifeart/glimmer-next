@@ -161,8 +161,11 @@ describe.each([
       test('non empty text nodes not trimmed', () => {
         expect($t<ASTv1.TextNode>(` foo`)).toEqual(` foo`);
       });
-      test('non empty text nodes trimmed', () => {
-        expect($t<ASTv1.TextNode>(` `)).toEqual(null);
+      test('empty non multiline text nodes preserved', () => {
+        expect($t<ASTv1.TextNode>(` `)).toEqual(' ');
+      });
+      test('empty multiline text nodes trimmed', () => {
+        expect($t<ASTv1.TextNode>(` \n `)).toEqual(null);
       });
     });
     describe('MustacheStatement', () => {

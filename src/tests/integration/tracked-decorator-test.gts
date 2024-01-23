@@ -12,4 +12,16 @@ module('Integration | Internal | @tracked', function () {
 
     assert.dom().hasText('42');
   });
+  test('value should not be shared between instances', async function (assert) {
+    class MyBucket {
+      @tracked value = 42;
+    }
+    const a = new MyBucket();
+    const b = new MyBucket();
+    assert.equal(a.value, 42);
+    assert.equal(b.value, 42);
+    a.value = 43;
+    assert.equal(a.value, 43);
+    assert.equal(b.value, 42);
+  });
 });
