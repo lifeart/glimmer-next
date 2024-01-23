@@ -1,4 +1,3 @@
-import '@glint/environment-glimmerx';
 import 'glint-environment-gxt';
 import 'decorator-transforms/globals';
 

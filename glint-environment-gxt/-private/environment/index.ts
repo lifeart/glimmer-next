@@ -1,4 +1,4 @@
-import { GlintEnvironmentConfig, GlintSpecialFormConfig } from '@glint/core/config-types';
+import { GlintEnvironmentConfig, GlintSpecialFormConfig, GlintTagConfig } from '@glint/core/config-types';
 import { preprocess } from './preprocess';
 import { transform } from './transform';
 
@@ -16,50 +16,53 @@ export default function gxtEnvironment(
     ? options['additionalGlobals']
     : [];
 
+  const tagConfig: GlintTagConfig = {
+    typesModule: 'glint-environment-gxt/-private/dsl',
+    specialForms: {
+      globals: {
+        if: 'if',
+        unless: 'if-not',
+        yield: 'yield',
+        component: 'bind-invokable',
+        modifier: 'bind-invokable',
+        helper: 'bind-invokable',
+        ...additionalGlobalSpecialForms,
+      },
+      imports: {
+        '@ember/helper': {
+          array: 'array-literal',
+          hash: 'object-literal',
+          ...additionalSpecialForms.imports?.['@ember/helper'],
+        },
+        ...additionalSpecialForms.imports,
+      },
+    },
+    globals: [
+      'component',
+      'debugger',
+      'each',
+      'has-block',
+      'has-block-params',
+      'helper',
+      'if',
+      'in-element',
+      'let',
+      'log',
+      'modifier',
+      'unless',
+      'yield',
+      // new:
+      "on", "array", "hash", "fn", "eq", "element",
+      ...Object.keys(additionalGlobalSpecialForms),
+      ...additionalGlobals,
+    ],
+  };
+
   return {
     tags: {
+      '@lifeart/gxt': { hbs: JSON.parse(JSON.stringify(tagConfig)) },
       'glint-environment-gxt/-private/tag': {
-        hbs: {
-          typesModule: 'glint-environment-gxt/-private/dsl',
-          specialForms: {
-            globals: {
-              if: 'if',
-              unless: 'if-not',
-              yield: 'yield',
-              component: 'bind-invokable',
-              modifier: 'bind-invokable',
-              helper: 'bind-invokable',
-              ...additionalGlobalSpecialForms,
-            },
-            imports: {
-              '@ember/helper': {
-                array: 'array-literal',
-                hash: 'object-literal',
-                ...additionalSpecialForms.imports?.['@ember/helper'],
-              },
-              ...additionalSpecialForms.imports,
-            },
-          },
-          globals: [
-            'component',
-            'debugger',
-            'each',
-            'has-block',
-            'has-block-params',
-            'helper',
-            'if',
-            'in-element',
-            'let',
-            'log',
-            'modifier',
-            'unless',
-            'yield',
-            // new:
-            "on", "array", "hash", "fn", "eq", "element",
-            ...Object.keys(additionalGlobalSpecialForms),
-            ...additionalGlobals,
-          ],
-        },
+        hbs: JSON.parse(JSON.stringify(tagConfig)),
       },
     },
     extensions: {

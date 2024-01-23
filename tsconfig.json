@@ -34,7 +34,6 @@
   "include": ["src", "plugins"],
   "glint": {
     "environment": {
-      "glimmerx": {},
       "gxt": {
         "additionalGlobals": [],
       },
