@@ -1,6 +1,6 @@
 {
   "name": "glint-environment-gxt",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "repository": "lifeart/glimmer-next",
   "description": "A Glint environment to support template-imports projects",
   "license": "MIT",
