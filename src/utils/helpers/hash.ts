@@ -1,3 +1,20 @@
 export function $__hash(obj: Record<string, unknown>) {
-  return obj;
+  const newObj = {};
+  Object.keys(obj).forEach((key) => {
+    Object.defineProperty(newObj, key, {
+      get() {
+        const value = obj[key];
+        if (typeof value === 'function') {
+          return value.call(obj);
+        } else {
+          return value;
+        }
+      },
+      set() {
+        throw new Error('unable to set hash object');
+      },
+      enumerable: true,
+    });
+  })
+  return newObj;
 }
