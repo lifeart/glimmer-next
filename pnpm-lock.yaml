@@ -21,9 +21,6 @@ devDependencies:
   '@glint/core':
     specifier: ^1.3.0
     version: 1.3.0(typescript@5.2.2)
-  '@glint/environment-glimmerx':
-    specifier: ^1.3.0
-    version: 1.3.0(@glint/template@1.3.0)
   '@glint/template':
     specifier: ^1.3.0
     version: 1.3.0
@@ -50,7 +47,7 @@ devDependencies:
     version: 4.18.2
   glint-environment-gxt:
     specifier: file:./glint-environment-gxt
-    version: file:glint-environment-gxt(@glint/environment-ember-loose@1.3.0)(@glint/template@1.3.0)
+    version: file:glint-environment-gxt(@glint/core@1.3.0)(@glint/environment-ember-loose@1.3.0)(@glint/template@1.3.0)
   happy-dom:
     specifier: ^13.0.6
     version: 13.0.6
@@ -1760,24 +1757,6 @@ packages:
         optional: true
     dependencies:
       '@glimmer/component': 1.1.2(@babel/core@7.23.6)
-      '@glint/template': 1.3.0
-    dev: true
-
-  /@glint/environment-glimmerx@1.3.0(@glint/template@1.3.0):
-    resolution: {integrity: sha512-Oux3bnwR2Myz6JAVgmPVToy0pQuEC3s9UkORpKYDj6f0v08IsBmPTwgskAy68u4BySGGxBaCqPeWeRVX1Zt1XA==}
-    peerDependencies:
-      '@glimmerx/component': ^0.6.7
-      '@glimmerx/helper': ^0.6.7
-      '@glimmerx/modifier': ^0.6.7
-      '@glint/template': ^1.3.0
-    peerDependenciesMeta:
-      '@glimmerx/component':
-        optional: true
-      '@glimmerx/helper':
-        optional: true
-      '@glimmerx/modifier':
-        optional: true
-    dependencies:
       '@glint/template': 1.3.0
     dev: true
 
@@ -8296,12 +8275,13 @@ packages:
       yaml: 2.3.4
     dev: true
 
-  file:glint-environment-gxt(@glint/environment-ember-loose@1.3.0)(@glint/template@1.3.0):
+  file:glint-environment-gxt(@glint/core@1.3.0)(@glint/environment-ember-loose@1.3.0)(@glint/template@1.3.0):
     resolution: {directory: glint-environment-gxt, type: directory}
     id: file:glint-environment-gxt
     name: glint-environment-gxt
     version: 0.0.1
     peerDependencies:
+      '@glint/core': ^1.3.0
       '@glint/environment-ember-loose': ^1.3.0
       '@glint/template': ^1.3.0
       '@types/ember__component': ^4.0.10
@@ -8318,6 +8298,7 @@ packages:
       '@types/ember__routing':
         optional: true
     dependencies:
+      '@glint/core': 1.3.0(typescript@5.2.2)
       '@glint/environment-ember-loose': 1.3.0(@glimmer/component@1.1.2)(@glint/template@1.3.0)
       '@glint/template': 1.3.0
       ember-template-imports: 3.4.2

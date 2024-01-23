@@ -31,8 +31,8 @@ router.addResolver('isPolarisReady', async () => {
   link.href = '/is-polaris-ready.css';
   link.as = 'style';
   document.head.appendChild(link);
-  // @ts-ignore import
   const { IsPolarisReady } = await import(
+    // @ts-ignore import
     '@/components/pages/IsPolarisReady.gts'
   );
   return {
