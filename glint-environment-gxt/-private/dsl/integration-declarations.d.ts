@@ -25,4 +25,3 @@ declare module '@ember/component' {
   export interface Input extends EELInput {}
   export interface Textarea extends EELTextarea {}
 }
-
