@@ -59,11 +59,11 @@ router.addResolver('todomvc', async () => {
     '@/components/pages/ToDoMVC.gts'
   );
   const model = {
-    component: ToDoMVC
+    component: ToDoMVC,
   };
   router._resolvedData['todomvc'] = {
     model,
-    params: {}
+    params: {},
   };
   return model;
 });
@@ -79,7 +79,7 @@ router.addResolver('todomvc.all', async () => {
     component: page.default,
     get model() {
       return repo.all;
-    }
+    },
   };
 });
 router.addResolver('todomvc.active', async () => {
@@ -91,7 +91,7 @@ router.addResolver('todomvc.active', async () => {
     component: page.default,
     get model() {
       return repo.active;
-    }
+    },
   };
 });
 
@@ -104,6 +104,6 @@ router.addResolver('todomvc.completed', async () => {
     component: page.default,
     get model() {
       return repo.completed;
-    }
+    },
   };
 });

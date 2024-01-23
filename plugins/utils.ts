@@ -63,7 +63,33 @@ export function resolvePath(str: string) {
   } else if (str.includes('has-block')) {
     str = str.replace('has-block', `${SYMBOLS.$_hasBlock}.bind(this, $slots)`);
   }
-  return str.replace('$:', '').replace('@', `this[${SYMBOLS.$args}].`);
+  return toOptionalChaining(str)
+    .replace('$:', '')
+    .replace('@', `this[${SYMBOLS.$args}].`);
+}
+
+export function toOptionalChaining(str: string) {
+  // special control parts
+  if (str.includes('$_')) {
+    return str;
+  } else if (str.includes('?.')) {
+    return str;
+  } else if (str.split('.').length < 3) {
+    return str;
+  }
+  const result = str
+    .split('...')
+    .map((el) => el.split('.').join('?.'))
+    .join('...');
+  if (result.includes('this?.')) {
+    return result.replace('this?.', 'this.');
+  } else if (result.includes(`this[${SYMBOLS.$args}]?.`)) {
+    return result.replace(
+      `this[${SYMBOLS.$args}]?.`,
+      `this[${SYMBOLS.$args}].`,
+    );
+  }
+  return result;
 }
 
 export function serializePath(
@@ -89,7 +115,11 @@ export function resolvedChildren(els: ASTv1.Node[]) {
     ) {
       return false;
     }
-    if (el.type === 'TextNode' && el.chars.trim().length === 0 && el.chars.includes('\n')) {
+    if (
+      el.type === 'TextNode' &&
+      el.chars.trim().length === 0 &&
+      el.chars.includes('\n')
+    ) {
       return false;
     }
     return true;
