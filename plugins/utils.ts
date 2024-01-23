@@ -89,7 +89,7 @@ export function resolvedChildren(els: ASTv1.Node[]) {
     ) {
       return false;
     }
-    if (el.type === 'TextNode' && el.chars.trim().length === 0) {
+    if (el.type === 'TextNode' && el.chars.trim().length === 0 && el.chars.includes('\n')) {
       return false;
     }
     return true;

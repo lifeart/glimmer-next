@@ -128,7 +128,7 @@ export function convert(seenNodes: Set<ASTv1.Node>, flags: Flags) {
     if (node.type === 'StringLiteral') {
       return escapeString(node.value);
     } else if (node.type === 'TextNode') {
-      if (node.chars.trim().length === 0) {
+      if (node.chars.trim().length === 0 && node.chars.includes('\n')) {
         return null;
       }
       return node.chars;

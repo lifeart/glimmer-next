@@ -2,3 +2,7 @@
 /pageTwo   /index.html   200
 /benchmark /index.html   200
 /is-polaris-ready /index.html 200
+/todomvc /index.html 200
+/todomvc/active /index.html 200
+/todomvc/completed /index.html 200
+

@@ -14,6 +14,7 @@ import {
   $args,
   $fwProp,
   RENDER_TREE,
+  isPrimitive,
 } from './shared';
 import { addChild, getRoot, setRoot } from './dom';
 
@@ -47,14 +48,17 @@ function renderNode(parent: Node, target: Node, placeholder: Node | Comment) {
 
 export function renderElement(
   target: Node,
-  el: GenericReturnType | Node,
+  el: GenericReturnType | Node | string | number | null | undefined,
   placeholder: Comment | Node,
 ) {
   if (!Array.isArray(el)) {
-    if (el === null) {
+    if (el === null || el === undefined || el === '') {
       return;
     }
-    if ($node in el) {
+    if (isPrimitive(el)) {
+      // @ts-expect-error
+      renderNode(target, api.text(el), placeholder);
+    } else if ($node in el) {
       renderNode(target, el[$node], placeholder);
     } else if ($nodes in el) {
       el[$nodes].forEach((node) => {

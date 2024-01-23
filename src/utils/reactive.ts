@@ -21,6 +21,8 @@ export const DEBUG_MERGED_CELLS = new Set<MergedCell>();
 export const DEBUG_CELLS = new Set<Cell>();
 var currentTracker: Set<Cell> | null = null;
 let _isRendering = false;
+const cellsMap = new WeakMap<object, Record<string, Cell<unknown>>>();
+
 
 export function getCells() {
   return Array.from(DEBUG_CELLS);
@@ -39,38 +41,46 @@ if (IS_DEV_MODE) {
   }
 }
 
+function keysFor(obj: object): Record<string, Cell<unknown>>{
+  if (!cellsMap.has(obj)) {
+    cellsMap.set(obj, {});
+  }
+  return cellsMap.get(obj)!;
+}
+
 export function tracked(
   klass: any,
   key: string,
   descriptor?: PropertyDescriptor & { initializer?: () => any },
 ): void {
-  let value: any = cell(
-    descriptor?.value,
-    `${klass.constructor.name}.${key}.@tracked`,
-  );
-  let isInitialized = false;
   let hasInitializer = typeof descriptor?.initializer === 'function';
   return {
     get() {
-      if (!isInitialized && hasInitializer) {
-        isInitialized = true;
-        const initValue = descriptor!.initializer?.call(this);
-        const refs = cellsMap.get(this) || {};
-        refs[key] = value;
-        cellsMap.set(this, refs);
-        value.update(initValue);
-      } else if (!isInitialized) {
-        const refs = cellsMap.get(this) || {};
-        refs[key] = value;
-        cellsMap.set(this, refs);
+      const keys = keysFor(this);
+      if (!(key in keys)) {
+        const value: any = cell(
+          hasInitializer
+            ? descriptor!.initializer?.call(this)
+            : descriptor?.value,
+          `${klass.constructor.name}.${key}.@tracked`,
+        );
+        keys[key] = value;
+        return value.value;
+      } else {
+        return keys[key].value;
       }
-      return value.value;
     },
     set(newValue: any) {
-      if (newValue === value) {
+      const keys = keysFor(this);
+      if (!(key in keys)) {
+        keys[key] = cell(newValue, `${klass.constructor.name}.${key}.@tracked`);
         return;
       }
-      value.update(newValue);
+      const _cell = keys[key];
+      if (_cell.value === newValue) {
+        return;
+      }
+      _cell.update(newValue);
     },
     enumerable: descriptor?.enumerable ?? true,
     configurable: descriptor?.configurable ?? true,
@@ -246,7 +256,6 @@ export async function executeTag(tag: Cell | MergedCell) {
   }
 }
 
-const cellsMap = new WeakMap<object, Record<string, Cell<unknown>>>();
 // this is function to create a reactive cell from an object property
 export function cellFor<T extends object, K extends keyof T>(
   obj: T,
