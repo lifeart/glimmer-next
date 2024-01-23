@@ -10,6 +10,7 @@ import {
   toObject,
   setFlags,
   resolvePath,
+  toOptionalChaining,
 } from './utils';
 import { EVENT_TYPE, SYMBOLS } from './symbols';
 import type { Flags } from './flags';
@@ -64,7 +65,12 @@ function patchNodePath(node: ASTv1.MustacheStatement | ASTv1.SubExpression) {
   } else if (node.path.original === 'fn') {
     node.path.original = SYMBOLS.$__fn;
   }
+
+  if (node.path.original.includes('.')) {
+    node.path.original = toOptionalChaining(node.path.original);
+  }
 }
+
 export type PrimitiveJSType = null | number | string | boolean | undefined;
 export type ComplexJSType = PrimitiveJSType | HBSControlExpression | HBSNode;
 

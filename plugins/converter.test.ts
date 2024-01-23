@@ -63,6 +63,81 @@ describe.each([
     flags.IS_GLIMMER_COMPAT_MODE = glimmerCompat;
   });
   describe('convert function builder', () => {
+    describe('path expressions are optional chained', () => {
+      test('works for template paths', () => {
+        expect($t<ASTv1.BlockStatement>(`{{this.foo.bar.baz}}`)).toEqual(
+          `$:this.foo?.bar?.baz`,
+        );
+        expect($t<ASTv1.BlockStatement>(`{{this.foo}}`)).toEqual(`$:this.foo`);
+        expect($t<ASTv1.BlockStatement>(`{{this.foo.bar}}`)).toEqual(
+          `$:this.foo?.bar`,
+        );
+        expect($t<ASTv1.BlockStatement>(`{{foo.bar.baz}}`)).toEqual(
+          `$:foo?.bar?.baz`,
+        );
+        expect($t<ASTv1.BlockStatement>(`{{foo.bar}}`)).toEqual(`$:foo.bar`);
+        expect($t<ASTv1.BlockStatement>(`{{@foo.bar.baz}}`)).toEqual(
+          `$:this[$args].foo?.bar?.baz`,
+        );
+        expect($t<ASTv1.BlockStatement>(`{{@foo.bar}}`)).toEqual(
+          `$:this[$args].foo.bar`,
+        );
+      });
+      test('works for sub-expression paths', () => {
+        expect(
+          $t<ASTv1.BlockStatement>(`{{and (or this.foo.bar.baz)}}`),
+        ).toEqual(`$:() => $:and(or($:this.foo?.bar?.baz))`);
+        expect($t<ASTv1.BlockStatement>(`{{and (or this.foo)}}`)).toEqual(
+          `$:() => $:and(or($:this.foo))`,
+        );
+        expect($t<ASTv1.BlockStatement>(`{{and (or this.foo.bar)}}`)).toEqual(
+          `$:() => $:and(or($:this.foo?.bar))`,
+        );
+        expect($t<ASTv1.BlockStatement>(`{{and (or foo.bar.baz)}}`)).toEqual(
+          `$:() => $:and(or($:foo?.bar?.baz))`,
+        );
+        expect($t<ASTv1.BlockStatement>(`{{and (or foo.bar)}}`)).toEqual(
+          `$:() => $:and(or($:foo.bar))`,
+        );
+        expect($t<ASTv1.BlockStatement>(`{{and (or @foo.bar.baz)}}`)).toEqual(
+          `$:() => $:and(or($:this[$args].foo?.bar?.baz))`,
+        );
+        expect($t<ASTv1.BlockStatement>(`{{and (or @foo.bar)}}`)).toEqual(
+          `$:() => $:and(or($:this[$args].foo?.bar))`,
+        );
+      });
+      test('works as hash params', () => {
+        // maybeWrapped
+        const mW = (str: string) => {
+          if (flags.IS_GLIMMER_COMPAT_MODE) {
+            return `$:() => $:$__hash({a: () => ${str}})`;
+          } else {
+            return `$:() => $:$__hash({a: ${str}})`;
+          }
+        };
+        expect($t<ASTv1.BlockStatement>(`{{hash a=this.foo.bar.baz}}`)).toEqual(
+          mW('this.foo?.bar?.baz'),
+        );
+        expect($t<ASTv1.BlockStatement>(`{{hash a=this.foo}}`)).toEqual(
+          mW('this.foo'),
+        );
+        expect($t<ASTv1.BlockStatement>(`{{hash a=this.foo.bar}}`)).toEqual(
+          mW('this.foo?.bar'),
+        );
+        expect($t<ASTv1.BlockStatement>(`{{hash a=foo.bar.baz}}`)).toEqual(
+          mW('foo?.bar?.baz'),
+        );
+        expect($t<ASTv1.BlockStatement>(`{{hash a=foo.bar}}`)).toEqual(
+          mW('foo.bar'),
+        );
+        expect($t<ASTv1.BlockStatement>(`{{hash a=@foo.bar.baz}}`)).toEqual(
+          mW('this[$args].foo?.bar?.baz'),
+        );
+        expect($t<ASTv1.BlockStatement>(`{{hash a=@foo.bar}}`)).toEqual(
+          mW('this[$args].foo?.bar'),
+        );
+      });
+    });
     describe('basic element helper support', () => {
       test('it return kinda valid component-like code', () => {
         expect($t<ASTv1.BlockStatement>(`{{(element "tag")}}`)).toEqual(

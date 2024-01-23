@@ -15,6 +15,6 @@ export function $__hash(obj: Record<string, unknown>) {
       },
       enumerable: true,
     });
-  })
+  });
   return newObj;
 }

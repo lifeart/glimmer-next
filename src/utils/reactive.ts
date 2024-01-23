@@ -23,7 +23,6 @@ var currentTracker: Set<Cell> | null = null;
 let _isRendering = false;
 const cellsMap = new WeakMap<object, Record<string, Cell<unknown>>>();
 
-
 export function getCells() {
   return Array.from(DEBUG_CELLS);
 }
@@ -41,7 +40,7 @@ if (IS_DEV_MODE) {
   }
 }
 
-function keysFor(obj: object): Record<string, Cell<unknown>>{
+function keysFor(obj: object): Record<string, Cell<unknown>> {
   if (!cellsMap.has(obj)) {
     cellsMap.set(obj, {});
   }
