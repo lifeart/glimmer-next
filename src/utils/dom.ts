@@ -531,6 +531,9 @@ function component(
   try {
     return _component(comp, args, fw, ctx);
   } catch (e) {
+    if (import.meta.env.SSR) {
+      throw e;
+    }
     if (IS_DEV_MODE) {
       let ErrorOverlayClass = customElements.get('vite-error-overlay');
       let errorOverlay!: Element;
@@ -551,6 +554,7 @@ function component(
       } else {
         errorOverlay = new ErrorOverlayClass(e, true);
       }
+      console.error(label, e);
 
       return {
         ctx: null,
