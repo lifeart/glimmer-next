@@ -5,6 +5,7 @@
 */
 import { scheduleRevalidate } from '@/utils/runtime';
 import { isFn, isTag, isTagLike } from '@/utils/shared';
+import { supportChromeExtension } from './redux-devtools';
 
 export const asyncOpcodes = new WeakSet<tagOp>();
 // List of DOM operations for each tag
@@ -308,3 +309,28 @@ export function inNewTrackingFrame(callback: () => void) {
   callback();
   currentTracker = existingTracker;
 }
+
+supportChromeExtension({
+  get() {
+    const cells = {};
+    DEBUG_CELLS.forEach((cell, index) => {
+      cells[`${cell._debugName}:${index}`] = cell._value;
+    });
+    return cells;
+  },
+  skipDispatch: 0,
+  set() {
+    console.log('set', ...arguments);
+  },
+  on(timeLine: string, fn: () => any) {
+    console.log('on', timeLine, fn);
+    setTimeout(() => {
+      // debugger;
+      fn.call(this, 'updates', {})
+    
+    }, 2000);
+  },
+  trigger() {
+    console.log('trigger', ...arguments);
+  }
+});
