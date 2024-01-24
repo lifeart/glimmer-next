@@ -535,10 +535,12 @@ function component(
   ctx: Component<any>,
   // slots: false | Record<string, () => Array<ComponentReturnType | NodeReturnType>> = false,
 ) {
-  let label = IS_DEV_MODE ? `${
-    // @ts-expect-error debugName may not exist
-    comp.debugName || comp.name || comp.constructor.name
-  }` : '';
+  let label = IS_DEV_MODE
+    ? `${
+        // @ts-expect-error debugName may not exist
+        comp.debugName || comp.name || comp.constructor.name
+      }`
+    : '';
   try {
     if (IS_DEV_MODE) {
       $DEBUG_REACTIVE_CONTEXTS.push(label);

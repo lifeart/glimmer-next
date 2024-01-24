@@ -23,7 +23,10 @@ export function debugContext(debugName?: string) {
   if (!debugName) {
     debugger;
   }
-  return [...$DEBUG_REACTIVE_CONTEXTS.filter(el => el !== 'UnstableChildWrapper'), debugName].join(' > ');
+  return [
+    ...$DEBUG_REACTIVE_CONTEXTS.filter((el) => el !== 'UnstableChildWrapper'),
+    debugName,
+  ].join(' > ');
 }
 
 export function isFn(value: unknown): value is Function {

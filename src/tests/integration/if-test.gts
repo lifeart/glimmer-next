@@ -3,6 +3,32 @@ import { render, allSettled } from '@lifeart/gxt/test-utils';
 import { cell } from '@lifeart/gxt';
 
 module('Integration | InternalComponent | if', function () {
+  test('it works with args [forward]', async function (assert) {
+    const H4 = <template>
+      <h4>
+        🚧<span style='margin: 0px 10px 0px 10px'>{{if
+            @text
+            @text
+            'To do'
+          }}</span>🚧
+      </h4>
+    </template>;
+    await render(<template><H4 @text='world' /></template>);
+    assert.dom().hasText('🚧world🚧');
+  });
+  test('it works with args [fallback]', async function (assert) {
+    const H4 = <template>
+      <h4>
+        🚧<span style='margin: 0px 10px 0px 10px'>{{if
+            @text
+            @text
+            'To do'
+          }}</span>🚧
+      </h4>
+    </template>;
+    await render(<template><H4 /></template>);
+    assert.dom().hasText('🚧To do🚧');
+  });
   test('it supports nested ifs', async function (assert) {
     const value1 = cell(false);
     const value2 = cell(false);
@@ -79,22 +105,16 @@ module('Integration | InternalComponent | if', function () {
     assert
       .dom('[data-test-false-branch]')
       .doesNotExist('false branch does not exist for initial true value');
-
     value.update(false);
-
     await allSettled();
-
     assert
       .dom('[data-test-true-branch]')
       .doesNotExist('true branch does not exist for updated to false value');
     assert
       .dom('[data-test-false-branch]')
       .exists('false branch exists for updated to false value');
-
     value.update(true);
-
     await allSettled();
-
     assert
       .dom('[data-test-true-branch]')
       .exists('true branch exists for updated to true value');
@@ -125,22 +145,16 @@ module('Integration | InternalComponent | if', function () {
       assert
         .dom('[data-test-false-branch]')
         .doesNotExist('false branch does not exist for initial true value');
-
       value.update(false);
-
       await allSettled();
-
       assert
         .dom('[data-test-true-branch]')
         .doesNotExist('true branch does not exist for updated to false value');
       assert
         .dom('[data-test-false-branch]')
         .exists('false branch exists for updated to false value');
-
       value.update(true);
-
       await allSettled();
-
       assert
         .dom('[data-test-true-branch]')
         .exists('true branch exists for updated to true value');
@@ -151,9 +165,7 @@ module('Integration | InternalComponent | if', function () {
   } else {
     test('no derived reactivity in templates', async function (assert) {
       const value = cell(true);
-      const derived = {
-        value: value,
-      };
+      const derived = { value: value };
       await render(
         <template>
           {{#if derived.value}}
@@ -169,22 +181,16 @@ module('Integration | InternalComponent | if', function () {
       assert
         .dom('[data-test-false-branch]')
         .doesNotExist('false branch does not exist for initial true value');
-
       value.update(false);
-
       await allSettled();
-
       assert
         .dom('[data-test-true-branch]')
         .doesNotExist('true branch does not exist for updated to false value');
       assert
         .dom('[data-test-false-branch]')
         .exists('false branch exists for updated to false value');
-
       value.update(true);
-
       await allSettled();
-
       assert
         .dom('[data-test-true-branch]')
         .exists('true branch exists for updated to true value');
