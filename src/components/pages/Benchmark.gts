@@ -95,7 +95,7 @@ export class Benchmark extends Component {
           </tr>
         </thead>
         <tbody>
-          {{#each this.items sync=true as |item|}}
+          {{#each this.items as |item|}}
             <Row
               @item={{item}}
               @onSelect={{this.onSelect}}
