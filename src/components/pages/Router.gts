@@ -39,25 +39,25 @@ export class Router extends Component {
     {
       name: 'routeOne',
       text: 'Into',
-      state: cell(true),
+      state: cell(true, 'routeOne active'),
       Component: PageOne,
     },
     {
       name: 'routeTwo',
       text: 'Goals',
-      state: cell(false),
+      state: cell(false, 'routeTwo active'),
       Component: PageTwo,
     },
     {
       name: 'benchmark',
       text: 'Benchmark',
-      state: cell(false),
+      state: cell(false, 'benchmark active'),
       Component: Benchmark,
     },
     {
       name: 'tests',
       text: 'Tests',
-      state: cell(false),
+      state: cell(false, 'tests active'),
       Component: Tests,
     },
   ];
