@@ -240,7 +240,7 @@ class BasicListComponent<T extends { id: number }> {
               });
             }
             return itemIndex;
-          });
+          },`each.index[${index}]`);
         }
         const row = this.ItemComponent(
           item,

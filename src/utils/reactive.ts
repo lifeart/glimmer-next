@@ -4,7 +4,7 @@
   We explicitly update DOM only when it's needed and only if tags are changed.
 */
 import { scheduleRevalidate } from '@/utils/runtime';
-import { isFn, isTag, isTagLike } from '@/utils/shared';
+import { isFn, isTag, isTagLike, debugContext } from '@/utils/shared';
 
 export const asyncOpcodes = new WeakSet<tagOp>();
 // List of DOM operations for each tag
@@ -110,7 +110,7 @@ export class Cell<T extends unknown = unknown> {
   constructor(value: T, debugName?: string) {
     this._value = value;
     if (IS_DEV_MODE) {
-      this._debugName = debugName;
+      this._debugName = debugContext(debugName);
       DEBUG_CELLS.add(this);
     }
   }
@@ -178,7 +178,7 @@ export class MergedCell {
   constructor(fn: Fn | Function, debugName?: string) {
     this.fn = fn;
     if (IS_DEV_MODE) {
-      this._debugName = debugName;
+      this._debugName = debugContext(debugName);
       DEBUG_MERGED_CELLS.add(this);
     }
   }

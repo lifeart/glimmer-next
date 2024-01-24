@@ -46,6 +46,7 @@ import {
   setBounds,
   $args,
   $fwProp,
+  $DEBUG_REACTIVE_CONTEXTS,
 } from './shared';
 import { isRehydrationScheduled } from './rehydration';
 
@@ -307,6 +308,9 @@ function _DOM(
 ): NodeReturnType {
   NODE_COUNTER++;
   const element = api.element(tag);
+  if (IS_DEV_MODE) {
+    $DEBUG_REACTIVE_CONTEXTS.push(`${tag}`);
+  }
   if (IN_SSR_ENV) {
     // todo - ssr mode here, we need to do it only in 2 cases:
     // 1. We running SSR tests in QUNIT
@@ -387,6 +391,9 @@ function _DOM(
   });
 
   associateDestroyable(ctx, destructors);
+  if (IS_DEV_MODE) {
+    $DEBUG_REACTIVE_CONTEXTS.pop();
+  }
   return def(element);
 }
 let unstableWrapperId = 0;
@@ -528,7 +535,15 @@ function component(
   ctx: Component<any>,
   // slots: false | Record<string, () => Array<ComponentReturnType | NodeReturnType>> = false,
 ) {
+  let label = IS_DEV_MODE ? `${
+    // @ts-expect-error debugName may not exist
+    comp.debugName || comp.name || comp.constructor.name
+  }` : '';
   try {
+    if (IS_DEV_MODE) {
+      $DEBUG_REACTIVE_CONTEXTS.push(label);
+      label = `<${label} ${JSON.stringify(args)} />`;
+    }
     return _component(comp, args, fw, ctx);
   } catch (e) {
     if (import.meta.env.SSR) {
@@ -537,10 +552,6 @@ function component(
     if (IS_DEV_MODE) {
       let ErrorOverlayClass = customElements.get('vite-error-overlay');
       let errorOverlay!: Element;
-      let label = `<${
-        // @ts-expect-error debugName may not exist
-        comp.debugName || comp.name || comp.constructor.name
-      } ${JSON.stringify(args)} />`;
       // @ts-expect-error message may not exit
       e.message = `${label}\n${e.message}`;
       if (!ErrorOverlayClass) {
@@ -570,6 +581,10 @@ function component(
         // @ts-expect-error message may not exit
         nodes: [api.text(String(e.message))],
       };
+    }
+  } finally {
+    if (IS_DEV_MODE) {
+      $DEBUG_REACTIVE_CONTEXTS.pop();
     }
   }
 }

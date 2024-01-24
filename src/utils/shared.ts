@@ -17,6 +17,15 @@ export const $propsProp = 'props' as const;
 export const $attrsProp = 'attrs' as const;
 export const $eventsProp = 'events' as const;
 
+export const $DEBUG_REACTIVE_CONTEXTS: string[] = [];
+
+export function debugContext(debugName?: string) {
+  if (!debugName) {
+    debugger;
+  }
+  return [...$DEBUG_REACTIVE_CONTEXTS.filter(el => el !== 'UnstableChildWrapper'), debugName].join(' > ');
+}
+
 export function isFn(value: unknown): value is Function {
   return typeof value === 'function';
 }
