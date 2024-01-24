@@ -521,8 +521,60 @@ if (!import.meta.env.SSR) {
     };
   }
 }
-// hello, basic component manager
 function component(
+  comp: ComponentReturnType | Component,
+  args: Record<string, unknown>,
+  fw: FwType,
+  ctx: Component<any>,
+  // slots: false | Record<string, () => Array<ComponentReturnType | NodeReturnType>> = false,
+) {
+  try {
+    return _component(comp, args, fw, ctx);
+  } catch (e) {
+    if (import.meta.env.SSR) {
+      throw e;
+    }
+    if (IS_DEV_MODE) {
+      let ErrorOverlayClass = customElements.get('vite-error-overlay');
+      let errorOverlay!: Element;
+      let label = `<${
+        // @ts-expect-error debugName may not exist
+        comp.debugName || comp.name || comp.constructor.name
+      } ${JSON.stringify(args)} />`;
+      // @ts-expect-error message may not exit
+      e.message = `${label}\n${e.message}`;
+      if (!ErrorOverlayClass) {
+        errorOverlay = api.element('pre');
+        // @ts-expect-error stack may not exit
+        errorOverlay.textContent = `${label}\n${e.stack ?? e}`;
+        errorOverlay.setAttribute(
+          'style',
+          'color:red;border:1px solid red;padding:10px;background-color:#333;',
+        );
+      } else {
+        errorOverlay = new ErrorOverlayClass(e, true);
+      }
+      console.error(label, e);
+
+      return {
+        ctx: null,
+        slots: {},
+        index: 0,
+        nodes: [errorOverlay],
+      };
+    } else {
+      return {
+        ctx: null,
+        slots: {},
+        index: 0,
+        // @ts-expect-error message may not exit
+        nodes: [api.text(String(e.message))],
+      };
+    }
+  }
+}
+// hello, basic component manager
+function _component(
   comp: ComponentReturnType | Component,
   args: Record<string, unknown>,
   fw: FwType,
