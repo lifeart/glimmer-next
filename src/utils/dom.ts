@@ -340,7 +340,13 @@ function _DOM(
       return;
     }
     seenKeys.add(key);
+    if (IS_DEV_MODE) {
+      $DEBUG_REACTIVE_CONTEXTS.push(`[${key}]`);
+    }
     $attr(element, key, value, destructors);
+    if (IS_DEV_MODE) {
+      $DEBUG_REACTIVE_CONTEXTS.pop();
+    }
   });
   const classNameModifiers: Attr[] = [];
   let hasShadowMode: ShadowRootMode = null;
@@ -356,9 +362,18 @@ function _DOM(
       return;
     }
     seenKeys.add(key);
+    if (IS_DEV_MODE) {
+      $DEBUG_REACTIVE_CONTEXTS.push(`[${key}]`);
+    }
     $prop(element, key, value, destructors);
+    if (IS_DEV_MODE) {
+      $DEBUG_REACTIVE_CONTEXTS.pop();
+    }
   });
   if (classNameModifiers.length > 0) {
+    if (IS_DEV_MODE) {
+      $DEBUG_REACTIVE_CONTEXTS.push(`[class]`);
+    }
     if (classNameModifiers.length === 1) {
       $prop(element, $_className, classNameModifiers[0], destructors);
     } else {
@@ -380,6 +395,9 @@ function _DOM(
         }, element.tagName + '.className'),
         destructors,
       );
+    }
+    if (IS_DEV_MODE) {
+      $DEBUG_REACTIVE_CONTEXTS.pop();
     }
   }
   const appendRef =

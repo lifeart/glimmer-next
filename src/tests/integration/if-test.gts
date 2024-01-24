@@ -6,28 +6,28 @@ module('Integration | InternalComponent | if', function () {
   test('it works with args [forward]', async function (assert) {
     const H4 = <template>
       <h4>
-        🚧<span style='margin: 0px 10px 0px 10px'>{{if
+        <span style='margin: 0px 10px 0px 10px'>{{if
             @text
             @text
             'To do'
-          }}</span>🚧
+          }}</span>
       </h4>
     </template>;
     await render(<template><H4 @text='world' /></template>);
-    assert.dom().hasText('🚧world🚧');
+    assert.dom().hasText('world');
   });
   test('it works with args [fallback]', async function (assert) {
     const H4 = <template>
       <h4>
-        🚧<span style='margin: 0px 10px 0px 10px'>{{if
+        <span style='margin: 0px 10px 0px 10px'>{{if
             @text
             @text
             'To do'
-          }}</span>🚧
+          }}</span>
       </h4>
     </template>;
     await render(<template><H4 /></template>);
-    assert.dom().hasText('🚧To do🚧');
+    assert.dom().hasText('To do');
   });
   test('it supports nested ifs', async function (assert) {
     const value1 = cell(false);
