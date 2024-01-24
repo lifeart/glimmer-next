@@ -11,6 +11,7 @@ import {
   setFlags,
   resolvePath,
   toOptionalChaining,
+  toSafeJSPath,
 } from './utils';
 import { EVENT_TYPE, SYMBOLS } from './symbols';
 import type { Flags } from './flags';
@@ -67,7 +68,7 @@ function patchNodePath(node: ASTv1.MustacheStatement | ASTv1.SubExpression) {
   }
 
   if (node.path.original.includes('.')) {
-    node.path.original = toOptionalChaining(node.path.original);
+    node.path.original = toSafeJSPath(toOptionalChaining(node.path.original));
   }
 }
 

@@ -2,6 +2,26 @@ import { module, test } from 'qunit';
 import { render } from '@lifeart/gxt/test-utils';
 
 module('Integration | Interal | @arguments', function () {
+  test('works as element attributes', async function (assert) {
+    const Link = <template>
+      <a href={{@href}}>Click Me</a>
+    </template>;
+    await render(
+      <template><Link @href='https://g-next.netlify.app/' /></template>,
+    );
+    assert.dom('a').hasAttribute('href', 'https://g-next.netlify.app/');
+  });
+  test('support attr-like args', async function (assert) {
+    const or = (a: string, b: string) => {
+      return a || b;
+    };
+    const Sample = <template>
+      <div aria-label={{@aria-label}}>{{or @aria-label 'default'}}</div>
+    </template>;
+    await render(<template><Sample @aria-label='foo' /></template>);
+    assert.dom('div').hasAttribute('aria-label', 'foo');
+    assert.dom('div').containsText('foo');
+  });
   test('support args in subExpression control', async function (assert) {
     const and = (a: any, b: any) => {
       return a && b;

@@ -63,9 +63,49 @@ export function resolvePath(str: string) {
   } else if (str.includes('has-block')) {
     str = str.replace('has-block', `${SYMBOLS.$_hasBlock}.bind(this, $slots)`);
   }
-  return toOptionalChaining(str)
-    .replace('$:', '')
-    .replace('@', `this[${SYMBOLS.$args}].`);
+  return toSafeJSPath(
+    toOptionalChaining(str)
+      .replace('$:', '')
+      .replace('@', `this[${SYMBOLS.$args}].`),
+  );
+}
+
+export function toSafeJSPath(str: string) {
+  // skip for functions
+  if (str.includes('(') || !str.includes('.')) {
+    return str;
+  }
+  const parts = str.split('.');
+  const result = parts
+    .map((p) => {
+      if (p.endsWith('?')) {
+        if (isSafeKey(p.slice(0, -1))) {
+          return p;
+        } else if (p.includes('[')) {
+          return p.slice(0, -1);
+        } else {
+          return `["${p.slice(0, -1)}"]?`;
+        }
+      } else if (p.includes('[')) {
+        return p;
+      } else if (isSafeKey(p)) {
+        return p;
+      } else {
+        return `["${p}"]`;
+      }
+    })
+    .reduce((acc, el) => {
+      if (el.startsWith('[')) {
+        return acc + el;
+      } else {
+        if (acc.length) {
+          return acc + '.' + el;
+        } else {
+          return el;
+        }
+      }
+    }, '');
+  return result;
 }
 
 export function toOptionalChaining(str: string) {
@@ -195,9 +235,14 @@ function serializeProp(
     return `${toPropName(attr[0])}: undefined`;
   }
   const isScopeValue = isPath(attr[1]);
-  return `${toPropName(attr[0])}: ${
+  const key = toPropName(attr[0]);
+  return `${isSafeKey(key) ? key : JSON.stringify(key)}: ${
     isScopeValue ? serializePath(attr[1]) : escapeString(attr[1])
   }`;
+}
+
+function isSafeKey(key: string): boolean {
+  return /^[a-z_$@][a-z0-9_$]*$/i.test(key);
 }
 
 export function toObject(
