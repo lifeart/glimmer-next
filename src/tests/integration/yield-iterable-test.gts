@@ -1,5 +1,5 @@
 import { module, test } from 'qunit';
-import { render, allSettled } from '@lifeart/gxt/test-utils';
+import { render, rerender } from '@lifeart/gxt/test-utils';
 import { cell } from '@lifeart/gxt';
 
 module('Integration | Internal | yield iterable', function () {
@@ -22,7 +22,7 @@ module('Integration | Internal | yield iterable', function () {
     assert.dom('li').exists({ count: 3 });
     assert.dom().hasText('Name: 1 Name: 2 Name: 3');
     items.update([]);
-    await allSettled();
+    await rerender();
     assert.dom('li').doesNotExist();
   });
 });

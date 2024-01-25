@@ -1,5 +1,5 @@
 import { module, test } from 'qunit';
-import { render, allSettled } from '@lifeart/gxt/test-utils';
+import { render, rerender } from '@lifeart/gxt/test-utils';
 import { cell } from '@lifeart/gxt';
 
 module('Integration | InternalComponent | if', function () {
@@ -25,23 +25,23 @@ module('Integration | InternalComponent | if', function () {
     assert.dom('h4').hasText('hello');
     assert.equal(renderCount, 1, 'true block rendered once');
     value.update(1);
-    await allSettled();
+    await rerender();
     assert.equal(renderCount, 1, 'true block not re-rendered');
     value.update('non-empty-string');
-    await allSettled();
+    await rerender();
     assert.equal(renderCount, 1, 'true block not re-rendered');
 
     value.update(0);
-    await allSettled();
+    await rerender();
     assert.dom('h4').hasText('world');
     assert.equal(renderCount, 2, 'false block rendered');
 
     value.update(null);
-    await allSettled();
+    await rerender();
     assert.equal(renderCount, 2, 'false block not re-rendered');
 
     value.update(true);
-    await allSettled();
+    await rerender();
     assert.dom('h4').hasText('hello');
     assert.equal(renderCount, 3, 'true block rendered');
   });
@@ -90,13 +90,13 @@ module('Integration | InternalComponent | if', function () {
     assert.dom('[data-test-if="2"]').doesNotExist();
     assert.dom('[data-test-if="3"]').exists('only true branch exists');
     value1.update(true);
-    await allSettled();
+    await rerender();
     assert.dom('[data-test-if="1"]').exists('only true branch exists');
     assert.dom('[data-test-if="2"]').doesNotExist();
     assert.dom('[data-test-if="3"]').doesNotExist();
     value1.update(false);
     value2.update(true);
-    await allSettled();
+    await rerender();
     assert.dom('[data-test-if="1"]').doesNotExist();
     assert.dom('[data-test-if="2"]').exists('only true branch exists');
     assert.dom('[data-test-if="3"]').doesNotExist();
@@ -148,7 +148,7 @@ module('Integration | InternalComponent | if', function () {
       .dom('[data-test-false-branch]')
       .doesNotExist('false branch does not exist for initial true value');
     value.update(false);
-    await allSettled();
+    await rerender();
     assert
       .dom('[data-test-true-branch]')
       .doesNotExist('true branch does not exist for updated to false value');
@@ -156,7 +156,7 @@ module('Integration | InternalComponent | if', function () {
       .dom('[data-test-false-branch]')
       .exists('false branch exists for updated to false value');
     value.update(true);
-    await allSettled();
+    await rerender();
     assert
       .dom('[data-test-true-branch]')
       .exists('true branch exists for updated to true value');
@@ -188,7 +188,7 @@ module('Integration | InternalComponent | if', function () {
         .dom('[data-test-false-branch]')
         .doesNotExist('false branch does not exist for initial true value');
       value.update(false);
-      await allSettled();
+      await rerender();
       assert
         .dom('[data-test-true-branch]')
         .doesNotExist('true branch does not exist for updated to false value');
@@ -196,7 +196,7 @@ module('Integration | InternalComponent | if', function () {
         .dom('[data-test-false-branch]')
         .exists('false branch exists for updated to false value');
       value.update(true);
-      await allSettled();
+      await rerender();
       assert
         .dom('[data-test-true-branch]')
         .exists('true branch exists for updated to true value');
@@ -224,7 +224,7 @@ module('Integration | InternalComponent | if', function () {
         .dom('[data-test-false-branch]')
         .doesNotExist('false branch does not exist for initial true value');
       value.update(false);
-      await allSettled();
+      await rerender();
       assert
         .dom('[data-test-true-branch]')
         .doesNotExist('true branch does not exist for updated to false value');
@@ -232,7 +232,7 @@ module('Integration | InternalComponent | if', function () {
         .dom('[data-test-false-branch]')
         .exists('false branch exists for updated to false value');
       value.update(true);
-      await allSettled();
+      await rerender();
       assert
         .dom('[data-test-true-branch]')
         .exists('true branch exists for updated to true value');
