@@ -92,12 +92,20 @@ export function evaluateOpcode(tag: AnyCell, op: tagOp) {
 }
 
 export function opcodeFor(tag: AnyCell, op: tagOp) {
-  evaluateOpcode(tag, op);
+  const wrappedOpcode = (value: any) => {
+    globalThis.activeTag = op;
+    try {
+      return op(value);
+    } finally {
+      globalThis.activeTag = null;
+    }
+  }
+  evaluateOpcode(tag, wrappedOpcode);
   const ops = opsFor(tag)!;
-  ops.push(op);
+  ops.push(wrappedOpcode);
   return () => {
     // console.info(`Removing Updating Opcode for ${tag._debugName}`, tag);
-    const index = ops.indexOf(op);
+    const index = ops.indexOf(wrappedOpcode);
     if (index > -1) {
       ops.splice(index, 1);
     }

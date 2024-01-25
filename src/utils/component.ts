@@ -156,6 +156,7 @@ export class Component<T extends Props = any>
 
 function destroyNode(node: Node) {
   if (IS_DEV_MODE) {
+    // console.log('destroying', node);
     if (node === undefined) {
       console.warn(`Trying to destroy undefined`);
       return;
@@ -240,7 +241,7 @@ function destroyNodes(
     internalDestroyNode(roots);
   }
 }
-
+let callId = 0;
 export async function destroyElement(
   component:
     | ComponentReturnType
@@ -249,6 +250,10 @@ export async function destroyElement(
     | null
     | null[],
 ) {
+  callId++;
+
+  let internalId = callId;
+  // console.log(`destroyElement call:${internalId}`, component);
   if (Array.isArray(component)) {
     await Promise.all(component.map((component) => destroyElement(component)));
   } else {
@@ -258,10 +263,12 @@ export async function destroyElement(
     if ($nodes in component) {
       if (component.ctx) {
         const destructors: Array<Promise<void>> = [];
+        // console.log(`runDestructors call:${internalId}`, component);
         runDestructors(component.ctx, destructors);
         await Promise.all(destructors);
       }
       try {
+        // console.log(`destroyNodes call:${internalId}`, component);
         destroyNodes(component[$nodes]);
       } catch (e) {
         console.warn(

@@ -753,6 +753,7 @@ function createSlot(
 }
 
 function slot(name: string, params: () => unknown[], $slot: Slots) {
+  console.log('rendering slot', name, params, $slot);
   if (!(name in $slot)) {
     const slotPlaceholder: NodeReturnType = def(
       api.comment(`slot-{{${name}}}-placeholder`),

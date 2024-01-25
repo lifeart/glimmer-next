@@ -34,6 +34,7 @@ export function ifCondition(
       prevComponent = null;
     }
   };
+  const ifId = Math.random().toString(36).slice(2);
   const originalCell = cell;
   if (isFn(originalCell)) {
     cell = formula(() => deepFnValue(originalCell), 'if-condition-wrapper-fn');
@@ -90,6 +91,15 @@ export function ifCondition(
         throw throwedError;
       }
       runNumber++;
+      const debugInfo = {
+        ifId,
+        ctx,
+        runNumber,
+        value,
+        lastValue,
+        debugName: cell._debugName,
+        prevComponent,
+      }
       if (runNumber > 1) {
         if (!!lastValue === !!value) {
           return;
@@ -137,6 +147,7 @@ export function ifCondition(
         if (isDestructorRunning) {
           return;
         }
+        console.log('executing async branch rendering', debugInfo);
         // @ts-expect-error this any type
         prevComponent = nextBranch(this);
         renderElement(
