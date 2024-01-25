@@ -41,6 +41,7 @@ export function ifCondition(
   } else if (isPrimitive(originalCell)) {
     cell = formula(() => originalCell, 'if-condition-primitive-wrapper');
   }
+  console.log(`new If branch created, ${ifId}, ${cell._debugName}`, ctx);
   let runNumber = 0;
   let throwedError: Error | null = null;
   let lastValue: unknown = undefined;
@@ -57,6 +58,9 @@ export function ifCondition(
   }
 
   associateDestroyable(ctx, [
+    () => {
+      console.log(`if branch destroyed ${ifId} - ${cell._debugName}`,  ctx);
+    },
     runExistingDestructors,
     opcodeFor(cell, (value) => {
       if (throwedError) {
