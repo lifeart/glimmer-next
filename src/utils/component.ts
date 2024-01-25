@@ -214,7 +214,9 @@ export function destroyElementSync(
 }
 
 function internalDestroyNode(el: Node | ComponentReturnType | NodeReturnType) {
-  if ('nodeType' in el) {
+  if (isFn(el)) {
+    return;
+  } else if ('nodeType' in el) {
     destroyNode(el);
   } else if ($nodes in el) {
     destroyNodes(el[$nodes]);
