@@ -1,5 +1,5 @@
 import { module, test } from 'qunit';
-import { allSettled, render } from '@lifeart/gxt/test-utils';
+import { rerender, render } from '@lifeart/gxt/test-utils';
 import { getDocument } from '@/utils/dom-api';
 import { cell } from '@/utils/reactive';
 
@@ -20,7 +20,7 @@ module('Integration | InternalComponent | in-elment', function () {
       </template>,
     );
     isMainRootRendered.value = true;
-    await allSettled();
+    await rerender();
     assert.dom('[id="42"]').hasText('t');
   });
   test('support strings as args and element as ref', async function (assert) {
@@ -69,7 +69,7 @@ module('Integration | InternalComponent | in-elment', function () {
     );
 
     isMainRootRendered.value = true;
-    await allSettled();
+    await rerender();
     assert
       .dom(elementRef())
       .hasText(value.value, 'values should be rendered inside in-element');
@@ -79,7 +79,7 @@ module('Integration | InternalComponent | in-elment', function () {
 
     value.value = 'u';
 
-    await allSettled();
+    await rerender();
 
     assert
       .dom(sideNode())
@@ -109,14 +109,14 @@ module('Integration | InternalComponent | in-elment', function () {
       .doesNotExist('should not render, because if is hidden');
     assert.dom(elementRef()).exists();
     isExpended.value = true;
-    await allSettled();
+    await rerender();
     assert
       .dom('[data-test-in-element]')
       .exists('should render, because if is visible');
     isExpended.value = false;
 
-    await allSettled();
-    await allSettled();
+    await rerender();
+    await rerender();
     assert
       .dom('[data-test-in-element]')
       .doesNotExist('should not render, because if is hidden');

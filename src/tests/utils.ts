@@ -70,7 +70,7 @@ export async function render(component: ComponentReturnType) {
   return renderResult;
 }
 
-export async function allSettled(timeout = 0) {
+export async function rerender(timeout = 0) {
   return new Promise((resolve) => {
     setTimeout(resolve, timeout);
   });

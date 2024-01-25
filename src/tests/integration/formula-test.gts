@@ -1,5 +1,5 @@
 import { module, test } from 'qunit';
-import { render, allSettled } from '@lifeart/gxt/test-utils';
+import { render, rerender } from '@lifeart/gxt/test-utils';
 import { cell, formula } from '@lifeart/gxt';
 
 module('Integration | Internal | MergedCell & formula ', function () {
@@ -10,7 +10,7 @@ module('Integration | Internal | MergedCell & formula ', function () {
 
     assert.dom().hasText('foo', 'cell value is rendered');
     _value.update('bar');
-    await allSettled();
+    await rerender();
     assert.dom().hasText('bar', 'cell value is updated');
   });
   test('could render MergedCell as attr primitive [explicit formula]', async function (assert) {
@@ -25,7 +25,7 @@ module('Integration | Internal | MergedCell & formula ', function () {
 
     assert.dom('#foo').hasText('123', 'cell value is rendered');
     _value.update('bar');
-    await allSettled();
+    await rerender();
     assert.dom('#bar').hasText('123', 'cell value is updated');
     assert.dom('#foo').doesNotExist('old cell value is removed');
   });
@@ -37,7 +37,7 @@ module('Integration | Internal | MergedCell & formula ', function () {
 
     assert.dom('input').isChecked('cell value is rendered');
     _value.update(false);
-    await allSettled();
+    await rerender();
     assert.dom('input').isNotChecked('cell value is updated');
   });
   test('it works for reactive className property [explicit formula]', async function (assert) {
@@ -52,7 +52,7 @@ module('Integration | Internal | MergedCell & formula ', function () {
 
     assert.dom('div').hasClass('foo', 'cell value is rendered');
     _value.update('bar');
-    await allSettled();
+    await rerender();
     assert.dom('div').hasClass('bar', 'cell value is updated');
     assert.dom('div').doesNotHaveClass('foo', 'old cell value is removed');
   });
@@ -64,7 +64,7 @@ module('Integration | Internal | MergedCell & formula ', function () {
 
     assert.dom().hasText('foo', 'cell value is rendered');
     _value.update('bar');
-    await allSettled();
+    await rerender();
     assert.dom().hasText('bar', 'cell value is updated');
   });
   test('could render MergedCell as attr primitive [auto formula]', async function (assert) {
@@ -79,7 +79,7 @@ module('Integration | Internal | MergedCell & formula ', function () {
 
     assert.dom('#foo').hasText('123', 'cell value is rendered');
     _value.update('bar');
-    await allSettled();
+    await rerender();
     assert.dom('#bar').hasText('123', 'cell value is updated');
     assert.dom('#foo').doesNotExist('old cell value is removed');
   });
@@ -91,7 +91,7 @@ module('Integration | Internal | MergedCell & formula ', function () {
 
     assert.dom('input').isChecked('cell value is rendered');
     _value.update(false);
-    await allSettled();
+    await rerender();
     assert.dom('input').isNotChecked('cell value is updated');
   });
   test('it works for reactive className property [auto formula]', async function (assert) {
@@ -106,7 +106,7 @@ module('Integration | Internal | MergedCell & formula ', function () {
 
     assert.dom('div').hasClass('foo', 'cell value is rendered');
     _value.update('bar');
-    await allSettled();
+    await rerender();
     assert.dom('div').hasClass('bar', 'cell value is updated');
     assert.dom('div').doesNotHaveClass('foo', 'old cell value is removed');
   });

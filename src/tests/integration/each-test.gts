@@ -1,5 +1,5 @@
 import { module, test } from 'qunit';
-import { render, allSettled, click } from '@/tests/utils';
+import { render, rerender, click } from '@/tests/utils';
 import { cell } from '@lifeart/gxt';
 import { type Cell } from '@/utils/reactive';
 import { step } from '../utils';
@@ -46,7 +46,7 @@ module('Integration | InternalComponent | each', function (hooks) {
     );
     assert.dom('[data-test-user]').exists({ count: 2 }, 'Initially 2 elements');
     await click('[data-test-user="1"]');
-    await allSettled();
+    await rerender();
     assert
       .dom('[data-test-user]')
       .exists({ count: 2 }, 'After click we should be able to see 2 elements');
@@ -90,7 +90,7 @@ module('Integration | InternalComponent | each', function (hooks) {
     );
     assert.dom('[data-test-user]').exists({ count: 2 }, 'Number of elements');
     await click('[data-test-user="1"]');
-    await allSettled();
+    await rerender();
     assert.dom('[data-test-user]').exists({ count: 2 }, 'Number of elements');
     await new Promise((resolve) => setTimeout(resolve, animationDelay));
     assert.dom('[data-test-user]').exists({ count: 1 }, 'Number of elements');
@@ -119,7 +119,7 @@ module('Integration | InternalComponent | each', function (hooks) {
     );
     assert.dom('li').exists({ count: 2 }, '2 list items visible on the screen');
     isExpended.update(false);
-    await allSettled();
+    await rerender();
     assert
       .dom('li')
       .exists(
@@ -180,7 +180,7 @@ module('Integration | InternalComponent | each', function (hooks) {
 
     step('Mutating the array, adding a new element');
     users.update([...users.value, { name: cell('Kyrr') }]);
-    await allSettled();
+    await rerender();
 
     assert.dom('[data-test-user]').exists({ count: 3 }, 'Number of elements');
     assert.dom('[data-test-user="0"]').hasText('Uef', '0th element text');
@@ -221,7 +221,7 @@ module('Integration | InternalComponent | each', function (hooks) {
 
     step('Mutating an array item');
     users.value[0].name.update('Mr. P-Zh');
-    await allSettled();
+    await rerender();
 
     assert.dom('[data-test-user]').exists({ count: 2 }, 'Number of elements');
     assert.dom('[data-test-user="0"]').hasText('Mr. P-Zh', '0th element text');
@@ -262,7 +262,7 @@ module('Integration | InternalComponent | each', function (hooks) {
     step('Mutating the array: same elements, new order');
     users.update([users.value[1], users.value[0]]);
 
-    await allSettled();
+    await rerender();
 
     assert.dom('[data-test-user]').exists({ count: 2 }, 'Number of elements');
     assert.dom('[data-test-user="0"]').hasText('Bi', '0th element text');
@@ -302,7 +302,7 @@ module('Integration | InternalComponent | each', function (hooks) {
 
     step('Mutating the array: new elements with same names, new order');
     users.update([{ name: cell('Bi') }, { name: cell('Uef') }]);
-    await allSettled();
+    await rerender();
 
     assert.dom('[data-test-user]').exists({ count: 2 }, 'Number of elements');
     assert.dom('[data-test-user="0"]').hasText('Bi', '0th element text');

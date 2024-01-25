@@ -1,7 +1,7 @@
 import { module, test } from 'qunit';
 import { render } from '@lifeart/gxt/test-utils';
 import { cell } from '@lifeart/gxt';
-import { allSettled } from '@lifeart/gxt/test-utils';
+import { rerender } from '@lifeart/gxt/test-utils';
 
 module('Integration | Internal | modifier', function () {
   test('modifiers executed during component creation, before it appears in DOM', async function (assert) {
@@ -44,7 +44,7 @@ module('Integration | Internal | modifier', function () {
       </template>,
     );
     conditionalCell.update(false);
-    await allSettled();
+    await rerender();
   });
   test('first argument of modifier is element', async function (assert) {
     assert.expect(1);

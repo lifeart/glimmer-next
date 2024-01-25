@@ -1,5 +1,5 @@
 import { module, test, skip } from 'qunit';
-import { render, allSettled } from '@lifeart/gxt/test-utils';
+import { render, rerender } from '@lifeart/gxt/test-utils';
 import { cell } from '@lifeart/gxt';
 
 module('Integration | InternalComponent | slots', function () {
@@ -25,12 +25,12 @@ module('Integration | InternalComponent | slots', function () {
 
     assert.dom().hasText('closed', 'initially closed');
     showBlock.value = true;
-    await allSettled();
+    await rerender();
     assert.dom().doesNotHaveTextContaining('closed');
     assert.dom().hasText('content', 'rendered content');
     debugger;
     showBlock.value = false;
-    await allSettled();
+    await rerender();
     assert.dom().doesNotHaveTextContaining('content');
     assert.dom().hasText('closed', 'initially closed');
   });
@@ -148,7 +148,7 @@ module('Integration | InternalComponent | slots', function () {
     );
     assert.dom('[data-test-slot="body"]').hasText('1');
     value.update(2);
-    await allSettled();
+    await rerender();
     assert.dom('[data-test-slot="body"]').hasText('2');
   });
   test('conditional slots', async function (assert) {
@@ -172,7 +172,7 @@ module('Integration | InternalComponent | slots', function () {
     assert.dom('[data-test-enabled] > [data-test-slot="body"]').hasText('true');
     assert.dom('[data-test-disabled]').doesNotExist();
     isEnabled.update(false);
-    await allSettled();
+    await rerender();
     assert
       .dom('[data-test-disabled] > [data-test-slot="body"]')
       .hasText('false');
@@ -202,7 +202,7 @@ module('Integration | InternalComponent | slots', function () {
     assert.dom('[data-test-head] > [data-test-slot="head"]').hasText('true');
     assert.dom('[data-test-body]').doesNotExist();
     isEnabled.update(false);
-    await allSettled();
+    await rerender();
     assert.dom('[data-test-body] > [data-test-slot="body"]').hasText('false');
     assert.dom('[data-test-head]').doesNotExist();
   });
