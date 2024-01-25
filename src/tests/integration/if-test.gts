@@ -3,6 +3,48 @@ import { render, allSettled } from '@lifeart/gxt/test-utils';
 import { cell } from '@lifeart/gxt';
 
 module('Integration | InternalComponent | if', function () {
+  test('it not re-render items if updated value not flipping it', async function (assert) {
+    let value = cell(true);
+    let renderCount = 0;
+    function text(txt: string) {
+      renderCount++;
+      return txt;
+    }
+    const H4 = <template>
+      <h4>{{text @txt}}</h4>
+    </template>;
+    await render(
+      <template>
+        {{#if value}}
+          <H4 @txt='hello' />
+        {{else}}
+          <H4 @txt='world' />
+        {{/if}}
+      </template>,
+    );
+    assert.dom('h4').hasText('hello');
+    assert.equal(renderCount, 1, 'true block rendered once');
+    value.update(1);
+    await allSettled();
+    assert.equal(renderCount, 1, 'true block not re-rendered');
+    value.update('non-empty-string');
+    await allSettled();
+    assert.equal(renderCount, 1, 'true block not re-rendered');
+
+    value.update(0);
+    await allSettled();
+    assert.dom('h4').hasText('world');
+    assert.equal(renderCount, 2, 'false block rendered');
+
+    value.update(null);
+    await allSettled();
+    assert.equal(renderCount, 2, 'false block not re-rendered');
+
+    value.update(true);
+    await allSettled();
+    assert.dom('h4').hasText('hello');
+    assert.equal(renderCount, 3, 'true block rendered');
+  });
   test('it works with args [forward]', async function (assert) {
     const H4 = <template>
       <h4>

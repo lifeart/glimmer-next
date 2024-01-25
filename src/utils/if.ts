@@ -58,9 +58,6 @@ export function ifCondition(
   associateDestroyable(ctx, [
     runExistingDestructors,
     opcodeFor(cell, (value) => {
-      if (IS_DEV_MODE) {
-        lastValue = value;
-      }
       if (throwedError) {
         Promise.resolve().then(() => {
           const newPlaceholder = api.comment('if-error-placeholder');
@@ -93,6 +90,12 @@ export function ifCondition(
         throw throwedError;
       }
       runNumber++;
+      if (runNumber > 1) {
+        if (!!lastValue === !!value) {
+          return;
+        }
+      }
+      lastValue = value;
       if (runNumber === 1) {
         let nextBranch = value ? trueBranch : falseBranch;
         // @ts-expect-error this any type
