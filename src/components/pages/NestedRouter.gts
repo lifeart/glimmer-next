@@ -7,7 +7,12 @@ type RouterArgs = {
   params?: Record<string, unknown>;
   components?: Record<string, any>;
 };
+let routerID = 0;
 export class NestedRouter extends Component<{ Args: RouterArgs }> {
+  constructor() {
+    super(...arguments);
+    this._debugName = `NestedRouter ${routerID++}`;
+  }
   get tail() {
     return this.parts.tail;
   }
