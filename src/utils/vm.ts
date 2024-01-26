@@ -97,7 +97,6 @@ export function opcodeFor(tag: AnyCell, op: tagOp) {
     try {
       return op(value);
     } finally {
-      globalThis.activeTag = null;
     }
   }
   evaluateOpcode(tag, wrappedOpcode);

@@ -41,7 +41,7 @@ export function ifCondition(
   } else if (isPrimitive(originalCell)) {
     cell = formula(() => originalCell, 'if-condition-primitive-wrapper');
   }
-  console.log(`new If branch created, ${ifId}, ${cell._debugName}`, ctx);
+  // console.log(`new If branch created, ${ifId}, ${cell._debugName}`, ctx);
   let runNumber = 0;
   let throwedError: Error | null = null;
   let lastValue: unknown = undefined;
@@ -59,7 +59,7 @@ export function ifCondition(
 
   associateDestroyable(ctx, [
     () => {
-      console.log(`if branch destroyed ${ifId} - ${cell._debugName}`,  ctx);
+      // console.log(`if branch destroyed ${ifId} - ${cell._debugName}`,  ctx);
     },
     runExistingDestructors,
     opcodeFor(cell, (value) => {
@@ -109,6 +109,7 @@ export function ifCondition(
           return;
         }
       }
+      console.log(`EXECUTING_IF_OPCODE ${ifId} - ${cell._debugName}`,  ctx);
       lastValue = value;
       if (runNumber === 1) {
         let nextBranch = value ? trueBranch : falseBranch;
@@ -121,7 +122,7 @@ export function ifCondition(
         );
         return;
       }
-      (async () => {
+      (() => {
         if (runNumber === 1 || isDestructorRunning) {
           return;
         }
@@ -131,7 +132,7 @@ export function ifCondition(
           let prevCmp = prevComponent;
           prevComponent = null;
           // console.log('prevComponent', prevCmp);
-          await destroyElement(prevCmp);
+          destroyElement(prevCmp);
         }
         if (localRunNumber !== runNumber) {
           // @todo: run -re-inicialization logic here,
@@ -151,7 +152,7 @@ export function ifCondition(
         if (isDestructorRunning) {
           return;
         }
-        console.log('executing async branch rendering', debugInfo);
+        // console.log('executing async branch rendering', debugInfo);
         // @ts-expect-error this any type
         prevComponent = nextBranch(this);
         renderElement(

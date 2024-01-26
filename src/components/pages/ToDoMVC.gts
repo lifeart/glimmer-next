@@ -16,10 +16,8 @@ export class ToDoMVC extends Component {
       {{pageTitle 'ToDoMVC'}}
       <Layout>
         {{#if @hasChildren}}
-          {{log 'rendering yield of todomvc'}}
-          {{yield}}
+          <div>{{yield}}</div>
         {{else}}
-          {{log 'rendering root of todomvc'}}
           <Page @model={{hash model=repo.all}} />
         {{/if}}
       </Layout>

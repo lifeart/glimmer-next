@@ -753,8 +753,8 @@ function createSlot(
 }
 
 function slot(name: string, params: () => unknown[], $slot: Slots) {
-  console.log('rendering slot', name, params, $slot);
-  console.info('we need a way to remove prev slot if exists');
+  // console.log('rendering slot', name, params, $slot);
+  // console.info('we need a way to remove prev slot if exists');
   if (!(name in $slot)) {
     const slotPlaceholder: NodeReturnType = def(
       api.comment(`slot-{{${name}}}-placeholder`),
