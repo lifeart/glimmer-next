@@ -980,7 +980,12 @@ export function $_fin(
   ctx: Component<any> | null,
 ) {
   const nodes: Array<
-    HTMLElement | ComponentReturnType | NodeReturnType | Text | Comment | TextReturnFn
+    | HTMLElement
+    | ComponentReturnType
+    | NodeReturnType
+    | Text
+    | Comment
+    | TextReturnFn
   > = [];
   if (!isStable) {
     if (IS_DEV_MODE) {
@@ -1006,7 +1011,7 @@ export function $_fin(
   }
 
   return {
-    [$nodes]: roots.map(item => {
+    [$nodes]: roots.map((item) => {
       if (isFn(item)) {
         // here may be component or text or node
         const value = resolveRenderable(item, `component child fn`);
@@ -1027,5 +1032,5 @@ export function $_fin(
     [$slotsProp]: slots,
     ctx,
     index: 0,
-  }
+  };
 }
