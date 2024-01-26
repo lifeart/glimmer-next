@@ -17,12 +17,12 @@ module('Integration | InternalComponent | if', function () {
     assert.dom().hasText('', 'slot not rendered by default');
 
     hasChildren.update(true);
-    debugger;
     await rerender();
     assert.dom().hasText('inside', 'slot rendered');
 
     hasChildren.update(false);
     await rerender();
+
     assert.dom().hasText('', 'slot should be destroyed');
   });
   test('slots is properly destroyed if wrapped into stable node', async function (assert) {
