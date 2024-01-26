@@ -1,8 +1,37 @@
 import { module, test } from 'qunit';
 import { render, rerender } from '@lifeart/gxt/test-utils';
-import { cell } from '@lifeart/gxt';
+import { cell, Component } from '@lifeart/gxt';
 
 module('Integration | InternalComponent | if', function () {
+  test('slots is properly destroyed in ifs', async function (assert) {
+    const hasChildren = cell(false);
+    const Page = <template>{{@text}}</template>;
+    const Route = <template>
+      {{#if @hasChildren}}
+        {{yield}}
+      {{else}}
+        <Page @text='outside' />
+      {{/if}}
+    </template>;
+
+    await render(
+      <template>
+        <Route @hasChildren={{hasChildren}}>
+          <Page @text='inside' />
+        </Route>
+      </template>,
+    );
+
+    assert.dom().hasText('outside');
+
+    hasChildren.update(true);
+    await rerender();
+    assert.dom().hasText('inside');
+
+    hasChildren.update(false);
+    await rerender();
+    assert.dom().hasText('outside');
+  });
   test('it not re-render items if updated value not flipping it', async function (assert) {
     let value = cell(true);
     let renderCount = 0;
