@@ -63,6 +63,7 @@ export function ifCondition(
     },
     runExistingDestructors,
     opcodeFor(cell, (value) => {
+      // console.log(`EXECUTING_IF_OPCODE ${ifId} - ${cell._debugName}`,  ctx);
       if (throwedError) {
         Promise.resolve().then(() => {
           const newPlaceholder = api.comment('if-error-placeholder');
@@ -109,7 +110,6 @@ export function ifCondition(
           return;
         }
       }
-      console.log(`EXECUTING_IF_OPCODE ${ifId} - ${cell._debugName}`,  ctx);
       lastValue = value;
       if (runNumber === 1) {
         let nextBranch = value ? trueBranch : falseBranch;
@@ -122,7 +122,7 @@ export function ifCondition(
         );
         return;
       }
-      (() => {
+      (async () => {
         if (runNumber === 1 || isDestructorRunning) {
           return;
         }
@@ -132,7 +132,7 @@ export function ifCondition(
           let prevCmp = prevComponent;
           prevComponent = null;
           // console.log('prevComponent', prevCmp);
-          destroyElement(prevCmp);
+          await destroyElement(prevCmp);
         }
         if (localRunNumber !== runNumber) {
           // @todo: run -re-inicialization logic here,

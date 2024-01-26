@@ -6,6 +6,7 @@ function isBlank(el: string) {
 }
 
 export class TodoItem extends Component<{
+  element: HTMLLIElement;
   Args: {
     todo: ToDoItem;
     onStartEdit: () => void;
@@ -16,6 +17,7 @@ export class TodoItem extends Component<{
     <li
       class={{if (cellFor @todo 'completed') 'completed'}}
       class={{if this.editing 'editing'}}
+      ...attributes
     >
       <div class='view'>
         <input

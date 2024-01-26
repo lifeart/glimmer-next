@@ -7,12 +7,8 @@ export class TodoList extends Component<{
     todos: IToDoItem[];
   };
 }> {
-  get stack() {
-    return new Error('todo-list').stack;
-  }
   <template>
     <section class='main'>
-      {{log 'rendering todo-list' this.stack globalThis.activeTag}}
       {{#if @todos.length}}
         {{#if this.canToggle}}
           <input
