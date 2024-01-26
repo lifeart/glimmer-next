@@ -20,9 +20,6 @@ export const $eventsProp = 'events' as const;
 export const $DEBUG_REACTIVE_CONTEXTS: string[] = [];
 
 export function debugContext(debugName?: string) {
-  if (!debugName) {
-    debugger;
-  }
   return [
     ...$DEBUG_REACTIVE_CONTEXTS.filter((el) => el !== 'UnstableChildWrapper'),
     debugName,

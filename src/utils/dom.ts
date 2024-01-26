@@ -723,9 +723,26 @@ function mergeComponents(
   };
 }
 
+function fnToText(fn: Function, destructors: Destructors = []) {
+  const value = resolveRenderable(fn, `fnToText`);
+  if (isPrimitive(value)) {
+    return api.text(String(value));
+  } else if (isTagLike(value)) {
+    // @todo - fix destructors in slots;
+    return cellToText(value, destructors);
+  } else if (value === null || value === undefined) {
+    return api.text('');
+  } else if (typeof value === 'object') {
+    return value;
+  } else {
+    return api.text(String(value));
+  }
+}
+
 function createSlot(
   value: Slots[string],
   params: () => unknown[],
+  // @ts-expect-error unused
   name: string,
 ) {
   // @todo - figure out destructors for slot (shoud work, bu need to be tested)
@@ -735,15 +752,7 @@ function createSlot(
       if (isPrimitive(el)) {
         return api.text(String(el));
       } else if (isFn(el)) {
-        const value = resolveRenderable(el, `slot ${name} element fn`);
-        if (isPrimitive(value)) {
-          return api.text(String(value));
-        } else if (isTagLike(value)) {
-          // @todo - fix destructors in slots;
-          return cellToText(value, []);
-        } else {
-          return value;
-        }
+        return fnToText(el);
       } else {
         return el;
       }
@@ -805,16 +814,8 @@ function text(
   } else if (text !== null && isTagLike(text)) {
     return def(cellToText(text as AnyCell, destructors));
   } else if (isFn(text)) {
-    // @todo update is const check here
-    const maybeFormula = resolveRenderable(text as Fn);
-    if (isPrimitive(maybeFormula)) {
-      return def(api.text(String(maybeFormula)));
-    } else if (isTagLike(maybeFormula)) {
-      return def(cellToText(maybeFormula, destructors));
-    } else {
-      // @ts-expect-error 'ComponentReturnType | NodeReturnType' is not assignable to type 'string | number | null'
-      return $_text(maybeFormula);
-    }
+    // @ts-expect-error return type
+    return def(fnToText(text as unknown as Function, destructors));
   } else {
     throw new Error('invalid text');
   }
@@ -969,6 +970,9 @@ export const $_slot = slot;
 export const $_c = component;
 export const $_text = text;
 export const $_tag = _DOM;
+
+type TextReturnFn = () => string | number | boolean | null | undefined;
+
 export function $_fin(
   roots: Array<ComponentReturnType | NodeReturnType>,
   slots: Slots,
@@ -976,7 +980,12 @@ export function $_fin(
   ctx: Component<any> | null,
 ) {
   const nodes: Array<
-    HTMLElement | ComponentReturnType | NodeReturnType | Text | Comment
+    | HTMLElement
+    | ComponentReturnType
+    | NodeReturnType
+    | Text
+    | Comment
+    | TextReturnFn
   > = [];
   if (!isStable) {
     if (IS_DEV_MODE) {
@@ -1002,7 +1011,24 @@ export function $_fin(
   }
 
   return {
-    [$nodes]: roots,
+    [$nodes]: roots.map((item) => {
+      if (isFn(item)) {
+        // here may be component or text or node
+        const value = resolveRenderable(item, `component child fn`);
+        if (value === null || value === undefined) {
+          return api.text('');
+        } else if (isPrimitive(value)) {
+          return api.text(String(value));
+        } else if (isTagLike(value)) {
+          // @todo - fix destructors in slots;
+          return cellToText(value, []);
+        } else {
+          return value;
+        }
+      } else {
+        return item;
+      }
+    }),
     [$slotsProp]: slots,
     ctx,
     index: 0,

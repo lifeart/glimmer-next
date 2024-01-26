@@ -1,8 +1,90 @@
 import { module, test } from 'qunit';
 import { render, rerender } from '@lifeart/gxt/test-utils';
-import { cell } from '@lifeart/gxt';
+import { cell, Component } from '@lifeart/gxt';
 
 module('Integration | InternalComponent | if', function () {
+  test('slots is properly destroyed in UnstableChildWrapper in ifs', async function (assert) {
+    const hasChildren = cell(false);
+    const Page = <template>{{@text}}</template>;
+    const Route = <template>{{#if @hasChildren}}{{yield}}{{/if}}</template>;
+
+    await render(
+      <template>
+        <Route @hasChildren={{hasChildren}}><Page @text='inside' /></Route>
+      </template>,
+    );
+
+    assert.dom().hasText('', 'slot not rendered by default');
+
+    hasChildren.update(true);
+    await rerender();
+    assert.dom().hasText('inside', 'slot rendered');
+
+    hasChildren.update(false);
+    await rerender();
+
+    assert.dom().hasText('', 'slot should be destroyed');
+  });
+  test('slots is properly destroyed if wrapped into stable node', async function (assert) {
+    const hasChildren = cell(false);
+    const Page = <template>{{@text}}</template>;
+    const Route = <template>
+      {{#if @hasChildren}}
+        <div>{{yield}}</div>
+      {{else}}
+        <div><Page @text='outside' /></div>
+      {{/if}}
+    </template>;
+
+    await render(
+      <template>
+        <Route @hasChildren={{hasChildren}}>
+          <Page @text='inside' />
+        </Route>
+      </template>,
+    );
+
+    assert.dom().hasText('outside');
+
+    hasChildren.update(true);
+    await rerender();
+    assert.dom().hasText('inside');
+
+    hasChildren.update(false);
+    await rerender();
+    assert.dom().hasText('outside');
+  });
+  test('slots is properly destroyed if produce stable child', async function (assert) {
+    const hasChildren = cell(false);
+    const Page = <template>
+      <div>{{@text}}</div>
+    </template>;
+    const Route = <template>
+      {{#if @hasChildren}}
+        {{yield}}
+      {{else}}
+        <Page @text='outside' />
+      {{/if}}
+    </template>;
+
+    await render(
+      <template>
+        <Route @hasChildren={{hasChildren}}>
+          <Page @text='inside' />
+        </Route>
+      </template>,
+    );
+
+    assert.dom().hasText('outside');
+
+    hasChildren.update(true);
+    await rerender();
+    assert.dom().hasText('inside');
+
+    hasChildren.update(false);
+    await rerender();
+    assert.dom().hasText('outside');
+  });
   test('it not re-render items if updated value not flipping it', async function (assert) {
     let value = cell(true);
     let renderCount = 0;

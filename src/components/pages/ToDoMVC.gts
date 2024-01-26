@@ -18,7 +18,7 @@ export class ToDoMVC extends Component {
         {{#if @hasChildren}}
           {{yield}}
         {{else}}
-          <Page @model={{repo.all}} />
+          <Page @model={{hash model=repo.all}} />
         {{/if}}
       </Layout>
       <Attribution />
