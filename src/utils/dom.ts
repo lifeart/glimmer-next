@@ -101,10 +101,14 @@ function $prop(
       destructors,
     );
   } else if (value !== null && isTagLike(value)) {
+    let prevPropValue: any = undefined;
     destructors.push(
       opcodeFor(value as AnyCell, (value) => {
+        if (value === prevPropValue) {
+          return
+        }
         // @ts-expect-error types casting
-        element[key] = value;
+        element[key] = prevPropValue = value;
       }),
     );
   } else {
