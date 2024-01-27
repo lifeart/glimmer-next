@@ -534,7 +534,6 @@ function component(
   args: Record<string, unknown>,
   fw: FwType,
   ctx: Component<any>,
-  // slots: false | Record<string, () => Array<ComponentReturnType | Node>> = false,
 ) {
   let label = IS_DEV_MODE
     ? `${
@@ -572,13 +571,11 @@ function component(
 
       return {
         ctx: null,
-        slots: {},
         nodes: [errorOverlay],
       };
     } else {
       return {
         ctx: null,
-        slots: {},
         // @ts-expect-error message may not exit
         nodes: [api.text(String(e.message))],
       };
@@ -595,7 +592,6 @@ function _component(
   args: Record<string, unknown>,
   fw: FwType,
   ctx: Component<any>,
-  // slots: false | Record<string, () => Array<ComponentReturnType | Node>> = false,
 ) {
   if (IS_DEV_MODE) {
     if (!COMPONENTS_HMR.has(comp)) {
@@ -955,6 +951,7 @@ type TextReturnFn = () => string | number | boolean | null | undefined;
 
 export function $_fin(
   roots: Array<ComponentReturnType | Node>,
+  // @ts-expect-error
   slots: Slots,
   isStable: boolean,
   ctx: Component<any> | null,
