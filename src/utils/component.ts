@@ -219,10 +219,7 @@ function internalDestroyNode(el: Node | ComponentReturnType) {
 }
 
 function destroyNodes(
-  roots:
-    | Node
-    | ComponentReturnType
-    | Array<Node | ComponentReturnType>,
+  roots: Node | ComponentReturnType | Array<Node | ComponentReturnType>,
 ) {
   if (Array.isArray(roots)) {
     for (let i = 0; i < roots.length; i++) {

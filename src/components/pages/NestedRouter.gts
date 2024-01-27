@@ -32,7 +32,6 @@ export class NestedRouter extends Component<{ Args: RouterArgs }> {
   }
   <template>
     {{#if @stack.length}}
-      {{log @stack}}
       <this.Component
         @route={{this.route}}
         @hasChildren={{this.tail.length}}

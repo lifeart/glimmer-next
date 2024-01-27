@@ -10,13 +10,7 @@ import {
 import { api } from '@/utils/dom-api';
 import { Cell, MergedCell, formula, deepFnValue } from '@/utils/reactive';
 import { opcodeFor } from '@/utils/vm';
-import {
-  $_debug_args,
-  $nodes,
-  isFn,
-  isPrimitive,
-  isTagLike,
-} from './shared';
+import { $_debug_args, $nodes, isFn, isPrimitive, isTagLike } from './shared';
 import { isRehydrationScheduled } from './rehydration';
 
 export function getFirstNode(
