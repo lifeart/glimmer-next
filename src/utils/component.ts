@@ -371,7 +371,6 @@ export type Slots = Record<
 export type ComponentReturnType = {
   nodes: Node[];
   ctx: Component<any> | null;
-  slots: Slots;
 };
 
 const noop = () => {};

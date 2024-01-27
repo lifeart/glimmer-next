@@ -1,9 +1,8 @@
-import { $nodes, $slotsProp } from '.';
+import { $nodes } from '.';
 
 export function hbs(tpl: TemplateStringsArray) {
   return {
     [$nodes]: [],
-    [$slotsProp]: {},
     ctx: null,
     tpl,
   };

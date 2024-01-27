@@ -112,9 +112,7 @@ export function convert(seenNodes: Set<ASTv1.Node>, flags: Flags) {
           SYMBOLS.$attrsProp
         }],props[${SYMBOLS.$eventsProp}]],[()=>${
           SYMBOLS.SLOT
-        }('default',()=>[],$slots)], this)],[${
-          SYMBOLS.$slotsProp
-        }]:$slots, ctx: this};}`;
+        }('default',()=>[],$slots)], this)], ctx: this};}`;
       } else if (node.path.original === SYMBOLS.$__hash) {
         const hashArgs: [string, PrimitiveJSType][] = node.hash.pairs.map(
           (pair) => {

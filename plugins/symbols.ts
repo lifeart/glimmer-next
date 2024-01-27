@@ -18,7 +18,6 @@ export const SYMBOLS = {
   $_hasBlock: '$_hasBlock',
   $nodes: '$nodes',
   $args: '$args',
-  $slotsProp: '$slotsProp',
   $propsProp: '$propsProp',
   $attrsProp: '$attrsProp',
   $_inElement: '$_inElement',

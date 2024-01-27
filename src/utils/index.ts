@@ -22,7 +22,6 @@ export {
   $nodes,
   $args,
   $fwProp,
-  $slotsProp,
   $propsProp,
   $attrsProp,
   $eventsProp,
