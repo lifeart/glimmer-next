@@ -35,7 +35,6 @@ import {
   isTagLike,
   $template,
   $nodes,
-  $slotsProp,
   $attrsProp,
   $propsProp,
   $eventsProp,
@@ -686,7 +685,6 @@ function mergeComponents(
   });
   return {
     [$nodes]: nodes,
-    [$slotsProp]: $_emptySlot,
     // @todo - fix proper ctx merging here;
     ctx: contexts.length > 0 ? contexts[0] : null,
   };
@@ -1006,7 +1004,6 @@ export function $_fin(
         return item;
       }
     }),
-    [$slotsProp]: slots,
     ctx,
   };
 }
