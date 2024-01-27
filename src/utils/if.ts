@@ -56,15 +56,20 @@ export function ifCondition(
   }
 
   associateDestroyable(ctx, [
+    () => {
+      if (placeholder.isConnected) {
+        placeholder.parentElement!.removeChild(placeholder);
+      }
+    },
     runExistingDestructors,
     opcodeFor(cell, (value) => {
       if (throwedError) {
         Promise.resolve().then(() => {
-          const newPlaceholder = api.comment('if-error-placeholder');
           if (!placeholder.isConnected) {
             // placeholder is disconnected, it means whole `if` is removed from DOM, no need to recover;
             return;
           }
+          const newPlaceholder = api.comment('if-error-placeholder');
           api.insert(placeholder.parentNode!, newPlaceholder, placeholder);
           runExistingDestructors().then(async () => {
             removeDestructor(ctx, runExistingDestructors);

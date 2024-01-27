@@ -6,8 +6,6 @@ export class Attribution extends Component {
       <p>Double-click to edit a todo</p>
       <p>
         Created by
-        <a href='https://github.com/cibernox'>Miguel Camba</a>,
-        <a href='https://github.com/addyosmani'>Addy Osmani</a>,
         <a href='https://github.com/lifeart'>Alex Kanunnikov</a>
       </p>
 
