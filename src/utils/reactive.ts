@@ -19,6 +19,7 @@ export const relatedTags: WeakMap<Cell, Set<MergedCell>> = new WeakMap();
 
 export const DEBUG_MERGED_CELLS = new Set<MergedCell>();
 export const DEBUG_CELLS = new Set<Cell>();
+export const CACHED_OPCODES = new WeakMap<tagOp, any>();
 var currentTracker: Set<Cell> | null = null;
 let _isRendering = false;
 const cellsMap = new WeakMap<object, Record<string, Cell<unknown>>>();

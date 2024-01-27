@@ -15,7 +15,7 @@ import {
   formula,
   deepFnValue,
 } from '@/utils/reactive';
-import { checkOpcode, opcodeFor } from '@/utils/vm';
+import { cachedOpcodeFor, checkOpcode, opcodeFor } from '@/utils/vm';
 import {
   SyncListComponent,
   AsyncListComponent,
@@ -102,7 +102,7 @@ function $prop(
     );
   } else if (value !== null && isTagLike(value)) {
     destructors.push(
-      opcodeFor(value as AnyCell, (value) => {
+      cachedOpcodeFor(value as AnyCell, (value) => {
         // @ts-expect-error types casting
         element[key] = value;
       }),
@@ -133,7 +133,7 @@ function $attr(
     );
   } else if (value !== null && isTagLike(value)) {
     destructors.push(
-      opcodeFor(value as AnyCell, (value) => {
+      cachedOpcodeFor(value as AnyCell, (value) => {
         // @ts-expect-error type casting
         api.attr(element, key, value);
       }),
@@ -219,7 +219,7 @@ function $ev(
         api.textContent(element, String(value));
       } else if (isTagLike(value)) {
         destructors.push(
-          opcodeFor(value, (value) => {
+          cachedOpcodeFor(value, (value) => {
             api.textContent(element, String(value));
           }),
         );
@@ -782,7 +782,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
 function cellToText(cell: Cell | MergedCell, destructors: Destructors) {
   const textNode = api.text('');
   destructors.push(
-    opcodeFor(cell, (value) => {
+    cachedOpcodeFor(cell, (value) => {
       api.textContent(textNode, String(value ?? ''));
     }),
   );
