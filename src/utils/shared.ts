@@ -11,7 +11,6 @@ export const $nodes = 'nodes' as const;
 export const $args = 'args' as const;
 export const $_debug_args = '_debug_args' as const;
 export const $fwProp = '$fw' as const;
-export const $node = 'node' as const;
 export const $slotsProp = 'slots' as const;
 export const $propsProp = 'props' as const;
 export const $attrsProp = 'attrs' as const;

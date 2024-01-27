@@ -10,7 +10,6 @@ import {
   isFn,
   $template,
   $nodes,
-  $node,
   $args,
   $fwProp,
   RENDER_TREE,
@@ -27,8 +26,8 @@ export type ComponentRenderTarget =
 
 export type GenericReturnType =
   | ComponentReturnType
-  | NodeReturnType
-  | Array<ComponentReturnType | NodeReturnType>
+  | Node
+  | Array<ComponentReturnType | Node>
   | null
   | null[];
 
@@ -58,8 +57,6 @@ export function renderElement(
     if (isPrimitive(el)) {
       // @ts-expect-error
       renderNode(target, api.text(el), placeholder);
-    } else if ($node in el) {
-      renderNode(target, el[$node], placeholder);
     } else if ($nodes in el) {
       el[$nodes].forEach((node) => {
         renderElement(target, node, placeholder);
@@ -183,8 +180,8 @@ function destroyNode(node: Node) {
 export function destroyElementSync(
   component:
     | ComponentReturnType
-    | NodeReturnType
-    | Array<ComponentReturnType | NodeReturnType>
+    | Node
+    | Array<ComponentReturnType | Node>
     | null
     | null[],
 ) {
@@ -208,18 +205,16 @@ export function destroyElementSync(
         );
       }
     } else {
-      destroyNode(component[$node]);
+      destroyNode(component);
     }
   }
 }
 
-function internalDestroyNode(el: Node | ComponentReturnType | NodeReturnType) {
+function internalDestroyNode(el: Node | ComponentReturnType) {
   if ('nodeType' in el) {
     destroyNode(el);
-  } else if ($nodes in el) {
-    destroyNodes(el[$nodes]);
   } else {
-    destroyNode(el[$node]);
+    destroyNodes(el[$nodes]);
   }
 }
 
@@ -227,8 +222,7 @@ function destroyNodes(
   roots:
     | Node
     | ComponentReturnType
-    | NodeReturnType
-    | Array<Node | ComponentReturnType | NodeReturnType>,
+    | Array<Node | ComponentReturnType>,
 ) {
   if (Array.isArray(roots)) {
     for (let i = 0; i < roots.length; i++) {
@@ -242,8 +236,8 @@ function destroyNodes(
 export async function destroyElement(
   component:
     | ComponentReturnType
-    | NodeReturnType
-    | Array<ComponentReturnType | NodeReturnType>
+    | Node
+    | Array<ComponentReturnType | Node>
     | null
     | null[],
 ) {
@@ -268,7 +262,7 @@ export async function destroyElement(
         );
       }
     } else {
-      await destroyNode(component[$node]);
+      await destroyNode(component);
     }
   }
 }
@@ -375,18 +369,14 @@ export type Slots = Record<
   string,
   (
     ...params: unknown[]
-  ) => Array<ComponentReturnType | NodeReturnType | Comment | string | number>
+  ) => Array<ComponentReturnType | Node | Comment | string | number>
 >;
 export type ComponentReturnType = {
   nodes: Node[];
-  index: number;
   ctx: Component<any> | null;
   slots: Slots;
 };
-export type NodeReturnType = {
-  node: Node;
-  index: number;
-};
+
 const noop = () => {};
 
 export function addEventListener(

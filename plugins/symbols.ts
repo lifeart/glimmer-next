@@ -16,7 +16,6 @@ export const SYMBOLS = {
   $template: '$template',
   $_hasBlockParams: '$_hasBlockParams',
   $_hasBlock: '$_hasBlock',
-  $node: '$node',
   $nodes: '$nodes',
   $args: '$args',
   $slotsProp: '$slotsProp',

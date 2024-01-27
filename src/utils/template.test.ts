@@ -8,7 +8,6 @@ describe('template package', () => {
       expect(hbs`123`).toEqual({
         [$nodes]: [],
         [$slotsProp]: {},
-        index: 0,
         ctx: null,
         tpl: ['123'],
       });
