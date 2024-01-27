@@ -144,11 +144,7 @@ function $attr(
   }
 }
 
-type RenderableType =
-  | Node
-  | ComponentReturnType
-  | string
-  | number;
+type RenderableType = Node | ComponentReturnType | string | number;
 type ShadowRootMode = 'open' | 'closed' | null;
 function resolveRenderable(
   child: Function,
@@ -291,13 +287,7 @@ export function $_hasBlockParams(
 function _DOM(
   tag: string,
   tagProps: Props,
-  children: (
-    | ComponentReturnType
-    | string
-    | Cell
-    | MergedCell
-    | Function
-  )[],
+  children: (ComponentReturnType | string | Cell | MergedCell | Function)[],
   ctx: any,
 ): Node {
   NODE_COUNTER++;
@@ -670,9 +660,7 @@ function _component(
 type Fn = () => unknown;
 
 function mergeComponents(
-  components: Array<
-    ComponentReturnType | Node | string | number
-  >,
+  components: Array<ComponentReturnType | Node | string | number>,
 ) {
   const nodes: Array<Node> = [];
   const contexts: Array<Component> = [];
@@ -742,9 +730,22 @@ function createSlot(
   return nodes;
 }
 
-function slot(name: string, params: () => unknown[], $slot: Slots) {
+function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
+  // console.log(ctx, ctx);
+  const $destructors: Destructors = [];
+  if (ctx) {
+    // TODO: ctx should always exist, fix `element` helper to be control node
+    associateDestroyable(ctx, [
+      () => {
+        $destructors.forEach((fn) => fn());
+      },
+    ]);
+  }
+
   if (!(name in $slot)) {
-    const slotPlaceholder: Comment = api.comment(`slot-{{${name}}}-placeholder`);
+    const slotPlaceholder: Comment = api.comment(
+      `slot-{{${name}}}-placeholder`,
+    );
     let isRendered = false;
     let isSettled = false;
     let slotValue: Slots[string] = () => [];
@@ -755,11 +756,11 @@ function slot(name: string, params: () => unknown[], $slot: Slots) {
           throw new Error(`Slot ${name} is already rendered`);
         }
         slotValue = value;
-        renderElement(
-          slotPlaceholder.parentNode!,
-          createSlot(slotValue, params, name),
-          slotPlaceholder,
-        );
+        const slotRoots = createSlot(slotValue, params, name);
+        $destructors.push(() => {
+          destroyElement(slotRoots);
+        });
+        renderElement(slotPlaceholder.parentNode!, slotRoots, slotPlaceholder);
         isRendered = true;
       },
       get() {
@@ -771,7 +772,11 @@ function slot(name: string, params: () => unknown[], $slot: Slots) {
     });
     return slotPlaceholder;
   }
-  return createSlot($slot[name], params, name);
+  const slotRoot = createSlot($slot[name], params, name);
+  $destructors.push(() => {
+    destroyElement(slotRoot);
+  });
+  return slotRoot;
 }
 
 function cellToText(cell: Cell | MergedCell, destructors: Destructors) {
@@ -903,9 +908,7 @@ export function $_GET_FW(ctx: any, args: any) {
 export const $SLOTS_SYMBOL = Symbol('slots');
 export function $_args(
   args: Record<string, unknown>,
-  slots:
-    | Record<string, () => Array<ComponentReturnType | Node>>
-    | false,
+  slots: Record<string, () => Array<ComponentReturnType | Node>> | false,
 ) {
   if (IS_GLIMMER_COMPAT_MODE) {
     if (IS_DEV_MODE) {
@@ -959,12 +962,7 @@ export function $_fin(
   ctx: Component<any> | null,
 ) {
   const nodes: Array<
-    | HTMLElement
-    | ComponentReturnType
-    | Node
-    | Text
-    | Comment
-    | TextReturnFn
+    HTMLElement | ComponentReturnType | Node | Text | Comment | TextReturnFn
   > = [];
   if (!isStable) {
     if (IS_DEV_MODE) {

@@ -1,8 +1,38 @@
 import { module, test } from 'qunit';
 import { render, rerender } from '@lifeart/gxt/test-utils';
-import { cell, Component } from '@lifeart/gxt';
-
+import { cell, formula, Component } from '@lifeart/gxt';
+import { NestedRouter } from '@/components/pages/NestedRouter.gts';
 module('Integration | InternalComponent | if', function () {
+  test('slots is properly destroyed', async function (assert) {
+    const hasChildren = cell(false);
+    const Page = <template>PAGE</template>;
+    const Route = <template>
+      {{#if hasChildren}}
+        {{yield}}
+      {{/if}}
+    </template>;
+    const components = {
+      main: Route,
+      page: Page,
+    };
+    const stack = [{ name: 'main' }, { name: 'page' }];
+    const App = <template>
+      <NestedRouter @components={{components}} @stack={{stack}} />
+    </template>;
+
+    await render(<template><App /></template>);
+
+    assert.dom().hasText('', 'slot not rendered by default');
+    hasChildren.update(true);
+    await rerender();
+    assert.dom().hasText('PAGE', 'slot rendered only once');
+    hasChildren.update(false);
+    await rerender();
+    assert.dom().hasText('', 'slot not rendered by default');
+    hasChildren.update(true);
+    await rerender();
+    assert.dom().hasText('PAGE', 'slot rendered only once');
+  });
   test('slots is properly destroyed in UnstableChildWrapper in ifs', async function (assert) {
     const hasChildren = cell(false);
     const Page = <template>{{@text}}</template>;
