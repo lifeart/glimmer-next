@@ -19,7 +19,6 @@ export * from '@/utils/dom';
 export * from '@/utils/helpers/index';
 export {
   $template,
-  $node,
   $nodes,
   $args,
   $fwProp,

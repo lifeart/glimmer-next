@@ -4,7 +4,6 @@ export function hbs(tpl: TemplateStringsArray) {
   return {
     [$nodes]: [],
     [$slotsProp]: {},
-    index: 0,
     ctx: null,
     tpl,
   };

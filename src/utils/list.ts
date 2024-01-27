@@ -1,6 +1,5 @@
 import {
   ComponentReturnType,
-  NodeReturnType,
   associateDestroyable,
   destroyElement,
   destroyElementSync,
@@ -13,7 +12,6 @@ import { Cell, MergedCell, formula, deepFnValue } from '@/utils/reactive';
 import { opcodeFor } from '@/utils/vm';
 import {
   $_debug_args,
-  $node,
   $nodes,
   isFn,
   isPrimitive,
@@ -21,21 +19,12 @@ import {
 } from './shared';
 import { isRehydrationScheduled } from './rehydration';
 
-function setIndex(item: GenericReturnType, index: number) {
-  item.forEach((item) => {
-    item.index = index;
-  });
-}
-function getIndex(item: GenericReturnType) {
-  return item[0].index;
-}
 export function getFirstNode(
   rawItem:
     | Node
     | ComponentReturnType
-    | NodeReturnType
     | GenericReturnType
-    | Array<Node | ComponentReturnType | NodeReturnType | GenericReturnType>,
+    | Array<Node | ComponentReturnType | GenericReturnType>,
 ): Node {
   if (Array.isArray(rawItem)) {
     return getFirstNode(rawItem[0]);
@@ -44,7 +33,7 @@ export function getFirstNode(
   } else if ($nodes in rawItem) {
     return getFirstNode(rawItem[$nodes]);
   } else {
-    return getFirstNode(rawItem[$node]);
+    throw new Error('Noop here');
   }
 }
 
@@ -54,7 +43,7 @@ export function getFirstNode(
 
   Based on Glimmer-VM list update logic.
 */
-type GenericReturnType = Array<ComponentReturnType | NodeReturnType>;
+type GenericReturnType = Array<ComponentReturnType | Node>;
 
 type ListComponentArgs<T> = {
   tag: Cell<T[]> | MergedCell;
@@ -65,6 +54,7 @@ type ListComponentArgs<T> = {
 type RenderTarget = HTMLElement | DocumentFragment;
 class BasicListComponent<T extends { id: number }> {
   keyMap: Map<string, GenericReturnType> = new Map();
+  indexMap: Map<string, number> = new Map();
   nodes: Node[] = [];
   index = 0;
   parentCtx!: Component<any>;
@@ -202,14 +192,14 @@ class BasicListComponent<T extends { id: number }> {
     const amountOfExistingKeys = amountOfKeys - keysToRemove.length;
 
     if (removedIndexes.length > 0 && this.keyMap.size > 0) {
-      for (const value of this.keyMap.values()) {
+      for (const key of this.keyMap.keys()) {
+        let keyIndex = this.indexMap.get(key)!;
         removedIndexes.forEach((index) => {
-          value.forEach((item) => {
-            if (item.index > index) {
-              item.index--;
-            }
-          });
+          if (keyIndex > index) {
+            keyIndex--;
+          }
         });
+        this.indexMap.set(key, keyIndex);
       }
     }
 
@@ -248,14 +238,15 @@ class BasicListComponent<T extends { id: number }> {
           this as unknown as Component<any>,
         );
         this.keyMap.set(key, row);
+        this.indexMap.set(key, index);
         row.forEach((item) => {
           renderElement(targetNode.parentNode!, item, targetNode);
-          item.index = index;
         });
       } else {
         seenKeys++;
-        if (getIndex(maybeRow) !== index) {
+        if (this.indexMap.get(key) !== index) {
           rowsToMove.push([maybeRow, index]);
+          this.indexMap.set(key, index);
         }
       }
     });
@@ -264,7 +255,6 @@ class BasicListComponent<T extends { id: number }> {
 
     rowsToMove.forEach(([row, index]) => {
       const nextItem = items[index + 1];
-      setIndex(row, index);
       if (nextItem === undefined) {
         renderElement(this.bottomMarker.parentNode!, row, this.bottomMarker);
       } else {
@@ -308,7 +298,7 @@ export class SyncListComponent<
       const isRemoved = !updatingKeys.has(key);
       if (isRemoved) {
         const row = this.keyMap.get(key)!;
-        removedIndexes.push(getIndex(row));
+        removedIndexes.push(this.indexMap.get(key)!);
         this.destroyItem(row, key);
       }
       return isRemoved;
@@ -318,6 +308,7 @@ export class SyncListComponent<
   }
   destroyItem(row: GenericReturnType, key: string) {
     this.keyMap.delete(key);
+    this.indexMap.delete(key);
     destroyElementSync(row);
   }
 }
@@ -341,7 +332,7 @@ export class AsyncListComponent<
       const isRemoved = !updatingKeys.has(key);
       if (isRemoved) {
         const row = this.keyMap.get(key)!;
-        removedIndexes.push(getIndex(row));
+        removedIndexes.push(this.indexMap.get(key)!);
         removeQueue.push(this.destroyItem(row, key));
       }
       return isRemoved;
@@ -363,6 +354,7 @@ export class AsyncListComponent<
   }
   async destroyItem(row: GenericReturnType, key: string) {
     this.keyMap.delete(key);
+    this.indexMap.delete(key);
     await destroyElement(row);
   }
 }

@@ -1,7 +1,6 @@
 import {
   addEventListener,
   associateDestroyable,
-  type NodeReturnType,
   type ComponentReturnType,
   type Slots,
   type Component,
@@ -36,7 +35,6 @@ import {
   isTagLike,
   $template,
   $nodes,
-  $node,
   $slotsProp,
   $attrsProp,
   $propsProp,
@@ -149,7 +147,6 @@ function $attr(
 type RenderableType =
   | Node
   | ComponentReturnType
-  | NodeReturnType
   | string
   | number;
 type ShadowRootMode = 'open' | 'closed' | null;
@@ -189,8 +186,6 @@ export function addChild(
     child[$nodes].forEach((node, i) => {
       addChild(element, node, destructors, index + i);
     });
-  } else if (isObject && $node in child) {
-    api.append(element, child[$node], index);
   } else if (isPrimitive(child)) {
     // @ts-expect-error number to string type casting
     api.append(element, api.text(child), index);
@@ -297,7 +292,6 @@ function _DOM(
   tag: string,
   tagProps: Props,
   children: (
-    | NodeReturnType
     | ComponentReturnType
     | string
     | Cell
@@ -305,7 +299,7 @@ function _DOM(
     | Function
   )[],
   ctx: any,
-): NodeReturnType {
+): Node {
   NODE_COUNTER++;
   const element = api.element(tag);
   if (IS_DEV_MODE) {
@@ -412,14 +406,14 @@ function _DOM(
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.pop();
   }
-  return def(element);
+  return element;
 }
 let unstableWrapperId = 0;
 
 type InElementFnArg = () => HTMLElement;
 export function $_inElement(
   elementRef: HTMLElement | Cell<HTMLElement> | InElementFnArg,
-  roots: (context: Component<any>) => (NodeReturnType | ComponentReturnType)[],
+  roots: (context: Component<any>) => (Node | ComponentReturnType)[],
   ctx: any,
 ) {
   return component(
@@ -454,7 +448,7 @@ export function $_inElement(
 
 // $_ unstableChildComponentWrapper
 export function $_ucw(
-  roots: (context: Component<any>) => (NodeReturnType | ComponentReturnType)[],
+  roots: (context: Component<any>) => (Node | ComponentReturnType)[],
   ctx: any,
 ) {
   return component(
@@ -551,7 +545,7 @@ function component(
   args: Record<string, unknown>,
   fw: FwType,
   ctx: Component<any>,
-  // slots: false | Record<string, () => Array<ComponentReturnType | NodeReturnType>> = false,
+  // slots: false | Record<string, () => Array<ComponentReturnType | Node>> = false,
 ) {
   let label = IS_DEV_MODE
     ? `${
@@ -590,14 +584,12 @@ function component(
       return {
         ctx: null,
         slots: {},
-        index: 0,
         nodes: [errorOverlay],
       };
     } else {
       return {
         ctx: null,
         slots: {},
-        index: 0,
         // @ts-expect-error message may not exit
         nodes: [api.text(String(e.message))],
       };
@@ -614,7 +606,7 @@ function _component(
   args: Record<string, unknown>,
   fw: FwType,
   ctx: Component<any>,
-  // slots: false | Record<string, () => Array<ComponentReturnType | NodeReturnType>> = false,
+  // slots: false | Record<string, () => Array<ComponentReturnType | Node>> = false,
 ) {
   if (IS_DEV_MODE) {
     if (!COMPONENTS_HMR.has(comp)) {
@@ -676,16 +668,10 @@ function _component(
   return instance;
 }
 type Fn = () => unknown;
-function def(node: Node) {
-  return {
-    node,
-    index: 0,
-  };
-}
 
 function mergeComponents(
   components: Array<
-    ComponentReturnType | NodeReturnType | Node | string | number
+    ComponentReturnType | Node | string | number
   >,
 ) {
   const nodes: Array<Node> = [];
@@ -701,15 +687,11 @@ function mergeComponents(
     }
     if (isPrimitive(component)) {
       nodes.push(api.text(String(component)));
-    } else if ('index' in component) {
-      if ($nodes in component) {
-        if (component.ctx !== null) {
-          contexts.push(component.ctx);
-        }
-        nodes.push(...component[$nodes]);
-      } else if ($node in component) {
-        nodes.push(component[$node]);
+    } else if ($nodes in component) {
+      if (component.ctx !== null) {
+        contexts.push(component.ctx);
       }
+      nodes.push(...component[$nodes]);
     } else {
       nodes.push(component);
     }
@@ -717,7 +699,6 @@ function mergeComponents(
   return {
     [$nodes]: nodes,
     [$slotsProp]: $_emptySlot,
-    index: 0,
     // @todo - fix proper ctx merging here;
     ctx: contexts.length > 0 ? contexts[0] : null,
   };
@@ -763,9 +744,7 @@ function createSlot(
 
 function slot(name: string, params: () => unknown[], $slot: Slots) {
   if (!(name in $slot)) {
-    const slotPlaceholder: NodeReturnType = def(
-      api.comment(`slot-{{${name}}}-placeholder`),
-    );
+    const slotPlaceholder: Comment = api.comment(`slot-{{${name}}}-placeholder`);
     let isRendered = false;
     let isSettled = false;
     let slotValue: Slots[string] = () => [];
@@ -777,9 +756,9 @@ function slot(name: string, params: () => unknown[], $slot: Slots) {
         }
         slotValue = value;
         renderElement(
-          slotPlaceholder[$node].parentNode!,
+          slotPlaceholder.parentNode!,
           createSlot(slotValue, params, name),
-          slotPlaceholder[$node],
+          slotPlaceholder,
         );
         isRendered = true;
       },
@@ -807,21 +786,21 @@ function cellToText(cell: Cell | MergedCell, destructors: Destructors) {
 function text(
   text: string | number | null | Cell | MergedCell | Fn,
   destructors: Destructors,
-): NodeReturnType {
+): Text {
   if (isPrimitive(text)) {
     // @ts-expect-error number to string type casting
-    return def(api.text(text));
+    return api.text(text);
   } else if (text !== null && isTagLike(text)) {
-    return def(cellToText(text as AnyCell, destructors));
+    return cellToText(text as AnyCell, destructors);
   } else if (isFn(text)) {
     // @ts-expect-error return type
-    return def(fnToText(text as unknown as Function, destructors));
+    return fnToText(text as unknown as Function, destructors);
   } else {
     throw new Error('invalid text');
   }
 }
 
-type BranchCb = () => ComponentReturnType | NodeReturnType;
+type BranchCb = () => ComponentReturnType | Node;
 
 function ifCond(
   cell: Cell<boolean>,
@@ -846,11 +825,11 @@ function ifCond(
     ifPlaceholder,
   );
   addToTree(ctx, instance);
-  return def(outlet);
+  return outlet;
 }
 export function $_eachSync<T extends { id: number }>(
   items: Cell<T[]> | MergedCell,
-  fn: (item: T) => Array<ComponentReturnType | NodeReturnType>,
+  fn: (item: T) => Array<ComponentReturnType | Node>,
   key: string | null = null,
   ctx: Component<any>,
 ) {
@@ -871,11 +850,11 @@ export function $_eachSync<T extends { id: number }>(
     outlet,
   );
   addToTree(ctx, instance as unknown as Component<any>);
-  return def(outlet);
+  return outlet;
 }
 export function $_each<T extends { id: number }>(
   items: Cell<T[]> | MergedCell,
-  fn: (item: T) => Array<ComponentReturnType | NodeReturnType>,
+  fn: (item: T) => Array<ComponentReturnType | Node>,
   key: string | null = null,
   ctx: Component<any>,
 ) {
@@ -896,7 +875,7 @@ export function $_each<T extends { id: number }>(
     outlet,
   );
   addToTree(ctx, instance as unknown as Component<any>);
-  return def(outlet);
+  return outlet;
 }
 const ArgProxyHandler = {
   get(target: Record<string, () => unknown>, prop: string) {
@@ -925,7 +904,7 @@ export const $SLOTS_SYMBOL = Symbol('slots');
 export function $_args(
   args: Record<string, unknown>,
   slots:
-    | Record<string, () => Array<ComponentReturnType | NodeReturnType>>
+    | Record<string, () => Array<ComponentReturnType | Node>>
     | false,
 ) {
   if (IS_GLIMMER_COMPAT_MODE) {
@@ -974,7 +953,7 @@ export const $_tag = _DOM;
 type TextReturnFn = () => string | number | boolean | null | undefined;
 
 export function $_fin(
-  roots: Array<ComponentReturnType | NodeReturnType>,
+  roots: Array<ComponentReturnType | Node>,
   slots: Slots,
   isStable: boolean,
   ctx: Component<any> | null,
@@ -982,7 +961,7 @@ export function $_fin(
   const nodes: Array<
     | HTMLElement
     | ComponentReturnType
-    | NodeReturnType
+    | Node
     | Text
     | Comment
     | TextReturnFn
@@ -1031,6 +1010,5 @@ export function $_fin(
     }),
     [$slotsProp]: slots,
     ctx,
-    index: 0,
   };
 }
