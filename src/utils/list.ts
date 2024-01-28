@@ -184,12 +184,10 @@ class BasicListComponent<T extends { id: number }> {
   }
   updateItems(
     items: T[],
-    amountOfKeys: number,
-    keysToRemove: string[],
+    amountOfExistingKeys: number,
     removedIndexes: number[],
   ) {
     const rowsToMove: Array<[GenericReturnType, number]> = [];
-    const amountOfExistingKeys = amountOfKeys - keysToRemove.length;
     const { indexMap, keyMap, bottomMarker, keyForItem, ItemComponent } = this;
     if (removedIndexes.length > 0 && keyMap.size > 0) {
       for (const key of keyMap.keys()) {
@@ -203,7 +201,7 @@ class BasicListComponent<T extends { id: number }> {
       }
     }
 
-    let targetNode = this.getTargetNode(amountOfKeys);
+    let targetNode = this.getTargetNode(amountOfExistingKeys);
     let seenKeys = 0;
     items.forEach((item, index) => {
       // @todo - fix here
@@ -293,17 +291,15 @@ export class SyncListComponent<
       if (isRemoved) {
         const row = keyMap.get(key)!;
         removedIndexes.push(indexMap.get(key)!);
-        this.destroyItem(row, key);
+        keyMap.delete(key);
+        indexMap.delete(key);
+        destroyElementSync(row);
       }
       return isRemoved;
     });
     const amountOfKeys = existingKeys.length;
-    this.updateItems(items, amountOfKeys, keysToRemove, removedIndexes);
-  }
-  destroyItem(row: GenericReturnType, key: string) {
-    this.keyMap.delete(key);
-    this.indexMap.delete(key);
-    destroyElementSync(row);
+    const amountOfExistingKeys = amountOfKeys - keysToRemove.length;
+    this.updateItems(items, amountOfExistingKeys, removedIndexes);
   }
 }
 export class AsyncListComponent<
@@ -328,7 +324,9 @@ export class AsyncListComponent<
       if (isRemoved) {
         const row = keyMap.get(key)!;
         removedIndexes.push(indexMap.get(key)!);
-        removeQueue.push(this.destroyItem(row, key));
+        keyMap.delete(key);
+        indexMap.delete(key);
+        removeQueue.push(destroyElement(row));
       }
       return isRemoved;
     });
@@ -345,11 +343,7 @@ export class AsyncListComponent<
         removeDestructor(this.parentCtx, destroyFn);
       });
     }
-    this.updateItems(items, amountOfKeys, keysToRemove, removedIndexes);
-  }
-  async destroyItem(row: GenericReturnType, key: string) {
-    this.keyMap.delete(key);
-    this.indexMap.delete(key);
-    await destroyElement(row);
+    const amountOfExistingKeys = amountOfKeys - keysToRemove.length;
+    this.updateItems(items, amountOfExistingKeys, removedIndexes);
   }
 }
