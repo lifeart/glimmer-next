@@ -107,7 +107,7 @@ export const Table = <template>
         @svelte='18.4 ± 0.3'
         @react='23.3 ± 0.3'
         @vue='21.7 ± 0.3'
-        @gxt='19.5 ± 0.6'
+        @gxt='18.5 ± 0.3'
         @glimmer='26.0 ± 4.1'
       />
       <Row
@@ -116,7 +116,7 @@ export const Table = <template>
         @svelte='4.0 ± 0.3'
         @react='6.1 ± 0.2'
         @vue='4.9 ± 0.2'
-        @gxt='6.4 ± 0.2'
+        @gxt='5.7 ± 0.2'
         @glimmer='22.5 ± 0.2'
       />
 
@@ -126,7 +126,7 @@ export const Table = <template>
         @svelte='22.7 ± 0.6'
         @react='181.3 ± 1.5'
         @vue='23.2 ± 0.6'
-        @gxt='22.5 ± 0.5'
+        @gxt='21.8 ± 0.4'
         @glimmer='30.7 ± 5.1'
       />
 
@@ -136,7 +136,7 @@ export const Table = <template>
         @svelte='17.8 ± 0.3'
         @react='19.3 ± 0.4'
         @vue='20.8 ± 0.3'
-        @gxt='18.2 ± 0.3'
+        @gxt='17.8 ± 0.3'
         @glimmer='28.4 ± 0.8'
       />
 
@@ -166,7 +166,7 @@ export const Table = <template>
         @svelte='14.3 ± 0.3'
         @react='29.5 ± 0.4'
         @vue='16.0 ± 0.3'
-        @gxt='24.1 ± 0.5'
+        @gxt='23.3 ± 0.3'
         @glimmer='30.7 ± 0.8'
       />
 
@@ -226,7 +226,7 @@ export const Table = <template>
         @svelte='6.4kb'
         @react='40.1kb'
         @vue='21.1kb'
-        @gxt='4.7kb'
+        @gxt='4.6kb'
         @glimmer='27.9kb'
       />
 
