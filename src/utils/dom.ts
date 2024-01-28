@@ -984,6 +984,7 @@ export function $_fin(
   roots: Array<ComponentReturnType | Node>,
   ctx: Component<any> | null,
 ) {
+  const $destructors: Destructors = [];
   const nodes: Array<
     HTMLElement | ComponentReturnType | Node | Text | Comment | TextReturnFn
   > = roots.map((item) => {
@@ -995,8 +996,7 @@ export function $_fin(
       } else if (isPrimitive(value)) {
         return api.text(String(value));
       } else if (isTagLike(value)) {
-        // @todo - fix destructors in slots;
-        return cellToText(value, []);
+        return cellToText(value, $destructors);
       } else {
         return value;
       }
@@ -1008,11 +1008,10 @@ export function $_fin(
   if (ctx !== null) {
     // no need to add destructors because component seems template-only and should not have `registerDestructor` flow.
 
-    associateDestroyable(ctx, [
-      () => {
-        executeDestructors(ctx as unknown as object);
-      },
-    ]);
+    $destructors.push(() => {
+      executeDestructors(ctx as unknown as object);
+    });
+    associateDestroyable(ctx, $destructors);
   }
 
   return {

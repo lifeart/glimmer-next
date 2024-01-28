@@ -28,7 +28,6 @@ module('Integration | InternalComponent | slots', function () {
     await rerender();
     assert.dom().doesNotHaveTextContaining('closed');
     assert.dom().hasText('content', 'rendered content');
-    debugger;
     showBlock.value = false;
     await rerender();
     assert.dom().doesNotHaveTextContaining('content');
