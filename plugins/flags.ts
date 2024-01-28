@@ -9,7 +9,7 @@ export function defaultFlags() {
   return {
     IS_GLIMMER_COMPAT_MODE: true,
     RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES: false,
-    TRY_CATCH_ERROR_HANDLING: false,
+    TRY_CATCH_ERROR_HANDLING: true,
     SUPPORT_SHADOW_DOM: true,
   } as Flags;
 }
