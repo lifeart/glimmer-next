@@ -14,6 +14,7 @@ import {
   $fwProp,
   RENDER_TREE,
   isPrimitive,
+  isArray,
 } from './shared';
 import { addChild, getRoot, setRoot } from './dom';
 
@@ -50,7 +51,7 @@ export function renderElement(
   el: GenericReturnType | Node | string | number | null | undefined,
   placeholder: Comment | Node,
 ) {
-  if (!Array.isArray(el)) {
+  if (!isArray(el)) {
     if (el === null || el === undefined || el === '') {
       return;
     }
@@ -183,7 +184,7 @@ export function destroyElementSync(
     | null
     | null[],
 ) {
-  if (Array.isArray(component)) {
+  if (isArray(component)) {
     component.map((component) => destroyElementSync(component));
   } else {
     if (component === null) {
@@ -219,7 +220,7 @@ function internalDestroyNode(el: Node | ComponentReturnType) {
 function destroyNodes(
   roots: Node | ComponentReturnType | Array<Node | ComponentReturnType>,
 ) {
-  if (Array.isArray(roots)) {
+  if (isArray(roots)) {
     for (let i = 0; i < roots.length; i++) {
       internalDestroyNode(roots[i]);
     }
@@ -236,7 +237,7 @@ export async function destroyElement(
     | null
     | null[],
 ) {
-  if (Array.isArray(component)) {
+  if (isArray(component)) {
     await Promise.all(component.map((component) => destroyElement(component)));
   } else {
     if (component === null) {

@@ -164,10 +164,18 @@ export function processTemplate(
   };
 }
 
-export function stripGXTDebug() {
+export function stripGXTDebug(babel: { types: typeof Babel.types }) {
+  const { types: t } = babel;
   return {
     name: 'string-gxt-debug-info-transform', // not required
     visitor: {
+      BinaryExpression(path: any) {
+        if (t.isLiteral(path.node.right)) {
+          if (path.node.right.value === '/tests.html') {
+            path.replaceWith(t.booleanLiteral(false));
+          }
+        }
+      },
       ClassMethod(path: any) {
         if (path.node.kind === 'constructor') {
           if (path.node.params.length === 2) {

@@ -15,6 +15,8 @@ export const $propsProp = 'props' as const;
 export const $attrsProp = 'attrs' as const;
 export const $eventsProp = 'events' as const;
 
+export const IN_SSR_ENV =
+  import.meta.env.SSR || location.pathname === '/tests.html';
 export const $DEBUG_REACTIVE_CONTEXTS: string[] = [];
 
 export function debugContext(debugName?: string) {
@@ -23,7 +25,9 @@ export function debugContext(debugName?: string) {
     debugName,
   ].join(' > ');
 }
-
+export function isArray(value: unknown): value is Array<any> {
+  return Array.isArray(value);
+}
 export function isFn(value: unknown): value is Function {
   return typeof value === 'function';
 }

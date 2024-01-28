@@ -44,6 +44,7 @@ import {
   $args,
   $fwProp,
   $DEBUG_REACTIVE_CONTEXTS,
+  IN_SSR_ENV,
 } from './shared';
 import { isRehydrationScheduled } from './rehydration';
 
@@ -276,7 +277,6 @@ export function resetNodeCounter() {
 export function getNodeCounter() {
   return NODE_COUNTER;
 }
-const IN_SSR_ENV = import.meta.env.SSR || location.pathname === '/tests.html';
 export function $_hasBlock(slots: Record<string, unknown>, name = 'default') {
   return name in slots;
 }

@@ -1,4 +1,5 @@
 import { getNodeCounter, incrementNodeCounter } from '@/utils/dom';
+import { IN_SSR_ENV } from './shared';
 
 let $doc =
   typeof document !== 'undefined'
@@ -10,8 +11,6 @@ export function setDocument(newDocument: Document) {
 export function getDocument() {
   return $doc;
 }
-const IN_SSR_ENV = import.meta.env.SSR || location.pathname === '/tests.html';
-
 export const api = {
   attr(element: HTMLElement, name: string, value: string | null) {
     element.setAttribute(name, value === null ? '' : value);
