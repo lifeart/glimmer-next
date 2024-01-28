@@ -341,10 +341,14 @@ function _DOM(
     if (key === $_className) {
       classNameModifiers.push(value);
       return;
-    } else if (key === 'shadowrootmode') {
-      hasShadowMode = value as NonNullable<ShadowRootMode>;
-      return;
     }
+    if (SUPPORT_SHADOW_DOM) {
+      if (key === 'shadowrootmode') {
+        hasShadowMode = value as NonNullable<ShadowRootMode>;
+        return;
+      }
+    }
+
     if (seenKeys.has(key)) {
       return;
     }
@@ -387,13 +391,20 @@ function _DOM(
       $DEBUG_REACTIVE_CONTEXTS.pop();
     }
   }
-  const appendRef =
-    hasShadowMode !== null
-      ? element.attachShadow({ mode: hasShadowMode }) || element.shadowRoot
-      : element;
-  children.forEach((child, index) => {
-    addChild(appendRef, child, destructors, index);
-  });
+
+  if (SUPPORT_SHADOW_DOM) {
+    const appendRef =
+      hasShadowMode !== null
+        ? element.attachShadow({ mode: hasShadowMode }) || element.shadowRoot
+        : element;
+    children.forEach((child, index) => {
+      addChild(appendRef, child, destructors, index);
+    });
+  } else {
+    children.forEach((child, index) => {
+      addChild(element, child, destructors, index);
+    });
+  }
 
   associateDestroyable(ctx, destructors);
   if (IS_DEV_MODE) {
@@ -545,49 +556,53 @@ function component(
         comp.debugName || comp.name || comp.constructor.name
       }`
     : '';
-  try {
-    if (IS_DEV_MODE) {
-      $DEBUG_REACTIVE_CONTEXTS.push(label);
-      label = `<${label} ${JSON.stringify(args)} />`;
-    }
-    return _component(comp, args, fw, ctx);
-  } catch (e) {
-    if (import.meta.env.SSR) {
-      throw e;
-    }
-    if (IS_DEV_MODE) {
-      let ErrorOverlayClass = customElements.get('vite-error-overlay');
-      let errorOverlay!: Element;
-      // @ts-expect-error message may not exit
-      e.message = `${label}\n${e.message}`;
-      if (!ErrorOverlayClass) {
-        errorOverlay = api.element('pre');
-        // @ts-expect-error stack may not exit
-        errorOverlay.textContent = `${label}\n${e.stack ?? e}`;
-        errorOverlay.setAttribute(
-          'style',
-          'color:red;border:1px solid red;padding:10px;background-color:#333;',
-        );
-      } else {
-        errorOverlay = new ErrorOverlayClass(e, true);
+  if (TRY_CATCH_ERROR_HANDLING) {
+    try {
+      if (IS_DEV_MODE) {
+        $DEBUG_REACTIVE_CONTEXTS.push(label);
+        label = `<${label} ${JSON.stringify(args)} />`;
       }
-      console.error(label, e);
-
-      return {
-        ctx: null,
-        nodes: [errorOverlay],
-      };
-    } else {
-      return {
-        ctx: null,
+      return _component(comp, args, fw, ctx);
+    } catch (e) {
+      if (import.meta.env.SSR) {
+        throw e;
+      }
+      if (IS_DEV_MODE) {
+        let ErrorOverlayClass = customElements.get('vite-error-overlay');
+        let errorOverlay!: Element;
         // @ts-expect-error message may not exit
-        nodes: [api.text(String(e.message))],
-      };
+        e.message = `${label}\n${e.message}`;
+        if (!ErrorOverlayClass) {
+          errorOverlay = api.element('pre');
+          // @ts-expect-error stack may not exit
+          errorOverlay.textContent = `${label}\n${e.stack ?? e}`;
+          errorOverlay.setAttribute(
+            'style',
+            'color:red;border:1px solid red;padding:10px;background-color:#333;',
+          );
+        } else {
+          errorOverlay = new ErrorOverlayClass(e, true);
+        }
+        console.error(label, e);
+
+        return {
+          ctx: null,
+          nodes: [errorOverlay],
+        };
+      } else {
+        return {
+          ctx: null,
+          // @ts-expect-error message may not exit
+          nodes: [api.text(String(e.message))],
+        };
+      }
+    } finally {
+      if (IS_DEV_MODE) {
+        $DEBUG_REACTIVE_CONTEXTS.pop();
+      }
     }
-  } finally {
-    if (IS_DEV_MODE) {
-      $DEBUG_REACTIVE_CONTEXTS.pop();
-    }
+  } else {
+    return _component(comp, args, fw, ctx);
   }
 }
 // hello, basic component manager
@@ -969,6 +984,7 @@ export function $_fin(
   roots: Array<ComponentReturnType | Node>,
   ctx: Component<any> | null,
 ) {
+  const $destructors: Destructors = [];
   const nodes: Array<
     HTMLElement | ComponentReturnType | Node | Text | Comment | TextReturnFn
   > = roots.map((item) => {
@@ -980,8 +996,7 @@ export function $_fin(
       } else if (isPrimitive(value)) {
         return api.text(String(value));
       } else if (isTagLike(value)) {
-        // @todo - fix destructors in slots;
-        return cellToText(value, []);
+        return cellToText(value, $destructors);
       } else {
         return value;
       }
@@ -993,11 +1008,10 @@ export function $_fin(
   if (ctx !== null) {
     // no need to add destructors because component seems template-only and should not have `registerDestructor` flow.
 
-    associateDestroyable(ctx, [
-      () => {
-        executeDestructors(ctx as unknown as object);
-      },
-    ]);
+    $destructors.push(() => {
+      executeDestructors(ctx as unknown as object);
+    });
+    associateDestroyable(ctx, $destructors);
   }
 
   return {

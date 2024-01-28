@@ -104,7 +104,24 @@ export function renderComponent(
 
   const destructors: Destructors = [];
   const children = component[$nodes];
-  try {
+
+  if (TRY_CATCH_ERROR_HANDLING) {
+    try {
+      children.forEach((child, i) => {
+        addChild(
+          targetElement as unknown as HTMLElement,
+          child as any,
+          destructors,
+          i,
+        );
+      });
+      associateDestroyable(ctx || component, destructors);
+    } catch (e) {
+      destructors.forEach((fn) => fn());
+      runDestructorsSync(ctx || component);
+      throw e;
+    }
+  } else {
     children.forEach((child, i) => {
       addChild(
         targetElement as unknown as HTMLElement,
@@ -114,10 +131,6 @@ export function renderComponent(
       );
     });
     associateDestroyable(ctx || component, destructors);
-  } catch (e) {
-    destructors.forEach((fn) => fn());
-    runDestructorsSync(ctx || component);
-    throw e;
   }
 
   return component;

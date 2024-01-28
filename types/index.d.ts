@@ -14,6 +14,8 @@ declare global {
   const IS_DEV_MODE: boolean;
   const IS_GLIMMER_COMPAT_MODE: boolean;
   const RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES: boolean;
+  const TRY_CATCH_ERROR_HANDLING: boolean;
+  const SUPPORT_SHADOW_DOM: boolean;
 }
 
 declare module 'glint-environment-gxt/globals' {
