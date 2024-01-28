@@ -11,7 +11,9 @@ export function $__hash(obj: Record<string, unknown>) {
         }
       },
       set() {
-        throw new Error('unable to set hash object');
+        if (IS_DEV_MODE) {
+          throw new Error('unable to set hash object');
+        }
       },
       enumerable: true,
     });

@@ -69,7 +69,9 @@ export function ifCondition(
             // placeholder is disconnected, it means whole `if` is removed from DOM, no need to recover;
             return;
           }
-          const newPlaceholder = api.comment('if-error-placeholder');
+          const newPlaceholder = IS_DEV_MODE
+            ? api.comment('if-error-placeholder')
+            : api.comment('');
           api.insert(placeholder.parentNode!, newPlaceholder, placeholder);
           runExistingDestructors().then(async () => {
             removeDestructor(ctx, runExistingDestructors);

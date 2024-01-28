@@ -164,9 +164,9 @@ export function processTemplate(
   };
 }
 
-export function processSource() {
+export function stripGXTDebug() {
   return {
-    name: 'prod-ast-transform', // not required
+    name: 'string-gxt-debug-info-transform', // not required
     visitor: {
       ClassMethod(path: any) {
         if (path.node.kind === 'constructor') {
