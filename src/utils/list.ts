@@ -284,11 +284,11 @@ export class SyncListComponent<
   syncList(items: T[]) {
     const { keyMap, indexMap, keyForItem } = this;
     if (items.length === 0) {
-      keyMap.clear();
       indexMap.clear();
       keyMap.forEach((value) => {
         destroyElementSync(value);
       });
+      keyMap.clear();
     }
     const existingKeys = Array.from(keyMap.keys());
     const updatingKeys = new Set(items.map((item) => keyForItem(item)));
@@ -324,11 +324,11 @@ export class AsyncListComponent<
     const { keyMap, indexMap, keyForItem } = this;
     const removeQueue: Array<Promise<void>> = [];
     if (items.length === 0) {
-      keyMap.clear();
       indexMap.clear();
       keyMap.forEach((value) => {
         removeQueue.push(destroyElement(value));
       });
+      keyMap.clear();
     }
     const existingKeys = Array.from(keyMap.keys());
     const updatingKeys = new Set(items.map((item) => keyForItem(item)));
