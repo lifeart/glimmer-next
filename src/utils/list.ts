@@ -50,7 +50,6 @@ class BasicListComponent<T extends { id: number }> {
   keyMap: Map<string, GenericReturnType> = new Map();
   indexMap: Map<string, number> = new Map();
   nodes: Node[] = [];
-  index = 0;
   parentCtx!: Component<any>;
   ItemComponent: (
     item: T,
@@ -166,7 +165,9 @@ class BasicListComponent<T extends { id: number }> {
     } else {
       let fragment!: DocumentFragment;
       // list fragment marker
-      const marker = api.comment('list fragment target marker');
+      const marker = IS_DEV_MODE
+        ? api.comment('list fragment target marker')
+        : api.comment('');
       if (isRehydrationScheduled()) {
         fragment = marker.parentElement as unknown as DocumentFragment;
       } else {
@@ -184,10 +185,10 @@ class BasicListComponent<T extends { id: number }> {
   ) {
     const rowsToMove: Array<[GenericReturnType, number]> = [];
     const amountOfExistingKeys = amountOfKeys - keysToRemove.length;
-
-    if (removedIndexes.length > 0 && this.keyMap.size > 0) {
-      for (const key of this.keyMap.keys()) {
-        let keyIndex = this.indexMap.get(key)!;
+    const { indexMap, keyMap, bottomMarker, keyForItem, ItemComponent } = this;
+    if (removedIndexes.length > 0 && keyMap.size > 0) {
+      for (const key of keyMap.keys()) {
+        let keyIndex = indexMap.get(key)!;
         removedIndexes.forEach((index) => {
           if (keyIndex > index) {
             keyIndex--;
@@ -201,15 +202,12 @@ class BasicListComponent<T extends { id: number }> {
     let seenKeys = 0;
     items.forEach((item, index) => {
       // @todo - fix here
-      if (
-        seenKeys === amountOfExistingKeys &&
-        targetNode === this.bottomMarker
-      ) {
+      if (seenKeys === amountOfExistingKeys && targetNode === bottomMarker) {
         // optimization for appending items case
         targetNode = this.getTargetNode(0);
       }
-      const key = this.keyForItem(item);
-      const maybeRow = this.keyMap.get(key);
+      const key = keyForItem(item);
+      const maybeRow = keyMap.get(key);
       if (!maybeRow) {
         let idx: number | MergedCell = index;
         if (IS_DEV_MODE) {
@@ -220,27 +218,23 @@ class BasicListComponent<T extends { id: number }> {
             const itemIndex = values.indexOf(item);
             if (itemIndex === -1) {
               return values.findIndex((value: T) => {
-                return this.keyForItem(value) === key;
+                return keyForItem(value) === key;
               });
             }
             return itemIndex;
           }, `each.index[${index}]`);
         }
-        const row = this.ItemComponent(
-          item,
-          idx,
-          this as unknown as Component<any>,
-        );
-        this.keyMap.set(key, row);
-        this.indexMap.set(key, index);
+        const row = ItemComponent(item, idx, this as unknown as Component<any>);
+        keyMap.set(key, row);
+        indexMap.set(key, index);
         row.forEach((item) => {
           renderElement(targetNode.parentNode!, item, targetNode);
         });
       } else {
         seenKeys++;
-        if (this.indexMap.get(key) !== index) {
+        if (indexMap.get(key) !== index) {
           rowsToMove.push([maybeRow, index]);
-          this.indexMap.set(key, index);
+          indexMap.set(key, index);
         }
       }
     });
@@ -250,10 +244,10 @@ class BasicListComponent<T extends { id: number }> {
     rowsToMove.forEach(([row, index]) => {
       const nextItem = items[index + 1];
       if (nextItem === undefined) {
-        renderElement(this.bottomMarker.parentNode!, row, this.bottomMarker);
+        renderElement(bottomMarker.parentNode!, row, bottomMarker);
       } else {
-        const nextKey = this.keyForItem(nextItem);
-        const nextRow = this.keyMap.get(nextKey)!;
+        const nextKey = keyForItem(nextItem);
+        const nextRow = keyMap.get(nextKey)!;
         const firstNode = getFirstNode(nextRow);
         if (nextRow !== undefined && firstNode !== undefined) {
           const parent = firstNode.parentNode!;
@@ -262,12 +256,12 @@ class BasicListComponent<T extends { id: number }> {
       }
     });
 
-    if (targetNode !== this.bottomMarker) {
+    if (targetNode !== bottomMarker) {
       const parent = targetNode.parentNode!;
-      const trueParent = this.bottomMarker.parentNode!;
+      const trueParent = bottomMarker.parentNode!;
       // parent.removeChild(targetNode);
       if (trueParent !== parent) {
-        api.insert(trueParent, parent, this.bottomMarker);
+        api.insert(trueParent, parent, bottomMarker);
       }
     }
   }
@@ -285,14 +279,15 @@ export class SyncListComponent<
     ]);
   }
   syncList(items: T[]) {
-    const existingKeys = Array.from(this.keyMap.keys());
-    const updatingKeys = new Set(items.map((item) => this.keyForItem(item)));
+    const { keyMap, indexMap, keyForItem } = this;
+    const existingKeys = Array.from(keyMap.keys());
+    const updatingKeys = new Set(items.map((item) => keyForItem(item)));
     const removedIndexes: number[] = [];
     const keysToRemove = existingKeys.filter((key) => {
       const isRemoved = !updatingKeys.has(key);
       if (isRemoved) {
-        const row = this.keyMap.get(key)!;
-        removedIndexes.push(this.indexMap.get(key)!);
+        const row = keyMap.get(key)!;
+        removedIndexes.push(indexMap.get(key)!);
         this.destroyItem(row, key);
       }
       return isRemoved;
@@ -318,15 +313,16 @@ export class AsyncListComponent<
     ]);
   }
   async syncList(items: T[]) {
-    const existingKeys = Array.from(this.keyMap.keys());
-    const updatingKeys = new Set(items.map((item) => this.keyForItem(item)));
+    const { keyMap, indexMap, keyForItem } = this;
+    const existingKeys = Array.from(keyMap.keys());
+    const updatingKeys = new Set(items.map((item) => keyForItem(item)));
     const removedIndexes: number[] = [];
     const removeQueue: Array<Promise<void>> = [];
     const keysToRemove = existingKeys.filter((key) => {
       const isRemoved = !updatingKeys.has(key);
       if (isRemoved) {
-        const row = this.keyMap.get(key)!;
-        removedIndexes.push(this.indexMap.get(key)!);
+        const row = keyMap.get(key)!;
+        removedIndexes.push(indexMap.get(key)!);
         removeQueue.push(this.destroyItem(row, key));
       }
       return isRemoved;

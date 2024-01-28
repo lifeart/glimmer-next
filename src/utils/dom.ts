@@ -741,17 +741,19 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
   }
 
   if (!(name in $slot)) {
-    const slotPlaceholder: Comment = api.comment(
-      `slot-{{${name}}}-placeholder`,
-    );
+    const slotPlaceholder: Comment = IS_DEV_MODE
+      ? api.comment(`slot-{{${name}}}-placeholder`)
+      : api.comment('');
     let isRendered = false;
     let isSettled = false;
     let slotValue: Slots[string] = () => [];
     Object.defineProperty($slot, name, {
       set(value: Slots[string]) {
         isSettled = true;
-        if (isRendered) {
-          throw new Error(`Slot ${name} is already rendered`);
+        if (IS_DEV_MODE) {
+          if (isRendered) {
+            throw new Error(`Slot ${name} is already rendered`);
+          }
         }
         slotValue = value;
         const slotRoots = createSlot(slotValue, params, name);
@@ -765,7 +767,9 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
         if (isSettled) {
           return slotValue;
         }
-        throw new Error(`Slot ${name} is not set`);
+        if (IS_DEV_MODE) {
+          throw new Error(`Slot ${name} is not set`);
+        }
       },
     });
     return slotPlaceholder;
@@ -798,9 +802,8 @@ function text(
   } else if (isFn(text)) {
     // @ts-expect-error return type
     return fnToText(text as unknown as Function, destructors);
-  } else {
-    throw new Error('invalid text');
   }
+  return api.text('');
 }
 
 type BranchCb = () => ComponentReturnType | Node;
@@ -811,7 +814,9 @@ function ifCond(
   falseBranch: BranchCb,
   ctx: Component<any>,
 ) {
-  const ifPlaceholder = api.comment('if-entry-placeholder');
+  const ifPlaceholder = IS_DEV_MODE
+    ? api.comment('if-entry-placeholder')
+    : api.comment('');
   const outlet = isRehydrationScheduled()
     ? ifPlaceholder.parentElement!
     : api.fragment();
@@ -836,7 +841,9 @@ export function $_eachSync<T extends { id: number }>(
   key: string | null = null,
   ctx: Component<any>,
 ) {
-  const eachPlaceholder = api.comment('sync-each-placeholder');
+  const eachPlaceholder = IS_DEV_MODE
+    ? api.comment('sync-each-placeholder')
+    : api.comment('');
   const outlet = isRehydrationScheduled()
     ? eachPlaceholder.parentElement!
     : api.fragment();
@@ -861,7 +868,9 @@ export function $_each<T extends { id: number }>(
   key: string | null = null,
   ctx: Component<any>,
 ) {
-  const eachPlaceholder = api.comment('async-each-placeholder');
+  const eachPlaceholder = IS_DEV_MODE
+    ? api.comment('async-each-placeholder')
+    : api.comment('');
   const outlet = isRehydrationScheduled()
     ? eachPlaceholder.parentElement!
     : api.fragment();

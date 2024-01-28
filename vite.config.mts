@@ -5,6 +5,7 @@ import { compiler } from "./plugins/compiler.ts";
 // import circleDependency from "vite-plugin-circular-dependency";
 import dts from "vite-plugin-dts";
 import babel from "vite-plugin-babel";
+import { stripGXTDebug } from "./plugins/babel.ts";
 
 const isLibBuild = process.env["npm_lifecycle_script"]?.includes("--lib");
 const withSourcemaps =
@@ -46,32 +47,33 @@ if (isLibBuild) {
       ],
     }),
   );
-} else {
-  plugins.push(
-    babel({
-      filter: /\.ts$/,
-      babelConfig: {
-        babelrc: false,
-        configFile: false,
-        presets: [
-          [
-            "@babel/preset-typescript",
-            {
-              allowDeclareFields: true,
-              allExtensions: true,
-            },
-          ],
-        ],
-        plugins: [["module:decorator-transforms"]],
-      },
-    }),
-  );
-  // plugins.push(circleDependency({}));
 }
 
 export default defineConfig(({ mode }) => ({
   plugins: [
     ...plugins,
+    isLibBuild
+      ? null
+      : babel({
+          filter: /\.ts$/,
+          babelConfig: {
+            babelrc: false,
+            configFile: false,
+            presets: [
+              [
+                "@babel/preset-typescript",
+                {
+                  allowDeclareFields: true,
+                  allExtensions: true,
+                },
+              ],
+            ],
+            plugins:
+              mode === "production"
+                ? [stripGXTDebug, ["module:decorator-transforms"]]
+                : [["module:decorator-transforms"]],
+          },
+        }),
     compiler(mode, {
       authorMode: true,
     }),

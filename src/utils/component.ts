@@ -141,8 +141,6 @@ export class Component<T extends Props = any>
     args: Get<T, 'Args'>,
   ) => ComponentReturn<Get<T, 'Blocks'>, Get<T, 'Element', null>>;
   nodes!: Node[];
-  index!: number;
-  slots!: Slots;
   $fw: unknown;
   constructor(props: Get<T, 'Args'>, fw?: unknown) {
     this[$args] = props;
