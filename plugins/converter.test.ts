@@ -294,7 +294,7 @@ describe.each([
         expect($t<ASTv1.ElementNode>(`<div class="foo"></div>`)).toEqual(
           $node({
             tag: 'div',
-            properties: [['className', 'foo']],
+            properties: [['', 'foo']],
           }),
         );
       });
@@ -321,7 +321,7 @@ describe.each([
           $node({
             tag: 'div',
             properties: [
-              ['className', '$:() => [$:foo," bar ",$:boo(baks)].join(\'\')'],
+              ['', '$:() => [$:foo," bar ",$:boo(baks)].join(\'\')'],
             ],
           }),
         );
@@ -330,7 +330,7 @@ describe.each([
         expect($t<ASTv1.ElementNode>(`<div class={{foo}}></div>`)).toEqual(
           $node({
             tag: 'div',
-            properties: [['className', '$:foo']],
+            properties: [['', '$:foo']],
           }),
         );
       });
@@ -340,7 +340,7 @@ describe.each([
         ).toEqual(
           $node({
             tag: 'div',
-            properties: [['className', '$:() => $:foo("bar")']],
+            properties: [['', '$:() => $:foo("bar")']],
           }),
         );
       });
@@ -348,7 +348,7 @@ describe.each([
         expect($t<ASTv1.ElementNode>(`<div class={{foo bar}}></div>`)).toEqual(
           $node({
             tag: 'div',
-            properties: [['className', '$:() => $:foo(bar)']],
+            properties: [['', '$:() => $:foo(bar)']],
           }),
         );
       });

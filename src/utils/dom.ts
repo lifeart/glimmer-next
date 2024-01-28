@@ -338,7 +338,7 @@ function _DOM(
   const classNameModifiers: Attr[] = [];
   let hasShadowMode: ShadowRootMode = null;
   properties.forEach(([key, value]) => {
-    if (key === $_className) {
+    if (key === '') {
       classNameModifiers.push(value);
       return;
     }
