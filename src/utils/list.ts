@@ -283,6 +283,13 @@ export class SyncListComponent<
   }
   syncList(items: T[]) {
     const { keyMap, indexMap, keyForItem } = this;
+    if (items.length === 0) {
+      keyMap.clear();
+      indexMap.clear();
+      keyMap.forEach((value) => {
+        destroyElementSync(value);
+      });
+    }
     const existingKeys = Array.from(keyMap.keys());
     const updatingKeys = new Set(items.map((item) => keyForItem(item)));
     const removedIndexes: number[] = [];
@@ -315,10 +322,17 @@ export class AsyncListComponent<
   }
   async syncList(items: T[]) {
     const { keyMap, indexMap, keyForItem } = this;
+    const removeQueue: Array<Promise<void>> = [];
+    if (items.length === 0) {
+      keyMap.clear();
+      indexMap.clear();
+      keyMap.forEach((value) => {
+        removeQueue.push(destroyElement(value));
+      });
+    }
     const existingKeys = Array.from(keyMap.keys());
     const updatingKeys = new Set(items.map((item) => keyForItem(item)));
     const removedIndexes: number[] = [];
-    const removeQueue: Array<Promise<void>> = [];
     const keysToRemove = existingKeys.filter((key) => {
       const isRemoved = !updatingKeys.has(key);
       if (isRemoved) {
