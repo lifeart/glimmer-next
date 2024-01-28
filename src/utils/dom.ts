@@ -900,7 +900,9 @@ const ArgProxyHandler = {
     return undefined;
   },
   set() {
-    throw new Error('args are readonly');
+    if (IS_DEV_MODE) {
+      throw new Error('args are readonly');
+    }
   },
 };
 export function $_GET_ARGS(ctx: any, args: any) {

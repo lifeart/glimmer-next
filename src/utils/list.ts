@@ -24,10 +24,8 @@ export function getFirstNode(
     return getFirstNode(rawItem[0]);
   } else if ('nodeType' in rawItem) {
     return rawItem;
-  } else if ($nodes in rawItem) {
-    return getFirstNode(rawItem[$nodes]);
   } else {
-    throw new Error('Noop here');
+    return getFirstNode(rawItem[$nodes][0]);
   }
 }
 
