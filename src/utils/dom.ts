@@ -341,10 +341,14 @@ function _DOM(
     if (key === $_className) {
       classNameModifiers.push(value);
       return;
-    } else if (key === 'shadowrootmode') {
-      hasShadowMode = value as NonNullable<ShadowRootMode>;
-      return;
     }
+    if (SUPPORT_SHADOW_DOM) {
+      if (key === 'shadowrootmode') {
+        hasShadowMode = value as NonNullable<ShadowRootMode>;
+        return;
+      }
+    }
+
     if (seenKeys.has(key)) {
       return;
     }
@@ -387,13 +391,20 @@ function _DOM(
       $DEBUG_REACTIVE_CONTEXTS.pop();
     }
   }
-  const appendRef =
-    hasShadowMode !== null
-      ? element.attachShadow({ mode: hasShadowMode }) || element.shadowRoot
-      : element;
-  children.forEach((child, index) => {
-    addChild(appendRef, child, destructors, index);
-  });
+
+  if (SUPPORT_SHADOW_DOM) {
+    const appendRef =
+      hasShadowMode !== null
+        ? element.attachShadow({ mode: hasShadowMode }) || element.shadowRoot
+        : element;
+    children.forEach((child, index) => {
+      addChild(appendRef, child, destructors, index);
+    });
+  } else {
+    children.forEach((child, index) => {
+      addChild(element, child, destructors, index);
+    });
+  }
 
   associateDestroyable(ctx, destructors);
   if (IS_DEV_MODE) {
