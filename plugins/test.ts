@@ -13,17 +13,6 @@ import { convert } from './converter';
 import { SYMBOLS } from './symbols';
 import type { Flags } from './flags';
 
-function isNodeStable(node: string | undefined) {
-  if (typeof node === 'undefined') {
-    return true;
-  }
-  return (
-    node.trim().startsWith(`${SYMBOLS.TAG}(`) ||
-    node.trim().startsWith(`${SYMBOLS.TEXT}(`) ||
-    !node.trim().includes('$_')
-  );
-}
-
 function isSimpleElement(element: ASTv1.ElementNode) {
   const tag = element.tag;
   if (tag.includes('.') || tag.startsWith(':')) {
@@ -172,11 +161,7 @@ export function transform(
       ${SYMBOLS.$_GET_ARGS}(this, arguments);
       ${hasSlots ? slotsResolution : ''}
       const roots = [${results.join(', ')}];
-      return ${SYMBOLS.FINALIZE_COMPONENT}(roots, ${
-        hasSlots ? '$slots' : '{}'
-      }, ${String(
-        isNodeStable(results[0]) && results.length === 1,
-      )}, ${finContext});
+      return ${SYMBOLS.FINALIZE_COMPONENT}(roots, ${finContext});
     }`;
     } else {
       result = isClass
@@ -184,17 +169,13 @@ export function transform(
       ${hasSlots ? slotsResolution : ''}
       ${hasFw ? `const $fw = ${SYMBOLS.$_GET_FW}(this, arguments);` : ''}
       const roots = [${results.join(', ')}];
-      return ${SYMBOLS.FINALIZE_COMPONENT}(roots, ${
-        hasSlots ? '$slots' : '{}'
-      }, ${String(isNodeStable(results[0]))}, ${finContext});
+      return ${SYMBOLS.FINALIZE_COMPONENT}(roots, ${finContext});
     }`
         : `(() => {
       ${hasSlots ? slotsResolution : ''}
       ${hasFw ? `const $fw = ${SYMBOLS.$_GET_FW}(this, arguments);` : ''}
       const roots = [${results.join(', ')}];
-      return ${SYMBOLS.FINALIZE_COMPONENT}(roots, ${
-        hasSlots ? '$slots' : '{}'
-      }, ${String(isNodeStable(results[0]))}, ${finContext});
+      return ${SYMBOLS.FINALIZE_COMPONENT}(roots, ${finContext});
     })()`;
     }
 
