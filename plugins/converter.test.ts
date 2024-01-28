@@ -239,6 +239,12 @@ describe.each([
       test('empty non multiline text nodes preserved', () => {
         expect($t<ASTv1.TextNode>(` `)).toEqual(' ');
       });
+      test('&nbsp; is preserved', () => {
+        expect($t<ASTv1.TextNode>(`&nbsp;`)).not.toEqual(null);
+      });
+      test('multispace lines are removed', () => {
+        expect($t<ASTv1.TextNode>(`            `)).toEqual(null);
+      });
       test('empty multiline text nodes trimmed', () => {
         expect($t<ASTv1.TextNode>(` \n `)).toEqual(null);
       });

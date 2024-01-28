@@ -135,6 +135,8 @@ export function convert(seenNodes: Set<ASTv1.Node>, flags: Flags) {
     } else if (node.type === 'TextNode') {
       if (node.chars.trim().length === 0 && node.chars.includes('\n')) {
         return null;
+      } else if (node.chars.trim().length === 0 && node.chars.length > 1) {
+        return null;
       }
       return node.chars;
     } else if (node.type === 'ElementNode') {
