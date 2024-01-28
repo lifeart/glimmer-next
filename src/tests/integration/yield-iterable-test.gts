@@ -20,7 +20,7 @@ module('Integration | Internal | yield iterable', function () {
       </template>,
     );
     assert.dom('li').exists({ count: 3 });
-    assert.dom().hasText('Name: 1 Name: 2 Name: 3');
+    assert.dom().hasText('Name: 1Name: 2Name: 3');
     items.update([]);
     await rerender();
     assert.dom('li').doesNotExist();
