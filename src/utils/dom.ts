@@ -104,7 +104,7 @@ function $prop(
     destructors.push(
       opcodeFor(value as AnyCell, (value) => {
         if (value === prevPropValue) {
-          return
+          return;
         }
         // @ts-expect-error types casting
         element[key] = prevPropValue = value;
@@ -431,7 +431,7 @@ export function $_inElement(
         appendRef.innerHTML = '';
       });
       associateDestroyable(ctx, destructors);
-      return $_fin([], {}, false, this);
+      return $_fin([], this);
     } as unknown as Component<any>,
     {},
     { attrs: [], props: [], events: [] },
@@ -450,7 +450,7 @@ export function $_ucw(
         // @ts-expect-error construct signature
         this.debugName = `UnstableChildWrapper-${unstableWrapperId++}`;
       }
-      return $_fin(roots(this), {}, false, this);
+      return $_fin(roots(this), this);
     } as unknown as Component<any>,
     {},
     { attrs: [], props: [], events: [] },
@@ -955,27 +955,29 @@ type TextReturnFn = () => string | number | boolean | null | undefined;
 
 export function $_fin(
   roots: Array<ComponentReturnType | Node>,
-  // @ts-expect-error
-  slots: Slots,
-  isStable: boolean,
   ctx: Component<any> | null,
 ) {
   const nodes: Array<
     HTMLElement | ComponentReturnType | Node | Text | Comment | TextReturnFn
-  > = [];
-  if (!isStable) {
-    if (IS_DEV_MODE) {
-      nodes.unshift(
-        api.comment(`unstable root enter node: ${ctx?.constructor.name}`),
-      );
-      nodes.push(
-        api.comment(`unstable root exit node: ${ctx?.constructor.name}`),
-      );
+  > = roots.map((item) => {
+    if (isFn(item)) {
+      // here may be component or text or node
+      const value = resolveRenderable(item, `component child fn`);
+      if (value === null || value === undefined) {
+        return api.text('');
+      } else if (isPrimitive(value)) {
+        return api.text(String(value));
+      } else if (isTagLike(value)) {
+        // @todo - fix destructors in slots;
+        return cellToText(value, []);
+      } else {
+        return value;
+      }
     } else {
-      nodes.unshift(api.comment());
-      nodes.push(api.comment());
+      return item;
     }
-  }
+  });
+
   if (ctx !== null) {
     // no need to add destructors because component seems template-only and should not have `registerDestructor` flow.
 
@@ -987,24 +989,7 @@ export function $_fin(
   }
 
   return {
-    [$nodes]: roots.map((item) => {
-      if (isFn(item)) {
-        // here may be component or text or node
-        const value = resolveRenderable(item, `component child fn`);
-        if (value === null || value === undefined) {
-          return api.text('');
-        } else if (isPrimitive(value)) {
-          return api.text(String(value));
-        } else if (isTagLike(value)) {
-          // @todo - fix destructors in slots;
-          return cellToText(value, []);
-        } else {
-          return value;
-        }
-      } else {
-        return item;
-      }
-    }),
+    [$nodes]: nodes,
     ctx,
   };
 }
