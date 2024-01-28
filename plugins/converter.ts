@@ -360,7 +360,7 @@ export function convert(seenNodes: Set<ASTv1.Node>, flags: Flags) {
     'selected',
   ];
   const propsToCast = {
-    class: 'className',
+    class: '', // className
   };
 
   function isAttribute(name: string) {
@@ -388,8 +388,9 @@ export function convert(seenNodes: Set<ASTv1.Node>, flags: Flags) {
         .map((attr) => {
           const rawValue = ToJSType(attr.value);
           // const value = rawValue.startsWith("$:") ? rawValue : escapeString(rawValue);
+          const castedProp = propsToCast[attr.name as keyof typeof propsToCast];
           return [
-            propsToCast[attr.name as keyof typeof propsToCast] || attr.name,
+            typeof castedProp === 'string' ? castedProp : attr.name,
             rawValue,
           ];
         }),
