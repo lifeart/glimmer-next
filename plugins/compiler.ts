@@ -4,6 +4,8 @@ import { transform } from './test';
 import { MAIN_IMPORT } from './symbols';
 import { type Flags, defaultFlags } from './flags.ts';
 import { HMR, fixExportsForHMR, shouldHotReloadFile } from './hmr.ts';
+import babel from 'vite-plugin-babel';
+import { processSource } from './babel.ts';
 
 const p = new Preprocessor();
 
@@ -46,7 +48,31 @@ export function compiler(mode: string, options: Options = {}): Plugin {
       if (!isLibBuild) {
         defineValues['IS_DEV_MODE'] = mode.mode === 'development';
       }
+      const plugins = config.plugins ?? [];
+      if (mode.mode === 'production') {
+        plugins.push(
+          babel({
+            filter: /\.(ts|js)$/,
+            babelConfig: {
+              babelrc: false,
+              configFile: false,
+              presets: [
+                [
+                  '@babel/preset-typescript',
+                  {
+                    allowDeclareFields: true,
+                    allExtensions: false,
+                  },
+                ],
+              ],
+              plugins: [processSource],
+            },
+          }),
+        );
+      }
+
       return {
+        plugins,
         define: defineValues,
         resolve: {
           extensions: extensionsToResolve,

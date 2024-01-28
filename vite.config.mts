@@ -5,7 +5,6 @@ import { compiler } from "./plugins/compiler.ts";
 // import circleDependency from "vite-plugin-circular-dependency";
 import dts from "vite-plugin-dts";
 import babel from "vite-plugin-babel";
-import { processSource } from "./plugins/babel.ts";
 
 const isLibBuild = process.env["npm_lifecycle_script"]?.includes("--lib");
 const withSourcemaps =
@@ -33,7 +32,6 @@ if (isLibBuild) {
             },
           ],
         ],
-        plugins: [processSource],
       },
     }),
     dts({
