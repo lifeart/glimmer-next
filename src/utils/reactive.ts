@@ -227,7 +227,34 @@ export async function executeTag(tag: Cell | MergedCell) {
     return;
   }
   const ops = opsFor(tag)!;
-  try {
+  if (TRY_CATCH_ERROR_HANDLING) {
+    try {
+      const value = tag.value;
+      for (const op of ops) {
+        opcode = op;
+        if (asyncOpcodes.has(op)) {
+          await op(value);
+        } else {
+          op(value);
+        }
+      }
+    } catch (e: any) {
+      if (IS_DEV_MODE) {
+        console.error({
+          message: 'Error executing tag',
+          error: e,
+          tag,
+          opcode: opcode?.toString(),
+        });
+      }
+      if (opcode) {
+        let index = ops.indexOf(opcode);
+        if (index > -1) {
+          ops.splice(index, 1);
+        }
+      }
+    }
+  } else {
     const value = tag.value;
     for (const op of ops) {
       opcode = op;
@@ -235,21 +262,6 @@ export async function executeTag(tag: Cell | MergedCell) {
         await op(value);
       } else {
         op(value);
-      }
-    }
-  } catch (e: any) {
-    if (IS_DEV_MODE) {
-      console.error({
-        message: 'Error executing tag',
-        error: e,
-        tag,
-        opcode: opcode?.toString(),
-      });
-    }
-    if (opcode) {
-      let index = ops.indexOf(opcode);
-      if (index > -1) {
-        ops.splice(index, 1);
       }
     }
   }
