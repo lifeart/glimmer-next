@@ -285,13 +285,11 @@ export class SyncListComponent<
     const { keyMap, indexMap, keyForItem } = this;
     const updatingKeys = new Set(items.map((item) => keyForItem(item)));
     // Arrays to track the removed keys and their indexes
-    const keysToRemove: string[] = [];
     const removedIndexes: number[] = [];
     let existingKeys = 0;
     // Iterate over the keys of the map
     keyMap.forEach((value, key) => {
       if (!updatingKeys.has(key)) {
-        keysToRemove.push(key);
         removedIndexes.push(indexMap.get(key)!);
         keyMap.delete(key);
         indexMap.delete(key);
@@ -318,7 +316,6 @@ export class AsyncListComponent<
     const { keyMap, indexMap, keyForItem } = this;
     const updatingKeys = new Set(items.map((item) => keyForItem(item)));
     // Arrays to track the removed keys and their indexes
-    const keysToRemove: string[] = [];
     const removedIndexes: number[] = [];
     const removeQueue: Array<Promise<void>> = [];
 
@@ -326,7 +323,6 @@ export class AsyncListComponent<
     // Iterate over the keys of the map
     keyMap.forEach((value, key) => {
       if (!updatingKeys.has(key)) {
-        keysToRemove.push(key);
         removedIndexes.push(indexMap.get(key)!);
         keyMap.delete(key);
         indexMap.delete(key);
