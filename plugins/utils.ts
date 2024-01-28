@@ -292,7 +292,7 @@ export function serializeNode(
     const key = `@${node.type}`;
     const arrayName = node.condition;
     const paramNames = node.blockParams;
-    const childs = node.children.filter((el) => el !== null);
+    const childs = (node.children || []).filter((el) => el !== null);
     const isSync = node.isSync;
     const inverses = node.inverse;
     let eachKey = node.key;
