@@ -184,12 +184,10 @@ class BasicListComponent<T extends { id: number }> {
   }
   updateItems(
     items: T[],
-    amountOfKeys: number,
-    keysToRemove: string[],
+    amountOfExistingKeys: number,
     removedIndexes: number[],
   ) {
     const rowsToMove: Array<[GenericReturnType, number]> = [];
-    const amountOfExistingKeys = amountOfKeys - keysToRemove.length;
     const { indexMap, keyMap, bottomMarker, keyForItem, ItemComponent } = this;
     if (removedIndexes.length > 0 && keyMap.size > 0) {
       for (const key of keyMap.keys()) {
@@ -203,7 +201,7 @@ class BasicListComponent<T extends { id: number }> {
       }
     }
 
-    let targetNode = this.getTargetNode(amountOfKeys);
+    let targetNode = this.getTargetNode(amountOfExistingKeys);
     let seenKeys = 0;
     items.forEach((item, index) => {
       // @todo - fix here
@@ -285,25 +283,24 @@ export class SyncListComponent<
   }
   syncList(items: T[]) {
     const { keyMap, indexMap, keyForItem } = this;
-    const existingKeys = Array.from(keyMap.keys());
     const updatingKeys = new Set(items.map((item) => keyForItem(item)));
+    // Arrays to track the removed keys and their indexes
+    const keysToRemove: string[] = [];
     const removedIndexes: number[] = [];
-    const keysToRemove = existingKeys.filter((key) => {
-      const isRemoved = !updatingKeys.has(key);
-      if (isRemoved) {
-        const row = keyMap.get(key)!;
+    let existingKeys = 0;
+    // Iterate over the keys of the map
+    keyMap.forEach((value, key) => {
+      if (!updatingKeys.has(key)) {
+        keysToRemove.push(key);
         removedIndexes.push(indexMap.get(key)!);
-        this.destroyItem(row, key);
+        keyMap.delete(key);
+        indexMap.delete(key);
+        destroyElementSync(value);
+      } else {
+        existingKeys++;
       }
-      return isRemoved;
     });
-    const amountOfKeys = existingKeys.length;
-    this.updateItems(items, amountOfKeys, keysToRemove, removedIndexes);
-  }
-  destroyItem(row: GenericReturnType, key: string) {
-    this.keyMap.delete(key);
-    this.indexMap.delete(key);
-    destroyElementSync(row);
+    this.updateItems(items, existingKeys, removedIndexes);
   }
 }
 export class AsyncListComponent<
@@ -319,20 +316,25 @@ export class AsyncListComponent<
   }
   async syncList(items: T[]) {
     const { keyMap, indexMap, keyForItem } = this;
-    const existingKeys = Array.from(keyMap.keys());
     const updatingKeys = new Set(items.map((item) => keyForItem(item)));
+    // Arrays to track the removed keys and their indexes
+    const keysToRemove: string[] = [];
     const removedIndexes: number[] = [];
     const removeQueue: Array<Promise<void>> = [];
-    const keysToRemove = existingKeys.filter((key) => {
-      const isRemoved = !updatingKeys.has(key);
-      if (isRemoved) {
-        const row = keyMap.get(key)!;
+
+    let existingKeys = 0;
+    // Iterate over the keys of the map
+    keyMap.forEach((value, key) => {
+      if (!updatingKeys.has(key)) {
+        keysToRemove.push(key);
         removedIndexes.push(indexMap.get(key)!);
-        removeQueue.push(this.destroyItem(row, key));
+        keyMap.delete(key);
+        indexMap.delete(key);
+        removeQueue.push(destroyElement(value));
+      } else {
+        existingKeys++;
       }
-      return isRemoved;
     });
-    const amountOfKeys = existingKeys.length;
 
     const removePromise = Promise.all(removeQueue);
 
@@ -345,11 +347,7 @@ export class AsyncListComponent<
         removeDestructor(this.parentCtx, destroyFn);
       });
     }
-    this.updateItems(items, amountOfKeys, keysToRemove, removedIndexes);
-  }
-  async destroyItem(row: GenericReturnType, key: string) {
-    this.keyMap.delete(key);
-    this.indexMap.delete(key);
-    await destroyElement(row);
+
+    this.updateItems(items, existingKeys, removedIndexes);
   }
 }
