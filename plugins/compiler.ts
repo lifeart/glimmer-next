@@ -5,6 +5,8 @@ import { MAIN_IMPORT } from './symbols';
 import { type Flags, defaultFlags } from './flags.ts';
 import { HMR, fixExportsForHMR, shouldHotReloadFile } from './hmr.ts';
 
+export { stripGXTDebug } from './babel.ts';
+
 const p = new Preprocessor();
 
 function fixContentTagOutput(code: string): string {
