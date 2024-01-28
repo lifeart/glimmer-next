@@ -44,9 +44,11 @@ export function compiler(mode: string, options: Options = {}): Plugin {
         isLibBuild = config.build?.lib !== undefined;
       }
       flags = { ...flags, ...(options.flags ?? {}) };
-      const defineValues: Record<string, boolean> = flags;
+      let defineValues: Record<string, boolean> = flags;
       if (!isLibBuild) {
         defineValues['IS_DEV_MODE'] = mode.mode === 'development';
+      } else {
+        defineValues = {};
       }
 
       return {
