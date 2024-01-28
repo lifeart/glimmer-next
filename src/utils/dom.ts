@@ -946,6 +946,7 @@ export function $_args(
         value: slots ?? {},
         enumerable: false,
       });
+      // @ts-expect-error ArgProxyHandler
       return new Proxy(args, ArgProxyHandler);
     }
   } else {
