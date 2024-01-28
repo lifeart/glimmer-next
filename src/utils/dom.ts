@@ -556,49 +556,53 @@ function component(
         comp.debugName || comp.name || comp.constructor.name
       }`
     : '';
-  try {
-    if (IS_DEV_MODE) {
-      $DEBUG_REACTIVE_CONTEXTS.push(label);
-      label = `<${label} ${JSON.stringify(args)} />`;
-    }
-    return _component(comp, args, fw, ctx);
-  } catch (e) {
-    if (import.meta.env.SSR) {
-      throw e;
-    }
-    if (IS_DEV_MODE) {
-      let ErrorOverlayClass = customElements.get('vite-error-overlay');
-      let errorOverlay!: Element;
-      // @ts-expect-error message may not exit
-      e.message = `${label}\n${e.message}`;
-      if (!ErrorOverlayClass) {
-        errorOverlay = api.element('pre');
-        // @ts-expect-error stack may not exit
-        errorOverlay.textContent = `${label}\n${e.stack ?? e}`;
-        errorOverlay.setAttribute(
-          'style',
-          'color:red;border:1px solid red;padding:10px;background-color:#333;',
-        );
-      } else {
-        errorOverlay = new ErrorOverlayClass(e, true);
+  if (TRY_CATCH_ERROR_HANDLING) {
+    try {
+      if (IS_DEV_MODE) {
+        $DEBUG_REACTIVE_CONTEXTS.push(label);
+        label = `<${label} ${JSON.stringify(args)} />`;
       }
-      console.error(label, e);
-
-      return {
-        ctx: null,
-        nodes: [errorOverlay],
-      };
-    } else {
-      return {
-        ctx: null,
+      return _component(comp, args, fw, ctx);
+    } catch (e) {
+      if (import.meta.env.SSR) {
+        throw e;
+      }
+      if (IS_DEV_MODE) {
+        let ErrorOverlayClass = customElements.get('vite-error-overlay');
+        let errorOverlay!: Element;
         // @ts-expect-error message may not exit
-        nodes: [api.text(String(e.message))],
-      };
+        e.message = `${label}\n${e.message}`;
+        if (!ErrorOverlayClass) {
+          errorOverlay = api.element('pre');
+          // @ts-expect-error stack may not exit
+          errorOverlay.textContent = `${label}\n${e.stack ?? e}`;
+          errorOverlay.setAttribute(
+            'style',
+            'color:red;border:1px solid red;padding:10px;background-color:#333;',
+          );
+        } else {
+          errorOverlay = new ErrorOverlayClass(e, true);
+        }
+        console.error(label, e);
+
+        return {
+          ctx: null,
+          nodes: [errorOverlay],
+        };
+      } else {
+        return {
+          ctx: null,
+          // @ts-expect-error message may not exit
+          nodes: [api.text(String(e.message))],
+        };
+      }
+    } finally {
+      if (IS_DEV_MODE) {
+        $DEBUG_REACTIVE_CONTEXTS.pop();
+      }
     }
-  } finally {
-    if (IS_DEV_MODE) {
-      $DEBUG_REACTIVE_CONTEXTS.pop();
-    }
+  } else {
+    return _component(comp, args, fw, ctx);
   }
 }
 // hello, basic component manager

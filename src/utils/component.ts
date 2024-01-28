@@ -133,7 +133,6 @@ export function renderComponent(
     associateDestroyable(ctx || component, destructors);
   }
 
-
   return component;
 }
 
