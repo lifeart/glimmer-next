@@ -187,7 +187,13 @@ export class MergedCell {
     opsForTag.delete(this);
     if (this.relatedCells !== null) {
       this.relatedCells.forEach((cell) => {
-        relatedTags.get(cell)?.delete(this);
+        const related = relatedTags.get(cell);
+        if (related !== undefined) {
+          related.delete(this);
+          if (related.size === 0) {
+            relatedTags.delete(cell);
+          }
+        }
       });
       this.relatedCells.clear();
     }
