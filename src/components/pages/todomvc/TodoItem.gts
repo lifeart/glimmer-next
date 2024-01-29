@@ -14,7 +14,7 @@ export class TodoItem extends Component<{
 }> {
   <template>
     <li
-      class={{if (cellFor @todo 'completed') 'completed'}}
+      class={{if this.isCompleted 'completed'}}
       class={{if this.editing 'editing'}}
     >
       <div class='view'>
@@ -22,7 +22,7 @@ export class TodoItem extends Component<{
           class='toggle'
           type='checkbox'
           aria-label='Toggle the completion state of this todo'
-          checked={{@todo.completed}}
+          checked={{this.isCompleted}}
           {{on 'change' this.toggleCompleted}}
         />
         <label {{on 'dblclick' this.startEditing}}>{{cellFor
@@ -45,6 +45,10 @@ export class TodoItem extends Component<{
       />
     </li>
   </template>
+
+  get isCompleted() {
+    return cellFor(this.args.todo, 'completed');
+  }
 
   repo = repo;
 
