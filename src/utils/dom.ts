@@ -248,32 +248,39 @@ function $ev(
     }
     // modifier case
   } else if (eventName === EVENT_TYPE.ON_CREATED) {
-    let destructor = () => void 0;
-    const updatingCell = formula(() => {
-      destructor();
-      return (fn as ModifierFn)(element);
-    }, `${element.tagName}.modifier`);
-    const opcodeDestructor = opcodeFor(updatingCell, (dest: any) => {
-      if (isFn(dest)) {
-        destructor = dest as any;
-      }
-    });
-    if (updatingCell.isConst) {
-      updatingCell.destroy();
-      opcodeDestructor();
-      destructors.push(() => {
-        return destructor();
+    if (REACTIVE_MODIFIERS) {
+      let destructor = () => void 0;
+      const updatingCell = formula(() => {
+        destructor();
+        return (fn as ModifierFn)(element);
+      }, `${element.tagName}.modifier`);
+      const opcodeDestructor = opcodeFor(updatingCell, (dest: any) => {
+        if (isFn(dest)) {
+          destructor = dest as any;
+        }
       });
-    } else {
-      destructors.push(
-        opcodeDestructor,
-        () => {
-          updatingCell.destroy();
-        },
-        () => {
+      if (updatingCell.isConst) {
+        updatingCell.destroy();
+        opcodeDestructor();
+        destructors.push(() => {
           return destructor();
-        },
-      );
+        });
+      } else {
+        destructors.push(
+          opcodeDestructor,
+          () => {
+            updatingCell.destroy();
+          },
+          () => {
+            return destructor();
+          },
+        );
+      }
+    } else {
+      const destructor = (fn as ModifierFn)(element);
+      if (isFn(destructor)) {
+        destructors.push(destructor);
+      }
     }
   } else {
     // event case (on modifier)

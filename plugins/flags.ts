@@ -3,6 +3,7 @@ export type Flags = {
   RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES: boolean;
   TRY_CATCH_ERROR_HANDLING: boolean;
   SUPPORT_SHADOW_DOM: boolean;
+  REACTIVE_MODIFIERS: boolean;
 };
 
 export function defaultFlags() {
@@ -11,5 +12,6 @@ export function defaultFlags() {
     RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES: false,
     TRY_CATCH_ERROR_HANDLING: true,
     SUPPORT_SHADOW_DOM: true,
+    REACTIVE_MODIFIERS: true,
   } as Flags;
 }
