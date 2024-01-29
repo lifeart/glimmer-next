@@ -267,7 +267,9 @@ class BasicListComponent<T extends { id: number }> {
       const parent = targetNode.parentNode!;
       const trueParent = bottomMarker.parentNode!;
       // parent may not exist in rehydration
-      parent && parent.removeChild(targetNode);
+      if (!import.meta.env.SSR) {
+        parent && parent.removeChild(targetNode)
+      }
       if (trueParent !== parent) {
         api.insert(trueParent, parent, bottomMarker);
       }
