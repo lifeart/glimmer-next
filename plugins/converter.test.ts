@@ -1,14 +1,26 @@
-import { expect, test, describe, beforeAll } from 'vitest';
+import { expect, test, describe, beforeAll, beforeEach } from 'vitest';
 import { preprocess } from '@glimmer/syntax';
 
 import { ComplexJSType, convert } from './converter';
 import { ASTv1 } from '@glimmer/syntax';
-import { HBSControlExpression, HBSNode } from './utils';
+import {
+  HBSControlExpression,
+  HBSNode,
+  serializeNode,
+  resetContextCounter,
+} from './utils';
 import { EVENT_TYPE } from './symbols';
 import { defaultFlags } from './flags';
 
 const flags = defaultFlags();
 
+function $args(str: string) {
+  if (flags.IS_GLIMMER_COMPAT_MODE) {
+    return `$_args(${str})`;
+  } else {
+    return str;
+  }
+}
 function $glimmerCompat(str: string) {
   if (flags.IS_GLIMMER_COMPAT_MODE) {
     return `() => ` + str.replace('$:', '');
@@ -17,6 +29,9 @@ function $glimmerCompat(str: string) {
   }
 }
 
+function $s<T extends ComplexJSType>(node: T): string | null | undefined {
+  return serializeNode(node);
+}
 function $t<T extends ASTv1.Node>(tpl: string): ComplexJSType {
   const seenNodes: Set<ASTv1.Node> = new Set();
   const { ToJSType } = convert(seenNodes, flags);
@@ -61,6 +76,9 @@ describe.each([
 ])('$name', ({ glimmerCompat }) => {
   beforeAll(() => {
     flags.IS_GLIMMER_COMPAT_MODE = glimmerCompat;
+  });
+  beforeEach(() => {
+    resetContextCounter();
   });
   describe('convert function builder', () => {
     describe('path expressions are optional chained', () => {
@@ -445,6 +463,66 @@ describe.each([
       });
     });
     describe('each condition', () => {
+      test('it adds unstable child wrapper for simple multi-nodes', () => {
+        const converted = $t<ASTv1.BlockStatement>(
+          `{{#each foo as |bar|}}<div></div><span></span>{{/each}}`,
+        );
+        expect(converted).toEqual<HBSControlExpression>(
+          $control({
+            type: 'each',
+            condition: $glimmerCompat('$:foo'),
+            blockParams: ['bar'],
+            children: [$node({ tag: 'div' }), $node({ tag: 'span' })],
+          }),
+        );
+        expect($s(converted)).toEqual(
+          `$_each(${$glimmerCompat(
+            'foo',
+          )}, (bar,$index,ctx0) => [$_ucw((ctx1) => [$_tag('div', $_edp, [], ctx1), $_tag('span', $_edp, [], ctx1)], ctx0)], null, this)`,
+        );
+      });
+      test('it not add unstable child wrapper for simple node', () => {
+        const converted = $t<ASTv1.BlockStatement>(
+          `{{#each foo as |bar|}}<div></div>{{/each}}`,
+        );
+        expect(converted).toEqual<HBSControlExpression>(
+          $control({
+            type: 'each',
+            condition: $glimmerCompat('$:foo'),
+            blockParams: ['bar'],
+            children: [$node({ tag: 'div' })],
+          }),
+        );
+        expect($s(converted)).toEqual(
+          `$_each(${$glimmerCompat(
+            'foo',
+          )}, (bar,$index,ctx0) => [$_tag('div', $_edp, [], ctx0)], null, this)`,
+        );
+      });
+      test('it do not add UnstableChildWrapper if we have component surrounded by empty text', () => {
+        const converted = $t<ASTv1.BlockStatement>(
+          `{{#each foo as |bar|}}   <Smile />   {{/each}}`,
+        );
+        expect($s(converted)).toEqual(
+          `$_each(${$glimmerCompat(
+            'foo',
+          )}, (bar,$index,ctx0) => [$_c(Smile,${$args(
+            '{}',
+          )}, void 0, ctx0, false)], null, this)`,
+        );
+      });
+      test('it add UnstableChildWrapper if component surrounded my meaningful text', () => {
+        const converted = $t<ASTv1.BlockStatement>(
+          `{{#each foo as |bar|}}1<Smile />{{/each}}`,
+        );
+        expect($s(converted)).toEqual(
+          `$_each(${$glimmerCompat(
+            'foo',
+          )}, (bar,$index,ctx0) => [$_ucw((ctx1) => [$_text("1"), $_c(Smile,${$args(
+            '{}',
+          )}, void 0, ctx1, false)], ctx0)], null, this)`,
+        );
+      });
       test('it works', () => {
         expect(
           $t<ASTv1.BlockStatement>(`{{#each foo as |bar index|}}123{{/each}}`),

@@ -1,6 +1,7 @@
 import type { ASTv1 } from '@glimmer/syntax';
 import { SYMBOLS } from './symbols';
 import type { Flags } from './flags';
+import type { ComplexJSType } from './converter';
 
 let flags!: Flags;
 
@@ -33,6 +34,9 @@ export type HBSNode = {
 let ctxIndex = 0;
 export function nextCtxName() {
   return `ctx${ctxIndex++}`;
+}
+export function resetContextCounter() {
+  ctxIndex = 0;
 }
 
 export function escapeString(str: string) {
@@ -280,7 +284,7 @@ function hasStableChildsForControlNode(
 }
 
 export function serializeNode(
-  node: string | null | HBSNode | HBSControlExpression,
+  node: string | null | HBSNode | HBSControlExpression | ComplexJSType,
   ctxName = 'this',
 ): string | undefined | null {
   if (node === null) {
