@@ -285,14 +285,24 @@ export class SyncListComponent<
   }
   syncList(items: T[]) {
     const { keyMap, indexMap, keyForItem } = this;
-    if (items.length === 0) {
+    let newItems = 0;
+    const updatingKeys = new Set(
+      items.map((item) => {
+        const key = keyForItem(item);
+        if (!keyMap.has(key)) {
+          newItems++;
+        }
+        return key;
+      }),
+    );
+    const isAllNewItems = newItems === items.length;
+    if (items.length === 0 || isAllNewItems) {
       keyMap.forEach((value) => {
         destroyElementSync(value);
       });
       indexMap.clear();
       keyMap.clear();
     }
-    const updatingKeys = new Set(items.map((item) => keyForItem(item)));
     const removedIndexes: number[] = [];
     let amountOfExistingKeys = 0;
     keyMap.forEach((row, key) => {
@@ -322,14 +332,24 @@ export class AsyncListComponent<
   async syncList(items: T[]) {
     const { keyMap, indexMap, keyForItem } = this;
     const removeQueue: Array<Promise<void>> = [];
-    if (items.length === 0) {
+    let newItems = 0;
+    const updatingKeys = new Set(
+      items.map((item) => {
+        const key = keyForItem(item);
+        if (!keyMap.has(key)) {
+          newItems++;
+        }
+        return key;
+      }),
+    );
+    const isAllNewItems = newItems === items.length;
+    if (items.length === 0 || isAllNewItems) {
       keyMap.forEach((value) => {
         removeQueue.push(destroyElement(value));
       });
       indexMap.clear();
       keyMap.clear();
     }
-    const updatingKeys = new Set(items.map((item) => keyForItem(item)));
     const removedIndexes: number[] = [];
     let amountOfExistingKeys = 0;
     keyMap.forEach((row, key) => {
