@@ -203,7 +203,9 @@ class BasicListComponent<T extends { id: number }> {
       }
     }
 
-    let targetNode = this.getTargetNode(amountOfKeys);
+    let targetNode = items.length
+      ? this.getTargetNode(amountOfExistingKeys)
+      : bottomMarker;
     let seenKeys = 0;
     items.forEach((item, index) => {
       // @todo - fix here
@@ -264,7 +266,10 @@ class BasicListComponent<T extends { id: number }> {
     if (targetNode !== bottomMarker) {
       const parent = targetNode.parentNode!;
       const trueParent = bottomMarker.parentNode!;
-      // parent.removeChild(targetNode);
+      // parent may not exist in rehydration
+      if (!import.meta.env.SSR) {
+        parent && parent.removeChild(targetNode)
+      }
       if (trueParent !== parent) {
         api.insert(trueParent, parent, bottomMarker);
       }
