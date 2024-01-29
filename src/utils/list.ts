@@ -286,28 +286,25 @@ export class SyncListComponent<
   syncList(items: T[]) {
     const { keyMap, indexMap, keyForItem } = this;
     if (items.length === 0) {
-      indexMap.clear();
       keyMap.forEach((value) => {
         destroyElementSync(value);
       });
+      indexMap.clear();
       keyMap.clear();
     }
-    const existingKeys = Array.from(keyMap.keys());
     const updatingKeys = new Set(items.map((item) => keyForItem(item)));
     const removedIndexes: number[] = [];
-    const keysToRemove = existingKeys.filter((key) => {
-      const isRemoved = !updatingKeys.has(key);
-      if (isRemoved) {
-        const row = keyMap.get(key)!;
+    let amountOfExistingKeys = 0;
+    keyMap.forEach((row, key) => {
+      if (updatingKeys.has(key)) {
+        amountOfExistingKeys++;
+      } else {
         removedIndexes.push(indexMap.get(key)!);
         keyMap.delete(key);
         indexMap.delete(key);
         destroyElementSync(row);
       }
-      return isRemoved;
     });
-    const amountOfKeys = existingKeys.length;
-    const amountOfExistingKeys = amountOfKeys - keysToRemove.length;
     this.updateItems(items, amountOfExistingKeys, removedIndexes);
   }
 }
@@ -326,27 +323,25 @@ export class AsyncListComponent<
     const { keyMap, indexMap, keyForItem } = this;
     const removeQueue: Array<Promise<void>> = [];
     if (items.length === 0) {
-      indexMap.clear();
       keyMap.forEach((value) => {
         removeQueue.push(destroyElement(value));
       });
+      indexMap.clear();
       keyMap.clear();
     }
-    const existingKeys = Array.from(keyMap.keys());
     const updatingKeys = new Set(items.map((item) => keyForItem(item)));
     const removedIndexes: number[] = [];
-    const keysToRemove = existingKeys.filter((key) => {
-      const isRemoved = !updatingKeys.has(key);
-      if (isRemoved) {
-        const row = keyMap.get(key)!;
+    let amountOfExistingKeys = 0;
+    keyMap.forEach((row, key) => {
+      if (updatingKeys.has(key)) {
+        amountOfExistingKeys++;
+      } else {
         removedIndexes.push(indexMap.get(key)!);
         keyMap.delete(key);
         indexMap.delete(key);
         removeQueue.push(destroyElement(row));
       }
-      return isRemoved;
     });
-    const amountOfKeys = existingKeys.length;
 
     const removePromise = Promise.all(removeQueue);
 
@@ -359,7 +354,6 @@ export class AsyncListComponent<
         removeDestructor(this.parentCtx, destroyFn);
       });
     }
-    const amountOfExistingKeys = amountOfKeys - keysToRemove.length;
     this.updateItems(items, amountOfExistingKeys, removedIndexes);
   }
 }
