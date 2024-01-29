@@ -4,6 +4,30 @@ import { cell } from '@lifeart/gxt';
 import { rerender } from '@lifeart/gxt/test-utils';
 
 module('Integration | Internal | modifier', function () {
+  if (REACTIVE_MODIFIERS) {
+    test('modifiers may be reactive', async function (assert) {
+      assert.expect(5);
+      const value = cell(3);
+      let removeCount = 0;
+      const modifier = (element: HTMLDivElement, v: number) => {
+        assert.equal(v, value.value, 'modifier rendered with correct value');
+        return () => {
+          removeCount++;
+          assert.ok(removeCount, 'modifier destructor is running');
+        };
+      };
+      await render(
+        <template>
+          <div {{modifier value.value}}></div>
+        </template>,
+      );
+      value.update(value.value - 1);
+      await rerender();
+      value.update(value.value - 1);
+      await rerender();
+    });
+  }
+
   test('modifiers executed during component creation, before it appears in DOM', async function (assert) {
     assert.expect(1);
     const modifier = (element: HTMLDivElement) => {
