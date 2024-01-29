@@ -203,7 +203,7 @@ class BasicListComponent<T extends { id: number }> {
       }
     }
 
-    let targetNode = this.getTargetNode(amountOfKeys);
+    let targetNode = this.getTargetNode(amountOfExistingKeys);
     let seenKeys = 0;
     items.forEach((item, index) => {
       // @todo - fix here
