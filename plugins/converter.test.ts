@@ -9,14 +9,17 @@ import {
   serializeNode,
   resetContextCounter,
 } from './utils';
-import { EVENT_TYPE } from './symbols';
+import { EVENT_TYPE, SYMBOLS } from './symbols';
 import { defaultFlags } from './flags';
 
 const flags = defaultFlags();
 
 function $args(str: string) {
   if (flags.IS_GLIMMER_COMPAT_MODE) {
-    return `$_args(${str})`;
+    if (str === '{}') {
+      return '{}';
+    }
+    return `${SYMBOLS.ARGS}(${str})`;
   } else {
     return str;
   }
@@ -508,7 +511,7 @@ describe.each([
             'foo',
           )}, (bar,$index,ctx0) => [$_c(Smile,${$args(
             '{}',
-          )}, void 0, ctx0, false)], null, this)`,
+          )}, ctx0)], null, this)`,
         );
       });
       test('it add UnstableChildWrapper if component surrounded my meaningful text', () => {
@@ -520,7 +523,7 @@ describe.each([
             'foo',
           )}, (bar,$index,ctx0) => [$_ucw((ctx1) => [$_text("1"), $_c(Smile,${$args(
             '{}',
-          )}, void 0, ctx1, false)], ctx0)], null, this)`,
+          )}, ctx1)], ctx0)], null, this)`,
         );
       });
       test('it works', () => {

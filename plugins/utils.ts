@@ -262,6 +262,27 @@ function toArray(
     .join(', ')}]`;
 }
 
+function toArgs(
+  args: [string, string | number | boolean | null | undefined][],
+  slots: string,
+  props: string,
+) {
+  if (flags.IS_GLIMMER_COMPAT_MODE === false) {
+    const extraArgs = [...args];
+    if (props !== '{}') {
+      extraArgs.push([`$:[${SYMBOLS.$PROPS_SYMBOL}]`, `$:${props}`]);
+    }
+    if (slots !== '{}') {
+      extraArgs.push([`$:[${SYMBOLS.$SLOTS_SYMBOL}]`, `$:${slots}`]);
+    }
+    return toObject(extraArgs);
+  }
+
+  const result = `${SYMBOLS.ARGS}(${toObject(args)},${slots},${props})`;
+
+  return result.replace(`${SYMBOLS.ARGS}({},{},{})`, '{}');
+}
+
 function hasStableChildsForControlNode(
   childs: null | (null | string | HBSNode | HBSControlExpression)[],
 ) {
@@ -410,7 +431,7 @@ export function serializeNode(
     if (isSecondArgEmpty) {
       if (!secondArg.includes('...')) {
         isSecondArgEmpty = true;
-        secondArg = 'void 0';
+        secondArg = '{}';
       } else {
         isSecondArgEmpty = false;
       }
@@ -418,15 +439,11 @@ export function serializeNode(
 
     if (node.selfClosing) {
       // @todo - we could pass `hasStableChild` ans hasBlock / hasBlockParams to the DOM helper
-      if (flags.IS_GLIMMER_COMPAT_MODE === false) {
-        return `${SYMBOLS.COMPONENT}(${node.tag},${toObject(
-          args,
-        )}, ${secondArg}, ${ctxName}, false)`;
-      } else {
-        return `${SYMBOLS.COMPONENT}(${node.tag},${SYMBOLS.ARGS}(${toObject(
-          args,
-        )}), ${secondArg}, ${ctxName}, false)`;
-      }
+      return `${SYMBOLS.COMPONENT}(${node.tag},${toArgs(
+        args,
+        '{}',
+        secondArg,
+      )}, ${ctxName})`;
     } else {
       const slots: HBSNode[] = node.children.filter((child) => {
         if (typeof child === 'string') {
@@ -451,15 +468,7 @@ export function serializeNode(
         )}) => [${slotChildren}]`;
       });
       const slotsObj = `{${serializedSlots.join(',')}}`;
-      let fn = `${node.tag},${SYMBOLS.ARGS}(${toObject(
-        args,
-      )}, ${slotsObj}), ${secondArg}, ${ctxName}`;
-      if (flags.IS_GLIMMER_COMPAT_MODE === false) {
-        fn = `${node.tag},${toObject([
-          ...args,
-          [`$:[${SYMBOLS.$SLOTS_SYMBOL}]`, `$:${slotsObj}`],
-        ])}, ${secondArg}, ${ctxName}`;
-      }
+      const fn = `${node.tag},${toArgs(args, slotsObj, secondArg)}, ${ctxName}`;
       // @todo - we could pass `hasStableChild` ans hasBlock / hasBlockParams to the DOM helper
       // including `has-block` helper
       return `${SYMBOLS.COMPONENT}(${fn})`;
