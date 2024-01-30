@@ -35,9 +35,6 @@ import {
   isTagLike,
   $template,
   $nodes,
-  $attrsProp,
-  $propsProp,
-  $eventsProp,
   addToTree,
   RENDER_TREE,
   setBounds,
@@ -79,11 +76,7 @@ type Attr =
 type TagAttr = [string, Attr];
 type TagProp = [string, Attr];
 type TagEvent = [string, EventListener | ModifierFn];
-type FwType = {
-  props: TagProp[];
-  attrs: TagAttr[];
-  events: TagEvent[];
-};
+type FwType = [TagProp[], TagAttr[], TagEvent[]];
 type Props = [TagProp[], TagAttr[], TagEvent[], FwType?];
 
 function $prop(
@@ -338,15 +331,9 @@ function _DOM(
   const attrs = tagProps[1];
   const _events = tagProps[2];
   const hasSplatAttrs = typeof tagProps[3] === 'object';
-  const attributes = hasSplatAttrs
-    ? [...tagProps[3]![$attrsProp], ...attrs]
-    : attrs;
-  const properties = hasSplatAttrs
-    ? [...tagProps[3]![$propsProp], ...props]
-    : props;
-  const events = hasSplatAttrs
-    ? [...tagProps[3]![$eventsProp], ..._events]
-    : _events;
+  const properties = hasSplatAttrs ? [...tagProps[3]![0], ...props] : props;
+  const attributes = hasSplatAttrs ? [...tagProps[3]![1], ...attrs] : attrs;
+  const events = hasSplatAttrs ? [...tagProps[3]![2], ..._events] : _events;
   events.forEach(([eventName, fn]) => {
     $ev(element, eventName, fn, destructors);
   });
@@ -474,7 +461,7 @@ export function $_inElement(
       return $_fin([], this);
     } as unknown as Component<any>,
     {
-      [$PROPS_SYMBOL]: { attrs: [], props: [], events: [] }
+      [$PROPS_SYMBOL]: { attrs: [], props: [], events: [] },
     },
     ctx,
   );
@@ -494,7 +481,7 @@ export function $_ucw(
       return $_fin(roots(this), this);
     } as unknown as Component<any>,
     {
-      [$PROPS_SYMBOL]: { attrs: [], props: [], events: [] }
+      [$PROPS_SYMBOL]: { attrs: [], props: [], events: [] },
     },
     ctx,
   );
@@ -957,10 +944,10 @@ export function $_GET_ARGS(ctx: any, args: any) {
   ctx[$args] = ctx[$args] || args[0] || {};
 }
 export function $_GET_SLOTS(ctx: any, args: any) {
-  return (args[0] || {})[$SLOTS_SYMBOL] || ctx[$args][$SLOTS_SYMBOL] || {};
+  return (args[0] || {})[$SLOTS_SYMBOL] || ctx[$args]?.[$SLOTS_SYMBOL] || {};
 }
 export function $_GET_FW(ctx: any, args: any) {
-  return (args[0] || {})[$PROPS_SYMBOL] || ctx[$args][$PROPS_SYMBOL] || {};
+  return (args[0] || {})[$PROPS_SYMBOL] || ctx[$args]?.[$PROPS_SYMBOL] || {};
 }
 export function $_args(
   args: Record<string, unknown>,

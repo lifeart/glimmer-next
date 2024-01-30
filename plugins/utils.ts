@@ -269,7 +269,7 @@ function toArgs(
 ) {
   if (flags.IS_GLIMMER_COMPAT_MODE === false) {
     const extraArgs = [...args];
-    if (props !== '{}') {
+    if (props !== '{}' && !props.includes(SYMBOLS.EMPTY_DOM_PROPS)) {
       extraArgs.push([`$:[${SYMBOLS.$PROPS_SYMBOL}]`, `$:${props}`]);
     }
     if (slots !== '{}') {
@@ -280,7 +280,9 @@ function toArgs(
 
   const result = `${SYMBOLS.ARGS}(${toObject(args)},${slots},${props})`;
 
-  return result.replace(`${SYMBOLS.ARGS}({},{},{})`, '{}');
+  return result
+    .replace(`${SYMBOLS.ARGS}({},{},{})`, '{}')
+    .replace('$_args({},{},$_edp)', '{}');
 }
 
 function hasStableChildsForControlNode(
@@ -413,29 +415,25 @@ export function serializeNode(
       return !attr[0].startsWith('@');
     });
     const props = node.properties;
+    //
     let secondArg = hasSplatAttrs
-      ? `{[${SYMBOLS.$propsProp}]: [...$fw[${SYMBOLS.$propsProp}], ...${toArray(
-          props,
-        )}], [${SYMBOLS.$attrsProp}]: [...$fw[${
-          SYMBOLS.$attrsProp
-        }], ...${toArray(attrs)}], [${SYMBOLS.$eventsProp}]: [...$fw[${
-          SYMBOLS.$eventsProp
-        }],...${toArray(node.events)}]}`
-      : `{[${SYMBOLS.$propsProp}]: ${toArray(props)}, [${
-          SYMBOLS.$attrsProp
-        }]: ${toArray(attrs)},  [${SYMBOLS.$eventsProp}]: ${toArray(
-          node.events,
-        )}}`;
+      ? `[[...$fw[0], ...${toArray(props)}],[...$fw[1], ...${toArray(
+          attrs,
+        )}],[...$fw[2],...${toArray(node.events)}]]`
+      : `[${toArray(props)},${toArray(attrs)},${toArray(node.events)}]`;
 
-    let isSecondArgEmpty = secondArg.split('[]').length === 4;
+    let isSecondArgEmpty = secondArg === '[[],[],[]]';
     if (isSecondArgEmpty) {
-      if (!secondArg.includes('...')) {
-        isSecondArgEmpty = true;
-        secondArg = '{}';
-      } else {
-        isSecondArgEmpty = false;
-      }
+      secondArg = SYMBOLS.EMPTY_DOM_PROPS;
     }
+    // if (isSecondArgEmpty) {
+    //   if (!secondArg.includes('...')) {
+    //     isSecondArgEmpty = true;
+    //     secondArg = '{}';
+    //   } else {
+    //     isSecondArgEmpty = false;
+    //   }
+    // }
 
     if (node.selfClosing) {
       // @todo - we could pass `hasStableChild` ans hasBlock / hasBlockParams to the DOM helper

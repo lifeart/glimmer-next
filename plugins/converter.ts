@@ -104,13 +104,14 @@ export function convert(seenNodes: Set<ASTv1.Node>, flags: Flags) {
       patchNodePath(node);
 
       if (node.path.original === 'element') {
-        return `$:function(args,props){const $slots = ${
+        // @todo  - write test to catch props issue here
+        return `$:function(args){const $fw = ${
+          SYMBOLS.$_GET_FW
+        }(this, arguments);const $slots = ${
           SYMBOLS.$_GET_SLOTS
         }(this, arguments);return{[${SYMBOLS.$nodes}]:[${
           SYMBOLS.TAG
-        }(${ToJSType(node.params[0])},[props[${SYMBOLS.$propsProp}],props[${
-          SYMBOLS.$attrsProp
-        }],props[${SYMBOLS.$eventsProp}]],[()=>${
+        }(${ToJSType(node.params[0])}, $fw,[()=>${
           SYMBOLS.SLOT
         }('default',()=>[],$slots)], this)], ctx: this};}`;
       } else if (node.path.original === SYMBOLS.$__hash) {

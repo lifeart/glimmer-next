@@ -162,7 +162,7 @@ describe.each([
     describe('basic element helper support', () => {
       test('it return kinda valid component-like code', () => {
         expect($t<ASTv1.BlockStatement>(`{{(element "tag")}}`)).toEqual(
-          `$:() => $:function(args,props){const $slots = $_GET_SLOTS(this, arguments);return{[$nodes]:[$_tag("tag",[props[$propsProp],props[$attrsProp],props[$eventsProp]],[()=>$_slot('default',()=>[],$slots)], this)], ctx: this};}`,
+          `$:() => $:function(args){const $fw = $_GET_FW(this, arguments);const $slots = $_GET_SLOTS(this, arguments);return{[$nodes]:[$_tag("tag", $fw,[()=>$_slot('default',()=>[],$slots)], this)], ctx: this};}`,
         );
       });
     });
