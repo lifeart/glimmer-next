@@ -474,7 +474,7 @@ export function $_inElement(
       return $_fin([], this);
     } as unknown as Component<any>,
     {
-      [$PROPS_SYMBOL]: { attrs: [], props: [], events: [] }
+      [$PROPS_SYMBOL]: { attrs: [], props: [], events: [] },
     },
     ctx,
   );
@@ -494,7 +494,7 @@ export function $_ucw(
       return $_fin(roots(this), this);
     } as unknown as Component<any>,
     {
-      [$PROPS_SYMBOL]: { attrs: [], props: [], events: [] }
+      [$PROPS_SYMBOL]: { attrs: [], props: [], events: [] },
     },
     ctx,
   );
@@ -935,22 +935,6 @@ export function $_each<T extends { id: number }>(
   addToTree(ctx, instance as unknown as Component<any>);
   return outlet;
 }
-const ArgProxyHandler = {
-  get(target: Record<string, () => unknown>, prop: string) {
-    if (prop in target) {
-      if (!isFn(target[prop])) {
-        return target[prop];
-      }
-      return target[prop]();
-    }
-    return undefined;
-  },
-  set() {
-    if (IS_DEV_MODE) {
-      throw new Error('args are readonly');
-    }
-  },
-};
 export const $SLOTS_SYMBOL = Symbol('slots');
 export const $PROPS_SYMBOL = Symbol('props');
 export function $_GET_ARGS(ctx: any, args: any) {
@@ -968,40 +952,27 @@ export function $_args(
   props: FwType,
 ) {
   if (IS_GLIMMER_COMPAT_MODE) {
-    if (IS_DEV_MODE) {
-      const newArgs: Record<string, () => unknown> = {
-        [$SLOTS_SYMBOL]: slots ?? {},
-        [$PROPS_SYMBOL]: props ?? {},
-      };
-      Object.keys(args).forEach((key) => {
-        try {
-          Object.defineProperty(newArgs, key, {
-            get() {
-              if (!isFn(args[key])) {
-                return args[key];
-              }
-              // @ts-expect-error function signature
-              return args[key]();
-            },
-            enumerable: true,
-          });
-        } catch (e) {
-          console.error(e);
-        }
-      });
-      return newArgs;
-    } else {
-      Object.defineProperty(args, $SLOTS_SYMBOL, {
-        value: slots ?? {},
-        enumerable: false,
-      });
-      Object.defineProperty(args, $PROPS_SYMBOL, {
-        value: props ?? {},
-        enumerable: false,
-      });
-      // @ts-expect-error ArgProxyHandler
-      return new Proxy(args, ArgProxyHandler);
-    }
+    const newArgs: Record<string, () => unknown> = {
+      [$SLOTS_SYMBOL]: slots ?? {},
+      [$PROPS_SYMBOL]: props ?? {},
+    };
+    Object.keys(args).forEach((key) => {
+      try {
+        Object.defineProperty(newArgs, key, {
+          get() {
+            if (!isFn(args[key])) {
+              return args[key];
+            }
+            // @ts-expect-error function signature
+            return args[key]();
+          },
+          enumerable: true,
+        });
+      } catch (e) {
+        console.error(e);
+      }
+    });
+    return newArgs;
   } else {
     Object.defineProperty(args, $PROPS_SYMBOL, {
       value: props ?? {},
