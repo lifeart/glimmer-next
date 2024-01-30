@@ -42,7 +42,6 @@ import {
   RENDER_TREE,
   setBounds,
   $args,
-  $fwProp,
   $DEBUG_REACTIVE_CONTEXTS,
   IN_SSR_ENV,
 } from './shared';
@@ -474,8 +473,9 @@ export function $_inElement(
       associateDestroyable(ctx, destructors);
       return $_fin([], this);
     } as unknown as Component<any>,
-    {},
-    { attrs: [], props: [], events: [] },
+    {
+      [$PROPS_SYMBOL]: { attrs: [], props: [], events: [] }
+    },
     ctx,
   );
 }
@@ -493,8 +493,9 @@ export function $_ucw(
       }
       return $_fin(roots(this), this);
     } as unknown as Component<any>,
-    {},
-    { attrs: [], props: [], events: [] },
+    {
+      [$PROPS_SYMBOL]: { attrs: [], props: [], events: [] }
+    },
     ctx,
   );
 }
@@ -541,7 +542,6 @@ const COMPONENTS_HMR = new WeakMap<
     parent: any;
     instance: ComponentReturnType;
     args: Record<string, unknown>;
-    fw: FwType;
   }>
 >();
 
@@ -563,8 +563,8 @@ if (!import.meta.env.SSR) {
       const renderedBuckets = Array.from(renderedInstances);
       // we need to append new instances before first element of rendered bucket and later remove all rendered buckets;
 
-      renderedBuckets.forEach(({ parent, instance, args, fw }) => {
-        const newCmp = component(newKlass, args, fw, parent);
+      renderedBuckets.forEach(({ parent, instance, args }) => {
+        const newCmp = component(newKlass, args, parent);
         const firstElement = getFirstNode(instance);
         const parentElement = firstElement.parentNode!;
         renderElement(parentElement, newCmp, firstElement);
@@ -577,7 +577,6 @@ if (!import.meta.env.SSR) {
 function component(
   comp: ComponentReturnType | Component,
   args: Record<string, unknown>,
-  fw: FwType,
   ctx: Component<any>,
 ) {
   let label = IS_DEV_MODE
@@ -592,6 +591,8 @@ function component(
         $DEBUG_REACTIVE_CONTEXTS.push(label);
         label = `<${label} ${JSON.stringify(args)} />`;
       }
+      // @ts-expect-error uniqSymbol as index
+      const fw = args[$PROPS_SYMBOL] as unknown as FwType;
       return _component(comp, args, fw, ctx);
     } catch (e) {
       if (import.meta.env.SSR) {
@@ -632,6 +633,8 @@ function component(
       }
     }
   } else {
+    // @ts-expect-error uniqSymbol as index
+    const fw = args[$PROPS_SYMBOL] as unknown as FwType;
     return _component(comp, args, fw, ctx);
   }
 }
@@ -667,7 +670,6 @@ function _component(
         parent: ctx,
         instance: result,
         args,
-        fw,
       };
       COMPONENTS_HMR.get(comp)?.add(bucket);
       registerDestructor(ctx, () => {
@@ -696,7 +698,6 @@ function _component(
       parent: ctx,
       instance: instance,
       args,
-      fw,
     });
   }
   return instance;
@@ -950,6 +951,8 @@ const ArgProxyHandler = {
     }
   },
 };
+export const $SLOTS_SYMBOL = Symbol('slots');
+export const $PROPS_SYMBOL = Symbol('props');
 export function $_GET_ARGS(ctx: any, args: any) {
   ctx[$args] = ctx[$args] || args[0] || {};
 }
@@ -957,17 +960,18 @@ export function $_GET_SLOTS(ctx: any, args: any) {
   return (args[0] || {})[$SLOTS_SYMBOL] || ctx[$args][$SLOTS_SYMBOL] || {};
 }
 export function $_GET_FW(ctx: any, args: any) {
-  return ctx[$fwProp] || args[1];
+  return (args[0] || {})[$PROPS_SYMBOL] || ctx[$args][$PROPS_SYMBOL] || {};
 }
-export const $SLOTS_SYMBOL = Symbol('slots');
 export function $_args(
   args: Record<string, unknown>,
   slots: Record<string, () => Array<ComponentReturnType | Node>> | false,
+  props: FwType,
 ) {
   if (IS_GLIMMER_COMPAT_MODE) {
     if (IS_DEV_MODE) {
       const newArgs: Record<string, () => unknown> = {
         [$SLOTS_SYMBOL]: slots ?? {},
+        [$PROPS_SYMBOL]: props ?? {},
       };
       Object.keys(args).forEach((key) => {
         try {
@@ -991,10 +995,18 @@ export function $_args(
         value: slots ?? {},
         enumerable: false,
       });
+      Object.defineProperty(args, $PROPS_SYMBOL, {
+        value: props ?? {},
+        enumerable: false,
+      });
       // @ts-expect-error ArgProxyHandler
       return new Proxy(args, ArgProxyHandler);
     }
   } else {
+    Object.defineProperty(args, $PROPS_SYMBOL, {
+      value: props ?? {},
+      enumerable: false,
+    });
     Object.defineProperty(args, $SLOTS_SYMBOL, {
       value: slots ?? {},
       enumerable: false,
