@@ -11,9 +11,6 @@ export const $nodes = 'nodes' as const;
 export const $args = 'args' as const;
 export const $_debug_args = '_debug_args' as const;
 export const $fwProp = '$fw' as const;
-export const $propsProp = 'props' as const;
-export const $attrsProp = 'attrs' as const;
-export const $eventsProp = 'events' as const;
 
 export const IN_SSR_ENV =
   import.meta.env.SSR || location.pathname === '/tests.html';
