@@ -460,9 +460,7 @@ export function $_inElement(
       associateDestroyable(ctx, destructors);
       return $_fin([], this);
     } as unknown as Component<any>,
-    {
-      [$PROPS_SYMBOL]: { attrs: [], props: [], events: [] },
-    },
+    {},
     ctx,
   );
 }
@@ -480,9 +478,7 @@ export function $_ucw(
       }
       return $_fin(roots(this), this);
     } as unknown as Component<any>,
-    {
-      [$PROPS_SYMBOL]: { attrs: [], props: [], events: [] },
-    },
+    {},
     ctx,
   );
 }
