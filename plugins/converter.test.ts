@@ -104,6 +104,16 @@ describe.each([
           `$:this[$args].foo.bar`,
         );
       });
+      test('it works for sub expression paths in mustache', () => {
+        expect(
+          $t<ASTv1.ElementNode>(`<div class={{maybeClass  (if @arrowProps.className @arrowProps.className)}}></div>`),
+        ).toEqual($node({
+          tag: 'div',
+          properties: [
+            ['', "$:() => $:maybeClass($__if($:this[$args].arrowProps?.className,$:this[$args].arrowProps?.className))"]
+          ]
+        }));
+      });
       test('works for sub-expression paths', () => {
         expect(
           $t<ASTv1.BlockStatement>(`{{and (or this.foo.bar.baz)}}`),

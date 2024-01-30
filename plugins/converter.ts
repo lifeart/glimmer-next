@@ -126,7 +126,8 @@ export function convert(seenNodes: Set<ASTv1.Node>, flags: Flags) {
         return `$:${SYMBOLS.$__hash}(${toObject(hashArgs)})`;
       }
       return `$:${resolvePath(node.path.original)}(${node.params
-        .map((p) => ToJSType(p))
+        // @ts-expect-error ComplexJSType
+        .map((p) => toOptionalChaining(ToJSType(p)))
         .join(',')})`;
     } else if (node.type === 'NumberLiteral') {
       return node.value;

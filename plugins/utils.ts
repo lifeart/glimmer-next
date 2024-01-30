@@ -112,7 +112,10 @@ export function toSafeJSPath(str: string) {
   return result;
 }
 
-export function toOptionalChaining(str: string) {
+export function toOptionalChaining<T extends string | number | undefined | null>(str: T): T {
+  if (typeof str !== 'string') {
+    return str;
+  }
   // special control parts
   if (str.includes('$_')) {
     return str;
@@ -126,14 +129,14 @@ export function toOptionalChaining(str: string) {
     .map((el) => el.split('.').join('?.'))
     .join('...');
   if (result.includes('this?.')) {
-    return result.replace('this?.', 'this.');
+    return result.replace('this?.', 'this.') as T;
   } else if (result.includes(`this[${SYMBOLS.$args}]?.`)) {
     return result.replace(
       `this[${SYMBOLS.$args}]?.`,
       `this[${SYMBOLS.$args}].`,
-    );
+    ) as T;
   }
-  return result;
+  return result as T;
 }
 
 export function serializePath(
