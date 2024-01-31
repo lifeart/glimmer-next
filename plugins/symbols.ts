@@ -20,6 +20,7 @@ export const SYMBOLS = {
   $nodes: '$nodes',
   $args: '$args',
   $_maybeHelper: '$_maybeHelper',
+  $_maybeModifier: '$_maybeModifier',
   $_inElement: '$_inElement',
   $_ucw: '$_ucw',
   $__if: '$__if',

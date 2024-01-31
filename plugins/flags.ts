@@ -16,6 +16,6 @@ export function defaultFlags() {
     SUPPORT_SHADOW_DOM: true,
     REACTIVE_MODIFIERS: true,
     WITH_HELPER_MANAGER: false,
-    WITH_MODIFIER_MANAGER: true,
+    WITH_MODIFIER_MANAGER: false,
   } as Flags;
 }

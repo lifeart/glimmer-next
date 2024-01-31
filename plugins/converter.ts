@@ -93,11 +93,31 @@ export function convert(seenNodes: Set<ASTv1.Node>, flags: Flags) {
     return isPath(p) ? serializePath(p, false) : escapeString(p);
   }
 
-  function toHelper(nodePath: string, params: any[], hash: [string, PrimitiveJSType][]) {
+  function toModifier(
+    nodePath: string,
+    params: any[],
+    hash: [string, PrimitiveJSType][],
+  ) {
+    if (flags.WITH_MODIFIER_MANAGER) {
+      return `${SYMBOLS.$_maybeModifier}($:${resolvePath(nodePath)},$n,[${params
+        .map((p) => serializeParam(p))
+        .join(',')}],${toObject(hash)})`;
+    } else {
+      return `$:${resolvePath(nodePath)}($n,${params
+        .map((p) => serializeParam(p))
+        .join(',')})`;
+    }
+  }
+
+  function toHelper(
+    nodePath: string,
+    params: any[],
+    hash: [string, PrimitiveJSType][],
+  ) {
     if (flags.WITH_HELPER_MANAGER && !nodePath.startsWith('$_')) {
-      return `$:${SYMBOLS.$_maybeHelper}(${resolvePath(
-        nodePath,
-      )},[${params.map((p) => serializeParam(p)).join(',')}],${toObject(hash)})`;
+      return `$:${SYMBOLS.$_maybeHelper}(${resolvePath(nodePath)},[${params
+        .map((p) => serializeParam(p))
+        .join(',')}],${toObject(hash)})`;
     } else {
       return `$:${resolvePath(nodePath)}(${params
         .map((p) => serializeParam(p))
@@ -232,7 +252,11 @@ export function convert(seenNodes: Set<ASTv1.Node>, flags: Flags) {
         }
         return toHelper(node.path.original, [], hashArgs);
       } else {
-        return `${wrap ? `$:() => ` : ''}${toHelper(node.path.original, node.params, hashArgs)}`;
+        return `${wrap ? `$:() => ` : ''}${toHelper(
+          node.path.original,
+          node.params,
+          hashArgs,
+        )}`;
       }
     } else if (node.type === 'BlockStatement') {
       if (!node.params.length) {
@@ -333,7 +357,10 @@ export function convert(seenNodes: Set<ASTv1.Node>, flags: Flags) {
                 'name'
                 "name"
             */
-            const re = new RegExp(`(?<!\\.)\\b${key}\\b(?!(=|'|\"|:)[^ ]*)`, 'g');
+            const re = new RegExp(
+              `(?<!\\.)\\b${key}\\b(?!(=|'|\"|:)[^ ]*)`,
+              'g',
+            );
             str = str.replace(re, namesToReplace[key]);
           });
           return str;
@@ -345,7 +372,8 @@ export function convert(seenNodes: Set<ASTv1.Node>, flags: Flags) {
           serializeChildren(
             children as unknown as [string | HBSNode | HBSControlExpression],
             'this', // @todo - fix possible context floating here
-          ) )}]})()`;
+          ),
+        )}]})()`;
         return result;
       }
 
@@ -466,11 +494,23 @@ export function convert(seenNodes: Set<ASTv1.Node>, flags: Flags) {
               return null;
             }
           } else {
+            const hashArgs: [string, PrimitiveJSType][] = mod.hash.pairs.map(
+              (pair) => {
+                return [
+                  pair.key,
+                  ToJSType(pair.value, false) as unknown as PrimitiveJSType,
+                ];
+              },
+            );
+
             return [
+              // @me here
               EVENT_TYPE.ON_CREATED,
-              `$:($n) => $:${mod.path.original}($n, ${mod.params
-                .map((p) => ToJSType(p))
-                .join(',')})`,
+              `$:($n) => ${toModifier(
+                mod.path.original,
+                mod.params,
+                hashArgs,
+              )}`,
             ];
           }
         })

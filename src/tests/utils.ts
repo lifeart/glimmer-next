@@ -9,8 +9,6 @@ export async function cleanupRender() {
   const root = getRoot();
   if (root) {
     await Promise.all(runDestructors(root));
-  } else {
-    debugger;
   }
   resetNodeCounter();
   resetRoot();

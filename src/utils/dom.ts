@@ -558,8 +558,12 @@ if (!import.meta.env.SSR) {
   }
 }
 
-// @ts-expect-error
-export const $_maybeHelper = (value: any, args: any[], _hash: Record<string, unknown>) => {
+export const $_maybeHelper = (
+  value: any,
+  // @ts-expect-error
+  args: any[],
+  _hash: Record<string, unknown>,
+) => {
   // @ts-expect-error amount of args
   const hash = $_args(_hash, false);
   // helper manager
@@ -569,7 +573,7 @@ export const $_maybeHelper = (value: any, args: any[], _hash: Record<string, unk
   } else if (EmberFunctionalHelpers.has(value)) {
     return (...args: any[]) => {
       return value(args, hash);
-    }
+    };
   } else if (value.helperType === 'ember') {
     const helper = new value();
     return (...args: any[]) => {
@@ -1023,6 +1027,72 @@ export function $_args(
 export const $_if = ifCond;
 export const $_slot = slot;
 export const $_c = component;
+export const $_component = (component: any) => {
+  console.log('component', component);
+  return component;
+};
+export const $_maybeModifier = (
+  modifier: any,
+  element: HTMLElement,
+  props: any[],
+  hashArgs: () => Record<string, unknown>,
+) => {
+  if ('emberModifier' in modifier) {
+    const instance = new modifier();
+    instance.modify = instance.modify.bind(instance);
+    const destructors: Destructors = [];
+    return () => {
+      console.log('running class-based  modifier');
+      requestAnimationFrame(() => {
+        const f = formula(() => {
+          instance.modify(element, props, hashArgs());
+        }, 'class-based modifier');
+        destructors.push(
+          opcodeFor(f, () => {
+            console.log('opcode executed for modifier');
+          }),
+        );
+      });
+      return () => {
+        destructors.forEach((fn) => fn());
+        console.log('destroing class-based modifier');
+        if ('willDestroy' in instance) {
+          instance.willDestroy();
+        }
+        runDestructors(instance);
+      };
+    };
+  } else {
+    // console.log(modifier);
+    // @ts-expect-error
+    if (EmberFunctionalModifiers.has(modifier)) {
+      return (element: HTMLElement) => {
+        console.log('ember-functional-modifier', props, hashArgs());
+        const args = hashArgs();
+        const newArgs = {};
+        Object.keys(args).forEach((key) => {
+          Object.defineProperty(newArgs, key, {
+            enumerable: true,
+            get() {
+              if (typeof args[key] === 'function') {
+                // @ts-expect-error function signature
+                return args[key]();
+              } else {
+                return args[key];
+              }
+            },
+          });
+        });
+        return modifier(element, props, newArgs);
+      };
+    }
+    return modifier;
+  }
+};
+export const $_helper = (helper: any) => {
+  console.log('helper', helper);
+  return helper;
+};
 export const $_text = text;
 export const $_tag = _DOM;
 

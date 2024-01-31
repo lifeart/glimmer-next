@@ -1,4 +1,11 @@
-import { expect, test, describe, beforeAll, beforeEach, afterEach } from 'vitest';
+import {
+  expect,
+  test,
+  describe,
+  beforeAll,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 import { preprocess } from '@glimmer/syntax';
 
 import { ComplexJSType, convert } from './converter';
@@ -16,6 +23,14 @@ const flags = defaultFlags();
 
 // flags.WITH_HELPER_MANAGER = false;
 
+// Maybe modifier
+function $mm(name: string, params: string = '', hash: string = '{}') {
+  if (flags.WITH_MODIFIER_MANAGER) {
+    return `$:($n) => $_maybeModifier($:${name},$n,[${params}],${hash})`;
+  } else {
+    return `$:($n) => $:${name}($n,${params.trim()})`;
+  }
+}
 // Maybe helper
 function $mh(name: string, params: string = '', hash: string = '{}') {
   if (flags.WITH_HELPER_MANAGER) {
@@ -87,15 +102,28 @@ function $node(partial: Partial<HBSNode>): HBSNode {
 describe.each([
   { glimmerCompat: true, name: 'glimmer compat mode' },
   { glimmerCompat: false, name: 'glimmer non-compat mode' },
-  { helperManager: true, glimmerCompat: true, name: 'glimmer compat mode [hm]' },
-  { helperManager: false, glimmerCompat: false, name: 'glimmer non-compat mode [hm]' },
-])('$name', ({ glimmerCompat, helperManager }) => {
+  {
+    helperManager: true,
+    glimmerCompat: true,
+    name: 'glimmer compat mode [hm]',
+  },
+  {
+    helperManager: false,
+    glimmerCompat: false,
+    name: 'glimmer non-compat mode [hm]',
+  },
+  { modifierManager: false, name: 'without modifier manager' },
+  { modifierManager: true, name: 'with modifier manager' },
+])('$name', ({ glimmerCompat, helperManager, modifierManager }) => {
   beforeAll(() => {
     if (glimmerCompat !== undefined) {
       flags.IS_GLIMMER_COMPAT_MODE = glimmerCompat;
     }
     if (helperManager !== undefined) {
       flags.WITH_HELPER_MANAGER = helperManager;
+    }
+    if (modifierManager !== undefined) {
+      flags.WITH_MODIFIER_MANAGER = modifierManager;
     }
   });
   beforeEach(() => {
@@ -124,13 +152,23 @@ describe.each([
       });
       test('it works for sub expression paths in mustache', () => {
         expect(
-          $t<ASTv1.ElementNode>(`<div class={{maybeClass  (if @arrowProps.className @arrowProps.className)}}></div>`),
-        ).toEqual($node({
-          tag: 'div',
-          properties: [
-            ['', `$:() => ${$mh('maybeClass', `$:$__if($:this[$args].arrowProps?.className,$:this[$args].arrowProps?.className)`)}`]
-          ]
-        }));
+          $t<ASTv1.ElementNode>(
+            `<div class={{maybeClass  (if @arrowProps.className @arrowProps.className)}}></div>`,
+          ),
+        ).toEqual(
+          $node({
+            tag: 'div',
+            properties: [
+              [
+                '',
+                `$:() => ${$mh(
+                  'maybeClass',
+                  `$:$__if($:this[$args].arrowProps?.className,$:this[$args].arrowProps?.className)`,
+                )}`,
+              ],
+            ],
+          }),
+        );
       });
       test('works for sub-expression paths', () => {
         expect(
@@ -370,7 +408,7 @@ describe.each([
           $node({
             tag: 'div',
             properties: [
-              ['', `$:() => [$:foo," bar ",${$mh('boo','$:baks')}].join('')`],
+              ['', `$:() => [$:foo," bar ",${$mh('boo', '$:baks')}].join('')`],
             ],
           }),
         );
@@ -417,7 +455,9 @@ describe.each([
         ).toEqual(
           $node({
             tag: 'div',
-            events: [['click', `$:($e, $n) => ${$mh('foo','$:bar,$:baz')}($e, $n, )`]],
+            events: [
+              ['click', `$:($e, $n) => ${$mh('foo', '$:bar,$:baz')}($e, $n, )`],
+            ],
           }),
         );
       });
@@ -425,7 +465,40 @@ describe.each([
         expect($t<ASTv1.ElementNode>(`<div {{foo-bar}}></div>`)).toEqual(
           $node({
             tag: 'div',
-            events: [['0', '$:($n) => $:foo-bar($n, )']],
+            events: [['0', $mm('foo-bar')]],
+          }),
+        );
+      });
+      test('support custom modifiers with params ', () => {
+        expect(
+          $t<ASTv1.ElementNode>(
+            `<div {{foo-bar foo 1 true null undefined}}></div>`,
+          ),
+        ).toEqual(
+          $node({
+            tag: 'div',
+            events: [['0', $mm('foo-bar', '$:foo,1,true,null,undefined')]],
+          }),
+        );
+      });
+      test('support custom modifiers with hash params ', () => {
+        expect(
+          $t<ASTv1.ElementNode>(
+            `<div {{foo-bar a=1 b=true c=null d=undefined b="a" }}></div>`,
+          ),
+        ).toEqual(
+          $node({
+            tag: 'div',
+            events: [
+              [
+                '0',
+                $mm(
+                  'foo-bar',
+                  '',
+                  '{a: 1, b: true, c: null, d: undefined, b: "a"}',
+                ),
+              ],
+            ],
           }),
         );
       });
@@ -495,8 +568,14 @@ describe.each([
           ),
         ).toEqual(
           `$:...(() => {let self = this;let Let_bar_6c3gez6 = $:() => $:foo;let Let_k_6c3gez6 = "name";return [$_text("p"), ${
-            flags.IS_GLIMMER_COMPAT_MODE ? '() => Let_bar_6c3gez6' : 'Let_bar_6c3gez6'
-          }, ${flags.IS_GLIMMER_COMPAT_MODE ? '() => Let_k_6c3gez6' : 'Let_k_6c3gez6'}]})()`,
+            flags.IS_GLIMMER_COMPAT_MODE
+              ? '() => Let_bar_6c3gez6'
+              : 'Let_bar_6c3gez6'
+          }, ${
+            flags.IS_GLIMMER_COMPAT_MODE
+              ? '() => Let_k_6c3gez6'
+              : 'Let_k_6c3gez6'
+          }]})()`,
         );
       });
       test('it not override arg assign case', () => {
@@ -504,12 +583,15 @@ describe.each([
           `{{#let foo "name" as |bar k|}}<Div @bar={{bar}} bar={{if bar bar}} />{{/let}}`,
         );
         if (flags.IS_GLIMMER_COMPAT_MODE) {
-          expect(result).toEqual(`$:...(() => {let self = this;let Let_bar_6c3gez6 = $:() => $:foo;let Let_k_6c3gez6 = "name";return [$_c(Div,$_args({bar: () => Let_bar_6c3gez6},{},[[],[['bar', () => $:$__if($:Let_bar_6c3gez6,$:Let_bar_6c3gez6)]],[]]), this)]})()`);
+          expect(result).toEqual(
+            `$:...(() => {let self = this;let Let_bar_6c3gez6 = $:() => $:foo;let Let_k_6c3gez6 = "name";return [$_c(Div,$_args({bar: () => Let_bar_6c3gez6},{},[[],[['bar', () => $:$__if($:Let_bar_6c3gez6,$:Let_bar_6c3gez6)]],[]]), this)]})()`,
+          );
         } else {
-          expect(result).toEqual(`$:...(() => {let self = this;let Let_bar_6c3gez6 = $:() => $:foo;let Let_k_6c3gez6 = "name";return [$_c(Div,{bar: Let_bar_6c3gez6, "$:[$PROPS_SYMBOL]": [[],[['bar', () => $:$__if($:Let_bar_6c3gez6,$:Let_bar_6c3gez6)]],[]]}, this)]})()`);
+          expect(result).toEqual(
+            `$:...(() => {let self = this;let Let_bar_6c3gez6 = $:() => $:foo;let Let_k_6c3gez6 = "name";return [$_c(Div,{bar: Let_bar_6c3gez6, "$:[$PROPS_SYMBOL]": [[],[['bar', () => $:$__if($:Let_bar_6c3gez6,$:Let_bar_6c3gez6)]],[]]}, this)]})()`,
+          );
         }
-
-      })
+      });
     });
     describe('each condition', () => {
       test('it adds unstable child wrapper for simple multi-nodes', () => {
