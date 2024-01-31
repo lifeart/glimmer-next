@@ -112,7 +112,9 @@ export function toSafeJSPath(str: string) {
   return result;
 }
 
-export function toOptionalChaining<T extends string | number | undefined | null>(str: T): T {
+export function toOptionalChaining<
+  T extends string | number | undefined | null,
+>(str: T): T {
   if (typeof str !== 'string') {
     return str;
   }
