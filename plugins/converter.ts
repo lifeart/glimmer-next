@@ -264,12 +264,17 @@ export function convert(seenNodes: Set<ASTv1.Node>, flags: Flags) {
           key: keyValue,
         } as HBSControlExpression;
       } else if (name === 'let') {
+        const varScopeName = Math.random().toString(36).substring(7);
+        const namesToReplace: Record<string, string> = {};
         const vars = node.params.map((p, index) => {
           let isSubExpression = p.type === 'SubExpression';
           let isString = p.type === 'StringLiteral';
           let isBoolean = p.type === 'BooleanLiteral';
           let isNull = p.type === 'NullLiteral';
           let isUndefined = p.type === 'UndefinedLiteral';
+          let originalName = node.program.blockParams[index];
+          let newName = `Let_${originalName}_${varScopeName}`;
+          namesToReplace[originalName] = `${newName}`;
           if (
             isSubExpression ||
             isString ||
@@ -277,24 +282,39 @@ export function convert(seenNodes: Set<ASTv1.Node>, flags: Flags) {
             isNull ||
             isUndefined
           ) {
-            return `let ${node.program.blockParams[index]} = ${ToJSType(
-              p,
-              false,
-            )};`;
+            return `let ${newName} = ${ToJSType(p, false)};`;
           } else {
-            return `let ${node.program.blockParams[index]} = $:() => ${ToJSType(
-              p,
-            )};`;
+            return `let ${newName} = $:() => ${ToJSType(p)};`;
           }
         });
         // note, at the moment nested let's works fine if no name overlap,
         // looks like fix for other case should be on babel level;
-        const result = `$:...(() => {${vars.join(
-          '',
-        )}return [${serializeChildren(
-          children as unknown as [string | HBSNode | HBSControlExpression],
-          'this', // @todo - fix possible context floating here
-        )}]})()`;
+        // @todo - likely should be a babel work
+        function fixChildScopes(str: string) {
+          // console.log('fixChildScopes', str, JSON.stringify(namesToReplace));
+          Object.keys(namesToReplace).forEach((key) => {
+            /*
+              allow: {{name}} {{foo name}} name.bar
+              don't allow: 
+                name:
+                name=
+                foo.name
+                'name'
+                "name"
+            */
+            const re = new RegExp(`(?<!\\.)\\b${key}\\b(?!(=|'|\"|:)[^ ]*)`, 'g');
+            str = str.replace(re, namesToReplace[key]);
+          });
+          return str;
+        }
+        const result = `$:...(() => {let self = this;${vars
+          .join('')
+          .split('this.')
+          .join('self.')}return [${fixChildScopes(
+          serializeChildren(
+            children as unknown as [string | HBSNode | HBSControlExpression],
+            'this', // @todo - fix possible context floating here
+          ) )}]})()`;
         return result;
       }
 

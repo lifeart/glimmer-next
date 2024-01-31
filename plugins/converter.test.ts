@@ -1,4 +1,4 @@
-import { expect, test, describe, beforeAll, beforeEach } from 'vitest';
+import { expect, test, describe, beforeAll, beforeEach, afterEach } from 'vitest';
 import { preprocess } from '@glimmer/syntax';
 
 import { ComplexJSType, convert } from './converter';
@@ -463,17 +463,35 @@ describe.each([
       });
     });
     describe('let condition', () => {
+      const mathRandom = Math.random;
+      beforeEach(() => {
+        Math.random = () => 0.001;
+      });
+      afterEach(() => {
+        Math.random = mathRandom;
+      });
       test('it works', () => {
         expect(
           $t<ASTv1.BlockStatement>(
             `{{#let foo "name" as |bar k|}}p{{bar}}{{k}}{{/let}}`,
           ),
         ).toEqual(
-          `$:...(() => {let bar = $:() => $:foo;let k = "name";return [$_text("p"), ${
-            flags.IS_GLIMMER_COMPAT_MODE ? '() => bar' : 'bar'
-          }, ${flags.IS_GLIMMER_COMPAT_MODE ? '() => k' : 'k'}]})()`,
+          `$:...(() => {let self = this;let Let_bar_6c3gez6 = $:() => $:foo;let Let_k_6c3gez6 = "name";return [$_text("p"), ${
+            flags.IS_GLIMMER_COMPAT_MODE ? '() => Let_bar_6c3gez6' : 'Let_bar_6c3gez6'
+          }, ${flags.IS_GLIMMER_COMPAT_MODE ? '() => Let_k_6c3gez6' : 'Let_k_6c3gez6'}]})()`,
         );
       });
+      test('it not override arg assign case', () => {
+        const result = $t<ASTv1.BlockStatement>(
+          `{{#let foo "name" as |bar k|}}<Div @bar={{bar}} bar={{if bar bar}} />{{/let}}`,
+        );
+        if (flags.IS_GLIMMER_COMPAT_MODE) {
+          expect(result).toEqual(`$:...(() => {let self = this;let Let_bar_6c3gez6 = $:() => $:foo;let Let_k_6c3gez6 = "name";return [$_c(Div,$_args({bar: () => Let_bar_6c3gez6},{},[[],[['bar', () => $:$__if(Let_bar_6c3gez6,Let_bar_6c3gez6)]],[]]), this)]})()`);
+        } else {
+          expect(result).toEqual(`$:...(() => {let self = this;let Let_bar_6c3gez6 = $:() => $:foo;let Let_k_6c3gez6 = "name";return [$_c(Div,{bar: Let_bar_6c3gez6, "$:[$PROPS_SYMBOL]": [[],[['bar', () => $:$__if(Let_bar_6c3gez6,Let_bar_6c3gez6)]],[]]}, this)]})()`);
+        }
+
+      })
     });
     describe('each condition', () => {
       test('it adds unstable child wrapper for simple multi-nodes', () => {
