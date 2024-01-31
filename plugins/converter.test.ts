@@ -14,6 +14,17 @@ import { defaultFlags } from './flags';
 
 const flags = defaultFlags();
 
+// flags.WITH_HELPER_MANAGER = false;
+
+// Maybe helper
+function $mh(name: string, params: string = '', hash: string = '{}') {
+  if (flags.WITH_HELPER_MANAGER) {
+    return `$:$_maybeHelper(${name},[${params}],${hash})`;
+  } else {
+    return `$:${name}(${params})`;
+  }
+}
+
 function $args(str: string) {
   if (flags.IS_GLIMMER_COMPAT_MODE) {
     if (str === '{}') {
@@ -76,9 +87,16 @@ function $node(partial: Partial<HBSNode>): HBSNode {
 describe.each([
   { glimmerCompat: true, name: 'glimmer compat mode' },
   { glimmerCompat: false, name: 'glimmer non-compat mode' },
-])('$name', ({ glimmerCompat }) => {
+  { helperManager: true, glimmerCompat: true, name: 'glimmer compat mode [hm]' },
+  { helperManager: false, glimmerCompat: false, name: 'glimmer non-compat mode [hm]' },
+])('$name', ({ glimmerCompat, helperManager }) => {
   beforeAll(() => {
-    flags.IS_GLIMMER_COMPAT_MODE = glimmerCompat;
+    if (glimmerCompat !== undefined) {
+      flags.IS_GLIMMER_COMPAT_MODE = glimmerCompat;
+    }
+    if (helperManager !== undefined) {
+      flags.WITH_HELPER_MANAGER = helperManager;
+    }
   });
   beforeEach(() => {
     resetContextCounter();
@@ -110,31 +128,31 @@ describe.each([
         ).toEqual($node({
           tag: 'div',
           properties: [
-            ['', "$:() => $:maybeClass($__if($:this[$args].arrowProps?.className,$:this[$args].arrowProps?.className))"]
+            ['', `$:() => ${$mh('maybeClass', `$:$__if($:this[$args].arrowProps?.className,$:this[$args].arrowProps?.className)`)}`]
           ]
         }));
       });
       test('works for sub-expression paths', () => {
         expect(
           $t<ASTv1.BlockStatement>(`{{and (or this.foo.bar.baz)}}`),
-        ).toEqual(`$:() => $:and(or($:this.foo?.bar?.baz))`);
+        ).toEqual(`$:() => ${$mh('and', $mh('or', `$:this.foo?.bar?.baz`))}`);
         expect($t<ASTv1.BlockStatement>(`{{and (or this.foo)}}`)).toEqual(
-          `$:() => $:and(or($:this.foo))`,
+          `$:() => ${$mh('and', $mh('or', '$:this.foo'))}`,
         );
         expect($t<ASTv1.BlockStatement>(`{{and (or this.foo.bar)}}`)).toEqual(
-          `$:() => $:and(or($:this.foo?.bar))`,
+          `$:() => ${$mh('and', $mh('or', '$:this.foo?.bar'))}`,
         );
         expect($t<ASTv1.BlockStatement>(`{{and (or foo.bar.baz)}}`)).toEqual(
-          `$:() => $:and(or($:foo?.bar?.baz))`,
+          `$:() => ${$mh('and', $mh('or', '$:foo?.bar?.baz'))}`,
         );
         expect($t<ASTv1.BlockStatement>(`{{and (or foo.bar)}}`)).toEqual(
-          `$:() => $:and(or($:foo.bar))`,
+          `$:() => ${$mh('and', $mh('or', `$:foo.bar`))}`,
         );
         expect($t<ASTv1.BlockStatement>(`{{and (or @foo.bar.baz)}}`)).toEqual(
-          `$:() => $:and(or($:this[$args].foo?.bar?.baz))`,
+          `$:() => ${$mh('and', $mh('or', `$:this[$args].foo?.bar?.baz`))}`,
         );
         expect($t<ASTv1.BlockStatement>(`{{and (or @foo.bar)}}`)).toEqual(
-          `$:() => $:and(or($:this[$args].foo?.bar))`,
+          `$:() => ${$mh('and', $mh('or', `$:this[$args].foo?.bar`))}`,
         );
       });
       test('works as hash params', () => {
@@ -179,38 +197,38 @@ describe.each([
     describe('Builtin helpers in MustacheStatements', () => {
       test('fn helper properly mapped', () => {
         expect($t<ASTv1.MustacheStatement>(`{{fn a "b" "c"}}`)).toEqual(
-          `$:() => $:$__fn(a,"b","c")`,
+          `$:() => $:$__fn($:a,"b","c")`,
         );
       });
       test('if helper properly mapped', () => {
         expect($t<ASTv1.MustacheStatement>(`{{if foo "bar" "baz"}}`)).toEqual(
-          `$:() => $:$__if(foo,"bar","baz")`,
+          `$:() => $:$__if($:foo,"bar","baz")`,
         );
       });
       test('unless helper properly mapped', () => {
         expect(
           $t<ASTv1.MustacheStatement>(`{{unless foo "bar" "baz"}}`),
-        ).toEqual(`$:() => $:$__if(foo,"baz","bar")`);
+        ).toEqual(`$:() => $:$__if($:foo,"baz","bar")`);
       });
       test('eq helper properly mapped', () => {
         expect($t<ASTv1.MustacheStatement>(`{{eq foo "bar" "baz"}}`)).toEqual(
-          `$:() => $:$__eq(foo,"bar","baz")`,
+          `$:() => $:$__eq($:foo,"bar","baz")`,
         );
       });
       test('debugger helper properly mapped', () => {
         expect(
           $t<ASTv1.MustacheStatement>(`{{debugger foo "bar" "baz"}}`),
-        ).toEqual(`$:() => $:$__debugger.call(this,foo,"bar","baz")`);
+        ).toEqual(`$:() => $:$__debugger.call($:this,$:foo,"bar","baz")`);
       });
       test('log helper properly mapped', () => {
         expect($t<ASTv1.MustacheStatement>(`{{log foo "bar" "baz"}}`)).toEqual(
-          `$:() => $:$__log(foo,"bar","baz")`,
+          `$:() => $:$__log($:foo,"bar","baz")`,
         );
       });
       test('array helper properly mapped', () => {
         expect(
           $t<ASTv1.MustacheStatement>(`{{array foo "bar" "baz"}}`),
-        ).toEqual(`$:() => $:$__array(foo,"bar","baz")`);
+        ).toEqual(`$:() => $:$__array($:foo,"bar","baz")`);
       });
       test('hash helper properly mapped', () => {
         expect(
@@ -221,43 +239,43 @@ describe.each([
     describe('Builtin helpers in SubExpression', () => {
       test('fn helper properly mapped', () => {
         expect($t<ASTv1.MustacheStatement>(`{{q (fn a b (if c d))}}`)).toEqual(
-          `$:() => $:q($__fn($:a,$:b,$:$__if($:c,$:d)))`,
+          `$:() => ${$mh('q', `$:$__fn($:a,$:b,$:$__if($:c,$:d))`)}`,
         );
       });
       test('if helper properly mapped', () => {
         expect($t<ASTv1.MustacheStatement>(`{{q (if a b (if c d))}}`)).toEqual(
-          `$:() => $:q($__if($:a,$:b,$:$__if($:c,$:d)))`,
+          `$:() => ${$mh('q', `$:$__if($:a,$:b,$:$__if($:c,$:d))`)}`,
         );
       });
       test('unless helper properly mapped', () => {
         expect(
           $t<ASTv1.MustacheStatement>(`{{q (unless a b (if c d))}}`),
-        ).toEqual(`$:() => $:q($__if($:a,$:$__if($:c,$:d),$:b))`);
+        ).toEqual(`$:() => ${$mh('q', `$:$__if($:a,$:$__if($:c,$:d),$:b)`)}`);
       });
       test('eq helper properly mapped', () => {
         expect($t<ASTv1.MustacheStatement>(`{{q (eq a b)}}`)).toEqual(
-          `$:() => $:q($__eq($:a,$:b))`,
+          `$:() => ${$mh('q', `$:$__eq($:a,$:b)`)}`,
         );
       });
       test('debugger helper properly mapped', () => {
         expect($t<ASTv1.MustacheStatement>(`{{q (debugger a)}}`)).toEqual(
-          `$:() => $:q($__debugger.call($:this,$:a))`,
+          `$:() => ${$mh('q', `$:$__debugger.call($:this,$:a)`)}`,
         );
       });
       test('log helper properly mapped', () => {
         expect($t<ASTv1.MustacheStatement>(`{{q (log a b)}}`)).toEqual(
-          `$:() => $:q($__log($:a,$:b))`,
+          `$:() => ${$mh('q', `$:$__log($:a,$:b)`)}`,
         );
       });
       test('array helper properly mapped', () => {
         expect(
           $t<ASTv1.MustacheStatement>(`{{q (array foo "bar" "baz")}}`),
-        ).toEqual(`$:() => $:q($__array($:foo,"bar","baz"))`);
+        ).toEqual(`$:() => ${$mh('q', `$:$__array($:foo,"bar","baz")`)}`);
       });
       test('hash helper properly mapped', () => {
         expect(
           $t<ASTv1.MustacheStatement>(`{{q (hash foo="bar" boo="baz")}}`),
-        ).toEqual(`$:() => $:q($__hash({foo: "bar", boo: "baz"}))`);
+        ).toEqual(`$:() => ${$mh('q', `$:$__hash({foo: "bar", boo: "baz"})`)}`);
       });
     });
     describe('TextNode', () => {
@@ -286,17 +304,17 @@ describe.each([
       });
       test('converts a path with args', () => {
         expect($t<ASTv1.MustacheStatement>(`{{foo-bar bas boo}}`)).toEqual(
-          `$:() => $:foo-bar(bas,boo)`,
+          `$:() => ${$mh('foo-bar', '$:bas,$:boo')}`,
         );
       });
       test('converts sub-expression without args', () => {
         expect($t<ASTv1.MustacheStatement>(`{{(foo-bar)}}`)).toEqual(
-          `$:() => $:foo-bar()`,
+          `$:() => ${$mh('foo-bar')}`,
         );
       });
       test('supports helper composition', () => {
         expect($t<ASTv1.MustacheStatement>(`{{(foo-bar (baz-bat))}}`)).toEqual(
-          `$:() => $:foo-bar($:baz-bat())`,
+          `$:() => ${$mh('foo-bar', $mh('baz-bat'))}`,
         );
       });
       test('support boolean literals', () => {
@@ -312,7 +330,7 @@ describe.each([
       test('support bool,  null, undefined as helper args', () => {
         expect(
           $t<ASTv1.MustacheStatement>(`{{foo true null undefined}}`),
-        ).toEqual(`$:() => $:foo(true,null,undefined)`);
+        ).toEqual(`$:() => ${$mh('foo', 'true,null,undefined')}`);
       });
     });
     describe('ElementNode', () => {
@@ -352,7 +370,7 @@ describe.each([
           $node({
             tag: 'div',
             properties: [
-              ['', '$:() => [$:foo," bar ",$:boo(baks)].join(\'\')'],
+              ['', `$:() => [$:foo," bar ",${$mh('boo','$:baks')}].join('')`],
             ],
           }),
         );
@@ -371,7 +389,7 @@ describe.each([
         ).toEqual(
           $node({
             tag: 'div',
-            properties: [['', '$:() => $:foo("bar")']],
+            properties: [['', `$:() => ${$mh('foo', '"bar"')}`]],
           }),
         );
       });
@@ -379,7 +397,7 @@ describe.each([
         expect($t<ASTv1.ElementNode>(`<div class={{foo bar}}></div>`)).toEqual(
           $node({
             tag: 'div',
-            properties: [['', '$:() => $:foo(bar)']],
+            properties: [['', `$:() => ${$mh('foo', '$:bar')}`]],
           }),
         );
       });
@@ -399,7 +417,7 @@ describe.each([
         ).toEqual(
           $node({
             tag: 'div',
-            events: [['click', '$:($e, $n) => $:foo($:bar,$:baz)($e, $n, )']],
+            events: [['click', `$:($e, $n) => ${$mh('foo','$:bar,$:baz')}($e, $n, )`]],
           }),
         );
       });
@@ -442,7 +460,7 @@ describe.each([
         ).toEqual<HBSControlExpression>(
           $control({
             type: 'if',
-            condition: $glimmerCompat('$:foo($:bar)'),
+            condition: $glimmerCompat($mh('foo', '$:bar')),
             children: ['123'],
             inverse: ['456'],
           }),
@@ -455,7 +473,7 @@ describe.each([
         ).toEqual<HBSControlExpression>(
           $control({
             type: 'if',
-            condition: $glimmerCompat('$:foo($:bar)'),
+            condition: $glimmerCompat($mh('foo', '$:bar')),
             children: ['456'],
             inverse: ['123'],
           }),
@@ -486,9 +504,9 @@ describe.each([
           `{{#let foo "name" as |bar k|}}<Div @bar={{bar}} bar={{if bar bar}} />{{/let}}`,
         );
         if (flags.IS_GLIMMER_COMPAT_MODE) {
-          expect(result).toEqual(`$:...(() => {let self = this;let Let_bar_6c3gez6 = $:() => $:foo;let Let_k_6c3gez6 = "name";return [$_c(Div,$_args({bar: () => Let_bar_6c3gez6},{},[[],[['bar', () => $:$__if(Let_bar_6c3gez6,Let_bar_6c3gez6)]],[]]), this)]})()`);
+          expect(result).toEqual(`$:...(() => {let self = this;let Let_bar_6c3gez6 = $:() => $:foo;let Let_k_6c3gez6 = "name";return [$_c(Div,$_args({bar: () => Let_bar_6c3gez6},{},[[],[['bar', () => $:$__if($:Let_bar_6c3gez6,$:Let_bar_6c3gez6)]],[]]), this)]})()`);
         } else {
-          expect(result).toEqual(`$:...(() => {let self = this;let Let_bar_6c3gez6 = $:() => $:foo;let Let_k_6c3gez6 = "name";return [$_c(Div,{bar: Let_bar_6c3gez6, "$:[$PROPS_SYMBOL]": [[],[['bar', () => $:$__if(Let_bar_6c3gez6,Let_bar_6c3gez6)]],[]]}, this)]})()`);
+          expect(result).toEqual(`$:...(() => {let self = this;let Let_bar_6c3gez6 = $:() => $:foo;let Let_k_6c3gez6 = "name";return [$_c(Div,{bar: Let_bar_6c3gez6, "$:[$PROPS_SYMBOL]": [[],[['bar', () => $:$__if($:Let_bar_6c3gez6,$:Let_bar_6c3gez6)]],[]]}, this)]})()`);
         }
 
       })
