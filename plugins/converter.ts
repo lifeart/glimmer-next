@@ -77,6 +77,43 @@ export type ComplexJSType = PrimitiveJSType | HBSControlExpression | HBSNode;
 
 export function convert(seenNodes: Set<ASTv1.Node>, flags: Flags) {
   setFlags(flags);
+
+  function serializeParam(p: any) {
+    if (typeof p !== 'string') {
+      if (typeof p === 'object' && p !== null) {
+        let t = ToJSType(p, false);
+        if (typeof t !== 'string') {
+          return String(t);
+        }
+        return toOptionalChaining(t);
+      }
+      return String(p);
+    }
+    // ? serializePath(p, false)
+    return isPath(p) ? serializePath(p, false) : escapeString(p);
+  }
+
+  function toHelper(nodePath: string, params: any[], hash: [string, PrimitiveJSType][]) {
+    if (flags.WITH_HELPER_MANAGER && !nodePath.startsWith('$_')) {
+      return `$:${SYMBOLS.$_maybeHelper}(${resolvePath(
+        nodePath,
+      )},[${params.map((p) => serializeParam(p)).join(',')}],${toObject(hash)})`;
+    } else {
+      return `$:${resolvePath(nodePath)}(${params
+        .map((p) => serializeParam(p))
+        .join(',')})`;
+    }
+    /*
+      params.map(el => {
+        return             if (typeof el !== 'string') {
+              return String(el);
+            }
+            return isPath(el) ? serializePath(el, false) : escapeString(el);
+      })
+
+    */
+  }
+
   function ToJSType(node: ASTv1.Node, wrap = true): ComplexJSType {
     seenNodes.add(node);
     if (node.type === 'ConcatStatement') {
@@ -126,10 +163,7 @@ export function convert(seenNodes: Set<ASTv1.Node>, flags: Flags) {
       } else if (node.path.original === SYMBOLS.$__hash) {
         return `$:${SYMBOLS.$__hash}(${toObject(hashArgs)})`;
       }
-      return `$:${resolvePath(node.path.original)}(${node.params
-        // @ts-expect-error ComplexJSType
-        .map((p) => toOptionalChaining(ToJSType(p)))
-        .join(',')})`;
+      return toHelper(node.path.original, node.params, hashArgs);
     } else if (node.type === 'NumberLiteral') {
       return node.value;
     }
@@ -193,17 +227,12 @@ export function convert(seenNodes: Set<ASTv1.Node>, flags: Flags) {
             hashArgs,
           )})`;
         }
-        return ToJSType(node.path);
+        if (hashArgs.length === 0) {
+          return ToJSType(node.path);
+        }
+        return toHelper(node.path.original, [], hashArgs);
       } else {
-        return `${wrap ? `$:() => ` : ''}${ToJSType(node.path)}(${node.params
-          .map((p) => ToJSType(p))
-          .map((el) => {
-            if (typeof el !== 'string') {
-              return String(el);
-            }
-            return isPath(el) ? serializePath(el, false) : escapeString(el);
-          })
-          .join(',')})`;
+        return `${wrap ? `$:() => ` : ''}${toHelper(node.path.original, node.params, hashArgs)}`;
       }
     } else if (node.type === 'BlockStatement') {
       if (!node.params.length) {

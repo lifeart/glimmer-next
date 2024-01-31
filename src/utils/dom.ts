@@ -557,6 +557,29 @@ if (!import.meta.env.SSR) {
     };
   }
 }
+
+// @ts-expect-error
+export const $_maybeHelper = (value: any, args: any[], _hash: Record<string, unknown>) => {
+  // @ts-expect-error amount of args
+  const hash = $_args(_hash, false);
+  // helper manager
+  if (isPrimitive(value)) {
+    return value;
+    // @ts-expect-error
+  } else if (EmberFunctionalHelpers.has(value)) {
+    return (...args: any[]) => {
+      return value(args, hash);
+    }
+  } else if (value.helperType === 'ember') {
+    const helper = new value();
+    return (...args: any[]) => {
+      return helper.compute.call(helper, args, hash);
+    };
+  }
+
+  return value;
+};
+
 function component(
   comp: ComponentReturnType | Component,
   args: Record<string, unknown>,

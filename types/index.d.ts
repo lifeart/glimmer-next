@@ -17,6 +17,8 @@ declare global {
   const TRY_CATCH_ERROR_HANDLING: boolean;
   const SUPPORT_SHADOW_DOM: boolean;
   const REACTIVE_MODIFIERS: boolean;
+  const WITH_HELPER_MANAGER: boolean;
+  const WITH_MODIFIER_MANAGER: boolean;
 }
 
 declare module 'glint-environment-gxt/globals' {

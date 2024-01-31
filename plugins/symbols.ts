@@ -19,6 +19,7 @@ export const SYMBOLS = {
   $_hasBlock: '$_hasBlock',
   $nodes: '$nodes',
   $args: '$args',
+  $_maybeHelper: '$_maybeHelper',
   $_inElement: '$_inElement',
   $_ucw: '$_ucw',
   $__if: '$__if',
