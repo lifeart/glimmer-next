@@ -103,6 +103,15 @@ export function convert(seenNodes: Set<ASTv1.Node>, flags: Flags) {
       // replacing builtin helpers
       patchNodePath(node);
 
+      const hashArgs: [string, PrimitiveJSType][] = node.hash.pairs.map(
+        (pair) => {
+          return [
+            pair.key,
+            ToJSType(pair.value, false) as unknown as PrimitiveJSType,
+          ];
+        },
+      );
+
       if (node.path.original === 'element') {
         // @todo  - write test to catch props issue here
         return `$:function(args){const $fw = ${
@@ -115,14 +124,6 @@ export function convert(seenNodes: Set<ASTv1.Node>, flags: Flags) {
           SYMBOLS.SLOT
         }('default',()=>[],$slots)], this)], ctx: this};}`;
       } else if (node.path.original === SYMBOLS.$__hash) {
-        const hashArgs: [string, PrimitiveJSType][] = node.hash.pairs.map(
-          (pair) => {
-            return [
-              pair.key,
-              ToJSType(pair.value) as unknown as PrimitiveJSType,
-            ];
-          },
-        );
         return `$:${SYMBOLS.$__hash}(${toObject(hashArgs)})`;
       }
       return `$:${resolvePath(node.path.original)}(${node.params
@@ -162,6 +163,12 @@ export function convert(seenNodes: Set<ASTv1.Node>, flags: Flags) {
       // replacing builtin helpers
       patchNodePath(node);
 
+      const hashArgs: [string, PrimitiveJSType][] = node.hash.pairs.map(
+        (pair) => {
+          return [pair.key, ToJSType(pair.value) as PrimitiveJSType];
+        },
+      );
+
       if (node.path.original === 'yield') {
         let slotName =
           node.hash.pairs.find((p) => p.key === 'to')?.value || 'default';
@@ -182,11 +189,6 @@ export function convert(seenNodes: Set<ASTv1.Node>, flags: Flags) {
       if (node.params.length === 0) {
         // hash case
         if (node.path.original === SYMBOLS.$__hash) {
-          const hashArgs: [string, PrimitiveJSType][] = node.hash.pairs.map(
-            (pair) => {
-              return [pair.key, ToJSType(pair.value) as PrimitiveJSType];
-            },
-          );
           return `${wrap ? `$:() => ` : ''}${ToJSType(node.path)}(${toObject(
             hashArgs,
           )})`;
