@@ -207,7 +207,8 @@ function toChildArray(
 }
 
 function toPropName(name: string) {
-  return name.replace('@', '');
+  let result = name.replace('@', '');
+  return isSafeKey(result) ? result : JSON.stringify(result);
 }
 
 export function serializeAttribute(
@@ -243,7 +244,7 @@ function serializeProp(
   }
   const isScopeValue = isPath(attr[1]);
   const key = toPropName(attr[0]);
-  return `${isSafeKey(key) ? key : JSON.stringify(key)}: ${
+  return `${key}: ${
     isScopeValue ? serializePath(attr[1]) : escapeString(attr[1])
   }`;
 }
