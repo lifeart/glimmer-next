@@ -130,6 +130,16 @@ describe.each([
     resetContextCounter();
   });
   describe('convert function builder', () => {
+    describe('mustache helper usage - optional chaining', () => {
+      test('it has proper chains', () => {
+        expect($t<ASTv1.MustacheStatement>(`{{toInitials @name @initialLength @initials}}`)).toEqual(
+          `$:() => ` + $mh('toInitials', '$:this[$args].name,$:this[$args].initialLength,$:this[$args].initials'),
+        );
+        expect($t<ASTv1.MustacheStatement>(`{{toInitials @name @initialLength.a @initials}}`)).toEqual(
+          `$:() => ` + $mh('toInitials', '$:this[$args].name,$:this[$args].initialLength?.a,$:this[$args].initials'),
+        );
+      });
+    });
     describe('path expressions are optional chained', () => {
       test('works for template paths', () => {
         expect($t<ASTv1.BlockStatement>(`{{this.foo.bar.baz}}`)).toEqual(
