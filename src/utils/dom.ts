@@ -52,6 +52,16 @@ const $_className = 'className';
 
 let ROOT: Component<any> | null = null;
 
+export function $_componentHelper(arg: any) {
+  return arg;
+}
+export function $_modifierHelper(arg: any) {
+  return arg;
+}
+export function $_helperHelper(arg: any) {
+  return arg;
+}
+
 export function resetRoot() {
   ROOT = null;
 }
