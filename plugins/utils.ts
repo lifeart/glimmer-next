@@ -4,6 +4,11 @@ import type { Flags } from './flags';
 import type { ComplexJSType } from './converter';
 
 let flags!: Flags;
+let bindings: Set<string> = new Set();
+
+export function setBindings(b: Set<string>) {
+  bindings = b;
+}
 
 export function setFlags(f: Flags) {
   flags = f;
@@ -59,6 +64,9 @@ export function isPath(str: string) {
 }
 
 export function resolvePath(str: string) {
+  if (bindings.has(str)) {
+    return str;
+  }
   if (str === 'has-block-params') {
     str = str.replace(
       'has-block-params',

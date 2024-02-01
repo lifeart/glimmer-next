@@ -6,7 +6,19 @@ export type ResolvedHBS = {
   flags: {
     hasThisAccess: boolean;
   };
+  bindings: Set<string>;
 };
+
+
+function getScopeBindings(path: any, bindings: Set<string> = new Set()) {
+  Object.keys(path.scope.bindings).forEach((key) => {
+    bindings.add(key);
+  });
+  if (path.parentPath) {
+    getScopeBindings(path.parentPath, bindings);
+  }
+  return bindings;
+}
 
 export function processTemplate(
   hbsToProcess: ResolvedHBS[],
@@ -155,6 +167,7 @@ export function processTemplate(
               flags: {
                 hasThisAccess: hasThisAccess,
               },
+              bindings: getScopeBindings(path),
             });
             path.replaceWith(t.identifier('$placeholder'));
           }
