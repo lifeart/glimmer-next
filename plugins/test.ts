@@ -56,7 +56,7 @@ export function transform(
 ) {
   const programs: {
     meta: ResolvedHBS['flags'];
-    bindings: ResolvedHBS['bindings'],
+    bindings: ResolvedHBS['bindings'];
     template: Array<HBSNode | HBSControlExpression>;
   }[] = [];
   const seenNodes: Set<ASTv1.Node> = new Set();

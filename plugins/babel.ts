@@ -9,7 +9,6 @@ export type ResolvedHBS = {
   bindings: Set<string>;
 };
 
-
 function getScopeBindings(path: any, bindings: Set<string> = new Set()) {
   Object.keys(path.scope.bindings).forEach((key) => {
     bindings.add(key);

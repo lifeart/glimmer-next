@@ -76,7 +76,11 @@ function patchNodePath(node: ASTv1.MustacheStatement | ASTv1.SubExpression) {
 export type PrimitiveJSType = null | number | string | boolean | undefined;
 export type ComplexJSType = PrimitiveJSType | HBSControlExpression | HBSNode;
 
-export function convert(seenNodes: Set<ASTv1.Node>, flags: Flags, bindings: Set<string> = new Set()) {
+export function convert(
+  seenNodes: Set<ASTv1.Node>,
+  flags: Flags,
+  bindings: Set<string> = new Set(),
+) {
   setFlags(flags);
   setBindings(bindings);
 
