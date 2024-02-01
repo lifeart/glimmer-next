@@ -6,6 +6,7 @@ import {
   type HBSControlExpression,
   type HBSNode,
   serializeNode,
+  setBindings,
 } from './utils';
 import { processTemplate, type ResolvedHBS } from './babel';
 import { convert } from './converter';
@@ -55,6 +56,7 @@ export function transform(
 ) {
   const programs: {
     meta: ResolvedHBS['flags'];
+    bindings: ResolvedHBS['bindings'];
     template: Array<HBSNode | HBSControlExpression>;
   }[] = [];
   const seenNodes: Set<ASTv1.Node> = new Set();
@@ -84,9 +86,11 @@ export function transform(
 
   hbsToProcess.forEach((content) => {
     const flags = content.flags;
+    setBindings(content.bindings);
     const ast = preprocess(content.template);
     const program: (typeof programs)[number] = {
       meta: flags,
+      bindings: content.bindings,
       template: [],
     };
     traverse(ast, {

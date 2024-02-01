@@ -4,6 +4,11 @@ import type { Flags } from './flags';
 import type { ComplexJSType } from './converter';
 
 let flags!: Flags;
+let bindings: Set<string> = new Set();
+
+export function setBindings(b: Set<string>) {
+  bindings = b;
+}
 
 export function setFlags(f: Flags) {
   flags = f;
@@ -59,13 +64,22 @@ export function isPath(str: string) {
 }
 
 export function resolvePath(str: string) {
-  if (str.includes('has-block-params')) {
+  if (bindings.has(str)) {
+    return str;
+  }
+  if (str === 'has-block-params') {
     str = str.replace(
       'has-block-params',
       `${SYMBOLS.$_hasBlockParams}.bind(this, $slots)`,
     );
-  } else if (str.includes('has-block')) {
+  } else if (str === 'has-block') {
     str = str.replace('has-block', `${SYMBOLS.$_hasBlock}.bind(this, $slots)`);
+  } else if (str === 'component') {
+    str = SYMBOLS.COMPONENT_HELPER;
+  } else if (str === 'helper') {
+    str = SYMBOLS.HELPER_HELPER;
+  } else if (str === 'modifier') {
+    str = SYMBOLS.MODIFIER_HELPER;
   }
   return toSafeJSPath(
     toOptionalChaining(str)
