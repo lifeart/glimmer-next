@@ -61,20 +61,22 @@ export function $_componentHelper(params: any, hash: any) {
       args[key] = hash[key];
     });
     return new componentFn(...arguments);
-  }
+  };
 }
 export function $_modifierHelper(params: any, hash: any) {
   const modifierFn = params.shift();
   // @ts-expect-error undefined
   if (EmberFunctionalModifiers.has(modifierFn)) {
-    function wrappedModifier (node: any, _params: any, _hash: any) {
+    function wrappedModifier(node: any, _params: any, _hash: any) {
       console.log('callingWrapperModifier', {
-        params, _params,
-        hash, _hash
-      })
+        params,
+        _params,
+        hash,
+        _hash,
+      });
       return $_maybeModifier(modifierFn, node, [...params, ..._params], {
         ...hash,
-        ..._hash
+        ..._hash,
       });
     }
     // @ts-expect-error undefined
@@ -89,14 +91,16 @@ export function $_helperHelper(params: any, hash: any) {
   console.log('helper-helper', params, hash);
   // @ts-expect-error undefined
   if (EmberFunctionalHelpers.has(helperFn)) {
-    function wrappedHelper (_params: any, _hash: any) {
+    function wrappedHelper(_params: any, _hash: any) {
       console.log('callingWrapperHelper', {
-        params, _params,
-        hash, _hash
-      })
+        params,
+        _params,
+        hash,
+        _hash,
+      });
       return $_maybeHelper(helperFn, [...params, ..._params], {
         ...hash,
-        ..._hash
+        ..._hash,
       });
     }
     // @ts-expect-error undefined
