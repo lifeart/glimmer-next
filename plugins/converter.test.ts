@@ -302,14 +302,26 @@ describe.each([
     });
     describe('special ember composition helpers', () => {
       test('its properly converted', () => {
-        expect($t<ASTv1.MustacheStatement>(`{{component @cmp 123 name=hash}}`)).toEqual(
-          `$:() => $:${SYMBOLS.COMPONENT_HELPER}([$:this[$args].cmp,123],{name: ${$glimmerCompat('hash')}})`,
+        expect(
+          $t<ASTv1.MustacheStatement>(`{{component @cmp 123 name=hash}}`),
+        ).toEqual(
+          `$:() => $:${
+            SYMBOLS.COMPONENT_HELPER
+          }([$:this[$args].cmp,123],{name: ${$glimmerCompat('hash')}})`,
         );
-        expect($t<ASTv1.MustacheStatement>(`{{helper @cmp 123 name=hash}}`)).toEqual(
-          `$:() => $:${SYMBOLS.HELPER_HELPER}([$:this[$args].cmp,123],{name: ${$glimmerCompat('hash')}})`,
+        expect(
+          $t<ASTv1.MustacheStatement>(`{{helper @cmp 123 name=hash}}`),
+        ).toEqual(
+          `$:() => $:${
+            SYMBOLS.HELPER_HELPER
+          }([$:this[$args].cmp,123],{name: ${$glimmerCompat('hash')}})`,
         );
-        expect($t<ASTv1.MustacheStatement>(`{{modifier @cmp 123 name=hash}}`)).toEqual(
-          `$:() => $:${SYMBOLS.MODIFIER_HELPER}([$:this[$args].cmp,123],{name: ${$glimmerCompat('hash')}})`,
+        expect(
+          $t<ASTv1.MustacheStatement>(`{{modifier @cmp 123 name=hash}}`),
+        ).toEqual(
+          `$:() => $:${
+            SYMBOLS.MODIFIER_HELPER
+          }([$:this[$args].cmp,123],{name: ${$glimmerCompat('hash')}})`,
         );
       });
     });
@@ -633,6 +645,24 @@ describe.each([
       });
     });
     describe('each condition', () => {
+      test('it support block-less case', () => {
+        const converted = $t<ASTv1.BlockStatement>(
+          `{{#each smf}}<div></div>{{/each}}`,
+        );
+        expect(converted).toEqual<HBSControlExpression>(
+          $control({
+            type: 'each',
+            condition: $glimmerCompat('$:smf'),
+            blockParams: [],
+            children: [$node({ tag: 'div' })],
+          }),
+        );
+        expect($s(converted)).toEqual(
+          `$_each(${$glimmerCompat(
+            'smf',
+          )}, ($noop,$index,ctx0) => [$_tag('div', $_edp, [], ctx0)], null, this)`,
+        );
+      });
       test('it adds unstable child wrapper for simple multi-nodes', () => {
         const converted = $t<ASTv1.BlockStatement>(
           `{{#each foo as |bar|}}<div></div><span></span>{{/each}}`,

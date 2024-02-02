@@ -20,7 +20,7 @@ import type { Flags } from './flags';
 const SPECIAL_HELPERS = [
   SYMBOLS.HELPER_HELPER,
   SYMBOLS.MODIFIER_HELPER,
-  SYMBOLS.COMPONENT_HELPER
+  SYMBOLS.COMPONENT_HELPER,
 ];
 
 function patchNodePath(node: ASTv1.MustacheStatement | ASTv1.SubExpression) {
@@ -137,9 +137,7 @@ export function convert(
         .map((p) => serializeParam(p))
         .join(',')}],${toObject(hash)})`;
     } else {
-      return `$:${fnPath}(${params
-        .map((p) => serializeParam(p))
-        .join(',')})`;
+      return `$:${fnPath}(${params.map((p) => serializeParam(p)).join(',')})`;
     }
     /*
       params.map(el => {

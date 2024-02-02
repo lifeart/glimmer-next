@@ -117,6 +117,9 @@ class BasicListComponent<T extends { id: number }> {
       const map: WeakMap<T, string> = new WeakMap();
       this.keyForItem = (item: T) => {
         if (IS_DEV_MODE) {
+          if (typeof item === 'undefined' || item === null) {
+            return Math.random().toString(36).slice(2);
+          }
           if (isPrimitive(item)) {
             console.warn(`Iteration over primitives is not supported yet`);
             return String(item);
