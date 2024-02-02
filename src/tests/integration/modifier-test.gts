@@ -1,9 +1,28 @@
 import { module, test } from 'qunit';
 import { render } from '@lifeart/gxt/test-utils';
 import { cell } from '@lifeart/gxt';
-import { rerender } from '@lifeart/gxt/test-utils';
+import { rerender, click } from '@lifeart/gxt/test-utils';
 
 module('Integration | Internal | modifier', function () {
+  test('it support helper composition in on modifier', async function (assert) {
+    function optional(a) {
+      if (a) {
+        return a;
+      } else {
+        return () => {};
+      }
+    }
+    function onClick(e) {
+      e.target.innerHTML = 'WOO';
+    }
+    await render(
+      <template>
+        <div data-test-node {{on 'click' (optional onClick)}}></div>
+      </template>,
+    );
+    await click('[data-test-node]');
+    assert.dom().hasText('WOO');
+  });
   if (REACTIVE_MODIFIERS) {
     test('modifiers may be reactive', async function (assert) {
       assert.expect(5);

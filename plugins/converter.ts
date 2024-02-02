@@ -496,29 +496,32 @@ export function convert(
           if (mod.path.type !== 'PathExpression') {
             return null;
           }
+          const hashArgs: [string, PrimitiveJSType][] = mod.hash.pairs.map(
+            (pair) => {
+              return [
+                pair.key,
+                ToJSType(pair.value, false) as unknown as PrimitiveJSType,
+              ];
+            },
+          );
+
           if (mod.path.original === 'on') {
             const firstParam = mod.params[0];
             if (firstParam.type === 'StringLiteral') {
+              const tail = mod.params
+                .slice(2)
+                .map((p) => ToJSType(p))
+                .join(',');
               return [
                 firstParam.original,
-                `$:($e, $n) => ${ToJSType(mod.params[1])}($e, $n, ${mod.params
-                  .slice(2)
-                  .map((p) => ToJSType(p))
-                  .join(',')})`,
+                `$:($e, $n) => ${ToJSType(mod.params[1])}($e, $n${
+                  tail.length ? `,${tail}` : ''
+                })`,
               ];
             } else {
               return null;
             }
           } else {
-            const hashArgs: [string, PrimitiveJSType][] = mod.hash.pairs.map(
-              (pair) => {
-                return [
-                  pair.key,
-                  ToJSType(pair.value, false) as unknown as PrimitiveJSType,
-                ];
-              },
-            );
-
             return [
               // @me here
               EVENT_TYPE.ON_CREATED,
