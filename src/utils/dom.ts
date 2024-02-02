@@ -52,14 +52,59 @@ const $_className = 'className';
 
 let ROOT: Component<any> | null = null;
 
-export function $_componentHelper(arg: any) {
-  return arg;
+export function $_componentHelper(params: any, hash: any) {
+  const componentFn = params.shift();
+
+  return function wrappedComponent(args: any) {
+    console.log('patching component args', args, hash);
+    Object.keys(hash).forEach((key) => {
+      args[key] = hash[key];
+    });
+    return new componentFn(...arguments);
+  }
 }
-export function $_modifierHelper(arg: any) {
-  return arg;
+export function $_modifierHelper(params: any, hash: any) {
+  const modifierFn = params.shift();
+  // @ts-expect-error undefined
+  if (EmberFunctionalModifiers.has(modifierFn)) {
+    function wrappedModifier (node: any, _params: any, _hash: any) {
+      console.log('callingWrapperModifier', {
+        params, _params,
+        hash, _hash
+      })
+      return $_maybeModifier(modifierFn, node, [...params, ..._params], {
+        ...hash,
+        ..._hash
+      });
+    }
+    // @ts-expect-error undefined
+    EmberFunctionalModifiers.add(wrappedModifier);
+    return wrappedModifier;
+  } else {
+    throw new Error('Unable to use modifier helper with non-ember modifiers');
+  }
 }
-export function $_helperHelper(arg: any) {
-  return arg;
+export function $_helperHelper(params: any, hash: any) {
+  const helperFn = params.shift();
+  console.log('helper-helper', params, hash);
+  // @ts-expect-error undefined
+  if (EmberFunctionalHelpers.has(helperFn)) {
+    function wrappedHelper (_params: any, _hash: any) {
+      console.log('callingWrapperHelper', {
+        params, _params,
+        hash, _hash
+      })
+      return $_maybeHelper(helperFn, [...params, ..._params], {
+        ...hash,
+        ..._hash
+      });
+    }
+    // @ts-expect-error undefined
+    EmberFunctionalHelpers.add(wrappedHelper);
+    return wrappedHelper;
+  } else {
+    throw new Error('Unable to use helper with non-ember helpers');
+  }
 }
 
 export function resetRoot() {
