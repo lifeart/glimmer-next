@@ -12,6 +12,20 @@ module('Integration | InternalComponent | each', function (hooks) {
     users = cell([{ name: cell('Uef') }, { name: cell('Bi') }]);
   });
 
+  test('it support iteration without block params', async function (assert) {
+    const list = new Array(10).fill(undefined);
+    await render(
+      <template>
+        <ul>
+          {{#each list}}
+            <li></li>
+          {{/each}}
+        </ul>
+      </template>,
+    );
+    assert.dom('li').exists({ count: 10 });
+  });
+
   test('it runs async element destructors for Components with context', async function (assert) {
     const animationDelay = 100;
     const items = cell([{ id: '1' }, { id: '2' }]);

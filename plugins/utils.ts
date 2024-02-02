@@ -362,6 +362,9 @@ export function serializeNode(
         newCtxName,
       )}], ${ctxName})`;
     } else if (key === '@each') {
+      if (paramNames.length === 0) {
+        paramNames.push('$noop');
+      }
       if (paramNames.length === 1) {
         // @todo - add compiler param to mark there is no index here
         // likely we  need to import $getIndex function and pass it as a param for each constructor
