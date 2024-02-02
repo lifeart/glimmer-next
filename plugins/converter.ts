@@ -17,6 +17,12 @@ import {
 import { EVENT_TYPE, SYMBOLS } from './symbols';
 import type { Flags } from './flags';
 
+const SPECIAL_HELPERS = [
+  SYMBOLS.HELPER_HELPER,
+  SYMBOLS.MODIFIER_HELPER,
+  SYMBOLS.COMPONENT_HELPER
+];
+
 function patchNodePath(node: ASTv1.MustacheStatement | ASTv1.SubExpression) {
   if (node.path.type !== 'PathExpression') {
     return;
@@ -120,12 +126,18 @@ export function convert(
     params: any[],
     hash: [string, PrimitiveJSType][],
   ) {
+    const fnPath = resolvePath(nodePath);
+    if (SPECIAL_HELPERS.includes(fnPath)) {
+      return `$:${fnPath}([${params
+        .map((p) => serializeParam(p))
+        .join(',')}],${toObject(hash)})`;
+    }
     if (flags.WITH_HELPER_MANAGER && !nodePath.startsWith('$_')) {
-      return `$:${SYMBOLS.$_maybeHelper}(${resolvePath(nodePath)},[${params
+      return `$:${SYMBOLS.$_maybeHelper}(${fnPath},[${params
         .map((p) => serializeParam(p))
         .join(',')}],${toObject(hash)})`;
     } else {
-      return `$:${resolvePath(nodePath)}(${params
+      return `$:${fnPath}(${params
         .map((p) => serializeParam(p))
         .join(',')})`;
     }

@@ -300,6 +300,19 @@ describe.each([
         ).toEqual(`$:() => $:$__hash({foo: "bar", boo: "baz"})`);
       });
     });
+    describe('special ember composition helpers', () => {
+      test('its properly converted', () => {
+        expect($t<ASTv1.MustacheStatement>(`{{component @cmp 123 name=hash}}`)).toEqual(
+          `$:() => $:${SYMBOLS.COMPONENT_HELPER}([$:this[$args].cmp,123],{name: ${$glimmerCompat('hash')}})`,
+        );
+        expect($t<ASTv1.MustacheStatement>(`{{helper @cmp 123 name=hash}}`)).toEqual(
+          `$:() => $:${SYMBOLS.HELPER_HELPER}([$:this[$args].cmp,123],{name: ${$glimmerCompat('hash')}})`,
+        );
+        expect($t<ASTv1.MustacheStatement>(`{{modifier @cmp 123 name=hash}}`)).toEqual(
+          `$:() => $:${SYMBOLS.MODIFIER_HELPER}([$:this[$args].cmp,123],{name: ${$glimmerCompat('hash')}})`,
+        );
+      });
+    });
     describe('Builtin helpers in SubExpression', () => {
       test('fn helper properly mapped', () => {
         expect($t<ASTv1.MustacheStatement>(`{{q (fn a b (if c d))}}`)).toEqual(
