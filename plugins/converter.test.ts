@@ -495,7 +495,7 @@ describe.each([
         expect($t<ASTv1.ElementNode>(`<div {{on "click" foo}}></div>`)).toEqual(
           $node({
             tag: 'div',
-            events: [['click', '$:($e, $n) => $:foo($e, $n, )']],
+            events: [['click', '$:($e, $n) => $:foo($e, $n)']],
           }),
         );
       });
@@ -507,7 +507,7 @@ describe.each([
           $node({
             tag: 'div',
             events: [
-              ['click', `$:($e, $n) => ${$mh('foo', '$:bar,$:baz')}($e, $n, )`],
+              ['click', `$:($e, $n) => ${$mh('foo', '$:bar,$:baz')}($e, $n)`],
             ],
           }),
         );
@@ -519,6 +519,27 @@ describe.each([
             events: [['0', $mm('foo-bar')]],
           }),
         );
+      });
+      test('support helper as on modifier argument', () => {
+        const result = $t<ASTv1.ElementNode>(
+          `<div {{on "click" (optional tab.onClick a=12)}}></div>`,
+        );
+        expect(result).toEqual(
+          $node({
+            tag: 'div',
+            events: [
+              [
+                'click',
+                `$:($e, $n) => ${$mh(
+                  'optional',
+                  '$:tab.onClick',
+                  '{a: 12}',
+                )}($e, $n)`,
+              ],
+            ],
+          }),
+        );
+        console.log('result', result);
       });
       test('support custom modifiers with params ', () => {
         expect(
