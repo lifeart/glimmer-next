@@ -14,7 +14,13 @@ import {
 import { opcodeFor } from '@/utils/vm';
 import { associateDestroyable } from './component';
 import { api } from '@/utils/dom-api';
-import { $_debug_args, addToTree, isFn, isPrimitive } from './shared';
+import {
+  $DEBUG_REACTIVE_CONTEXTS,
+  $_debug_args,
+  addToTree,
+  isFn,
+  isPrimitive,
+} from './shared';
 
 export function ifCondition(
   ctx: Component<any>,
@@ -105,8 +111,16 @@ export function ifCondition(
       lastValue = value;
       if (runNumber === 1) {
         let nextBranch = value ? trueBranch : falseBranch;
+        if (IS_DEV_MODE) {
+          $DEBUG_REACTIVE_CONTEXTS.push(
+            `if:${value ? String(true) : String(false)}`,
+          );
+        }
         // @ts-expect-error this any type
         prevComponent = nextBranch(this as unknown as Component<any>);
+        if (IS_DEV_MODE) {
+          $DEBUG_REACTIVE_CONTEXTS.pop();
+        }
         renderElement(
           placeholder.parentNode || target,
           prevComponent,
@@ -144,8 +158,16 @@ export function ifCondition(
         if (isDestructorRunning) {
           return;
         }
+        if (IS_DEV_MODE) {
+          $DEBUG_REACTIVE_CONTEXTS.push(
+            `if:${value ? String(true) : String(false)}`,
+          );
+        }
         // @ts-expect-error this any type
         prevComponent = nextBranch(this);
+        if (IS_DEV_MODE) {
+          $DEBUG_REACTIVE_CONTEXTS.pop();
+        }
         renderElement(
           placeholder.parentNode || target,
           prevComponent,

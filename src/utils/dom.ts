@@ -824,10 +824,12 @@ function fnToText(fn: Function, destructors: Destructors = []) {
 function createSlot(
   value: Slots[string],
   params: () => unknown[],
-  // @ts-expect-error unused
   name: string,
 ) {
   // @todo - figure out destructors for slot (shoud work, bu need to be tested)
+  if (IS_DEV_MODE) {
+    $DEBUG_REACTIVE_CONTEXTS.push(`:${name}`);
+  }
   const elements = value(...params());
   const nodes = mergeComponents(
     elements.map((el) => {
@@ -840,6 +842,9 @@ function createSlot(
       }
     }),
   );
+  if (IS_DEV_MODE) {
+    $DEBUG_REACTIVE_CONTEXTS.pop();
+  }
   return nodes;
 }
 
