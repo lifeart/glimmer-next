@@ -1,5 +1,9 @@
 lockfileVersion: '6.0'
 
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
 dependencies:
   '@babel/core':
     specifier: ^7.23.6
@@ -8279,7 +8283,6 @@ packages:
     resolution: {directory: glint-environment-gxt, type: directory}
     id: file:glint-environment-gxt
     name: glint-environment-gxt
-    version: 0.0.2
     peerDependencies:
       '@glint/core': ^1.3.0
       '@glint/environment-ember-loose': ^1.3.0
