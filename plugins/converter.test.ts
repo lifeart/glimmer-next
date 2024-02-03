@@ -131,56 +131,64 @@ describe.each([
   });
   describe('support ...attributes', () => {
     test('works for simple dom nodes', () => {
-      const converted =  $t<ASTv1.ElementNode>(
-        `<div ...attributes></div>`,
+      const converted = $t<ASTv1.ElementNode>(`<div ...attributes></div>`);
+      expect(converted).toEqual(
+        $node({
+          tag: 'div',
+          attributes: [['...attributes', '']],
+        }),
       );
-      expect(converted).toEqual($node({
-        tag: 'div',
-        attributes: [
-          ['...attributes', ''],
-        ]
-      }));
       console.log(JSON.stringify(converted));
       const result = $s(converted);
       expect(result).toEqual(`$_tag('div', [[],[],[],$fw], [], this)`);
     });
     test('works for dom nodes inside if', () => {
-      const converted =  $t<ASTv1.ElementNode>(
+      const converted = $t<ASTv1.ElementNode>(
         `{{#if true}}<div ...attributes></div>{{/if}}`,
       );
-      expect(converted).toEqual($control({
-        // @ts-expect-error
-        condition: true,
-        children: [$node({
-          tag: 'div',
-          attributes: [
-            ['...attributes', ''],
-          ]
-        })]
-      }));
+      expect(converted).toEqual(
+        $control({
+          // @ts-expect-error
+          condition: true,
+          children: [
+            $node({
+              tag: 'div',
+              attributes: [['...attributes', '']],
+            }),
+          ],
+        }),
+      );
       const result = $s(converted);
-      expect(result).toEqual(`$_if(true, (ctx0) => $_ucw((ctx1) => [$_tag('div', [[],[],[],$fw], [], ctx1)], ctx0), (ctx0) => $_ucw((ctx1) => [], ctx0), this)`);
+      expect(result).toEqual(
+        `$_if(true, (ctx0) => $_ucw((ctx1) => [$_tag('div', [[],[],[],$fw], [], ctx1)], ctx0), (ctx0) => $_ucw((ctx1) => [], ctx0), this)`,
+      );
     });
     test('works for component nodes inside if', () => {
-      const converted =  $t<ASTv1.ElementNode>(
+      const converted = $t<ASTv1.ElementNode>(
         `{{#if true}}<Smile ...attributes />{{/if}}`,
       );
-      expect(converted).toEqual($control({
-        // @ts-expect-error
-        condition: true,
-        children: [$node({
-          tag: 'Smile',
-          selfClosing: true,
-          attributes: [
-            ['...attributes', ''],
-          ]
-        })]
-      }));
+      expect(converted).toEqual(
+        $control({
+          // @ts-expect-error
+          condition: true,
+          children: [
+            $node({
+              tag: 'Smile',
+              selfClosing: true,
+              attributes: [['...attributes', '']],
+            }),
+          ],
+        }),
+      );
       const result = $s(converted);
       if (flags.IS_GLIMMER_COMPAT_MODE) {
-        expect(result).toEqual(`$_if(true, (ctx0) => $_ucw((ctx1) => [$_c(Smile,$_args({},{},[[...$fw[0], ...[]],[...$fw[1], ...[]],[...$fw[2],...[]]]), ctx1)], ctx0), (ctx0) => $_ucw((ctx1) => [], ctx0), this)`);
+        expect(result).toEqual(
+          `$_if(true, (ctx0) => $_ucw((ctx1) => [$_c(Smile,$_args({},{},[[...$fw[0], ...[]],[...$fw[1], ...[]],[...$fw[2],...[]]]), ctx1)], ctx0), (ctx0) => $_ucw((ctx1) => [], ctx0), this)`,
+        );
       } else {
-        expect(result).toEqual(`$_if(true, (ctx0) => $_ucw((ctx1) => [$_c(Smile,{"$:[$PROPS_SYMBOL]": $:[[...$fw[0], ...[]],[...$fw[1], ...[]],[...$fw[2],...[]]]}, ctx1)], ctx0), (ctx0) => $_ucw((ctx1) => [], ctx0), this)`);
+        expect(result).toEqual(
+          `$_if(true, (ctx0) => $_ucw((ctx1) => [$_c(Smile,{"$:[$PROPS_SYMBOL]": $:[[...$fw[0], ...[]],[...$fw[1], ...[]],[...$fw[2],...[]]]}, ctx1)], ctx0), (ctx0) => $_ucw((ctx1) => [], ctx0), this)`,
+        );
       }
     });
   });

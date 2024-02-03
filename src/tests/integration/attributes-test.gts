@@ -2,6 +2,29 @@ import { module, test } from 'qunit';
 import { render } from '@lifeart/gxt/test-utils';
 
 module('Integration | Interal | ...attributes', function () {
+  test('forard attrs to target component node inside if', async function (assert) {
+    const InternalButton = <template>
+      {{#if true}}
+        <button ...attributes>button</button>
+      {{/if}}
+    </template>;
+    const Button = <template>
+      {{#if true}}
+        <InternalButton ...attributes />
+      {{/if}}
+    </template>;
+    await render(<template><Button data-test-button /></template>);
+    assert.dom('[data-test-button]').hasText('button');
+  });
+  test('forard attrs to target node inside if', async function (assert) {
+    const Button = <template>
+      {{#if true}}
+        <button ...attributes>button</button>
+      {{/if}}
+    </template>;
+    await render(<template><Button data-test-button /></template>);
+    assert.dom('[data-test-button]').hasText('button');
+  });
   test('forwards attrs to target node', async function (assert) {
     const Button = <template>
       <button ...attributes>button</button>
