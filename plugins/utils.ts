@@ -156,9 +156,17 @@ export function toOptionalChaining<
 }
 
 export function serializePath(
-  p: string,
+  p: string | boolean,
   wrap = flags.IS_GLIMMER_COMPAT_MODE,
 ): string {
+  if (typeof p !== 'string') {
+    // @ts-expect-error
+    return p;
+  }
+  if (p.includes('...')) {
+    // splat attrs case
+    return p;
+  }
   const isFunction =
     p.startsWith('$:(') || p.startsWith('$:...(') || p.startsWith('$:function');
   if (wrap === false) {
@@ -295,7 +303,8 @@ function toArgs(
     if (slots !== '{}') {
       extraArgs.push([`$:[${SYMBOLS.$SLOTS_SYMBOL}]`, `$:${slots}`]);
     }
-    return toObject(extraArgs);
+    const result = toObject(extraArgs);
+    return result;
   }
 
   const result = `${SYMBOLS.ARGS}(${toObject(args)},${slots},${props})`;
@@ -428,13 +437,13 @@ export function serializeNode(
     const hasSplatAttrs = node.attributes.find((attr) => {
       return attr[0] === '...attributes';
     });
-    node.attributes = node.attributes.filter((attr) => {
+    const attributes = node.attributes.filter((attr) => {
       return attr[0] !== '...attributes';
     });
-    const args = node.attributes.filter((attr) => {
+    const args = attributes.filter((attr) => {
       return attr[0].startsWith('@');
     });
-    const attrs = node.attributes.filter((attr) => {
+    const attrs = attributes.filter((attr) => {
       return !attr[0].startsWith('@');
     });
     const props = node.properties;
@@ -498,11 +507,11 @@ export function serializeNode(
     const hasSplatAttrs = node.attributes.find((attr) => {
       return attr[0] === '...attributes';
     });
-    node.attributes = node.attributes.filter((attr) => {
+    const attributes = node.attributes.filter((attr) => {
       return attr[0] !== '...attributes';
     });
     let tagProps = `[${toArray(node.properties)},${toArray(
-      node.attributes,
+      attributes,
     )},${toArray(node.events)}${hasSplatAttrs ? `,$fw` : ''}]`;
     if (tagProps === '[[],[],[]]') {
       tagProps = SYMBOLS.EMPTY_DOM_PROPS;

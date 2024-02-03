@@ -129,6 +129,61 @@ describe.each([
   beforeEach(() => {
     resetContextCounter();
   });
+  describe('support ...attributes', () => {
+    test('works for simple dom nodes', () => {
+      const converted =  $t<ASTv1.ElementNode>(
+        `<div ...attributes></div>`,
+      );
+      expect(converted).toEqual($node({
+        tag: 'div',
+        attributes: [
+          ['...attributes', ''],
+        ]
+      }));
+      console.log(JSON.stringify(converted));
+      const result = $s(converted);
+      expect(result).toEqual(`$_tag('div', [[],[],[],$fw], [], this)`);
+    });
+    test('works for dom nodes inside if', () => {
+      const converted =  $t<ASTv1.ElementNode>(
+        `{{#if true}}<div ...attributes></div>{{/if}}`,
+      );
+      expect(converted).toEqual($control({
+        // @ts-expect-error
+        condition: true,
+        children: [$node({
+          tag: 'div',
+          attributes: [
+            ['...attributes', ''],
+          ]
+        })]
+      }));
+      const result = $s(converted);
+      expect(result).toEqual(`$_if(true, (ctx0) => $_ucw((ctx1) => [$_tag('div', [[],[],[],$fw], [], ctx1)], ctx0), (ctx0) => $_ucw((ctx1) => [], ctx0), this)`);
+    });
+    test('works for component nodes inside if', () => {
+      const converted =  $t<ASTv1.ElementNode>(
+        `{{#if true}}<Smile ...attributes />{{/if}}`,
+      );
+      expect(converted).toEqual($control({
+        // @ts-expect-error
+        condition: true,
+        children: [$node({
+          tag: 'Smile',
+          selfClosing: true,
+          attributes: [
+            ['...attributes', ''],
+          ]
+        })]
+      }));
+      const result = $s(converted);
+      if (flags.IS_GLIMMER_COMPAT_MODE) {
+        expect(result).toEqual(`$_if(true, (ctx0) => $_ucw((ctx1) => [$_c(Smile,$_args({},{},[[...$fw[0], ...[]],[...$fw[1], ...[]],[...$fw[2],...[]]]), ctx1)], ctx0), (ctx0) => $_ucw((ctx1) => [], ctx0), this)`);
+      } else {
+        expect(result).toEqual(`$_if(true, (ctx0) => $_ucw((ctx1) => [$_c(Smile,{"$:[$PROPS_SYMBOL]": $:[[...$fw[0], ...[]],[...$fw[1], ...[]],[...$fw[2],...[]]]}, ctx1)], ctx0), (ctx0) => $_ucw((ctx1) => [], ctx0), this)`);
+      }
+    });
+  });
   describe('convert function builder', () => {
     describe('mustache helper usage - optional chaining', () => {
       test('it has proper chains', () => {
@@ -539,7 +594,6 @@ describe.each([
             ],
           }),
         );
-        console.log('result', result);
       });
       test('support custom modifiers with params ', () => {
         expect(
