@@ -13,6 +13,7 @@ import { opcodeFor } from '@/utils/vm';
 import {
   $_debug_args,
   $nodes,
+  IN_SSR_ENV,
   isArray,
   isFn,
   isPrimitive,
@@ -270,7 +271,7 @@ class BasicListComponent<T extends { id: number }> {
       const parent = targetNode.parentNode!;
       const trueParent = bottomMarker.parentNode!;
       // parent may not exist in rehydration
-      if (!import.meta.env.SSR) {
+      if (!IN_SSR_ENV) {
         parent && parent.removeChild(targetNode);
       }
       if (trueParent !== parent) {

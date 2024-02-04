@@ -63,11 +63,11 @@ export function compiler(mode: string, options: Options = {}): Plugin {
         const intermediate = fixContentTagOutput(p.process(code, file));
 
         if (mode === 'development') {
-          const shouldHotRelaod = options.disableHMR
+          const shouldHotReload = options.disableHMR
             ? false
-            : shouldHotReloadFile(file);
+            : shouldHotReloadFile(file, code);
           return transform(
-            fixExportsForHMR(intermediate) + (shouldHotRelaod ? HMR : ''),
+            fixExportsForHMR(intermediate) + (shouldHotReload ? HMR : ''),
             file,
             mode as 'development' | 'production',
             isLibBuild,

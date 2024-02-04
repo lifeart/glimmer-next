@@ -2,11 +2,12 @@ export function fixExportsForHMR(code: string) {
   return code.split('export const ').join('export let ');
 }
 
-export function shouldHotReloadFile(fileName: string) {
+export function shouldHotReloadFile(fileName: string, code: string) {
   const isProperExtension =
     fileName.endsWith('.gts') || fileName.endsWith('.gjs');
   const isNotTest = !fileName.includes('-test');
-  return isProperExtension && isNotTest;
+  const hasTemplateTag = code.includes('<template>');
+  return isProperExtension && isNotTest && hasTemplateTag;
 }
 
 export const HMR = `

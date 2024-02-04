@@ -1,7 +1,44 @@
 import { module, test } from 'qunit';
-import { render } from '@lifeart/gxt/test-utils';
+import { render, rerender } from '@lifeart/gxt/test-utils';
+import { Component, tracked } from '@lifeart/gxt';
 
 module('Integration | InternalHelper | hash', function () {
+  test('properties may be reactive', async function (assert) {
+    const NestedComponent = <template>
+      <span>f{{@name.name}}</span>
+    </template>;
+    const SimpleComponent = <template>
+      <div data-test={{@hash.name}}>{{@hash.name}}</div><NestedComponent
+        @name={{hash name=@hash.name}}
+      />
+    </template>;
+    let klass = null;
+    const optional = (arg) => {
+      return arg;
+    };
+    class MyComponent extends Component {
+      constructor() {
+        super(...arguments);
+        klass = this;
+      }
+      @tracked name = '1';
+      get fullName() {
+        return this.name;
+      }
+      <template>
+        <SimpleComponent @hash={{optional (hash name=this.fullName)}} />
+      </template>
+    }
+    await render(<template><MyComponent /></template>);
+    assert.dom('[data-test="1"]').exists({ count: 1 });
+    assert.dom('[data-test="1"]').hasText('1');
+    assert.dom('span').hasText('f1');
+    klass!.name = 'name2';
+    await rerender();
+    assert.dom('[data-test="name2"]').exists({ count: 1 });
+    assert.dom('[data-test="name2"]').hasText('name2');
+    assert.dom('span').hasText('fname2');
+  });
   test('nested hashes works just fine', async function (assert) {
     assert.expect(1);
     const name = 'xyz';
