@@ -6,30 +6,7 @@ function ifs(condition: number) {
 
 function Display(props: { value: string }) {
   scope({ props, ifs, Display });
-  return hbs`<span>
-      <div>hello world!{{ifs props.value}}</div>
-      {{#let "div" as |tagName|}}
-        {{#let (element tagName props.value) as |Tag|}}
-          <Tag class="my-tag">This is custom element with reactive value inside {{ifs props.value}}</Tag>
-        {{/let}}
-      {{/let}}
-    
-    {{ifs props.value}}{{log (eq props.value 10)}}
-    <br>
-    {{log  props.value (hash value=props.value name="static")}}
-    {{#let props.value 'dddd' as |name1 dd|}}
-      This is: {{name1}} / {{dd}}
-      <br>
-      {{#let (hash parent=name1 palue=123) as |name2|}}
-        {{log name2 name2.palue name2.parent name1}}
-        This is: {{name2.palue}} and parent {{name2.parent}}
-        <br>
-        {{#let "321" as |name3|}}
-          This is: {{name3}}
-        {{/let}}
-      {{/let}}
-    {{/let}}
-  </span>`;
+  return hbs`<span>{{ifs props.value}}</span>`;
 }
 
 export function Clock(this: any) {

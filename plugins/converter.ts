@@ -541,7 +541,8 @@ export function convert(
       if (
         !v.includes(SYMBOLS.SLOT) &&
         !node.tag.startsWith(':') &&
-        node.tag.toLowerCase() === node.tag
+        node.tag.toLowerCase() === node.tag &&
+        !v.includes('...') // not LET CASE
       ) {
         node.children = [];
         node.events.push([EVENT_TYPE.TEXT_CONTENT, v]);
