@@ -7,6 +7,7 @@ import {
   renderElement,
   destroyElement,
   runDestructors,
+  destroyElementSync,
 } from '@/utils/component';
 import {
   AnyCell,
@@ -605,6 +606,7 @@ if (!import.meta.env.SSR) {
       const renderedBuckets = Array.from(renderedInstances);
       // we need to append new instances before first element of rendered bucket and later remove all rendered buckets;
 
+      // TODO: add tests for hot-reload
       renderedBuckets.forEach(({ parent, instance, args }) => {
         const newCmp = component(newKlass, args, parent);
         const firstElement = getFirstNode(instance);
@@ -1091,6 +1093,52 @@ export function $_args(
 export const $_if = ifCond;
 export const $_slot = slot;
 export const $_c = component;
+export function $_dc(
+  comp: () => ComponentReturnType | Component,
+  args: Record<string, unknown>,
+  ctx: Component<any>,
+) {
+  const _cmp = formula(comp, 'dynamic-component');
+  let result: ComponentReturnType | null = null;
+  let ref: unknown = null;
+  const destructor = opcodeFor(_cmp, (value: any) => {
+    if (typeof value !== 'function') {
+      result = value;
+      return;
+    }
+    if (value !== ref) {
+      ref = value;
+    } else {
+      return;
+    }
+    if (result) {
+      const target = result[$nodes].pop();
+      destroyElementSync(result);
+      result = component(value, args, ctx);
+      result![$nodes].push(target!);
+      renderElement(target!.parentNode!, result, target!);
+    } else {
+      result = component(value, args, ctx);
+    }
+  });
+  if (!_cmp.isConst) {
+    result!.nodes.push(
+      IS_DEV_MODE ? api.comment('placeholder') : api.comment(),
+    );
+    associateDestroyable(ctx, [destructor]);
+  } else {
+    _cmp.destroy();
+    destructor();
+  }
+  return {
+    get ctx() {
+      return result!.ctx;
+    },
+    get [$nodes]() {
+      return result![$nodes];
+    },
+  };
+}
 export const $_component = (component: any) => {
   console.log('component', component);
   return component;
