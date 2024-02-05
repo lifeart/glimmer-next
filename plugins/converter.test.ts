@@ -129,6 +129,19 @@ describe.each([
   beforeEach(() => {
     resetContextCounter();
   });
+  describe('support dynamic components', () => {
+    test('if component has path in name, it count it as dynamic', () => {
+      const converted = $t<ASTv1.ElementNode>(`<this.Item />`);
+      expect(converted).toEqual(
+        $node({
+          tag: 'this.Item',
+          selfClosing: true,
+        }),
+      );
+      const result = $s(converted);
+      expect(result).toEqual('$_dc($:()=>this.Item,{},this)');
+    });
+  });
   describe('support ...attributes', () => {
     test('works for simple dom nodes', () => {
       const converted = $t<ASTv1.ElementNode>(`<div ...attributes></div>`);
@@ -138,7 +151,6 @@ describe.each([
           attributes: [['...attributes', '']],
         }),
       );
-      console.log(JSON.stringify(converted));
       const result = $s(converted);
       expect(result).toEqual(`$_tag('div', [[],[],[],$fw], [], this)`);
     });
@@ -183,11 +195,11 @@ describe.each([
       const result = $s(converted);
       if (flags.IS_GLIMMER_COMPAT_MODE) {
         expect(result).toEqual(
-          `$_if(true, (ctx0) => $_ucw((ctx1) => [$_c(Smile,$_args({},{},[[...$fw[0], ...[]],[...$fw[1], ...[]],[...$fw[2],...[]]]), ctx1)], ctx0), (ctx0) => $_ucw((ctx1) => [], ctx0), this)`,
+          `$_if(true, (ctx0) => $_ucw((ctx1) => [$_c(Smile,$_args({},{},[[...$fw[0], ...[]],[...$fw[1], ...[]],[...$fw[2],...[]]]),ctx1)], ctx0), (ctx0) => $_ucw((ctx1) => [], ctx0), this)`,
         );
       } else {
         expect(result).toEqual(
-          `$_if(true, (ctx0) => $_ucw((ctx1) => [$_c(Smile,{"$:[$PROPS_SYMBOL]": $:[[...$fw[0], ...[]],[...$fw[1], ...[]],[...$fw[2],...[]]]}, ctx1)], ctx0), (ctx0) => $_ucw((ctx1) => [], ctx0), this)`,
+          `$_if(true, (ctx0) => $_ucw((ctx1) => [$_c(Smile,{"$:[$PROPS_SYMBOL]": $:[[...$fw[0], ...[]],[...$fw[1], ...[]],[...$fw[2],...[]]]},ctx1)], ctx0), (ctx0) => $_ucw((ctx1) => [], ctx0), this)`,
         );
       }
     });
@@ -718,11 +730,11 @@ describe.each([
         );
         if (flags.IS_GLIMMER_COMPAT_MODE) {
           expect(result).toEqual(
-            `$:...(() => {let self = this;let Let_bar_6c3gez6 = $:() => $:foo;let Let_k_6c3gez6 = "name";return [$_c(Div,$_args({bar: () => Let_bar_6c3gez6},{},[[],[['bar', () => $:$__if($:Let_bar_6c3gez6,$:Let_bar_6c3gez6)]],[]]), this)]})()`,
+            `$:...(() => {let self = this;let Let_bar_6c3gez6 = $:() => $:foo;let Let_k_6c3gez6 = "name";return [$_c(Div,$_args({bar: () => Let_bar_6c3gez6},{},[[],[['bar', () => $:$__if($:Let_bar_6c3gez6,$:Let_bar_6c3gez6)]],[]]),this)]})()`,
           );
         } else {
           expect(result).toEqual(
-            `$:...(() => {let self = this;let Let_bar_6c3gez6 = $:() => $:foo;let Let_k_6c3gez6 = "name";return [$_c(Div,{bar: Let_bar_6c3gez6, "$:[$PROPS_SYMBOL]": [[],[['bar', () => $:$__if($:Let_bar_6c3gez6,$:Let_bar_6c3gez6)]],[]]}, this)]})()`,
+            `$:...(() => {let self = this;let Let_bar_6c3gez6 = $:() => $:foo;let Let_k_6c3gez6 = "name";return [$_c(Div,{bar: Let_bar_6c3gez6, "$:[$PROPS_SYMBOL]": [[],[['bar', () => $:$__if($:Let_bar_6c3gez6,$:Let_bar_6c3gez6)]],[]]},this)]})()`,
           );
         }
       });
@@ -791,7 +803,7 @@ describe.each([
             'foo',
           )}, (bar,$index,ctx0) => [$_c(Smile,${$args(
             '{}',
-          )}, ctx0)], null, this)`,
+          )},ctx0)], null, this)`,
         );
       });
       test('it add UnstableChildWrapper if component surrounded my meaningful text', () => {
@@ -803,7 +815,7 @@ describe.each([
             'foo',
           )}, (bar,$index,ctx0) => [$_ucw((ctx1) => [$_text("1"), $_c(Smile,${$args(
             '{}',
-          )}, ctx1)], ctx0)], null, this)`,
+          )},ctx1)], ctx0)], null, this)`,
         );
       });
       test('it works', () => {

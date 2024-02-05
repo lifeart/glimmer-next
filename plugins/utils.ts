@@ -277,6 +277,15 @@ function isSafeKey(key: string): boolean {
   return /^[a-z_$@][a-z0-9_$]*$/i.test(key);
 }
 
+function toComponent(ref: string, args: string, ctx: string) {
+  if (ref.includes('.')) {
+    // may be a dynamic component
+    return `${SYMBOLS.DYNAMIC_COMPONENT}($:()=>${ref},${args},${ctx})`;
+  } else {
+    return `${SYMBOLS.COMPONENT}(${ref},${args},${ctx})`;
+  }
+}
+
 export function toObject(
   args: [string, string | number | boolean | null | undefined][],
 ) {
@@ -469,11 +478,7 @@ export function serializeNode(
 
     if (node.selfClosing) {
       // @todo - we could pass `hasStableChild` ans hasBlock / hasBlockParams to the DOM helper
-      return `${SYMBOLS.COMPONENT}(${node.tag},${toArgs(
-        args,
-        '{}',
-        secondArg,
-      )}, ${ctxName})`;
+      return toComponent(node.tag, toArgs(args, '{}', secondArg), ctxName);
     } else {
       const slots: HBSNode[] = node.children.filter((child) => {
         if (typeof child === 'string') {
@@ -498,10 +503,9 @@ export function serializeNode(
         )}) => [${slotChildren}]`;
       });
       const slotsObj = `{${serializedSlots.join(',')}}`;
-      const fn = `${node.tag},${toArgs(args, slotsObj, secondArg)}, ${ctxName}`;
       // @todo - we could pass `hasStableChild` ans hasBlock / hasBlockParams to the DOM helper
       // including `has-block` helper
-      return `${SYMBOLS.COMPONENT}(${fn})`;
+      return toComponent(node.tag, toArgs(args, slotsObj, secondArg), ctxName);
     }
   } else if (typeof node === 'object' && node.tag) {
     const hasSplatAttrs = node.attributes.find((attr) => {
