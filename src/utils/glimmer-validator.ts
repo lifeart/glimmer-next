@@ -1,4 +1,11 @@
-import { Cell, cellFor, cellsMap, getTracker } from './reactive';
+import {
+  type Cell,
+  cellFor,
+  cellsMap,
+  getTracker,
+  isRendering,
+  setIsRendering,
+} from './reactive';
 
 export { cellFor as tagFor } from '@lifeart/gxt';
 
@@ -54,4 +61,32 @@ export function trackedData<T extends object, K extends keyof T>(
   }
 
   return { getter, setter };
+}
+
+let renderingStateBeforeBegin = isRendering();
+
+export function beginTrackFrame() {
+  renderingStateBeforeBegin = isRendering();
+  if (!isRendering()) {
+    setIsRendering(true);
+  }
+}
+
+export function endTrackFrame() {
+  if (isRendering() !== renderingStateBeforeBegin) {
+    setIsRendering(renderingStateBeforeBegin);
+  }
+}
+
+export function beginUntrackFrame() {
+  renderingStateBeforeBegin = isRendering();
+  if (renderingStateBeforeBegin) {
+    setIsRendering(false);
+  }
+}
+
+export function endUntrackFrame() {
+  if (isRendering() !== renderingStateBeforeBegin) {
+    setIsRendering(renderingStateBeforeBegin);
+  }
 }

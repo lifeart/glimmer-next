@@ -330,3 +330,6 @@ export function inNewTrackingFrame(callback: () => void) {
 export function getTracker() {
   return currentTracker;
 }
+export function setTracker(tracker: Set<Cell> | null) {
+  currentTracker = tracker;
+}
