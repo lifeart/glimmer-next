@@ -715,8 +715,8 @@ describe.each([
         ).toEqual(
           `$:...(() => {let self = this;let Let_bar_6c3gez6 = $:() => $:foo;let Let_k_6c3gez6 = "name";return [$_text("p"), ${
             flags.IS_GLIMMER_COMPAT_MODE
-              ? '() => Let_bar_6c3gez6'
-              : 'Let_bar_6c3gez6'
+              ? '() => Let_bar_6c3gez6()'
+              : 'Let_bar_6c3gez6()'
           }, ${
             flags.IS_GLIMMER_COMPAT_MODE
               ? '() => Let_k_6c3gez6'
@@ -730,11 +730,11 @@ describe.each([
         );
         if (flags.IS_GLIMMER_COMPAT_MODE) {
           expect(result).toEqual(
-            `$:...(() => {let self = this;let Let_bar_6c3gez6 = $:() => $:foo;let Let_k_6c3gez6 = "name";return [$_c(Div,$_args({bar: () => Let_bar_6c3gez6},{},[[],[['bar', () => $:$__if($:Let_bar_6c3gez6,$:Let_bar_6c3gez6)]],[]]),this)]})()`,
+            `$:...(() => {let self = this;let Let_bar_6c3gez6 = $:() => $:foo;let Let_k_6c3gez6 = "name";return [$_c(Div,$_args({bar: () => Let_bar_6c3gez6()},{},[[],[['bar', () => $:$__if($:Let_bar_6c3gez6(),$:Let_bar_6c3gez6())]],[]]),this)]})()`,
           );
         } else {
           expect(result).toEqual(
-            `$:...(() => {let self = this;let Let_bar_6c3gez6 = $:() => $:foo;let Let_k_6c3gez6 = "name";return [$_c(Div,{bar: Let_bar_6c3gez6, "$:[$PROPS_SYMBOL]": [[],[['bar', () => $:$__if($:Let_bar_6c3gez6,$:Let_bar_6c3gez6)]],[]]},this)]})()`,
+            `$:...(() => {let self = this;let Let_bar_6c3gez6 = $:() => $:foo;let Let_k_6c3gez6 = "name";return [$_c(Div,{bar: Let_bar_6c3gez6(), "$:[$PROPS_SYMBOL]": [[],[['bar', () => $:$__if($:Let_bar_6c3gez6(),$:Let_bar_6c3gez6())]],[]]},this)]})()`,
           );
         }
       });

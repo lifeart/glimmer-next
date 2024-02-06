@@ -64,7 +64,7 @@ export function ifCondition(
   associateDestroyable(ctx, [
     () => {
       if (placeholder.isConnected) {
-        placeholder.parentElement!.removeChild(placeholder);
+        placeholder.parentNode!.removeChild(placeholder);
       }
     },
     runExistingDestructors,
