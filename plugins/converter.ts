@@ -337,22 +337,20 @@ export function convert(
       } else if (name === 'let') {
         const varScopeName = Math.random().toString(36).substring(7);
         const namesToReplace: Record<string, string> = {};
+        const primitives: Set<string> = new Set();
         const vars = node.params.map((p, index) => {
-          let isSubExpression = p.type === 'SubExpression';
           let isString = p.type === 'StringLiteral';
           let isBoolean = p.type === 'BooleanLiteral';
+          let isNumber = p.type === 'NumberLiteral';
           let isNull = p.type === 'NullLiteral';
           let isUndefined = p.type === 'UndefinedLiteral';
           let originalName = node.program.blockParams[index];
           let newName = `Let_${originalName}_${varScopeName}`;
           namesToReplace[originalName] = `${newName}`;
-          if (
-            isSubExpression ||
-            isString ||
-            isBoolean ||
-            isNull ||
-            isUndefined
-          ) {
+          let castToPrimitive =
+            isString || isBoolean || isNull || isUndefined || isNumber;
+          if (castToPrimitive) {
+            primitives.add(originalName);
             return `let ${newName} = ${ToJSType(p, false)};`;
           } else {
             return `let ${newName} = $:() => ${ToJSType(p)};`;
@@ -377,7 +375,11 @@ export function convert(
               `(?<!\\.)\\b${key}\\b(?!(=|'|\"|:)[^ ]*)`,
               'g',
             );
-            str = str.replace(re, namesToReplace[key]);
+            if (primitives.has(key)) {
+              str = str.replace(re, namesToReplace[key]);
+            } else {
+              str = str.replace(re, `${namesToReplace[key]}()`);
+            }
           });
           return str;
         }

@@ -12,6 +12,61 @@ module('Integration | InternalComponent | each', function (hooks) {
     users = cell([{ name: cell('Uef') }, { name: cell('Bi') }]);
   });
 
+  test('it not reactive if non-reactive getter used as source', async function (assert) {
+    let iteration = 1;
+    const ctx = {
+      get values() {
+        return new Array(iteration).fill(null).map((_, id) => {
+          id;
+        });
+      },
+    };
+    await render(
+      <template>
+        <ul>
+          {{#each ctx.values as |value|}}
+            <li>{{value}}</li>
+          {{/each}}
+        </ul>
+      </template>,
+    );
+    assert.dom('li').exists({ count: 1 });
+    iteration = 2;
+    await rerender();
+    assert.dom('li').exists({ count: 1 });
+  });
+
+  test('it remains reactive if reactive getter used as source', async function (assert) {
+    const iteration = cell(1);
+    const ctx = {
+      get values() {
+        return new Array(iteration.value).fill(null).map((_, id) => {
+          id;
+        });
+      },
+    };
+    await render(
+      <template>
+        <ul>
+          {{#each ctx.values as |value|}}
+            <li>{{value}}</li>
+          {{/each}}
+        </ul>
+      </template>,
+    );
+    assert.dom('li').exists({ count: 1 });
+    iteration.update(2);
+    await rerender();
+    assert.dom('li').exists({ count: 2 });
+    iteration.update(3);
+    await rerender();
+    assert.dom('li').exists({ count: 3 });
+
+    iteration.update(1);
+    await rerender();
+    assert.dom('li').exists({ count: 1 });
+  });
+
   test('it support iteration without block params', async function (assert) {
     const list = new Array(10).fill(undefined);
     await render(

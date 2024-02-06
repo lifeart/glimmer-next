@@ -3,6 +3,36 @@ import { render, rerender } from '@lifeart/gxt/test-utils';
 import { cell } from '@lifeart/gxt';
 
 module('Integration | InternalComponent | let', function () {
+  test('let arguments could be used to control slots', async function (assert) {
+    const value = cell(false);
+    const and = (...args: any[]) => {
+      return args.reduce((a, b) => a && b, true);
+    };
+    const c = {
+      get value() {
+        return value.value;
+      },
+    };
+    const Control = <template>
+      {{#let (and @value (has-block)) as |show|}}
+        {{#if show}}
+          {{yield}}
+        {{/if}}
+      {{/let}}
+    </template>;
+
+    await render(
+      <template>
+        <Control @value={{c.value}}>
+          <div data-test='block'>block</div>
+        </Control>
+      </template>,
+    );
+    assert.dom('[data-test="block"]').doesNotExist();
+    value.update(true);
+    await rerender();
+    assert.dom('[data-test="block"]').exists();
+  });
   test('reactive values works inside let', async function (assert) {
     const ifs = (v) => String(v);
     const Display = <template>

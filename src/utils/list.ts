@@ -108,6 +108,11 @@ class BasicListComponent<T extends { id: number }> {
         tag = new Cell(tag, 'list tag');
       } else if (isFn(originalTag)) {
         tag = formula(() => deepFnValue(originalTag), 'list tag');
+        associateDestroyable(ctx, [
+          () => {
+            (tag as MergedCell).destroy();
+          },
+        ]);
       }
     }
     this.tag = tag;
