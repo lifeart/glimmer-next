@@ -3,27 +3,30 @@ import { cell, type Cell } from '@lifeart/gxt';
 const CELL_SYMBOL = Symbol('cell');
 const CELL_VALUE = Symbol('cell-value');
 
-type CellWrapper = {
+interface Storage<T> {
   [CELL_SYMBOL]: true;
-  [CELL_VALUE]?: Cell<any>;
-};
+  [CELL_VALUE]: Cell<T>;
+  update(value: T): void;
+}
 
-function cellWrapper(): CellWrapper {
+export function createStorage<T>(
+  initialValue?: T,
+  isEqual?: (oldValue: T, newValue: T) => boolean,
+): Storage<T> {
   return {
     [CELL_SYMBOL]: true,
+    [CELL_VALUE]: cell<T>(initialValue as T, 'storage-primitive'),
+    update(value: T) {
+      if (isEqual && isEqual(this[CELL_VALUE]?.value as T, value)) {
+        return;
+      }
+      this[CELL_VALUE].update(value);
+    },
   };
 }
-
-export function createStorage() {
-  return cellWrapper();
+export function getValue<T>(storage: Storage<T>): T {
+  return (storage[CELL_VALUE]?.value ?? undefined) as unknown as T;
 }
-export function getValue(wrapper: CellWrapper) {
-  return wrapper[CELL_VALUE]?.value ?? undefined;
-}
-export function setValue(wrapper: CellWrapper, value: any) {
-  if (!wrapper[CELL_VALUE]) {
-    wrapper[CELL_VALUE] = cell(value, 'storage-primitive');
-  } else {
-    wrapper[CELL_VALUE].update(value);
-  }
+export function setValue<T>(storage: Storage<T>, value: T) {
+  storage.update(value);
 }
