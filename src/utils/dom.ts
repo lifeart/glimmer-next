@@ -26,7 +26,7 @@ import { ifCondition } from '@/utils/if';
 import {
   DestructorFn,
   Destructors,
-  executeDestructors,
+  destroy,
   registerDestructor,
 } from './destroyable';
 import { api } from '@/utils/dom-api';
@@ -1239,7 +1239,7 @@ export function $_fin(
     // no need to add destructors because component seems template-only and should not have `registerDestructor` flow.
 
     $destructors.push(() => {
-      executeDestructors(ctx as unknown as object);
+      destroy(ctx as unknown as object);
     });
     associateDestroyable(ctx, $destructors);
   }
