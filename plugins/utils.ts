@@ -75,11 +75,11 @@ export function resolvePath(str: string) {
   } else if (str === 'has-block') {
     str = str.replace('has-block', `${SYMBOLS.$_hasBlock}.bind(this, $slots)`);
   } else if (str === 'component') {
-    str = SYMBOLS.COMPONENT_HELPER;
+    return SYMBOLS.COMPONENT_HELPER;
   } else if (str === 'helper') {
-    str = SYMBOLS.HELPER_HELPER;
+    return SYMBOLS.HELPER_HELPER;
   } else if (str === 'modifier') {
-    str = SYMBOLS.MODIFIER_HELPER;
+    return SYMBOLS.MODIFIER_HELPER;
   }
   return toSafeJSPath(
     toOptionalChaining(str)
