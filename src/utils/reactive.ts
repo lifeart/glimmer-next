@@ -21,7 +21,7 @@ export const DEBUG_MERGED_CELLS = new Set<MergedCell>();
 export const DEBUG_CELLS = new Set<Cell>();
 var currentTracker: Set<Cell> | null = null;
 let _isRendering = false;
-const cellsMap = new WeakMap<object, Record<string, Cell<unknown>>>();
+export const cellsMap = new WeakMap<object, Map<string | number | symbol, Cell<unknown>>>();
 
 export function getCells() {
   return Array.from(DEBUG_CELLS);
@@ -40,9 +40,9 @@ if (IS_DEV_MODE) {
   }
 }
 
-function keysFor(obj: object): Record<string, Cell<unknown>> {
+function keysFor(obj: object): Map<string | number | symbol, Cell<unknown>> {
   if (!cellsMap.has(obj)) {
-    cellsMap.set(obj, {});
+    cellsMap.set(obj, new Map());
   }
   return cellsMap.get(obj)!;
 }
@@ -56,26 +56,26 @@ export function tracked(
   return {
     get() {
       const keys = keysFor(this);
-      if (!(key in keys)) {
+      if (!keys.has(key)) {
         const value: any = cell(
           hasInitializer
             ? descriptor!.initializer?.call(this)
             : descriptor?.value,
           `${klass.constructor.name}.${key}.@tracked`,
         );
-        keys[key] = value;
+        keys.set(key, value);
         return value.value;
       } else {
-        return keys[key].value;
+        return keys.get(key)!.value;
       }
     },
     set(newValue: any) {
       const keys = keysFor(this);
-      if (!(key in keys)) {
-        keys[key] = cell(newValue, `${klass.constructor.name}.${key}.@tracked`);
+      if (!keys.has(key)) {
+        keys.set(key, cell(newValue, `${klass.constructor.name}.${key}.@tracked`));
         return;
       }
-      const _cell = keys[key];
+      const _cell = keys.get(key)!;
       if (_cell.value === newValue) {
         return;
       }
@@ -278,15 +278,15 @@ export function cellFor<T extends object, K extends keyof T>(
   obj: T,
   key: K,
 ): Cell<T[K]> {
-  const refs = cellsMap.get(obj) || {};
-  if (key in refs) {
-    return refs[key as unknown as string] as Cell<T[K]>;
+  const refs = cellsMap.get(obj) || new Map<string | number | symbol, Cell>();
+  if (refs.has(key)) {
+    return refs.get(key) as Cell<T[K]>;
   }
   const cellValue = new Cell<T[K]>(
     obj[key],
     `${obj.constructor.name}.${String(key)}`,
   );
-  refs[key as unknown as string] = cellValue;
+  refs.set(key, cellValue);
   cellsMap.set(obj, refs);
   Object.defineProperty(obj, key, {
     get() {
@@ -325,4 +325,11 @@ export function inNewTrackingFrame(callback: () => void) {
   currentTracker = null;
   callback();
   currentTracker = existingTracker;
+}
+
+export function getTracker() {
+  return currentTracker;
+}
+export function setTracker(tracker: Set<Cell> | null) {
+  currentTracker = tracker;
 }
