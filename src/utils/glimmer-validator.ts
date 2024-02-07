@@ -5,6 +5,7 @@ import {
   getTracker,
   isRendering,
   setIsRendering,
+  cell,
 } from './reactive';
 
 export { cellFor as tagFor } from '@lifeart/gxt';
@@ -90,3 +91,12 @@ export function endUntrackFrame() {
     setIsRendering(renderingStateBeforeBegin);
   }
 }
+
+export function valueForTag(tag: Cell) {
+  return tag.value;
+}
+
+export function validateTag() {
+  return false;
+}
+export const CURRENT_TAG = cell(0, 'CURRENT_TAG');
