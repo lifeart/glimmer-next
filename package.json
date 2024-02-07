@@ -50,6 +50,10 @@
       "import": "./dist/gxt.index.es.js",
       "types": "./dist/src/utils/index.d.ts"
     },
+    "./glimmer-compatibility": {
+      "import": "./dist/gxt.glimmer-compat.es.js",
+      "types": "./dist/glimmer-compat.d.ts"
+    },
     "./compiler": {
       "import": "./dist/gxt.compiler.es.js",
       "types": "./dist/compiler.d.ts"

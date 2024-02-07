@@ -21,7 +21,10 @@ export const DEBUG_MERGED_CELLS = new Set<MergedCell>();
 export const DEBUG_CELLS = new Set<Cell>();
 var currentTracker: Set<Cell> | null = null;
 let _isRendering = false;
-export const cellsMap = new WeakMap<object, Map<string | number | symbol, Cell<unknown>>>();
+export const cellsMap = new WeakMap<
+  object,
+  Map<string | number | symbol, Cell<unknown>>
+>();
 
 export function getCells() {
   return Array.from(DEBUG_CELLS);
@@ -72,7 +75,10 @@ export function tracked(
     set(newValue: any) {
       const keys = keysFor(this);
       if (!keys.has(key)) {
-        keys.set(key, cell(newValue, `${klass.constructor.name}.${key}.@tracked`));
+        keys.set(
+          key,
+          cell(newValue, `${klass.constructor.name}.${key}.@tracked`),
+        );
         return;
       }
       const _cell = keys.get(key)!;
