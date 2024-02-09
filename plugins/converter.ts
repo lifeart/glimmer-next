@@ -1,4 +1,4 @@
-import type { ASTv1 } from '@glimmer/syntax';
+import { type ASTv1 } from '@glimmer/syntax';
 import {
   type HBSControlExpression,
   type HBSNode,

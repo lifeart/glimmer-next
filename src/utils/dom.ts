@@ -44,6 +44,14 @@ import {
   IN_SSR_ENV,
 } from './shared';
 import { isRehydrationScheduled } from './rehydration';
+import { EmberFunctionalHelpers } from '../ember-compat/ember__component__helper';
+import {
+  canCarryModifier,
+  carryModifier,
+  modifierManager,
+  needManagerForModifier,
+} from './managers/modifier';
+import { canCarryHelper, carryHelper, helperManager, needManagerForHelper } from './managers/helper';
 
 // EMPTY DOM PROPS
 export const $_edp = [[], [], []] as Props;
@@ -66,50 +74,18 @@ export function $_componentHelper(params: any, hash: any) {
 }
 export function $_modifierHelper(params: any, hash: any) {
   const modifierFn = params.shift();
-  // @ts-expect-error undefined
-  if (EmberFunctionalModifiers.has(modifierFn)) {
-    function wrappedModifier(node: any, _params: any, _hash: any) {
-      console.log('callingWrapperModifier', {
-        params,
-        _params,
-        hash,
-        _hash,
-      });
-      return $_maybeModifier(modifierFn, node, [...params, ..._params], {
-        ...hash,
-        ..._hash,
-      });
-    }
-    // @ts-expect-error undefined
-    EmberFunctionalModifiers.add(wrappedModifier);
-    return wrappedModifier;
+  if (canCarryModifier(modifierFn)) {
+    return carryModifier(modifierFn, params, hash, $_maybeModifier);
   } else {
     throw new Error('Unable to use modifier helper with non-ember modifiers');
   }
 }
 export function $_helperHelper(params: any, hash: any) {
   const helperFn = params.shift();
-  console.log('helper-helper', params, hash);
-  // @ts-expect-error undefined
-  if (EmberFunctionalHelpers.has(helperFn)) {
-    function wrappedHelper(_params: any, _hash: any) {
-      console.log('callingWrapperHelper', {
-        params,
-        _params,
-        hash,
-        _hash,
-      });
-      return $_maybeHelper(helperFn, [...params, ..._params], {
-        ...hash,
-        ..._hash,
-      });
-    }
-    // @ts-expect-error undefined
-    EmberFunctionalHelpers.add(wrappedHelper);
-    return wrappedHelper;
-  } else {
-    throw new Error('Unable to use helper with non-ember helpers');
+  if (canCarryHelper(helperFn)) {
+    return carryHelper(helperFn, params, hash, $_maybeHelper);
   }
+  throw new Error('Unable to use helper with non-ember helpers');
 }
 
 export function resetRoot() {
@@ -152,7 +128,8 @@ function $prop(
       resolveRenderable(value, `${element.tagName}.${key}`),
       destructors,
     );
-  } else if (value !== null && isTagLike(value)) {
+  } else if (value !== null && !isPrimitive(value)) {
+    // isTagLike(value)?
     let prevPropValue: any = undefined;
     destructors.push(
       opcodeFor(value as AnyCell, (value) => {
@@ -187,7 +164,12 @@ function $attr(
       resolveRenderable(value, `${element.tagName}.${key}`),
       destructors,
     );
-  } else if (value !== null && isTagLike(value)) {
+  } else if (
+    value !== null &&
+    value !== undefined &&
+    !isPrimitive(value) &&
+    isTagLike(value)
+  ) {
     destructors.push(
       opcodeFor(value as AnyCell, (value) => {
         // @ts-expect-error type casting
@@ -207,6 +189,9 @@ function resolveRenderable(
   debugName = 'resolveRenderable',
 ): RenderableType | MergedCell | Cell {
   const f = formula(() => deepFnValue(child), debugName);
+  if (EmberFunctionalHelpers.has(f)) {
+    debugger;
+  }
   let componentProps: RenderableType = '';
   checkOpcode(f, (value) => {
     componentProps = value as unknown as RenderableType;
@@ -458,7 +443,11 @@ function _DOM(
         element,
         $_className,
         formula(() => {
-          return formulas.join(' ');
+          return formulas
+            .map((f) => {
+              return isPrimitive(f) ? String(f) : f.value;
+            })
+            .join(' ');
         }, element.tagName + '.className'),
         destructors,
       );
@@ -621,28 +610,20 @@ if (!import.meta.env.SSR) {
 
 export const $_maybeHelper = (
   value: any,
-  // @ts-expect-error
   args: any[],
   _hash: Record<string, unknown>,
 ) => {
-  // @ts-expect-error amount of args
-  const hash = $_args(_hash, false);
+
   // helper manager
   if (isPrimitive(value)) {
     return value;
-    // @ts-expect-error
-  } else if (EmberFunctionalHelpers.has(value)) {
-    return (...args: any[]) => {
-      return value(args, hash);
-    };
-  } else if (value.helperType === 'ember') {
-    const helper = new value();
-    return (...args: any[]) => {
-      return helper.compute.call(helper, args, hash);
-    };
+  } else if (needManagerForHelper(value)) {
+    // @ts-expect-error amount of args
+    const hash = $_args(_hash, false);
+    return helperManager(value, args, hash);
   }
 
-  return value;
+  return value(...args);
 };
 
 function component(
@@ -656,13 +637,13 @@ function component(
         comp.debugName || comp.name || comp.constructor.name
       }`
     : '';
+  let originalLabel = label;
   if (TRY_CATCH_ERROR_HANDLING) {
     try {
       if (IS_DEV_MODE) {
         $DEBUG_REACTIVE_CONTEXTS.push(label);
         label = `<${label} ${JSON.stringify(args)} />`;
       }
-      // @ts-expect-error uniqSymbol as index
       const fw = args[$PROPS_SYMBOL] as unknown as FwType;
       return _component(comp, args, fw, ctx);
     } catch (e) {
@@ -672,8 +653,21 @@ function component(
       if (IS_DEV_MODE) {
         let ErrorOverlayClass = customElements.get('vite-error-overlay');
         let errorOverlay!: Element;
+        // @ts-expect-error
+        let msg = e.message;
+        const key = originalLabel.replace('t', '');
+        // @ts-expect-error
+        if (globalThis.rawTemplates.has(key)) {
+          // @ts-expect-error
+          msg = `${globalThis.rawTemplates.get(key)}\n${msg}`;
+        }
+        // @ts-expect-error
+        if (globalThis.compiledTemplate.has(key)) {
+          // @ts-expect-error
+          msg = `${globalThis.compiledTemplate.get(key)}\n${msg}`;
+        }
         // @ts-expect-error message may not exit
-        e.message = `${label}\n${e.message}`;
+        e.message = `${label}\n${msg}`;
         if (!ErrorOverlayClass) {
           errorOverlay = api.element('pre');
           // @ts-expect-error stack may not exit
@@ -704,7 +698,6 @@ function component(
       }
     }
   } else {
-    // @ts-expect-error uniqSymbol as index
     const fw = args[$PROPS_SYMBOL] as unknown as FwType;
     return _component(comp, args, fw, ctx);
   }
@@ -727,51 +720,84 @@ function _component(
       comp = comp.value;
     }
   }
-  // @ts-expect-error construct signature
-  const instance = new (comp as unknown as Component<any>)(args, fw);
-  // todo - fix typings here
-  if ($template in instance) {
-    const result = (
-      instance[$template] as unknown as () => ComponentReturnType
-    )();
-    if (IS_DEV_MODE) {
-      // @ts-expect-error new
-      instance.debugName = comp.name;
-      const bucket = {
-        parent: ctx,
-        instance: result,
-        args,
-      };
-      COMPONENTS_HMR.get(comp)?.add(bucket);
+
+  try {
+    let instance: any;
+    // @ts-expect-error
+    if (comp.componentType === 'glimmer-component') {
+      // @ts-expect-error
+      instance = new (comp as unknown as Component<any>)({}, args, fw);
       registerDestructor(ctx, () => {
-        COMPONENTS_HMR.get(comp)?.delete(bucket);
+        if ('willDestroy' in instance) {
+          instance.willDestroy();
+        }
       });
+    } else {
+      // @ts-expect-error
+      instance = new (comp as unknown as Component<any>)(args, fw);
     }
-    if (result.ctx !== null) {
-      // here is workaround for simple components @todo - figure out how to show context-less components in tree
-      // for now we don't adding it
-      addToTree(ctx, result.ctx);
+    // todo - fix typings here
+    if ($template in instance) {
+      const result = (
+        instance[$template] as unknown as () => ComponentReturnType
+      )(
+        // @ts-expect-error args
+        args,
+        fw,
+      );
       if (IS_DEV_MODE) {
-        setBounds(result);
+        // @ts-expect-error new
+        instance.debugName = comp.name;
+        const bucket = {
+          parent: ctx,
+          instance: result,
+          args,
+          fw,
+        };
+        COMPONENTS_HMR.get(comp)?.add(bucket);
+        registerDestructor(ctx, () => {
+          COMPONENTS_HMR.get(comp)?.delete(bucket);
+        });
+      }
+      if (result.ctx !== null) {
+        // here is workaround for simple components @todo - figure out how to show context-less components in tree
+        // for now we don't adding it
+        addToTree(ctx, result.ctx);
+        if (IS_DEV_MODE) {
+          setBounds(result);
+        }
+      }
+      return result;
+    }
+    if (instance.ctx !== null) {
+      // for now we adding only components with context
+      addToTree(ctx, instance.ctx);
+      if (IS_DEV_MODE) {
+        setBounds(instance);
       }
     }
-    return result;
-  }
-  if (instance.ctx !== null) {
-    // for now we adding only components with context
-    addToTree(ctx, instance.ctx);
     if (IS_DEV_MODE) {
-      setBounds(instance);
+      COMPONENTS_HMR.get(comp)?.add({
+        parent: ctx,
+        instance: instance,
+        args,
+      });
     }
+    return instance;
+  } catch (e) {
+    console.error(`Unable to create ComponentInstance`, e);
+    if (IS_DEV_MODE) {
+      debugger;
+      throw e;
+    }
+    return {
+      ctx: null,
+      [$nodes]: [
+        // @ts-expect-error e may not have message
+        $_text(`Unable to create ComponentInstance: ${e.message}`, []),
+      ],
+    };
   }
-  if (IS_DEV_MODE) {
-    COMPONENTS_HMR.get(comp)?.add({
-      parent: ctx,
-      instance: instance,
-      args,
-    });
-  }
-  return instance;
 }
 type Fn = () => unknown;
 
@@ -1027,16 +1053,42 @@ const ArgProxyHandler = {
     }
   },
 };
-export const $SLOTS_SYMBOL = Symbol('slots');
-export const $PROPS_SYMBOL = Symbol('props');
+// export const $SLOTS_SYMBOL = //Symbol('slots');
+export const $PROPS_SYMBOL = '_PROPS_'; // Symbol('props');
+export const $SLOTS_SYMBOL = '_SLOTS_'; // Symbol('slots') have to fix it here for 2 types of compilers working in different contexts (node, browser);
+
 export function $_GET_ARGS(ctx: any, args: any) {
   ctx[$args] = ctx[$args] || args[0] || {};
 }
 export function $_GET_SLOTS(ctx: any, args: any) {
+  if (ctx === undefined) {
+    // inside let value
+    /*
+    
+      let SButtonElement_4k0gzo = function(args) {
+        const $fw = $_GET_FW(this, arguments);
+        const $slots = $_GET_SLOTS(this, arguments);
+      }
+
+    */
+    return {};
+  }
   return (args[0] || {})[$SLOTS_SYMBOL] || ctx[$args]?.[$SLOTS_SYMBOL] || {};
 }
 export function $_GET_FW(ctx: any, args: any) {
-  return (args[0] || {})[$PROPS_SYMBOL] || ctx[$args]?.[$PROPS_SYMBOL] || {};
+  if (ctx === undefined) {
+    // inside let value
+    /*
+    
+      let SButtonElement_4k0gzo = function(args) {
+        const $fw = $_GET_FW(this, arguments);
+        const $slots = $_GET_SLOTS(this, arguments);
+      }
+
+    */
+    return $_edp;
+  }
+  return (args[0] || {})[$PROPS_SYMBOL] || ctx[$args]?.[$PROPS_SYMBOL] || $_edp;
 }
 export function $_args(
   args: Record<string, unknown>,
@@ -1046,18 +1098,20 @@ export function $_args(
   if (IS_GLIMMER_COMPAT_MODE) {
     if (IS_DEV_MODE) {
       const newArgs: Record<string, () => unknown> = {
+        // @ts-expect-error
         [$SLOTS_SYMBOL]: slots ?? {},
+        // @ts-expect-error
         [$PROPS_SYMBOL]: props ?? {},
       };
       Object.keys(args).forEach((key) => {
         try {
           Object.defineProperty(newArgs, key, {
             get() {
-              if (!isFn(args[key])) {
-                return args[key];
+              if (isFn(args[key])) {
+                // @ts-expect-error function signature
+                return args[key]();
               }
-              // @ts-expect-error function signature
-              return args[key]();
+              return args[key];
             },
             enumerable: true,
           });
@@ -1143,67 +1197,18 @@ export const $_component = (component: any) => {
   console.log('component', component);
   return component;
 };
+
 export const $_maybeModifier = (
   modifier: any,
   element: HTMLElement,
   props: any[],
-  hashArgs: () => Record<string, unknown>,
+  hashArgs: Record<string, unknown>,
 ) => {
-  if ('emberModifier' in modifier) {
-    const instance = new modifier();
-    instance.modify = instance.modify.bind(instance);
-    const destructors: Destructors = [];
-    return () => {
-      console.log('running class-based  modifier');
-      requestAnimationFrame(() => {
-        const f = formula(() => {
-          instance.modify(element, props, hashArgs());
-        }, 'class-based modifier');
-        destructors.push(
-          opcodeFor(f, () => {
-            console.log('opcode executed for modifier');
-          }),
-        );
-      });
-      return () => {
-        destructors.forEach((fn) => fn());
-        console.log('destroing class-based modifier');
-        if ('willDestroy' in instance) {
-          instance.willDestroy();
-        }
-        runDestructors(instance);
-      };
-    };
+  if (needManagerForModifier(modifier)) {
+    return modifierManager(modifier, element, props, hashArgs);
   } else {
-    // console.log(modifier);
-    // @ts-expect-error
-    if (EmberFunctionalModifiers.has(modifier)) {
-      return (element: HTMLElement) => {
-        console.log('ember-functional-modifier', props, hashArgs());
-        const args = hashArgs();
-        const newArgs = {};
-        Object.keys(args).forEach((key) => {
-          Object.defineProperty(newArgs, key, {
-            enumerable: true,
-            get() {
-              if (typeof args[key] === 'function') {
-                // @ts-expect-error function signature
-                return args[key]();
-              } else {
-                return args[key];
-              }
-            },
-          });
-        });
-        return modifier(element, props, newArgs);
-      };
-    }
-    return modifier;
+    return modifier(element, ...props);
   }
-};
-export const $_helper = (helper: any) => {
-  console.log('helper', helper);
-  return helper;
 };
 export const $_text = text;
 export const $_tag = _DOM;

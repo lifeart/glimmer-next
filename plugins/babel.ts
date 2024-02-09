@@ -104,7 +104,8 @@ export function processTemplate(
             );
           }
         },
-        CallExpression(path: any) {
+        // @ts-expect-error context is not used
+        CallExpression(path: any, context: Context) {
           if (path.node.callee && path.node.callee.type === 'Identifier') {
             if (path.node.callee.name === 'scope') {
               path.remove();
@@ -122,6 +123,24 @@ export function processTemplate(
                   path.node.arguments.pop();
                 }
               }
+            } else if (path.node.callee.name === 'precompileTemplate') {
+              // const template = path.node.arguments[0].quasis[0].value
+              //   .raw as string;
+              // const isInsideClassBody = context.isInsideClassBody === true;
+              // const hasThisInTemplate = template.includes('this');
+              // let hasThisAccess =
+              //   isInsideClassBody === true || hasThisInTemplate;
+              // // looks like it's function based template, we don't need to mess with it's context hell
+              // if (context.isInsideReturnStatement === true) {
+              //   hasThisAccess = true;
+              // }
+              // hbsToProcess.push({
+              //   template,
+              //   flags: {
+              //     hasThisAccess: hasThisAccess,
+              //   },
+              // });
+              // path.replaceWith(t.identifier('$placeholder'));
             }
           }
         },

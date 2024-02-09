@@ -52,6 +52,10 @@ export const api = {
     child: HTMLElement | Node,
     anchor?: HTMLElement | Node | null,
   ) {
-    parent.insertBefore(child, anchor || null);
+    try {
+      parent.insertBefore(child, anchor || null);
+    } catch (e) {
+      debugger;
+    }
   },
 };

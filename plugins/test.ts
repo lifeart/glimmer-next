@@ -10,6 +10,10 @@ import {
 } from './utils';
 import { processTemplate, type ResolvedHBS } from './babel';
 import { convert } from './converter';
+// @ts-expect-error
+import tsPreset from '@babel/preset-typescript';
+import dT from './decorator-transforms/index';
+// console.table(dT);
 
 import { SYMBOLS } from './symbols';
 import type { Flags } from './flags';
@@ -66,17 +70,18 @@ export function transform(
 
   const plugins: PluginItem[] = [processTemplate(hbsToProcess, mode)];
   if (!isLibBuild) {
-    plugins.push('module:decorator-transforms');
+    plugins.push(dT);
   }
 
   const babelResult = transformSync(rawTxt, {
     plugins,
+    configFile: false,
+    babelrc: false,
+    babelrcRoots: false,
+    browserslistConfigFile: false,
     filename: fileName.replace('.gts', '.ts').replace('.gjs', '.js'),
     presets: [
-      [
-        '@babel/preset-typescript',
-        { allExtensions: true, onlyRemoveTypeImports: true },
-      ],
+      [tsPreset.default, { allExtensions: true, onlyRemoveTypeImports: true }],
     ],
   });
 

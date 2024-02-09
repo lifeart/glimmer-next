@@ -133,7 +133,7 @@ export class Router extends Component {
       .route-container {background-color: black;height:100vh;width:100vw;} .page
       { box-shadow: -13px -15px 20px 0px #e3e3e3; transition: opacity 0.5s
       ease-out, transform 0.5s ease-out; opacity: 1; height: 100vh; width:
-      100vw; padding: 20px; color: white; background-color: black; }
+      100vw; padding: 20px; }
     </style>
     <div class='route-container'>
       {{#each this.routes as |route|}}
