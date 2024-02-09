@@ -57,6 +57,12 @@ import { IfCondition, type IfFunction } from './control-flow/if';
 import { modifierManagers } from '../ember-compat/ember__modifier';
 import { EmberFunctionalModifiers } from '../ember-compat/ember-modifier';
 import { EmberFunctionalHelpers } from '../ember-compat/ember__component__helper';
+import {
+  canCarryModifier,
+  carryModifier,
+  modifierManager,
+  needManagerForModifier,
+} from './managers/modifier';
 
 type RenderableType = Node | ComponentReturnType | string | number;
 type ShadowRootMode = 'open' | 'closed' | null;
@@ -203,60 +209,9 @@ export function $_componentHelper(params: any, hash: any) {
 }
 export function $_modifierHelper(params: any, hash: any) {
   const modifierFn = params.shift();
-  if (EmberFunctionalModifiers.has(modifierFn)) {
-    function wrappedModifier(node: any, _params: any, _hash: any) {
-      console.log('callingWrapperModifier', {
-        params,
-        _params,
-        hash,
-        _hash,
-      });
-      return $_maybeModifier(modifierFn, node, [...params, ..._params], {
-        ...hash,
-        ..._hash,
-      });
-    }
-    EmberFunctionalModifiers.add(wrappedModifier);
-    return wrappedModifier;
+  if (canCarryModifier(modifierFn)) {
+    return carryModifier(modifierFn, params, hash, $_maybeModifier);
   } else {
-    if (modifierManagers.has(modifierFn)) {
-      let manager = modifierManagers.get(modifierFn);
-      const state = {};
-      if (isFn(manager)) {
-        manager = manager();
-      }
-      console.log(manager);
-      // debugger;
-      return (
-        element: HTMLElement,
-        args: any[] = [],
-        hash: Record<string, unknown> = {},
-      ) => {
-        return manager.installModifier(state, element, {
-          positional: args,
-          named: hash,
-        });
-      };
-    } else if (modifierFn.emberModifier) {
-      class Modifier extends modifierFn {
-        modify(
-          element: Fn,
-          named: Record<string, unknown> = {},
-          positional: any[] = [],
-        ) {
-          super.modify(element, { ...hash, ...named }, [
-            ...params,
-            ...positional,
-          ]);
-        }
-      }
-      return Modifier;
-    } else {
-      return function wrappedModifier(node: HTMLElement, ...args: unknown[]) {
-        return modifierFn(node, ...[...params, ...args]);
-      };
-    }
-    console.log(modifierFn);
     throw new Error('Unable to use modifier helper with non-ember modifiers');
   }
 }
@@ -1472,63 +1427,13 @@ export const $_maybeModifier = (
       return $_MANAGERS.modifier.handle(modifier, element, props, hashArgs);
     }
   }
-  if (modifierManagers.has(modifier)) {
-    // Use modifier manager
-    let manager = modifierManagers.get(modifier);
-    const state = {};
-    if (isFn(manager)) {
-      manager = manager();
-    }
-    return manager.installModifier(state, element, {
-      positional: props,
-      named: hashArgs,
-    });
+  if (needManagerForModifier(modifier)) {
+    return modifierManager(modifier, element, props, hashArgs);
   }
-  if ('emberModifier' in modifier) {
-    const instance = new modifier();
-    instance.modify = instance.modify.bind(instance);
-    const destructors: Destructors = [];
-    console.log('running class-based  modifier');
-    requestAnimationFrame(() => {
-      const f = formula(() => {
-        instance.modify(element, props, hashArgs);
-      }, 'class-based modifier');
-      destructors.push(
-        opcodeFor(f, () => {
-          console.log('opcode executed for modifier');
-        }),
-      );
-    });
-    return () => {
-      destructors.forEach((fn) => fn());
-      console.log('destroing class-based modifier');
-      if ('willDestroy' in instance) {
-        instance.willDestroy();
-      }
-      runDestructors(instance);
-    };
-  } else {
-    // console.log(modifier);
-    if (EmberFunctionalModifiers.has(modifier)) {
-      console.log('ember-functional-modifier', props, hashArgs);
-      const args = hashArgs as Record<string, unknown>;
-      const newArgs: Record<string, unknown> = {};
-      Object.keys(args).forEach((key) => {
-        Object.defineProperty(newArgs, key, {
-          enumerable: true,
-          get() {
-            if (typeof args[key] === 'function') {
-              return (args[key] as () => unknown)();
-            } else {
-              return args[key];
-            }
-          },
-        });
-      });
-      return modifier(element, props, newArgs);
-    }
-    return modifier(element, ...props);
+  if (canCarryModifier(modifier)) {
+    return carryModifier(modifier, element, props, hashArgs);
   }
+  return modifier(element, ...props);
 };
 export const $_helper = (helper: any) => {
   console.log('helper', helper);
