@@ -63,6 +63,7 @@ import {
   modifierManager,
   needManagerForModifier,
 } from './managers/modifier';
+import { canCarryHelper, carryHelper, helperManager, needManagerForHelper } from './managers/helper';
 
 type RenderableType = Node | ComponentReturnType | string | number;
 type ShadowRootMode = 'open' | 'closed' | null;
@@ -217,30 +218,15 @@ export function $_modifierHelper(params: any, hash: any) {
 }
 export function $_helperHelper(params: any, hash: any) {
   const helperFn = params.shift();
-  console.log('helper-helper', params, hash);
-  if (EmberFunctionalHelpers.has(helperFn)) {
-    function wrappedHelper(_params: any, _hash: any) {
-      console.log('callingWrapperHelper', {
-        params,
-        _params,
-        hash,
-        _hash,
-      });
-      return $_maybeHelper(helperFn, [...params, ..._params], {
-        ...hash,
-        ..._hash,
-      });
-    }
-    EmberFunctionalHelpers.add(wrappedHelper);
-    return wrappedHelper;
-  } else {
-    if (WITH_EMBER_INTEGRATION) {
-      if ($_MANAGERS.helper.canHandle(helperFn)) {
-        return $_MANAGERS.helper.handle(helperFn, params, hash);
-      }
-    }
-    throw new Error('Unable to use helper with non-ember helpers');
+  if (canCarryHelper(helperFn)) {
+    return carryHelper(helperFn, params, hash, $_maybeHelper);
   }
+  if (WITH_EMBER_INTEGRATION) {
+    if ($_MANAGERS.helper.canHandle(helperFn)) {
+      return $_MANAGERS.helper.handle(helperFn, params, hash);
+    }
+  }
+  throw new Error('Unable to use helper with non-ember helpers');
 }
 export function createRoot() {
   const root = new Root();
@@ -828,13 +814,10 @@ export const $_maybeHelper = (
     } else {
       return value;
     }
-    // @ts-expect-error
-  } else if (EmberFunctionalHelpers.has(value)) {
-    return value(args, hash);
-  } else if (value.helperType === 'ember') {
-    const helper = new value();
-    return helper.compute.call(helper, args, hash);
+  } else if (needManagerForHelper(value)) {
+    return helperManager(value, args, hash);
   }
+
   return value(...args);
 };
 
