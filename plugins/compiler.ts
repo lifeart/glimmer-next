@@ -4,7 +4,7 @@ import { transform } from './test';
 import { MAIN_IMPORT } from './symbols';
 import { type Flags, defaultFlags } from './flags.ts';
 import { HMR, fixExportsForHMR, shouldHotReloadFile } from './hmr.ts';
-
+import { compile as compileSvelte } from './svelte-compiler.js';
 export { stripGXTDebug } from './babel.ts';
 
 const p = new Preprocessor();
@@ -26,6 +26,7 @@ const extensionsToResolve = [
 ];
 
 const templateFileRegex = /\.(gts|gjs)$/;
+const svelteTemplateFileRegex = /\.(svelte)$/;
 const scriptFileRegex = /\.(ts|js)$/;
 type Options = {
   authorMode?: boolean;
@@ -59,7 +60,10 @@ export function compiler(mode: string, options: Options = {}): Plugin {
       };
     },
     transform(code: string, file: string) {
-      if (templateFileRegex.test(file)) {
+      if (svelteTemplateFileRegex.test(file)) {
+        const result = compileSvelte(code, file);
+        return result;
+      } else if (templateFileRegex.test(file)) {
         const intermediate = fixContentTagOutput(p.process(code, file));
 
         if (mode === 'development') {

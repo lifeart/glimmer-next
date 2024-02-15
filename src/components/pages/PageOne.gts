@@ -1,11 +1,13 @@
 import { Component } from '@lifeart/gxt';
 import { Smile } from './page-one/Smile';
 import { Table } from './page-one/Table.gts';
+import HelloWorld from './../World.svelte';
 
 export class PageOne extends Component {
   <template>
     <div class='text-white p-3'>
       <h1><q>Compilers are the New Frameworks</q> - Tom Dale &copy;</h1>
+      <HelloWorld @prefix='Hello'>1234</HelloWorld>
       <br />
 
       <div>Imagine a world where the robust, mature ecosystems of development
