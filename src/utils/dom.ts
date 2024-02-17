@@ -145,7 +145,10 @@ function $prop(
   value: unknown,
   destructors: DestructorFn[],
 ) {
-  if (isFn(value)) {
+  if (key.startsWith('on')) {
+    // @ts-expect-error
+    element[key] = value();
+  } else if (isFn(value)) {
     $prop(
       element,
       key,
