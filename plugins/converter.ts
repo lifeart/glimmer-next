@@ -428,7 +428,92 @@ export function convert(
     return false;
   }
 
+  const eventprops = [
+    // Window Event Attributes
+    'onafterprint',
+    'onbeforeprint',
+    'onbeforeunload',
+    'onerror',
+    'onhashchange',
+    'onload',
+    'onmessage',
+    'onoffline',
+    'ononline',
+    'onpagehide',
+    'onpageshow',
+    'onpopstate',
+    'onresize',
+    'onstorage',
+    'onunload',
+    // Form Events
+    'onblur',
+    'onchange',
+    'oncontextmenu',
+    'onfocus',
+    'oninput',
+    'oninvalid',
+    'onreset',
+    'onsearch',
+    'onselect',
+    'onsubmit',
+    // keyboard
+    'onkeydown',
+    'onkeypress',
+    'onkeyup',
+    // Mouse Events
+    'onclick',
+    'ondblclick',
+    'onmousedown',
+    'onmousemove',
+    'onmouseout',
+    'onmouseover',
+    'onmouseup',
+    'onmousewheel',
+    'onwheel',
+    // Drag Events
+    'ondrag',
+    'ondragend',
+    'ondragenter',
+    'ondragleave',
+    'ondragover',
+    'ondragstart',
+    'ondrop',
+    'onscroll',
+    // Clipboard Events
+    'oncopy',
+    'oncut',
+    'onpaste',
+    // Media Events
+    'onabort',
+    'oncanplay',
+    'oncanplaythrough',
+    'oncuechange',
+    'ondurationchange',
+    'onemptied',
+    'onended',
+    'onerror',
+    'onloadeddata',
+    'onloadedmetadata',
+    'onloadstart',
+    'onpause',
+    'onplay',
+    'onplaying',
+    'onprogress',
+    'onratechange',
+    'onseeked',
+    'onseeking',
+    'onstalled',
+    'onsuspend',
+    'ontimeupdate',
+    'onvolumechange',
+    'onwaiting',
+    // Misc Events
+
+    'ontoggle',
+  ];
+
   const propertyKeys = [
+    ...eventprops,
     'class',
     'shadowrootmode',
     // boolean attributes (https://meiert.com/en/blog/boolean-attributes-of-html/)

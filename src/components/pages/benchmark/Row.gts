@@ -89,14 +89,14 @@ export class Row extends Component<RowArgs> {
       <td class='px-6 py-4' class={{this.className}}>
         <a
           class='cursor-pointer'
-          {{on 'click' this.onClick}}
+          onclick={{this.onClick}}
           data-no-router
           data-test-select
         >{{this.labelCell}}</a>
       </td>
       <td class='px-6 py-4' class={{this.className}}>
         <a
-          {{on 'click' this.onClickRemove}}
+          onclick={{this.onClickRemove}}
           data-no-router
           data-test-remove
           class='cursor-pointer mr-1 rounded bg-indigo-600 px-2 py-1 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600'
