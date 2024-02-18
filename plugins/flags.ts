@@ -11,7 +11,7 @@ export type Flags = {
 export function defaultFlags() {
   return {
     IS_GLIMMER_COMPAT_MODE: true,
-    RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES: false,
+    RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES: true,
     TRY_CATCH_ERROR_HANDLING: true,
     SUPPORT_SHADOW_DOM: true,
     REACTIVE_MODIFIERS: true,
