@@ -20,6 +20,7 @@ import {
   isTagLike,
 } from './shared';
 import { isRehydrationScheduled } from './rehydration';
+import { LISTS_FOR_HMR } from './dom';
 
 export function getFirstNode(
   rawItem:
@@ -52,7 +53,7 @@ type ListComponentArgs<T> = {
   ItemComponent: (item: T, index?: number | MergedCell) => GenericReturnType;
 };
 type RenderTarget = HTMLElement | DocumentFragment;
-class BasicListComponent<T extends { id: number }> {
+export class BasicListComponent<T extends { id: number }> {
   keyMap: Map<string, GenericReturnType> = new Map();
   indexMap: Map<string, number> = new Map();
   nodes: Node[] = [];
@@ -90,6 +91,10 @@ class BasicListComponent<T extends { id: number }> {
           };
         },
       });
+      LISTS_FOR_HMR.add(this);
+      associateDestroyable(ctx, [() => {
+        LISTS_FOR_HMR.delete(this);
+      }]);
     }
     // "list bottom marker"
     if (IS_DEV_MODE) {

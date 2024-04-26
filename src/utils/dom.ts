@@ -21,6 +21,7 @@ import {
   SyncListComponent,
   AsyncListComponent,
   getFirstNode,
+  type BasicListComponent,
 } from '@/utils/list';
 import { ifCondition } from '@/utils/if';
 import {
@@ -579,6 +580,8 @@ if (IS_DEV_MODE) {
   }
 }
 
+export const LISTS_FOR_HMR: Set<BasicListComponent<any>> = new Set();
+
 const COMPONENTS_HMR = new WeakMap<
   Component | ComponentReturnType,
   Set<{
@@ -605,14 +608,26 @@ if (!import.meta.env.SSR) {
       }
       const renderedBuckets = Array.from(renderedInstances);
       // we need to append new instances before first element of rendered bucket and later remove all rendered buckets;
-
       // TODO: add tests for hot-reload
       renderedBuckets.forEach(({ parent, instance, args }) => {
         const newCmp = component(newKlass, args, parent);
         const firstElement = getFirstNode(instance);
-        const parentElement = firstElement.parentNode!;
+        const parentElement = firstElement.parentNode;
+        if (!parentElement) {
+          return;
+        }
+        LISTS_FOR_HMR.forEach((list) => {
+          list.keyMap.forEach((lineItems) => {
+            for (let k = 0; k < lineItems.length; k++) {
+              const value = lineItems[k];
+              if (instance === value) {
+                lineItems[k] = newCmp;
+              }
+            }
+          });
+        });
         renderElement(parentElement, newCmp, firstElement);
-        destroyElement(instance);
+        destroyElementSync(instance);
       });
       COMPONENTS_HMR.delete(oldklass);
     };
