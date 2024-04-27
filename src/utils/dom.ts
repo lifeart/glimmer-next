@@ -8,6 +8,7 @@ import {
   destroyElement,
   runDestructors,
   destroyElementSync,
+  GenericReturnType,
 } from '@/utils/component';
 import {
   AnyCell,
@@ -581,6 +582,7 @@ if (IS_DEV_MODE) {
 }
 
 export const LISTS_FOR_HMR: Set<BasicListComponent<any>> = new Set();
+export const IFS_FOR_HMR: Set<()=>{item: GenericReturnType, set: (item: GenericReturnType) => void}> = new Set();
 
 const COMPONENTS_HMR = new WeakMap<
   Component | ComponentReturnType,
@@ -625,6 +627,19 @@ if (!import.meta.env.SSR) {
               }
             }
           });
+        });
+        IFS_FOR_HMR.forEach((fn) => {
+          const { item: scopes, set } = fn();
+          if (scopes === instance) {
+            set(newCmp);
+          } else if (Array.isArray(scopes)) {
+            for (let i = 0; i < scopes.length; i++) {
+              if (scopes[i] === instance) {
+                scopes[i] = newCmp;
+              }
+            }
+            set(scopes);
+          }
         });
         renderElement(parentElement, newCmp, firstElement);
         destroyElementSync(instance);

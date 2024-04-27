@@ -21,6 +21,7 @@ import {
   isFn,
   isPrimitive,
 } from './shared';
+import { IFS_FOR_HMR } from './dom';
 
 export function ifCondition(
   ctx: Component<any>,
@@ -59,6 +60,20 @@ export function ifCondition(
         };
       },
     });
+    const currentComponent = () => {
+      return {
+        item: prevComponent,
+        set(value: GenericReturnType) {
+          prevComponent = value;
+        }
+      }
+    }
+    IFS_FOR_HMR.add(currentComponent);
+    associateDestroyable(ctx, [
+      () => {
+        IFS_FOR_HMR.delete(currentComponent);
+      }
+    ]);
   }
 
   associateDestroyable(ctx, [
