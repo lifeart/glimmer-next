@@ -630,15 +630,35 @@ if (!import.meta.env.SSR) {
         });
         IFS_FOR_HMR.forEach((fn) => {
           const { item: scopes, set } = fn();
+          console.log(scopes, instance);
           if (scopes === instance) {
+            console.log('bingo1');
             set(newCmp);
           } else if (Array.isArray(scopes)) {
+            let dirty = false;
             for (let i = 0; i < scopes.length; i++) {
               if (scopes[i] === instance) {
                 scopes[i] = newCmp;
+                dirty = true;
               }
             }
-            set(scopes);
+            console.log('bingo2');
+            if (dirty) {
+              set(scopes);
+            }
+          } else if (scopes && ('nodes' in scopes)) {
+            let dirty = false;
+            for (let i = 0; i < scopes.nodes.length; i++) {
+              // @ts-expect-error
+              if (scopes.nodes[i] === instance) {
+                scopes.nodes[i] = newCmp;
+                dirty = true;
+              }
+            }
+            if (dirty) {
+              console.log('bingo3');
+              set(scopes);
+            }
           }
         });
         renderElement(parentElement, newCmp, firstElement);
