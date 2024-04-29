@@ -33,7 +33,11 @@ function $mm(name: string, params: string = '', hash: string = '{}') {
 }
 // Maybe helper
 function $mh(name: string, params: string = '', hash: string = '{}') {
-  if (flags.WITH_HELPER_MANAGER) {
+  const isBuiltin = ['or'].includes(name);
+  if (isBuiltin) {
+    name = '$__' + name;
+  }
+  if (!isBuiltin && flags.WITH_HELPER_MANAGER) {
     return `$:$_maybeHelper(${name},[${params}],${hash})`;
   } else {
     return `$:${name}(${params})`;
@@ -368,6 +372,11 @@ describe.each([
         expect(
           $t<ASTv1.MustacheStatement>(`{{array foo "bar" "baz"}}`),
         ).toEqual(`$:() => $:$__array($:foo,"bar","baz")`);
+      });
+      test('or helper properly mapped', () => {
+        expect(
+          $t<ASTv1.MustacheStatement>(`{{or foo "bar" "baz"}}`),
+        ).toEqual(`$:() => $:$__or($:foo,"bar","baz")`);
       });
       test('hash helper properly mapped', () => {
         expect(

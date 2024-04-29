@@ -23,8 +23,11 @@ const SPECIAL_HELPERS = [
   SYMBOLS.COMPONENT_HELPER,
 ];
 
-function patchNodePath(node: ASTv1.MustacheStatement | ASTv1.SubExpression) {
+function patchNodePath(node: ASTv1.MustacheStatement | ASTv1.SubExpression, bindings: Set<string>) {
   if (node.path.type !== 'PathExpression') {
+    return;
+  }
+  if (bindings.has(node.path.original)) {
     return;
   }
   // replacing builtin helpers
@@ -72,6 +75,8 @@ function patchNodePath(node: ASTv1.MustacheStatement | ASTv1.SubExpression) {
     node.path.original = SYMBOLS.$__hash;
   } else if (node.path.original === 'fn') {
     node.path.original = SYMBOLS.$__fn;
+  } else if (node.path.original === 'or') {
+    node.path.original = SYMBOLS.$__or;
   }
 
   if (node.path.original.includes('.')) {
@@ -174,7 +179,7 @@ export function convert(
         return null;
       }
       // replacing builtin helpers
-      patchNodePath(node);
+      patchNodePath(node, bindings);
 
       const hashArgs: [string, PrimitiveJSType][] = node.hash.pairs.map(
         (pair) => {
@@ -231,7 +236,7 @@ export function convert(
         return null;
       }
       // replacing builtin helpers
-      patchNodePath(node);
+      patchNodePath(node, bindings);
 
       const hashArgs: [string, PrimitiveJSType][] = node.hash.pairs.map(
         (pair) => {

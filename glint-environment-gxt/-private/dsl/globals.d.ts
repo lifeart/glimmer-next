@@ -33,6 +33,7 @@ interface Internal {
   hash: <T extends Record<string, unknown>>(obj: T) => T;
   fn: (...args: any) => (...args: any) => void;
   eq: (...args: any) => boolean;
+  or: (...args: any) => any;
   element: (tagName: string) => ComponentLike<{
     Element: Element;
     Blocks: {

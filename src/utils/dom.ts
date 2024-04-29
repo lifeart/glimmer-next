@@ -20,8 +20,6 @@ import { checkOpcode, opcodeFor } from '@/utils/vm';
 import {
   SyncListComponent,
   AsyncListComponent,
-  getFirstNode,
-  type BasicListComponent,
 } from '@/utils/list';
 import { ifCondition } from '@/utils/if';
 import {
@@ -43,8 +41,10 @@ import {
   $args,
   $DEBUG_REACTIVE_CONTEXTS,
   IN_SSR_ENV,
+  COMPONENTS_HMR,
 } from './shared';
 import { isRehydrationScheduled } from './rehydration';
+import { createHotReload } from './hmr';
 
 // EMPTY DOM PROPS
 export const $_edp = [[], [], []] as Props;
@@ -146,7 +146,10 @@ function $prop(
   value: unknown,
   destructors: DestructorFn[],
 ) {
-  if (isFn(value)) {
+  if (isPrimitive(value)) {
+    // @ts-expect-error type casting
+    element[key] = value;
+  } else if (isFn(value)) {
     $prop(
       element,
       key,
@@ -169,8 +172,9 @@ function $prop(
       // we should have all static keys settled
       return;
     } else {
-      // @ts-expect-error never ever
-      element[key] = value;
+      if (IS_DEV_MODE) {
+        throw new Error(`Unknown value ${typeof value} for property ${key}`);
+      }
     }
   }
 }
@@ -181,7 +185,10 @@ function $attr(
   value: unknown,
   destructors: Destructors,
 ) {
-  if (isFn(value)) {
+  if (isPrimitive(value)) {
+    // @ts-expect-error type casting
+    api.attr(element, key, value);
+  } else if (isFn(value)) {
     $attr(
       element,
       key,
@@ -196,8 +203,9 @@ function $attr(
       }),
     );
   } else {
-    // @ts-expect-error type casting
-    api.attr(element, key, value);
+    if (IS_DEV_MODE) {
+      throw new Error(`Unknown value ${typeof value} for attribute ${key}`);
+    }
   }
 }
 
@@ -580,16 +588,6 @@ if (IS_DEV_MODE) {
   }
 }
 
-export const LISTS_FOR_HMR: Set<BasicListComponent<any>> = new Set();
-
-const COMPONENTS_HMR = new WeakMap<
-  Component | ComponentReturnType,
-  Set<{
-    parent: any;
-    instance: ComponentReturnType;
-    args: Record<string, unknown>;
-  }>
->();
 
 if (!import.meta.env.SSR) {
   if (IS_DEV_MODE) {
@@ -598,39 +596,7 @@ if (!import.meta.env.SSR) {
       getRoot,
       runDestructors,
     };
-    window.hotReload = function hotReload(
-      oldklass: Component | ComponentReturnType,
-      newKlass: Component | ComponentReturnType,
-    ) {
-      const renderedInstances = COMPONENTS_HMR.get(oldklass);
-      if (!renderedInstances) {
-        return;
-      }
-      const renderedBuckets = Array.from(renderedInstances);
-      // we need to append new instances before first element of rendered bucket and later remove all rendered buckets;
-      // TODO: add tests for hot-reload
-      renderedBuckets.forEach(({ parent, instance, args }) => {
-        const newCmp = component(newKlass, args, parent);
-        const firstElement = getFirstNode(instance);
-        const parentElement = firstElement.parentNode;
-        if (!parentElement) {
-          return;
-        }
-        LISTS_FOR_HMR.forEach((list) => {
-          list.keyMap.forEach((lineItems) => {
-            for (let k = 0; k < lineItems.length; k++) {
-              const value = lineItems[k];
-              if (instance === value) {
-                lineItems[k] = newCmp;
-              }
-            }
-          });
-        });
-        renderElement(parentElement, newCmp, firstElement);
-        destroyElementSync(instance);
-      });
-      COMPONENTS_HMR.delete(oldklass);
-    };
+    window.hotReload = createHotReload(component);
   }
 }
 

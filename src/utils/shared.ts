@@ -1,9 +1,11 @@
 import {
   associateDestroyable,
+  type GenericReturnType,
   type Component,
   type ComponentReturnType,
 } from '@/utils/component';
 import { type AnyCell } from './reactive';
+import { type BasicListComponent } from './list';
 
 export const isTag = Symbol('isTag');
 export const $template = 'template' as const;
@@ -139,3 +141,18 @@ export function addToTree(
   }
   RENDER_TREE.get(ctx)!.add(node);
 }
+
+/*
+HMR stuff
+*/
+
+export const LISTS_FOR_HMR: Set<BasicListComponent<any>> = new Set();
+export const IFS_FOR_HMR: Set<()=>{item: GenericReturnType, set: (item: GenericReturnType) => void}> = new Set();
+export const COMPONENTS_HMR = new WeakMap<
+  Component | ComponentReturnType,
+  Set<{
+    parent: any;
+    instance: ComponentReturnType;
+    args: Record<string, unknown>;
+  }>
+>();

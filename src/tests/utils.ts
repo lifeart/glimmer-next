@@ -58,6 +58,10 @@ export async function render(component: ComponentReturnType) {
   if (getRoot()) {
     await cleanupRender();
   }
+  if (targetElement.childNodes.length) {
+    console.warn('testing container not empty, force cleanup');
+    targetElement.innerHTML = '';
+  }
   // @ts-expect-error typings mismatch
   const cmp = new component();
   let renderResult = renderComponent(cmp, targetElement, cmp.ctx);

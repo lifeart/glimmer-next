@@ -20,6 +20,7 @@ import {
   addToTree,
   isFn,
   isPrimitive,
+  IFS_FOR_HMR,
 } from './shared';
 
 export function ifCondition(
@@ -59,6 +60,20 @@ export function ifCondition(
         };
       },
     });
+    const currentComponent = () => {
+      return {
+        item: prevComponent,
+        set(value: GenericReturnType) {
+          prevComponent = value;
+        }
+      }
+    }
+    IFS_FOR_HMR.add(currentComponent);
+    associateDestroyable(ctx, [
+      () => {
+        IFS_FOR_HMR.delete(currentComponent);
+      }
+    ]);
   }
 
   associateDestroyable(ctx, [
