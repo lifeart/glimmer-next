@@ -18,9 +18,9 @@ import {
   isFn,
   isPrimitive,
   isTagLike,
+  LISTS_FOR_HMR,
 } from './shared';
 import { isRehydrationScheduled } from './rehydration';
-import { LISTS_FOR_HMR } from './dom';
 
 export function getFirstNode(
   rawItem:

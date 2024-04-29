@@ -12,9 +12,6 @@ module('Integration | Interal | @arguments', function () {
     assert.dom('a').hasAttribute('href', 'https://g-next.netlify.app/');
   });
   test('support attr-like args', async function (assert) {
-    const or = (a: string, b: string) => {
-      return a || b;
-    };
     const Sample = <template>
       <div aria-label={{@aria-label}}>{{or @aria-label 'default'}}</div>
     </template>;
@@ -130,9 +127,6 @@ module('Integration | Interal | @arguments', function () {
     };
     const n_umber = (value: number) => {
       return value;
-    };
-    const or = (a: any, b: any) => {
-      return a || b;
     };
     const Button = <template>
       <button aria-label={{or (@helloWorld (@number 42)) 1}}></button>

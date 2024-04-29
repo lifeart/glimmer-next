@@ -34,6 +34,7 @@ export const SYMBOLS = {
   $__array: '$__array',
   $__hash: '$__hash',
   $__fn: '$__fn',
+  $__or: '$__or',
 };
 
 export const EVENT_TYPE = {

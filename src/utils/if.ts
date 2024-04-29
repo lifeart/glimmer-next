@@ -20,8 +20,8 @@ import {
   addToTree,
   isFn,
   isPrimitive,
+  IFS_FOR_HMR,
 } from './shared';
-import { IFS_FOR_HMR } from './dom';
 
 export function ifCondition(
   ctx: Component<any>,
