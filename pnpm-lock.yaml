@@ -68,11 +68,11 @@ devDependencies:
     specifier: ^2.0.0
     version: 2.0.0(prettier@3.1.1)
   qunit:
-    specifier: ^2.20.0
-    version: 2.20.0
+    specifier: 2.20.1
+    version: 2.20.1
   qunit-dom:
-    specifier: ^3.0.0
-    version: 3.0.0
+    specifier: ^3.1.2
+    version: 3.1.2
   qunit-theme-ember:
     specifier: ^0.2.0
     version: 0.2.0
@@ -6539,16 +6539,16 @@ packages:
       underscore.string: 3.3.6
     dev: true
 
-  /qunit-dom@3.0.0:
-    resolution: {integrity: sha512-rqGZ9ZgOvtOY+Ph2ElCJ4pRIHouMZmI3DWK35Xr3x3c17/gIwOHHyKAQk6XetqhqepS6p+oXvK6Bx1uZu5jJuw==}
+  /qunit-dom@3.1.2:
+    resolution: {integrity: sha512-urHvzhDxihYrMBpsT/Fk7So79CPfvS0ZwZw2VPA+0JV1Q1XP2IhDg/PLHTt+r2j7787iQAOpILx2GjwAa6CpnA==}
     dev: true
 
   /qunit-theme-ember@0.2.0:
     resolution: {integrity: sha512-o2j4MoGspsGBnPmWk87/vPHmIsvKNzwCtymbc8bpRxCBVgF1JW5ry2uIFi4XYDY8k6RcL9ashCDHiSjzbn8oqw==}
     dev: true
 
-  /qunit@2.20.0:
-    resolution: {integrity: sha512-N8Fp1J55waE+QG1KwX2LOyqulZUToRrrPBqDOfYfuAMkEglFL15uwvmH1P4Tq/omQ/mGbBI8PEB3PhIfvUb+jg==}
+  /qunit@2.20.1:
+    resolution: {integrity: sha512-scZfyhX8mmP3u/CN2y3CutQb+ppalbpqmm7g/X62M2yOt8ofzsxrRaC+MPmYm/tXxpzs9HGrVeCxZwLoP0tuAA==}
     engines: {node: '>=10'}
     hasBin: true
     dependencies:
