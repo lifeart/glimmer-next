@@ -1,0 +1,390 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`compiler > compile sample case #1 1`] = `
+"import {
+  $_fin,
+  $_tag,
+  $_if,
+  $_each,
+  $_eachSync,
+  $_slot,
+  $_edp,
+  $_args,
+  $_text,
+  $_c,
+  $_dc,
+  $SLOTS_SYMBOL,
+  $PROPS_SYMBOL,
+  $_GET_SLOTS,
+  $_GET_ARGS,
+  $_GET_FW,
+  $_componentHelper,
+  $_modifierHelper,
+  $_helperHelper,
+  $template,
+  $_hasBlockParams,
+  $_hasBlock,
+  $nodes,
+  $args,
+  $_maybeHelper,
+  $_maybeModifier,
+  $_inElement,
+  $_ucw,
+  $__if,
+  $__eq,
+  $__debugger,
+  $__log,
+  $__array,
+  $__hash,
+  $__fn,
+} from "@lifeart/gxt";
+
+export default function unknown(args) {
+  const $fw = $_GET_FW(this, arguments);
+  const $slots = $_GET_SLOTS(this, arguments);
+  const $ctx = {};
+  const roots = [
+    "\\n",
+    $_tag(
+      "div",
+      [
+        [],
+        [
+          ["id", "12"],
+          ["name", () => 3 + 2],
+          ["label", () => ["1", 2].join("")],
+        ],
+        [],
+      ],
+      [],
+      this,
+    ),
+    "\\n",
+    $_tag("button", [[], [["disabled", () => !clickable]], []], ["..."], this),
+    "\\n",
+    $_tag("button", [[], [["disabled", true]], []], ["can't touch this"], this),
+    "\\n",
+    $_tag("input", [[], [["type", "checkbox"]], []], [], this),
+    "\\n",
+    $_tag(
+      "input",
+      [
+        [],
+        [
+          ["required", () => false],
+          ["placeholder", "This input field is not required"],
+        ],
+        [],
+      ],
+      [],
+      this,
+    ),
+    "\\n",
+    $_tag(
+      "div",
+      [[], [["title", () => null]], []],
+      ["This div has no title attribute"],
+      this,
+    ),
+    "\\n",
+    $_tag(
+      "button",
+      [[], [["disabled", () => number !== 42]], []],
+      ["..."],
+      this,
+    ),
+    "\\n",
+    $_tag("button", [[], [["disabled", () => disabled]], []], ["..."], this),
+    "\\n",
+    $_c(
+      Widget,
+      {
+        foo: () => bar,
+        answer: () => 42,
+        text: "hello",
+        [$SLOTS_SYMBOL]: {
+          default: () => [],
+        },
+      },
+      this,
+    ),
+    "\\n",
+    $_tag(
+      "p",
+      [[], [], []],
+      [() => a, " + ", () => b, " = ", () => a + b, "."],
+      this,
+    ),
+    "\\n",
+    $_tag(
+      "div",
+      [[], [], []],
+      [() => (/^[A-Za-z ]+$/.test(value) ? x : y)],
+      this,
+    ),
+    "\\n",
+    $_if(
+      () => expression,
+      () => ["..."],
+      () => ["..."],
+    ),
+    "\\n",
+    $_if(
+      () => answer === 42,
+      () => [$_tag("p", [[], [], []], ["what was the question?"], this)],
+      null,
+    ),
+    "\\n-----\\n",
+    $_if(
+      () => porridge.temperature > 100,
+      () => [$_tag("p", [[], [], []], ["too hot!"], this)],
+      () => [
+        $_if(
+          () => 80 > porridge.temperature,
+          () => [$_tag("p", [[], [], []], ["too cold!"], this)],
+          () => [$_tag("p", [[], [], []], ["just right!"], this)],
+        ),
+      ],
+    ),
+    "\\n---\\n",
+    $_each(
+      () => expression,
+      (name, $index, $key = "@identity") => ["..."],
+      this,
+    ),
+    "\\n\\n",
+    $_tag(
+      "ul",
+      [[], [], []],
+      [
+        "\\n\\t",
+        $_each(
+          () => items,
+          (item, $index, $key = "@identity") => [
+            $_tag(
+              "li",
+              [[], [], []],
+              [() => item.name, " x ", () => item.qty],
+              this,
+            ),
+          ],
+          this,
+        ),
+        "\\n",
+      ],
+      this,
+    ),
+    "\\n\\n\\n",
+    $_each(
+      () => items,
+      (item, i, $key = "@identity") => [
+        $_tag(
+          "li",
+          [[], [], []],
+          [() => i + 1, ": ", () => item.name, " x ", () => item.qty],
+          this,
+        ),
+      ],
+      this,
+    ),
+    "\\n\\n",
+    $_each(
+      () => items,
+      (item, $index, $key = (item) => item.id) => [
+        $_tag(
+          "li",
+          [[], [], []],
+          [() => item.name, " x ", () => item.qty],
+          this,
+        ),
+      ],
+      this,
+    ),
+    "\\n\\n",
+    $_each(
+      () => items,
+      (item, i, $key = (item) => item.id) => [
+        $_tag(
+          "li",
+          [[], [], []],
+          [() => i + 1, ": ", () => item.name, " x ", () => item.qty],
+          this,
+        ),
+      ],
+      this,
+    ),
+    "\\n\\n",
+    $_c(
+      MyComponent,
+      {
+        ...rest,
+        [$SLOTS_SYMBOL]: {
+          default: () => [],
+        },
+      },
+      this,
+    ),
+    "\\n\\n",
+    $_tag(
+      "button",
+      [[], [], [["click", () => handleClick()]]],
+      ["\\n\\tcount: ", () => count, "\\n"],
+      this,
+    ),
+    "\\n\\n",
+    $_tag("div", [[["", "name"]], [], []], [], this),
+    "\\n",
+    $_tag(
+      "div",
+      [[["", () => (isActive ? "active" : "")]], [], []],
+      ["..."],
+      this,
+    ),
+    "\\n",
+    $_tag(
+      "div",
+      [[["", () => (isActive ? "active" : "")]], [], []],
+      ["..."],
+      this,
+    ),
+    "\\n",
+    $_tag(
+      "div",
+      [
+        [
+          ["", () => (active ? "active" : "")],
+          ["", () => (!active ? "inactive" : "")],
+          ["", () => (isAdmin ? "isAdmin" : "")],
+        ],
+        [],
+        [],
+      ],
+      ["..."],
+      this,
+    ),
+    "\\n",
+    $_tag("div", [[], [["color", () => myColor]], []], ["..."], this),
+    "\\n\\n",
+    $_tag(
+      "a",
+      [[], [["href", () => ["page/", p].join("")]], []],
+      ["page ", () => p],
+      this,
+    ),
+    "\\n\\n",
+    $_slot("item", () => [], $slots, this),
+    "\\n\\n",
+    $_c(
+      FancyList,
+      {
+        [$SLOTS_SYMBOL]: {
+          footer: () => ["Copyright (c) 2019 Svelte Industries"],
+          default: () => ["\\n  ", "\\n"],
+        },
+      },
+      this,
+    ),
+  ];
+  return $_fin(roots, this);
+}
+"
+`;
+
+exports[`compiler > compile sample case #2 1`] = `
+"import {
+  $_fin,
+  $_tag,
+  $_if,
+  $_each,
+  $_eachSync,
+  $_slot,
+  $_edp,
+  $_args,
+  $_text,
+  $_c,
+  $_dc,
+  $SLOTS_SYMBOL,
+  $PROPS_SYMBOL,
+  $_GET_SLOTS,
+  $_GET_ARGS,
+  $_GET_FW,
+  $_componentHelper,
+  $_modifierHelper,
+  $_helperHelper,
+  $template,
+  $_hasBlockParams,
+  $_hasBlock,
+  $nodes,
+  $args,
+  $_maybeHelper,
+  $_maybeModifier,
+  $_inElement,
+  $_ucw,
+  $__if,
+  $__eq,
+  $__debugger,
+  $__log,
+  $__array,
+  $__hash,
+  $__fn,
+} from "@lifeart/gxt";
+
+export default function unknown(args) {
+  const $fw = $_GET_FW(this, arguments);
+  const $slots = $_GET_SLOTS(this, arguments);
+  const $ctx = {};
+  const name = "Hello World";
+  const roots = ["\\n\\n", $_tag("div", [[], [], []], [() => name], this)];
+  return $_fin(roots, this);
+}
+"
+`;
+
+exports[`compiler > compile sample case #3 1`] = `
+"import {
+  $_fin,
+  $_tag,
+  $_if,
+  $_each,
+  $_eachSync,
+  $_slot,
+  $_edp,
+  $_args,
+  $_text,
+  $_c,
+  $_dc,
+  $SLOTS_SYMBOL,
+  $PROPS_SYMBOL,
+  $_GET_SLOTS,
+  $_GET_ARGS,
+  $_GET_FW,
+  $_componentHelper,
+  $_modifierHelper,
+  $_helperHelper,
+  $template,
+  $_hasBlockParams,
+  $_hasBlock,
+  $nodes,
+  $args,
+  $_maybeHelper,
+  $_maybeModifier,
+  $_inElement,
+  $_ucw,
+  $__if,
+  $__eq,
+  $__debugger,
+  $__log,
+  $__array,
+  $__hash,
+  $__fn,
+} from "@lifeart/gxt";
+
+export default function unknown(args) {
+  const $fw = $_GET_FW(this, arguments);
+  const $slots = $_GET_SLOTS(this, arguments);
+  const $ctx = {};
+  const roots = ["\\n", $_tag("input", [[], [], []], [], this)];
+  return $_fin(roots, this);
+}
+"
+`;
