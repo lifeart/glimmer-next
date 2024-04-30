@@ -2,6 +2,8 @@ import { type ComponentReturnType } from '@/utils/component';
 import { getNodeCounter, resetNodeCounter } from '@/utils/dom';
 import { api as rehydrationDomApi } from '@/utils/rehydration-dom-api';
 import { api as domApi } from '@/utils/dom-api';
+
+var originalDomAPI = { ...domApi };
 const withRehydrationStack: HTMLElement[] = [];
 const commentsToRehydrate: Comment[] = [];
 let rehydrationScheduled = false;
@@ -109,8 +111,8 @@ function pushToStack(node: HTMLElement, isFirst = false) {
   }
 }
 
-const originalDomAPI = { ...domApi };
 function patchDOMAPI() {
+  originalDomAPI = { ...domApi };
   domApi.attr = rehydrationDomApi.attr;
   domApi.comment = rehydrationDomApi.comment;
   // @ts-expect-error

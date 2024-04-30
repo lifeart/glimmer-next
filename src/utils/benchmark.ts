@@ -2,7 +2,7 @@ import { Application } from '@/components/Application.gts';
 import { withRehydration } from '@/utils/rehydration';
 import { getDocument } from '@/utils/dom-api';
 import { measureRender } from '@/utils/measure-render';
-import { setResolveRender } from '@/utils/runtime';
+import { setResolveRender } from '@/utils/signals';
 
 export function createBenchmark() {
   return {

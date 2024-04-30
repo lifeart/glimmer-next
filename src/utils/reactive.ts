@@ -3,8 +3,9 @@
   It's related to Glimmer-VM's `@tracked` system, but without invalidation step.
   We explicitly update DOM only when it's needed and only if tags are changed.
 */
-import { scheduleRevalidate } from '@/utils/runtime';
 import { isFn, isTag, isTagLike, debugContext } from '@/utils/shared';
+import { Signal } from "signal-polyfill";
+
 
 export const asyncOpcodes = new WeakSet<tagOp>();
 // List of DOM operations for each tag
@@ -101,12 +102,9 @@ export function setIsRendering(value: boolean) {
   _isRendering = value;
 }
 
-function tracker() {
-  return new Set<Cell>();
-}
 // "data" cell, it's value can be updated, and it's used to create derived cells
 export class Cell<T extends unknown = unknown> {
-  _value!: T;
+  _value!: Signal.State<T>;
   declare toHTML: () => string;
   [Symbol.toPrimitive]() {
     return this.value;
@@ -114,7 +112,7 @@ export class Cell<T extends unknown = unknown> {
   _debugName?: string | undefined;
   [isTag] = true;
   constructor(value: T, debugName?: string) {
-    this._value = value;
+    this._value = new Signal.State(value);
     if (IS_DEV_MODE) {
       this._debugName = debugContext(debugName);
       DEBUG_CELLS.add(this);
@@ -124,15 +122,13 @@ export class Cell<T extends unknown = unknown> {
     if (currentTracker !== null) {
       currentTracker.add(this);
     }
-    return this._value;
+    return this._value.get();
   }
   set value(value: T) {
     this.update(value);
   }
   update(value: T) {
-    this._value = value;
-    tagsToRevalidate.add(this);
-    scheduleRevalidate();
+    this._value.set(value);
   }
 }
 
@@ -162,16 +158,9 @@ export function relatedTagsForCell(cell: Cell) {
   return relatedTags.get(cell)!;
 }
 
-function bindAllCellsToTag(cells: Set<Cell>, tag: MergedCell) {
-  cells.forEach((cell) => {
-    const tags = relatedTagsForCell(cell);
-    tags.add(tag);
-  });
-}
-
 // "derived" cell, it's value is calculated from other cells, and it's value can't be updated
 export class MergedCell {
-  fn: Fn | Function;
+  fn:  Fn | Function;
   declare toHTML: () => string;
   isConst: boolean = false;
   isDestroyed = false;
@@ -190,94 +179,17 @@ export class MergedCell {
   }
   destroy() {
     this.isDestroyed = true;
-    opsForTag.delete(this);
-    if (this.relatedCells !== null) {
-      this.relatedCells.forEach((cell) => {
-        const related = relatedTags.get(cell);
-        if (related !== undefined) {
-          related.delete(this);
-          if (related.size === 0) {
-            relatedTags.delete(cell);
-          }
-        }
-      });
-      this.relatedCells.clear();
-    }
     if (IS_DEV_MODE) {
       DEBUG_MERGED_CELLS.delete(this);
     }
   }
   get value() {
-    if (this.isDestroyed) {
-      return;
-    }
-
-    if (this.isConst || !_isRendering || currentTracker !== null) {
-      return this.fn();
-    }
-
-    try {
-      currentTracker = tracker();
-      return this.fn();
-    } finally {
-      bindAllCellsToTag(currentTracker!, this);
-      this.isConst = currentTracker!.size === 0;
-      this.relatedCells = currentTracker;
-      currentTracker = null;
-    }
+    return this.fn();
   }
 }
 
 // this function is called when we need to update DOM, values represented by tags are changed
 export type tagOp = (...values: unknown[]) => Promise<void> | void;
-
-// this is runtime function, it's called when we need to update DOM for a specific tag
-export async function executeTag(tag: Cell | MergedCell) {
-  let opcode: null | tagOp = null;
-  // we always have ops for a tag
-  if (!opsForTag.has(tag)) {
-    return;
-  }
-  const ops = opsFor(tag)!;
-  if (TRY_CATCH_ERROR_HANDLING) {
-    try {
-      const value = tag.value;
-      for (const op of ops) {
-        opcode = op;
-        if (asyncOpcodes.has(op)) {
-          await op(value);
-        } else {
-          op(value);
-        }
-      }
-    } catch (e: any) {
-      if (IS_DEV_MODE) {
-        console.error({
-          message: 'Error executing tag',
-          error: e,
-          tag,
-          opcode: opcode?.toString(),
-        });
-      }
-      if (opcode) {
-        let index = ops.indexOf(opcode);
-        if (index > -1) {
-          ops.splice(index, 1);
-        }
-      }
-    }
-  } else {
-    const value = tag.value;
-    for (const op of ops) {
-      opcode = op;
-      if (asyncOpcodes.has(op)) {
-        await op(value);
-      } else {
-        op(value);
-      }
-    }
-  }
-}
 
 // this is function to create a reactive cell from an object property
 export function cellFor<T extends object, K extends keyof T>(
@@ -327,10 +239,10 @@ export function cell<T>(value: T, debugName?: string) {
 }
 
 export function inNewTrackingFrame(callback: () => void) {
-  const existingTracker = currentTracker;
-  currentTracker = null;
+  // const existingTracker = currentTracker;
+  // currentTracker = null;
   callback();
-  currentTracker = existingTracker;
+  // currentTracker = existingTracker;
 }
 
 export function getTracker() {

@@ -20,6 +20,9 @@ dependencies:
   decorator-transforms:
     specifier: 1.1.0
     version: 1.1.0(@babel/core@7.23.6)
+  signal-polyfill:
+    specifier: ^0.1.0
+    version: 0.1.0
 
 devDependencies:
   '@glint/core':
@@ -6986,6 +6989,10 @@ packages:
     resolution: {integrity: sha512-bzyZ1e88w9O1iNJbKnOlvYTrWPDl46O1bG0D3XInv+9tkPrxrN8jUUTiFlDkkmKWgn1M6CfIA13SuGqOa9Korw==}
     engines: {node: '>=14'}
     dev: true
+
+  /signal-polyfill@0.1.0:
+    resolution: {integrity: sha512-RMyLaEor0noasIsXmvLfRNf/QeF3eND6A1WErMqJ5ZLc3dpI7aifcZMwwpLafJkGnyLSWraK8gcXaAqxCtxxeg==}
+    dev: false
 
   /silent-error@1.1.1:
     resolution: {integrity: sha512-n4iEKyNcg4v6/jpb3c0/iyH2G1nzUNl7Gpqtn/mHIJK9S/q/7MCfoO4rwVOoO59qPFIc0hVHvMbiOJ0NdtxKKw==}
