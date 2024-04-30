@@ -517,6 +517,7 @@ export function $_inElement(
       } else if (isTagLike(elementRef)) {
         appendRef = elementRef.value;
       } else {
+        // @ts-expect-error
         appendRef = elementRef;
       }
       const destructors: Destructors = [];

@@ -1,16 +1,16 @@
 import {
-  opsForTag,
   type AnyCell,
   type tagOp,
   asyncOpcodes,
   setIsRendering,
   isRendering,
   formula,
-  opsFor,
   inNewTrackingFrame,
 } from './reactive';
 import { isFn } from './shared';
+import { Signal } from "signal-polyfill";
 
+import { w } from './signals';
 type maybeDestructor = undefined | (() => void);
 type maybePromise = undefined | Promise<void>;
 
@@ -92,20 +92,12 @@ export function evaluateOpcode(tag: AnyCell, op: tagOp) {
 }
 
 export function opcodeFor(tag: AnyCell, op: tagOp) {
-  evaluateOpcode(tag, op);
-  const ops = opsFor(tag)!;
-  ops.push(op);
+  const computed = new Signal.Computed(() => {
+    op(tag.value);
+  });
+  w.watch(computed);
+  computed.get();
   return () => {
-    // console.info(`Removing Updating Opcode for ${tag._debugName}`, tag);
-    const index = ops.indexOf(op);
-    if (index > -1) {
-      ops.splice(index, 1);
-    }
-    if (ops.length === 0) {
-      opsForTag.delete(tag);
-      if ('destroy' in tag) {
-        tag.destroy();
-      }
-    }
+    w.unwatch(computed);
   };
 }

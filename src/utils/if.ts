@@ -83,6 +83,7 @@ export function ifCondition(
       }
     },
     runExistingDestructors,
+    // @ts-expect-error
     opcodeFor(cell, (value) => {
       if (throwedError) {
         Promise.resolve().then(() => {

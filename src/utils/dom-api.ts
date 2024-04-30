@@ -1,7 +1,7 @@
 import { getNodeCounter, incrementNodeCounter } from '@/utils/dom';
 import { IN_SSR_ENV } from './shared';
 
-let $doc =
+var $doc =
   typeof document !== 'undefined'
     ? document
     : (undefined as unknown as Document);
@@ -11,7 +11,7 @@ export function setDocument(newDocument: Document) {
 export function getDocument() {
   return $doc;
 }
-export const api = {
+export var api = {
   attr(element: HTMLElement, name: string, value: string | null) {
     element.setAttribute(name, value === null ? '' : value);
   },
