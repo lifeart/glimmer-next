@@ -15,8 +15,8 @@ concurrency:
 env:
   EXPERIMENT_BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
   CONTROL_BRANCH_NAME: "master"
-  FIDELITY: 100
-  THROTTLE: 4
+  FIDELITY: 50
+  THROTTLE: 1
   FORK_NAME: ${{ github.event.pull_request.head.repo.full_name }}
 
 jobs:
