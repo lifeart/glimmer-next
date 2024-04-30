@@ -6,7 +6,7 @@ import {
   isRendering,
   setIsRendering,
   cell,
-} from './reactive';
+} from '../reactive';
 
 export { cellFor as tagFor } from '@lifeart/gxt';
 

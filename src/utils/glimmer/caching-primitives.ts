@@ -1,5 +1,5 @@
 import { type Cell, formula } from '@lifeart/gxt';
-import { opcodeFor, evaluateOpcode } from './vm';
+import { opcodeFor, evaluateOpcode } from '../vm';
 
 interface Cache {
   tag: ReturnType<typeof formula>;

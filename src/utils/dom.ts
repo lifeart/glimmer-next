@@ -27,7 +27,7 @@ import {
   Destructors,
   destroy,
   registerDestructor,
-} from './destroyable';
+} from './glimmer/destroyable';
 import { api } from '@/utils/dom-api';
 import {
   isFn,

@@ -96,7 +96,7 @@ export default defineConfig(({ mode }) => ({
             path.join(currentPath, "src", "utils", "index.ts"),
             path.join(currentPath, "plugins", "compiler.ts"),
             path.join(currentPath, "src", "utils", "ember-inspector.ts"),
-            path.join(currentPath, "src", "utils", "glimmer-compat.ts"),
+            path.join(currentPath, "src", "utils", "glimmer", "glimmer-compat.ts"),
             path.join(currentPath, "src", "tests", "utils.ts"),
           ],
           name: "gxt",

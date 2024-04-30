@@ -1,5 +1,5 @@
 import { cell, type Cell } from '@lifeart/gxt';
-import { isFn } from './shared';
+import { isFn } from '../shared';
 interface Storage<T> {
   cell: Cell<T>;
   update(value: T): void;

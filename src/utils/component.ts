@@ -1,4 +1,4 @@
-import { DestructorFn, Destructors } from '@/utils/destroyable';
+import { DestructorFn, Destructors } from '@/utils/glimmer/destroyable';
 import type {
   TemplateContext,
   Context,
