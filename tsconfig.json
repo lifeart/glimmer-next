@@ -26,7 +26,7 @@
       "@/utils/*": ["./src/utils/*"],
       "@/services/*": ["./src/services/*"],
       "@lifeart/gxt/test-utils": ["./src/tests/utils"],
-      "@lifeart/gxt/ember-inspector": ["./src/utils/ember-inspector"],
+      "@lifeart/gxt/ember-inspector": ["./src/utils/inspector/ember-inspector"],
       "@lifeart/gxt": ["./src/utils/index"]
     },
     "types": ["vite/client", "./types"]

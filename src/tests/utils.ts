@@ -1,8 +1,8 @@
 import { type ComponentReturnType, renderComponent } from '@/utils/component';
 import { getDocument } from '@/utils/dom-api';
-import { withRehydration } from '@/utils/rehydration';
+import { withRehydration } from '@/utils/ssr/rehydration';
 import { getRoot, resetNodeCounter, setRoot, resetRoot } from '@/utils/dom';
-import { renderInBrowser } from '@/utils/ssr';
+import { renderInBrowser } from '@/utils/ssr/ssr';
 import { runDestructors } from '@/utils/component';
 
 export async function cleanupRender() {

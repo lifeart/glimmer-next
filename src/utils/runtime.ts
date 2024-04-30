@@ -5,7 +5,7 @@ import {
   executeTag,
   relatedTags,
 } from '@/utils/reactive';
-import { isRehydrationScheduled } from './rehydration';
+import { isRehydrationScheduled } from './ssr/rehydration';
 
 let revalidateScheduled = false;
 type voidFn = () => void;

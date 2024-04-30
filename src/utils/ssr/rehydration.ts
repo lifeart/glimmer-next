@@ -1,6 +1,6 @@
 import { type ComponentReturnType } from '@/utils/component';
 import { getNodeCounter, resetNodeCounter } from '@/utils/dom';
-import { api as rehydrationDomApi } from '@/utils/rehydration-dom-api';
+import { api as rehydrationDomApi } from '@/utils/ssr/rehydration-dom-api';
 import { api as domApi } from '@/utils/dom-api';
 const withRehydrationStack: HTMLElement[] = [];
 const commentsToRehydrate: Comment[] = [];

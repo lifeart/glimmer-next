@@ -20,8 +20,8 @@ import { checkOpcode, opcodeFor } from '@/utils/vm';
 import {
   SyncListComponent,
   AsyncListComponent,
-} from '@/utils/list';
-import { ifCondition } from '@/utils/if';
+} from '@/utils/control-flow/list';
+import { ifCondition } from '@/utils/control-flow/if';
 import {
   DestructorFn,
   Destructors,
@@ -43,7 +43,7 @@ import {
   IN_SSR_ENV,
   COMPONENTS_HMR,
 } from './shared';
-import { isRehydrationScheduled } from './rehydration';
+import { isRehydrationScheduled } from './ssr/rehydration';
 import { createHotReload } from './hmr';
 
 // EMPTY DOM PROPS

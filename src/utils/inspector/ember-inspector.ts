@@ -1,9 +1,9 @@
 import * as backburner from 'backburner.js';
-import { getRoot } from './dom';
-import { $_debug_args, RENDER_TREE, getBounds } from './shared';
-import { Component } from '.';
-import { Cell, MergedCell, getCells, getMergedCells } from './reactive';
-import { $args } from './shared';
+import { getRoot } from '../dom';
+import { $_debug_args, RENDER_TREE, getBounds } from '../shared';
+import { Component } from '..';
+import { Cell, MergedCell, getCells, getMergedCells } from '../reactive';
+import { $args } from '../shared';
 import { inspect } from '@/utils/inspector';
 
 const genericProxy = new Proxy(

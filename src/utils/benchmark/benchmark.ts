@@ -1,7 +1,7 @@
 import { Application } from '@/components/Application.gts';
-import { withRehydration } from '@/utils/rehydration';
+import { withRehydration } from '@/utils/ssr/rehydration';
 import { getDocument } from '@/utils/dom-api';
-import { measureRender } from '@/utils/measure-render';
+import { measureRender } from '@/utils/benchmark/measure-render';
 import { setResolveRender } from '@/utils/runtime';
 
 export function createBenchmark() {
