@@ -115,13 +115,11 @@ export class Cell<T extends unknown = unknown> {
     this._value = new Signal.State(value);
     if (IS_DEV_MODE) {
       this._debugName = debugContext(debugName);
+      // @ts-expect-error
       DEBUG_CELLS.add(this);
     }
   }
   get value() {
-    if (currentTracker !== null) {
-      currentTracker.add(this);
-    }
     return this._value.get();
   }
   set value(value: T) {
@@ -204,6 +202,7 @@ export function cellFor<T extends object, K extends keyof T>(
     obj[key],
     `${obj.constructor.name}.${String(key)}`,
   );
+  // @ts-expect-error
   refs.set(key, cellValue);
   cellsMap.set(obj, refs);
   Object.defineProperty(obj, key, {

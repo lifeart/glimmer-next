@@ -41,6 +41,7 @@ export function trackedData<T extends object, K extends keyof T>(
   let hasInitializer = typeof initializer === 'function';
 
   function getter(self: T) {
+    // @ts-expect-error
     consumeTag(cellFor(self, key));
 
     let value;
