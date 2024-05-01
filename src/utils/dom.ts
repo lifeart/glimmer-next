@@ -66,7 +66,6 @@ type FwType = [TagProp[], TagAttr[], TagEvent[]];
 type Props = [TagProp[], TagAttr[], TagEvent[], FwType?];
 
 type Fn = () => unknown;
-type TextReturnFn = () => string | number | boolean | null | undefined;
 type InElementFnArg = () => HTMLElement;
 type BranchCb = () => ComponentReturnType | Node;
 
