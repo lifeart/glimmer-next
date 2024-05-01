@@ -792,26 +792,11 @@ function mergeComponents(
   };
 }
 
-function fnToText(fn: Function, destructors: Destructors = []) {
-  const value = resolveRenderable(fn, `fnToText`);
-  if (isPrimitive(value)) {
-    return api.text(value);
-  } else if (isTagLike(value)) {
-    // @todo - fix destructors in slots;
-    return cellToText(value, destructors);
-  } else if (isEmpty(value)) {
-    return api.text('');
-  } else if (typeof value === 'object') {
-    return value;
-  } else {
-    return api.text(value);
-  }
-}
-
 function createSlot(
   value: Slots[string],
   params: () => unknown[],
   name: string,
+  $destructors: Destructors,
 ) {
   // @todo - figure out destructors for slot (shoud work, bu need to be tested)
   if (IS_DEV_MODE) {
@@ -823,7 +808,7 @@ function createSlot(
       if (isPrimitive(el)) {
         return api.text(el);
       } else if (isFn(el)) {
-        return fnToText(el);
+        return text(resolveRenderable(el, 'slot-fn'), $destructors);
       } else {
         return el;
       }
@@ -863,7 +848,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
           }
         }
         slotValue = value;
-        const slotRoots = createSlot(slotValue, params, name);
+        const slotRoots = createSlot(slotValue, params, name, $destructors);
         $destructors.push(() => {
           destroyElement(slotRoots);
         });
@@ -881,7 +866,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
     });
     return slotPlaceholder;
   }
-  const slotRoot = createSlot($slot[name], params, name);
+  const slotRoot = createSlot($slot[name], params, name, $destructors);
   $destructors.push(() => {
     destroyElement(slotRoot);
   });
@@ -897,7 +882,7 @@ function cellToText(cell: Cell | MergedCell, destructors: Destructors) {
   return textNode;
 }
 function text(
-  text: string | number | null | Cell | MergedCell | Fn,
+  text: string | number | null | Cell | MergedCell | Fn | RenderableType,
   destructors: Destructors,
 ): Text {
   if (isPrimitive(text)) {
@@ -906,8 +891,13 @@ function text(
     return cellToText(text as AnyCell, destructors);
   } else if (isFn(text)) {
     // @ts-expect-error return type
-    return fnToText(text as unknown as Function, destructors);
+    return text(resolveRenderable(fn, `fnToText`), destructors);
   }
+  if (typeof text === 'object') {
+    // TODO: change fn name?
+    return text as Text;
+  }
+
   return api.text('');
 }
 
@@ -1192,25 +1182,13 @@ export function $_fin(
   ctx: Component<any> | null,
 ) {
   const $destructors: Destructors = [];
-  const nodes: Array<
-    HTMLElement | ComponentReturnType | Node | Text | Comment | TextReturnFn
-  > = roots.map((item) => {
-    if (isFn(item)) {
-      // here may be component or text or node
-      const value = resolveRenderable(item, `component child fn`);
-      if (isEmpty(value)) {
-        return api.text('');
-      } else if (isPrimitive(value)) {
-        return api.text(value);
-      } else if (isTagLike(value)) {
-        return cellToText(value, $destructors);
-      } else {
-        return value;
-      }
-    } else {
-      return item;
+
+  for (let i = 0; i < roots.length; i++) {
+    const node = roots[i];
+    if (isFn(node)) {
+      roots[i] = text(resolveRenderable(node, `component child fn`), $destructors);
     }
-  });
+  }
 
   if (ctx !== null) {
     // no need to add destructors because component seems template-only and should not have `registerDestructor` flow.
@@ -1222,7 +1200,7 @@ export function $_fin(
   }
 
   return {
-    [$nodes]: nodes,
+    [$nodes]: roots,
     ctx,
   };
 }
