@@ -10,7 +10,7 @@ import {
 import { isFn } from './shared';
 import { Signal } from "signal-polyfill";
 
-import { w } from './signals';
+import { signalsToUnwatch, w } from './signals';
 type maybeDestructor = undefined | (() => void);
 type maybePromise = undefined | Promise<void>;
 
@@ -98,6 +98,6 @@ export function opcodeFor(tag: AnyCell, op: tagOp) {
   w.watch(computed);
   computed.get();
   return () => {
-    w.unwatch(computed);
+    signalsToUnwatch.push(computed);
   };
 }
