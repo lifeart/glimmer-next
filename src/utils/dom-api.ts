@@ -1,5 +1,5 @@
 import { getNodeCounter, incrementNodeCounter } from '@/utils/dom';
-import { IN_SSR_ENV } from './shared';
+import { IN_SSR_ENV, noop } from './shared';
 
 let $doc =
   typeof document !== 'undefined'
@@ -12,8 +12,26 @@ export function getDocument() {
   return $doc;
 }
 export const api = {
+  addEventListener(node: Node, eventName: string, fn: EventListener) {
+    if (import.meta.env.SSR) {
+      return noop;
+    }
+    node.addEventListener(eventName, fn);
+    if (RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES) {
+      return () => {
+        node.removeEventListener(eventName, fn);
+      };
+    } else {
+      return noop;
+    }
+  },
   attr(element: HTMLElement, name: string, value: string | null) {
     element.setAttribute(name, value === null ? '' : value);
+  },
+  prop(element: HTMLElement, name: string, value: any) {
+    // @ts-ignore
+    element[name] = value;
+    return value;
   },
   comment(text = '') {
     if (IN_SSR_ENV) {
@@ -27,8 +45,8 @@ export const api = {
       }
     }
   },
-  text(text = '') {
-    return $doc.createTextNode(text);
+  text(text: string | number = '') {
+    return $doc.createTextNode(text as string);
   },
   textContent(node: Node, text: string) {
     node.textContent = text;

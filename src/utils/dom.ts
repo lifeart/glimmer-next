@@ -1,5 +1,4 @@
 import {
-  addEventListener,
   associateDestroyable,
   type ComponentReturnType,
   type Slots,
@@ -42,16 +41,44 @@ import {
   $DEBUG_REACTIVE_CONTEXTS,
   IN_SSR_ENV,
   COMPONENTS_HMR,
+  isEmpty,
 } from './shared';
 import { isRehydrationScheduled } from './ssr/rehydration';
 import { createHotReload } from './hmr';
+
+type RenderableType = Node | ComponentReturnType | string | number;
+type ShadowRootMode = 'open' | 'closed' | null;
+type ModifierFn = (
+  element: HTMLElement,
+  ...args: unknown[]
+) => void | DestructorFn;
+
+type Attr =
+  | MergedCell
+  | Cell
+  | string
+  | ((element: HTMLElement, attribute: string) => void);
+
+type TagAttr = [string, Attr];
+type TagProp = [string, Attr];
+type TagEvent = [string, EventListener | ModifierFn];
+type FwType = [TagProp[], TagAttr[], TagEvent[]];
+type Props = [TagProp[], TagAttr[], TagEvent[], FwType?];
+
+type Fn = () => unknown;
+type InElementFnArg = () => HTMLElement;
+type BranchCb = () => ComponentReturnType | Node;
 
 // EMPTY DOM PROPS
 export const $_edp = [[], [], []] as Props;
 export const $_emptySlot = Object.seal(Object.freeze({}));
 
+export const $SLOTS_SYMBOL = Symbol('slots');
+export const $PROPS_SYMBOL = Symbol('props');
+
 const $_className = 'className';
 
+let unstableWrapperId: number = 0;
 let ROOT: Component<any> | null = null;
 
 export function $_componentHelper(params: any, hash: any) {
@@ -123,23 +150,6 @@ export function getRoot() {
   return ROOT;
 }
 
-type ModifierFn = (
-  element: HTMLElement,
-  ...args: unknown[]
-) => void | DestructorFn;
-
-type Attr =
-  | MergedCell
-  | Cell
-  | string
-  | ((element: HTMLElement, attribute: string) => void);
-
-type TagAttr = [string, Attr];
-type TagProp = [string, Attr];
-type TagEvent = [string, EventListener | ModifierFn];
-type FwType = [TagProp[], TagAttr[], TagEvent[]];
-type Props = [TagProp[], TagAttr[], TagEvent[], FwType?];
-
 function $prop(
   element: HTMLElement,
   key: string,
@@ -147,8 +157,7 @@ function $prop(
   destructors: DestructorFn[],
 ) {
   if (isPrimitive(value)) {
-    // @ts-expect-error type casting
-    element[key] = value;
+    api.prop(element, key, value);
   } else if (isFn(value)) {
     $prop(
       element,
@@ -163,8 +172,7 @@ function $prop(
         if (value === prevPropValue) {
           return;
         }
-        // @ts-expect-error types casting
-        element[key] = prevPropValue = value;
+        prevPropValue = api.prop(element, key, value);
       }),
     );
   } else {
@@ -209,8 +217,6 @@ function $attr(
   }
 }
 
-type RenderableType = Node | ComponentReturnType | string | number;
-type ShadowRootMode = 'open' | 'closed' | null;
 function resolveRenderable(
   child: Function,
   debugName = 'resolveRenderable',
@@ -239,7 +245,7 @@ export function addChild(
   destructors: Destructors = [],
   index = 0,
 ) {
-  if (child === null || child === undefined) {
+  if (isEmpty(child)) {
     return;
   }
   const isObject = typeof child === 'object';
@@ -248,7 +254,6 @@ export function addChild(
       addChild(element, node, destructors, index + i);
     });
   } else if (isPrimitive(child)) {
-    // @ts-expect-error number to string type casting
     api.append(element, api.text(child), index);
   } else if (isTagLike(child)) {
     api.append(element, cellToText(child, destructors), index);
@@ -347,10 +352,10 @@ function $ev(
     // event case (on modifier)
     if (RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES) {
       destructors.push(
-        addEventListener(element, eventName, fn as EventListener),
+        api.addEventListener(element, eventName, fn as EventListener),
       );
     } else {
-      addEventListener(element, eventName, fn as EventListener);
+      api.addEventListener(element, eventName, fn as EventListener);
     }
   }
 }
@@ -393,7 +398,7 @@ function _DOM(
     // todo - ssr mode here, we need to do it only in 2 cases:
     // 1. We running SSR tests in QUNIT
     // 1. We inside SSR mode
-    element.setAttribute('data-node-id', String(NODE_COUNTER));
+    api.attr(element, 'data-node-id', String(NODE_COUNTER));
   }
   const destructors: Destructors = [];
   const props = tagProps[0];
@@ -497,9 +502,7 @@ function _DOM(
   }
   return element;
 }
-let unstableWrapperId = 0;
 
-type InElementFnArg = () => HTMLElement;
 export function $_inElement(
   elementRef: HTMLElement | Cell<HTMLElement> | InElementFnArg,
   roots: (context: Component<any>) => (Node | ComponentReturnType)[],
@@ -588,7 +591,6 @@ if (IS_DEV_MODE) {
   }
 }
 
-
 if (!import.meta.env.SSR) {
   if (IS_DEV_MODE) {
     // @ts-expect-error global
@@ -652,14 +654,15 @@ function component(
       }
       if (IS_DEV_MODE) {
         let ErrorOverlayClass = customElements.get('vite-error-overlay');
-        let errorOverlay!: Element;
+        let errorOverlay!: HTMLElement;
         // @ts-expect-error message may not exit
         e.message = `${label}\n${e.message}`;
         if (!ErrorOverlayClass) {
           errorOverlay = api.element('pre');
           // @ts-expect-error stack may not exit
-          errorOverlay.textContent = `${label}\n${e.stack ?? e}`;
-          errorOverlay.setAttribute(
+          api.textContent(errorOverlay, `${label}\n${e.stack ?? e}`);
+          api.attr(
+            errorOverlay,
             'style',
             'color:red;border:1px solid red;padding:10px;background-color:#333;',
           );
@@ -754,10 +757,10 @@ function _component(
   }
   return instance;
 }
-type Fn = () => unknown;
 
 function mergeComponents(
   components: Array<ComponentReturnType | Node | string | number>,
+  $destructors: Destructors,
 ) {
   const nodes: Array<Node> = [];
   const contexts: Array<Component> = [];
@@ -770,14 +773,17 @@ function mergeComponents(
         `);
       }
     }
+    if (isFn(component)) {
+      component = text(resolveRenderable(component, 'merge-components'), $destructors);
+    }
     if (isPrimitive(component)) {
-      nodes.push(api.text(String(component)));
+      nodes.push(api.text(component));
     } else if ($nodes in component) {
       if (component.ctx !== null) {
         contexts.push(component.ctx);
       }
       nodes.push(...component[$nodes]);
-    } else {
+    } else if (!isEmpty(component)) {
       nodes.push(component);
     }
   });
@@ -788,43 +794,18 @@ function mergeComponents(
   };
 }
 
-function fnToText(fn: Function, destructors: Destructors = []) {
-  const value = resolveRenderable(fn, `fnToText`);
-  if (isPrimitive(value)) {
-    return api.text(String(value));
-  } else if (isTagLike(value)) {
-    // @todo - fix destructors in slots;
-    return cellToText(value, destructors);
-  } else if (value === null || value === undefined) {
-    return api.text('');
-  } else if (typeof value === 'object') {
-    return value;
-  } else {
-    return api.text(String(value));
-  }
-}
-
 function createSlot(
   value: Slots[string],
   params: () => unknown[],
   name: string,
+  $destructors: Destructors,
 ) {
   // @todo - figure out destructors for slot (shoud work, bu need to be tested)
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.push(`:${name}`);
   }
   const elements = value(...params());
-  const nodes = mergeComponents(
-    elements.map((el) => {
-      if (isPrimitive(el)) {
-        return api.text(String(el));
-      } else if (isFn(el)) {
-        return fnToText(el);
-      } else {
-        return el;
-      }
-    }),
-  );
+  const nodes = mergeComponents(elements, $destructors);
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.pop();
   }
@@ -859,7 +840,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
           }
         }
         slotValue = value;
-        const slotRoots = createSlot(slotValue, params, name);
+        const slotRoots = createSlot(slotValue, params, name, $destructors);
         $destructors.push(() => {
           destroyElement(slotRoots);
         });
@@ -877,13 +858,12 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
     });
     return slotPlaceholder;
   }
-  const slotRoot = createSlot($slot[name], params, name);
+  const slotRoot = createSlot($slot[name], params, name, $destructors);
   $destructors.push(() => {
     destroyElement(slotRoot);
   });
   return slotRoot;
 }
-
 function cellToText(cell: Cell | MergedCell, destructors: Destructors) {
   const textNode = api.text('');
   destructors.push(
@@ -894,22 +874,24 @@ function cellToText(cell: Cell | MergedCell, destructors: Destructors) {
   return textNode;
 }
 function text(
-  text: string | number | null | Cell | MergedCell | Fn,
+  text: string | number | null | Cell | MergedCell | Fn | RenderableType,
   destructors: Destructors,
 ): Text {
   if (isPrimitive(text)) {
-    // @ts-expect-error number to string type casting
     return api.text(text);
   } else if (text !== null && isTagLike(text)) {
     return cellToText(text as AnyCell, destructors);
   } else if (isFn(text)) {
     // @ts-expect-error return type
-    return fnToText(text as unknown as Function, destructors);
+    return text(resolveRenderable(fn, `fnToText`), destructors);
   }
+  if (typeof text === 'object') {
+    // TODO: change fn name?
+    return text as Text;
+  }
+
   return api.text('');
 }
-
-type BranchCb = () => ComponentReturnType | Node;
 
 function ifCond(
   cell: Cell<boolean>,
@@ -1008,8 +990,6 @@ const ArgProxyHandler = {
     }
   },
 };
-export const $SLOTS_SYMBOL = Symbol('slots');
-export const $PROPS_SYMBOL = Symbol('props');
 export function $_GET_ARGS(ctx: any, args: any) {
   ctx[$args] = ctx[$args] || args[0] || {};
 }
@@ -1189,32 +1169,21 @@ export const $_helper = (helper: any) => {
 export const $_text = text;
 export const $_tag = _DOM;
 
-type TextReturnFn = () => string | number | boolean | null | undefined;
-
 export function $_fin(
   roots: Array<ComponentReturnType | Node>,
   ctx: Component<any> | null,
 ) {
   const $destructors: Destructors = [];
-  const nodes: Array<
-    HTMLElement | ComponentReturnType | Node | Text | Comment | TextReturnFn
-  > = roots.map((item) => {
-    if (isFn(item)) {
-      // here may be component or text or node
-      const value = resolveRenderable(item, `component child fn`);
-      if (value === null || value === undefined) {
-        return api.text('');
-      } else if (isPrimitive(value)) {
-        return api.text(String(value));
-      } else if (isTagLike(value)) {
-        return cellToText(value, $destructors);
-      } else {
-        return value;
-      }
-    } else {
-      return item;
+
+  for (let i = 0; i < roots.length; i++) {
+    const node = roots[i];
+    if (isFn(node)) {
+      roots[i] = text(
+        resolveRenderable(node, `component child fn`),
+        $destructors,
+      );
     }
-  });
+  }
 
   if (ctx !== null) {
     // no need to add destructors because component seems template-only and should not have `registerDestructor` flow.
@@ -1226,7 +1195,7 @@ export function $_fin(
   }
 
   return {
-    [$nodes]: nodes,
+    [$nodes]: roots,
     ctx,
   };
 }

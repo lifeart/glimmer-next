@@ -13,6 +13,8 @@ export const $nodes = 'nodes' as const;
 export const $args = 'args' as const;
 export const $_debug_args = '_debug_args' as const;
 export const $fwProp = '$fw' as const;
+export const noop = () => {};
+
 
 export const IN_SSR_ENV =
   import.meta.env.SSR || location.pathname === '/tests.html';
@@ -30,6 +32,9 @@ export function isArray(value: unknown): value is Array<any> {
 export function isFn(value: unknown): value is Function {
   return typeof value === 'function';
 }
+export function isEmpty(value: unknown): value is null | undefined {
+  return value === null || value === undefined;
+} 
 export function isPrimitive(value: unknown): value is string | number {
   const vType = typeof value;
   return (
