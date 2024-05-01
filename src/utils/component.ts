@@ -384,20 +384,3 @@ export type ComponentReturnType = {
   nodes: Node[];
   ctx: Component<any> | null;
 };
-
-const noop = () => {};
-
-export function addEventListener(
-  node: Node,
-  eventName: string,
-  fn: EventListener,
-) {
-  node.addEventListener(eventName, fn);
-  if (RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES) {
-    return () => {
-      node.removeEventListener(eventName, fn);
-    };
-  } else {
-    return noop;
-  }
-}

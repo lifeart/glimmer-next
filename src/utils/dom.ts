@@ -1,5 +1,4 @@
 import {
-  addEventListener,
   associateDestroyable,
   type ComponentReturnType,
   type Slots,
@@ -46,12 +45,41 @@ import {
 import { isRehydrationScheduled } from './ssr/rehydration';
 import { createHotReload } from './hmr';
 
+type RenderableType = Node | ComponentReturnType | string | number;
+type ShadowRootMode = 'open' | 'closed' | null;
+type ModifierFn = (
+  element: HTMLElement,
+  ...args: unknown[]
+) => void | DestructorFn;
+
+type Attr =
+  | MergedCell
+  | Cell
+  | string
+  | ((element: HTMLElement, attribute: string) => void);
+
+type TagAttr = [string, Attr];
+type TagProp = [string, Attr];
+type TagEvent = [string, EventListener | ModifierFn];
+type FwType = [TagProp[], TagAttr[], TagEvent[]];
+type Props = [TagProp[], TagAttr[], TagEvent[], FwType?];
+
+type Fn = () => unknown;
+type TextReturnFn = () => string | number | boolean | null | undefined;
+type InElementFnArg = () => HTMLElement;
+type BranchCb = () => ComponentReturnType | Node;
+
+
 // EMPTY DOM PROPS
 export const $_edp = [[], [], []] as Props;
 export const $_emptySlot = Object.seal(Object.freeze({}));
 
+export const $SLOTS_SYMBOL = Symbol('slots');
+export const $PROPS_SYMBOL = Symbol('props');
+
 const $_className = 'className';
 
+let unstableWrapperId: number = 0;
 let ROOT: Component<any> | null = null;
 
 export function $_componentHelper(params: any, hash: any) {
@@ -123,23 +151,6 @@ export function getRoot() {
   return ROOT;
 }
 
-type ModifierFn = (
-  element: HTMLElement,
-  ...args: unknown[]
-) => void | DestructorFn;
-
-type Attr =
-  | MergedCell
-  | Cell
-  | string
-  | ((element: HTMLElement, attribute: string) => void);
-
-type TagAttr = [string, Attr];
-type TagProp = [string, Attr];
-type TagEvent = [string, EventListener | ModifierFn];
-type FwType = [TagProp[], TagAttr[], TagEvent[]];
-type Props = [TagProp[], TagAttr[], TagEvent[], FwType?];
-
 function $prop(
   element: HTMLElement,
   key: string,
@@ -147,8 +158,7 @@ function $prop(
   destructors: DestructorFn[],
 ) {
   if (isPrimitive(value)) {
-    // @ts-expect-error type casting
-    element[key] = value;
+    api.prop(element, key, value);
   } else if (isFn(value)) {
     $prop(
       element,
@@ -163,8 +173,7 @@ function $prop(
         if (value === prevPropValue) {
           return;
         }
-        // @ts-expect-error types casting
-        element[key] = prevPropValue = value;
+        prevPropValue = api.prop(element, key, value);
       }),
     );
   } else {
@@ -209,8 +218,6 @@ function $attr(
   }
 }
 
-type RenderableType = Node | ComponentReturnType | string | number;
-type ShadowRootMode = 'open' | 'closed' | null;
 function resolveRenderable(
   child: Function,
   debugName = 'resolveRenderable',
@@ -347,10 +354,10 @@ function $ev(
     // event case (on modifier)
     if (RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES) {
       destructors.push(
-        addEventListener(element, eventName, fn as EventListener),
+        api.addEventListener(element, eventName, fn as EventListener),
       );
     } else {
-      addEventListener(element, eventName, fn as EventListener);
+      api.addEventListener(element, eventName, fn as EventListener);
     }
   }
 }
@@ -393,7 +400,7 @@ function _DOM(
     // todo - ssr mode here, we need to do it only in 2 cases:
     // 1. We running SSR tests in QUNIT
     // 1. We inside SSR mode
-    element.setAttribute('data-node-id', String(NODE_COUNTER));
+    api.attr(element, 'data-node-id', String(NODE_COUNTER));
   }
   const destructors: Destructors = [];
   const props = tagProps[0];
@@ -497,9 +504,7 @@ function _DOM(
   }
   return element;
 }
-let unstableWrapperId = 0;
 
-type InElementFnArg = () => HTMLElement;
 export function $_inElement(
   elementRef: HTMLElement | Cell<HTMLElement> | InElementFnArg,
   roots: (context: Component<any>) => (Node | ComponentReturnType)[],
@@ -588,7 +593,6 @@ if (IS_DEV_MODE) {
   }
 }
 
-
 if (!import.meta.env.SSR) {
   if (IS_DEV_MODE) {
     // @ts-expect-error global
@@ -652,14 +656,15 @@ function component(
       }
       if (IS_DEV_MODE) {
         let ErrorOverlayClass = customElements.get('vite-error-overlay');
-        let errorOverlay!: Element;
+        let errorOverlay!: HTMLElement;
         // @ts-expect-error message may not exit
         e.message = `${label}\n${e.message}`;
         if (!ErrorOverlayClass) {
           errorOverlay = api.element('pre');
           // @ts-expect-error stack may not exit
-          errorOverlay.textContent = `${label}\n${e.stack ?? e}`;
-          errorOverlay.setAttribute(
+          api.textContent(errorOverlay, `${label}\n${e.stack ?? e}`);
+          api.attr(
+            errorOverlay,
             'style',
             'color:red;border:1px solid red;padding:10px;background-color:#333;',
           );
@@ -754,7 +759,6 @@ function _component(
   }
   return instance;
 }
-type Fn = () => unknown;
 
 function mergeComponents(
   components: Array<ComponentReturnType | Node | string | number>,
@@ -883,7 +887,6 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
   });
   return slotRoot;
 }
-
 function cellToText(cell: Cell | MergedCell, destructors: Destructors) {
   const textNode = api.text('');
   destructors.push(
@@ -908,8 +911,6 @@ function text(
   }
   return api.text('');
 }
-
-type BranchCb = () => ComponentReturnType | Node;
 
 function ifCond(
   cell: Cell<boolean>,
@@ -1008,8 +1009,6 @@ const ArgProxyHandler = {
     }
   },
 };
-export const $SLOTS_SYMBOL = Symbol('slots');
-export const $PROPS_SYMBOL = Symbol('props');
 export function $_GET_ARGS(ctx: any, args: any) {
   ctx[$args] = ctx[$args] || args[0] || {};
 }
@@ -1188,8 +1187,6 @@ export const $_helper = (helper: any) => {
 };
 export const $_text = text;
 export const $_tag = _DOM;
-
-type TextReturnFn = () => string | number | boolean | null | undefined;
 
 export function $_fin(
   roots: Array<ComponentReturnType | Node>,

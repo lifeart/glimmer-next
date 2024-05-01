@@ -8,6 +8,27 @@ import {
 } from './rehydration';
 const $doc = getDocument();
 export const api = {
+  addEventListener(node: Node, eventName: string, fn: EventListener) {
+    node.addEventListener(eventName, fn);
+    if (RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES) {
+      return () => {
+        node.removeEventListener(eventName, fn);
+      };
+    } else {
+      return () => {};
+    }
+  },
+  prop(element: HTMLElement, name: string, value: any) {
+    if (isRehydrationScheduled()) {
+      // @ts-ignore
+      if (element[name] === value) {
+        return value;
+      }
+    }
+    // @ts-ignore
+    element[name] = value;
+    return value;
+  },
   attr(element: HTMLElement, name: string, value: string | null) {
     if (isRehydrationScheduled()) {
       const existingValue = element.getAttribute(name);
