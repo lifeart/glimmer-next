@@ -69,7 +69,6 @@ type Fn = () => unknown;
 type InElementFnArg = () => HTMLElement;
 type BranchCb = () => ComponentReturnType | Node;
 
-
 // EMPTY DOM PROPS
 export const $_edp = [[], [], []] as Props;
 export const $_emptySlot = Object.seal(Object.freeze({}));
@@ -761,6 +760,7 @@ function _component(
 
 function mergeComponents(
   components: Array<ComponentReturnType | Node | string | number>,
+  $destructors: Destructors,
 ) {
   const nodes: Array<Node> = [];
   const contexts: Array<Component> = [];
@@ -773,6 +773,9 @@ function mergeComponents(
         `);
       }
     }
+    if (isFn(component)) {
+      component = text(resolveRenderable(component, 'merge-components'), $destructors);
+    }
     if (isPrimitive(component)) {
       nodes.push(api.text(component));
     } else if ($nodes in component) {
@@ -780,7 +783,7 @@ function mergeComponents(
         contexts.push(component.ctx);
       }
       nodes.push(...component[$nodes]);
-    } else {
+    } else if (!isEmpty(component)) {
       nodes.push(component);
     }
   });
@@ -802,17 +805,7 @@ function createSlot(
     $DEBUG_REACTIVE_CONTEXTS.push(`:${name}`);
   }
   const elements = value(...params());
-  const nodes = mergeComponents(
-    elements.map((el) => {
-      if (isPrimitive(el)) {
-        return api.text(el);
-      } else if (isFn(el)) {
-        return text(resolveRenderable(el, 'slot-fn'), $destructors);
-      } else {
-        return el;
-      }
-    }),
-  );
+  const nodes = mergeComponents(elements, $destructors);
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.pop();
   }
@@ -1185,7 +1178,10 @@ export function $_fin(
   for (let i = 0; i < roots.length; i++) {
     const node = roots[i];
     if (isFn(node)) {
-      roots[i] = text(resolveRenderable(node, `component child fn`), $destructors);
+      roots[i] = text(
+        resolveRenderable(node, `component child fn`),
+        $destructors,
+      );
     }
   }
 
