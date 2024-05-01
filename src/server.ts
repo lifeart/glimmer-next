@@ -4,7 +4,7 @@ import 'decorator-transforms/globals';
 import { URL } from 'node:url';
 import { router } from '@/services/router';
 import { Application } from '@/components/Application.gts';
-import { render as renderSSR } from '@/utils/ssr';
+import { render as renderSSR } from '@/utils/ssr/ssr';
 
 export async function render(url: string) {
   const urlInstance = new URL(url);

@@ -5,7 +5,7 @@ import {
   type ComponentReturnType,
 } from '@/utils/component';
 import { type AnyCell } from './reactive';
-import { type BasicListComponent } from './list';
+import { type BasicListComponent } from './control-flow/list';
 
 export const isTag = Symbol('isTag');
 export const $template = 'template' as const;

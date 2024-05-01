@@ -12,7 +12,7 @@ import {
   deepFnValue,
 } from '@/utils/reactive';
 import { opcodeFor } from '@/utils/vm';
-import { associateDestroyable } from './component';
+import { associateDestroyable } from '../component';
 import { api } from '@/utils/dom-api';
 import {
   $DEBUG_REACTIVE_CONTEXTS,
@@ -21,7 +21,7 @@ import {
   isFn,
   isPrimitive,
   IFS_FOR_HMR,
-} from './shared';
+} from '../shared';
 
 export function ifCondition(
   ctx: Component<any>,

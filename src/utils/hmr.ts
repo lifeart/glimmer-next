@@ -1,4 +1,4 @@
-import { getFirstNode } from '@/utils/list';
+import { getFirstNode } from '@/utils/control-flow/list';
 import { COMPONENTS_HMR, IFS_FOR_HMR, LISTS_FOR_HMR } from './shared';
 import {
   renderElement,

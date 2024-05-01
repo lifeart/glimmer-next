@@ -1,4 +1,9 @@
-import { buildData, swapRows, updateData, type Item } from '@/utils/data';
+import {
+  buildData,
+  swapRows,
+  updateData,
+  type Item,
+} from '@/utils/benchmark/data';
 import { Component, tracked, cellFor, type Cell } from '@lifeart/gxt';
 import { Header } from './benchmark/Header.gts';
 import { Row } from './benchmark/Row.gts';

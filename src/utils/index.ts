@@ -12,7 +12,7 @@ export {
   Component,
   type ComponentReturnType,
 } from '@/utils/component';
-export { registerDestructor } from '@/utils/destroyable';
+export { registerDestructor } from '@/utils/glimmer/destroyable';
 export { hbs, scope } from '@/utils/template';
 export { effect } from '@/utils/vm';
 export * from '@/utils/dom';
