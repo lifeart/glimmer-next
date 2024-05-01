@@ -45,8 +45,8 @@ export const api = {
       }
     }
   },
-  text(text = '') {
-    return $doc.createTextNode(text);
+  text(text: string | number = '') {
+    return $doc.createTextNode(text as string);
   },
   textContent(node: Node, text: string) {
     node.textContent = text;

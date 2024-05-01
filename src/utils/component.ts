@@ -15,6 +15,7 @@ import {
   RENDER_TREE,
   isPrimitive,
   isArray,
+  isEmpty,
 } from './shared';
 import { addChild, getRoot, setRoot } from './dom';
 
@@ -34,7 +35,7 @@ export type GenericReturnType =
 
 function renderNode(parent: Node, target: Node, placeholder: Node | Comment) {
   if (import.meta.env.DEV) {
-    if (target === undefined || target === null) {
+    if (isEmpty(target)) {
       console.warn(`Trying to render ${typeof target}`);
       return;
     }
@@ -52,11 +53,10 @@ export function renderElement(
   placeholder: Comment | Node,
 ) {
   if (!isArray(el)) {
-    if (el === null || el === undefined || el === '') {
+    if (isEmpty(el) || el === '') {
       return;
     }
     if (isPrimitive(el)) {
-      // @ts-expect-error
       renderNode(target, api.text(el), placeholder);
     } else if ($nodes in el) {
       el[$nodes].forEach((node) => {

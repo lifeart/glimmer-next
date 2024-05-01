@@ -41,6 +41,7 @@ import {
   $DEBUG_REACTIVE_CONTEXTS,
   IN_SSR_ENV,
   COMPONENTS_HMR,
+  isEmpty,
 } from './shared';
 import { isRehydrationScheduled } from './ssr/rehydration';
 import { createHotReload } from './hmr';
@@ -246,7 +247,7 @@ export function addChild(
   destructors: Destructors = [],
   index = 0,
 ) {
-  if (child === null || child === undefined) {
+  if (isEmpty(child)) {
     return;
   }
   const isObject = typeof child === 'object';
@@ -255,7 +256,6 @@ export function addChild(
       addChild(element, node, destructors, index + i);
     });
   } else if (isPrimitive(child)) {
-    // @ts-expect-error number to string type casting
     api.append(element, api.text(child), index);
   } else if (isTagLike(child)) {
     api.append(element, cellToText(child, destructors), index);
@@ -775,7 +775,7 @@ function mergeComponents(
       }
     }
     if (isPrimitive(component)) {
-      nodes.push(api.text(String(component)));
+      nodes.push(api.text(component));
     } else if ($nodes in component) {
       if (component.ctx !== null) {
         contexts.push(component.ctx);
@@ -795,16 +795,16 @@ function mergeComponents(
 function fnToText(fn: Function, destructors: Destructors = []) {
   const value = resolveRenderable(fn, `fnToText`);
   if (isPrimitive(value)) {
-    return api.text(String(value));
+    return api.text(value);
   } else if (isTagLike(value)) {
     // @todo - fix destructors in slots;
     return cellToText(value, destructors);
-  } else if (value === null || value === undefined) {
+  } else if (isEmpty(value)) {
     return api.text('');
   } else if (typeof value === 'object') {
     return value;
   } else {
-    return api.text(String(value));
+    return api.text(value);
   }
 }
 
@@ -821,7 +821,7 @@ function createSlot(
   const nodes = mergeComponents(
     elements.map((el) => {
       if (isPrimitive(el)) {
-        return api.text(String(el));
+        return api.text(el);
       } else if (isFn(el)) {
         return fnToText(el);
       } else {
@@ -901,7 +901,6 @@ function text(
   destructors: Destructors,
 ): Text {
   if (isPrimitive(text)) {
-    // @ts-expect-error number to string type casting
     return api.text(text);
   } else if (text !== null && isTagLike(text)) {
     return cellToText(text as AnyCell, destructors);
@@ -1199,10 +1198,10 @@ export function $_fin(
     if (isFn(item)) {
       // here may be component or text or node
       const value = resolveRenderable(item, `component child fn`);
-      if (value === null || value === undefined) {
+      if (isEmpty(value)) {
         return api.text('');
       } else if (isPrimitive(value)) {
-        return api.text(String(value));
+        return api.text(value);
       } else if (isTagLike(value)) {
         return cellToText(value, $destructors);
       } else {
