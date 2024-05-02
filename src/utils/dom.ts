@@ -80,6 +80,35 @@ const $_className = 'className';
 
 let unstableWrapperId: number = 0;
 let ROOT: Component<any> | null = null;
+let delegatedEvents: Record<string, WeakMap<HTMLElement, (e: Event) => void>> = {
+  click: new WeakMap(),
+};
+
+function handleDelegatedEvent(e: Event) {
+  let target = e.target as HTMLElement;
+  let maxDepth = 3;
+  while (target && target !== document.body && maxDepth > 0) {
+    maxDepth--;
+    if (delegatedEvents.click.has(target)) {
+      break;
+    }
+    target = target.parentElement!;
+  }
+  const fn = delegatedEvents.click.get(target);
+  if (fn) {
+    fn(e);
+  }
+}
+
+if (!IN_SSR_ENV) {
+  Object.keys(delegatedEvents).forEach((name) => {
+    document.addEventListener(name, handleDelegatedEvent);
+  });
+}
+
+export function $_delegateEvent(element: HTMLElement, name: string, fn: (e: Event) => void) {
+  delegatedEvents[name].set(element, fn);
+}
 
 export function $_TO_VALUE(reference: unknown) {
   if (isFn(reference)) {
@@ -324,6 +353,10 @@ function $ev(
       }
     }
   } else {
+    if (eventName === 'click') {
+      $_delegateEvent(element, eventName, fn as EventListener);
+      return;
+    }
     // event case (on modifier)
     if (RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES) {
       destructors.push(
