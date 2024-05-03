@@ -81,6 +81,16 @@ const $_className = 'className';
 let unstableWrapperId: number = 0;
 let ROOT: Component<any> | null = null;
 
+export function $_TO_VALUE(reference: unknown) {
+  if (isPrimitive(reference)) {
+    return reference;
+  } else if (isTagLike(reference)) {
+    return reference;
+  } else {
+    return resolveRenderable(reference as Function);
+  }
+}
+
 export function $_componentHelper(params: any, hash: any) {
   const componentFn = params.shift();
 
@@ -712,7 +722,10 @@ function _component(
     }
   }
   // @ts-expect-error construct signature
-  const instance = new (comp as unknown as Component<any>)(args, fw);
+  let instance = comp.prototype === undefined ? comp(args, fw) : new (comp as unknown as Component<any>)(args, fw);
+  if (typeof instance === 'function') {
+    instance = new instance(args, fw);
+  }
   // todo - fix typings here
   if ($template in instance) {
     const result = (

@@ -233,6 +233,9 @@ export function convert(
         } else if (node.path.type === 'SubExpression') {
           return `${wrap ? `$:() => ` : ''}${ToJSType(node.path)}`;
         }
+        if (node.path.type === 'StringLiteral') {
+          return escapeString(node.path.value);
+        }
         return null;
       }
       // replacing builtin helpers
@@ -475,6 +478,22 @@ export function convert(
     const children = resolvedChildren(element.children)
       .map((el) => ToJSType(el))
       .filter((el) => el !== null);
+    
+    const rawStyleEvents = element.attributes.filter((attr) => {
+      return attr.name.startsWith('style.');
+    });
+    element.attributes = element.attributes.filter((attr) => {
+      return !rawStyleEvents.includes(attr);
+    });
+    const styleEvents = rawStyleEvents.map((attr) => {
+      const propertyName = attr.name.split('.').pop();
+      const value = attr.value.type === 'TextNode' ? escapeString(attr.value.chars) : ToJSType(attr.value);
+      const isPath = typeof value === 'string' ? value.includes('.') : false;
+      return [
+        EVENT_TYPE.ON_CREATED,
+        `$:function($v,$n){$n.style.setProperty('${propertyName}',$v);}.bind(null,${SYMBOLS.$_TO_VALUE}(${isPath?`$:()=>${value}`: value}))`,
+      ];
+    });
     const node = {
       tag: element.tag,
       selfClosing: element.selfClosing,
@@ -498,7 +517,7 @@ export function convert(
             rawValue,
           ];
         }),
-      events: element.modifiers
+      events: [...styleEvents,...element.modifiers
         .map((mod) => {
           if (mod.path.type !== 'PathExpression') {
             return null;
@@ -540,7 +559,7 @@ export function convert(
             ];
           }
         })
-        .filter((el) => el !== null),
+        .filter((el) => el !== null)],
       children: children,
     };
     if (children.length === 1 && typeof children[0] === 'string') {

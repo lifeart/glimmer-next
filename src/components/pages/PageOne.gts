@@ -1,11 +1,32 @@
-import { Component } from '@lifeart/gxt';
+import { Component, cell } from '@lifeart/gxt';
 import { Smile } from './page-one/Smile';
 import { Table } from './page-one/Table.gts';
 
-export class PageOne extends Component {
-  <template>
+function Controls() {
+  const color = cell('red');
+
+  const intervalId = setInterval(() => {
+    color.update(Math.random() > 0.5 ? 'red' : 'blue');
+  }, 1000);
+
+  function onDestroy() {
+    return () => {
+      console.log('destroying interval');
+      clearInterval(intervalId);
+    };
+  }
+
+  return <template>
+    <h1><q {{onDestroy}} style.background-color={{color}}>Compilers are the New
+        Frameworks</q>
+      - Tom Dale &copy;</h1>
+  </template>;
+}
+
+export function PageOne() {
+  return <template>
     <div class='text-white p-3'>
-      <h1><q>Compilers are the New Frameworks</q> - Tom Dale &copy;</h1>
+      <Controls />
       <br />
 
       <div>Imagine a world where the robust, mature ecosystems of development
@@ -38,5 +59,5 @@ export class PageOne extends Component {
         efficiency. Get ready to elevate your coding experience!</i>
       <br /><br />
       <a href='/pageTwo'>Go to page two <Smile /></a></div>
-  </template>
+  </template>;
 }

@@ -12,6 +12,7 @@ export const SYMBOLS = {
   DYNAMIC_COMPONENT: '$_dc',
   $SLOTS_SYMBOL: '$SLOTS_SYMBOL',
   $PROPS_SYMBOL: '$PROPS_SYMBOL',
+  $_TO_VALUE: '$_TO_VALUE',
   $_GET_SLOTS: '$_GET_SLOTS',
   $_GET_ARGS: '$_GET_ARGS',
   $_GET_FW: '$_GET_FW',
