@@ -27,7 +27,7 @@ import {
   destroy,
   registerDestructor,
 } from './glimmer/destroyable';
-import { api } from '@/utils/dom-api';
+import { api, getDocument } from '@/utils/dom-api';
 import {
   isFn,
   isPrimitive,
@@ -86,13 +86,15 @@ let delegatedEvents: Record<string, WeakMap<HTMLElement, (e: Event) => void>> = 
 
 function handleDelegatedEvent(e: Event) {
   let target = e.target as HTMLElement;
-  let maxDepth = 3;
-  while (target && target !== document.body && maxDepth > 0) {
-    maxDepth--;
+  const body = getDocument().body;
+  while (target && target !== body) {
     if (delegatedEvents.click.has(target)) {
       break;
     }
     target = target.parentElement!;
+  }
+  if (!target.isConnected) {
+    return;
   }
   const fn = delegatedEvents.click.get(target);
   if (fn) {
@@ -100,11 +102,9 @@ function handleDelegatedEvent(e: Event) {
   }
 }
 
-if (!IN_SSR_ENV) {
-  Object.keys(delegatedEvents).forEach((name) => {
-    document.addEventListener(name, handleDelegatedEvent);
-  });
-}
+Object.keys(delegatedEvents).forEach((name) => {
+  api.addEventListener(getDocument(), name, handleDelegatedEvent);
+});
 
 export function $_delegateEvent(element: HTMLElement, name: string, fn: (e: Event) => void) {
   delegatedEvents[name].set(element, fn);
