@@ -854,7 +854,6 @@ function text(
   } else if (isPrimitive(result)) {
     return api.text(result);
   } else {
-    // @ts-expect-error
     return cellToText(typeof text === 'function' ? result : text, destructors);
   }
 }
