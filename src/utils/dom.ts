@@ -688,7 +688,7 @@ function _component(
   }
   // @ts-expect-error construct signature
   let instance = comp.prototype === undefined ? comp(args, fw) : new (comp as unknown as Component<any>)(args, fw);
-  if (typeof instance === 'function') {
+  if (isFn(instance)) {
     instance = new instance(args, fw);
   }
   // todo - fix typings here
