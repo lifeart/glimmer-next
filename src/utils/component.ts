@@ -19,8 +19,6 @@ import {
 } from './shared';
 import { addChild, getRoot, setRoot } from './dom';
 
-const FRAGMENT_TYPE = 11; // Node.DOCUMENT_FRAGMENT_NODE
-
 export type ComponentRenderTarget =
   | HTMLElement
   | DocumentFragment
@@ -163,31 +161,7 @@ export class Component<T extends Props = any>
   template!: ComponentReturnType;
 }
 
-function destroyNode(node: Node) {
-  if (IS_DEV_MODE) {
-    if (node === undefined) {
-      console.warn(`Trying to destroy undefined`);
-      return;
-    } else if (node.nodeType === FRAGMENT_TYPE) {
-      return;
-    }
-    const parent = node.parentNode;
-    if (parent !== null) {
-      parent.removeChild(node);
-    } else {
-      if (import.meta.env.SSR) {
-        console.warn(`Node is not in DOM`, node.nodeType, node.nodeName);
-        return;
-      }
-      throw new Error(`Node is not in DOM`);
-    }
-  } else {
-    if (node.nodeType === FRAGMENT_TYPE) {
-      return;
-    }
-    node.parentNode!.removeChild(node);
-  }
-}
+
 
 export function destroyElementSync(
   component:
@@ -217,14 +191,14 @@ export function destroyElementSync(
         );
       }
     } else {
-      destroyNode(component);
+      api.destroy(component);
     }
   }
 }
 
 function internalDestroyNode(el: Node | ComponentReturnType) {
   if ('nodeType' in el) {
-    destroyNode(el);
+    api.destroy(el);
   } else {
     destroyNodes(el[$nodes]);
   }
@@ -260,7 +234,9 @@ export async function destroyElement(
       if (component.ctx) {
         const destructors: Array<Promise<void>> = [];
         runDestructors(component.ctx, destructors);
-        await Promise.all(destructors);
+        if (destructors.length) {
+          await Promise.all(destructors);
+        }
       }
       try {
         destroyNodes(component[$nodes]);
@@ -271,7 +247,7 @@ export async function destroyElement(
         );
       }
     } else {
-      await destroyNode(component);
+      api.destroy(component);
     }
   }
 }

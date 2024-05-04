@@ -79,7 +79,7 @@ export function ifCondition(
   associateDestroyable(ctx, [
     () => {
       if (placeholder.isConnected) {
-        placeholder.parentNode!.removeChild(placeholder);
+        api.destroy(placeholder);
       }
     },
     runExistingDestructors,
@@ -93,7 +93,7 @@ export function ifCondition(
           const newPlaceholder = IS_DEV_MODE
             ? api.comment('if-error-placeholder')
             : api.comment('');
-          api.insert(placeholder.parentNode!, newPlaceholder, placeholder);
+          api.insert(api.parentNode(placeholder)!, newPlaceholder, placeholder);
           runExistingDestructors().then(async () => {
             removeDestructor(ctx, runExistingDestructors);
             if (!newPlaceholder.isConnected) {
@@ -137,7 +137,7 @@ export function ifCondition(
           $DEBUG_REACTIVE_CONTEXTS.pop();
         }
         renderElement(
-          placeholder.parentNode || target,
+          api.parentNode(placeholder) || target,
           prevComponent,
           placeholder,
         );
@@ -184,7 +184,7 @@ export function ifCondition(
           $DEBUG_REACTIVE_CONTEXTS.pop();
         }
         renderElement(
-          placeholder.parentNode || target,
+          api.parentNode(placeholder) || target,
           prevComponent,
           placeholder,
         );

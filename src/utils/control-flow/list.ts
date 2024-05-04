@@ -221,11 +221,13 @@ export class BasicListComponent<T extends { id: number }> {
       ? this.getTargetNode(amountOfExistingKeys)
       : bottomMarker;
     let seenKeys = 0;
+    let targetParent = api.parentNode(targetNode)!;
     items.forEach((item, index) => {
       // @todo - fix here
       if (seenKeys === amountOfExistingKeys && targetNode === bottomMarker) {
         // optimization for appending items case
         targetNode = this.getTargetNode(0);
+        targetParent = api.parentNode(targetNode)!;
       }
       const key = keyForItem(item);
       const maybeRow = keyMap.get(key);
@@ -249,7 +251,7 @@ export class BasicListComponent<T extends { id: number }> {
         keyMap.set(key, row);
         indexMap.set(key, index);
         row.forEach((item) => {
-          renderElement(targetNode.parentNode!, item, targetNode);
+          renderElement(targetParent, item, targetNode);
         });
       } else {
         seenKeys++;
@@ -265,23 +267,24 @@ export class BasicListComponent<T extends { id: number }> {
     rowsToMove.forEach(([row, index]) => {
       const nextItem = items[index + 1];
       if (nextItem === undefined) {
-        renderElement(bottomMarker.parentNode!, row, bottomMarker);
+        renderElement(api.parentNode(bottomMarker)!, row, bottomMarker);
       } else {
         const nextKey = keyForItem(nextItem);
         const nextRow = keyMap.get(nextKey)!;
         const firstNode = getFirstNode(nextRow);
         if (nextRow !== undefined && firstNode !== undefined) {
-          const parent = firstNode.parentNode!;
+          const parent = api.parentNode(firstNode)!;
           renderElement(parent, row, firstNode);
         }
       }
     });
 
     if (targetNode !== bottomMarker) {
-      const parent = targetNode.parentNode!;
-      const trueParent = bottomMarker.parentNode!;
+      const parent = api.parentNode(targetNode)!;
+      const trueParent = api.parentNode(bottomMarker)!;
       // parent may not exist in rehydration
       if (!IN_SSR_ENV) {
+        // TODO: move to dom API
         parent && parent.removeChild(targetNode);
       }
       if (trueParent !== parent) {

@@ -6,6 +6,7 @@ import {
   type Component,
   type ComponentReturnType,
 } from '@/utils/component';
+import { api } from './dom-api';
 
 export function createHotReload(
   component: (
@@ -28,7 +29,7 @@ export function createHotReload(
     renderedBuckets.forEach(({ parent, instance, args }) => {
       const newCmp = component(newKlass, args, parent);
       const firstElement = getFirstNode(instance);
-      const parentElement = firstElement.parentNode;
+      const parentElement = api.parentNode(firstElement);
       if (!parentElement) {
         return;
       }

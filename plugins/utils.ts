@@ -344,6 +344,16 @@ function hasStableChildsForControlNode(
   return hasStableChild;
 }
 
+export function isComponentNode(node: HBSNode) {
+  if (node.tag && node.tag.toLowerCase() !== node.tag) {
+    return true;
+  }
+  if (node.tag.startsWith('Tres')) {
+    return true;
+  }
+  return false;
+}
+
 export function serializeNode(
   node: string | null | HBSNode | HBSControlExpression | ComplexJSType,
   ctxName = 'this',
@@ -439,9 +449,7 @@ export function serializeNode(
       return `${SYMBOLS.IF}(${arrayName}, ${trueBranch}, ${falseBranch}, ${ctxName})`;
     }
   } else if (
-    typeof node === 'object' &&
-    node.tag &&
-    node.tag.toLowerCase() !== node.tag
+    typeof node === 'object' && isComponentNode(node)
   ) {
     const hasSplatAttrs = node.attributes.find((attr) => {
       return attr[0] === '...attributes';
