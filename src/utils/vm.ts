@@ -92,9 +92,6 @@ export function evaluateOpcode(tag: AnyCell, op: tagOp) {
 }
 
 export function opcodeFor(tag: AnyCell, op: tagOp) {
-  if (!tag) {
-    debugger;
-  }
   evaluateOpcode(tag, op);
   const ops = opsFor(tag)!;
   ops.push(op);
