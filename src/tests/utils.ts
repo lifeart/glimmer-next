@@ -78,7 +78,7 @@ export async function rerender(timeout = 0) {
   });
 }
 
-export function click(selector: string) {
+export async function click(selector: string) {
   const element = getDocument()
     .getElementById('ember-testing')!
     .querySelector(selector);
@@ -93,6 +93,7 @@ export function click(selector: string) {
     cancelable: true,
   });
   element!.dispatchEvent(event);
+  await rerender();
 }
 
 export function step(message: string) {

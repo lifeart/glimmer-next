@@ -24,7 +24,7 @@ module('Integration | Component | Button', function () {
         <Button @onClick={{onClick}} data-test-button>DEMO</Button>
       </template>,
     );
-    click('[data-test-button]');
+    await click('[data-test-button]');
   });
 
   test('has default type', async function (assert) {

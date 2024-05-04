@@ -494,6 +494,10 @@ describe.each([
         expect($t<ASTv1.MustacheStatement>(`{{true}}`)).toEqual(true);
         expect($t<ASTv1.MustacheStatement>(`{{false}}`)).toEqual(false);
       });
+      test('support string literals', () => {
+        expect($t<ASTv1.MustacheStatement>(`{{'true'}}`)).toEqual('"true"');
+        expect($t<ASTv1.MustacheStatement>(`{{'false'}}`)).toEqual('"false"');
+      });
       test('support null literals', () => {
         expect($t<ASTv1.MustacheStatement>(`{{null}}`)).toEqual(null);
       });

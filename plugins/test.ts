@@ -158,28 +158,32 @@ export function transform(
     const hasFw = results.some((el) => el.includes('$fw'));
     const hasSlots = results.some((el) => el.includes('$slots'));
     const slotsResolution = `const $slots = ${SYMBOLS.$_GET_SLOTS}(this, arguments);`;
+    const maybeFw = `${hasFw ? `const $fw = ${SYMBOLS.$_GET_FW}(this, arguments);` : ''}`;
+    const maybeSlots = `${hasSlots ? slotsResolution : ''}`;
+    const declareRoots = `const roots = [${results.join(', ')}];`;
+    const declareReturn = `return ${SYMBOLS.FINALIZE_COMPONENT}(roots, ${finContext});`;
 
     if (isTemplateTag) {
       result = `function () {
-      ${hasFw ? `const $fw = ${SYMBOLS.$_GET_FW}(this, arguments);` : ''}
+      ${maybeFw}
       ${SYMBOLS.$_GET_ARGS}(this, arguments);
-      ${hasSlots ? slotsResolution : ''}
-      const roots = [${results.join(', ')}];
-      return ${SYMBOLS.FINALIZE_COMPONENT}(roots, ${finContext});
+      ${maybeSlots}
+      ${declareRoots}
+      ${declareReturn}
     }`;
     } else {
       result = isClass
         ? `() => {
-      ${hasSlots ? slotsResolution : ''}
-      ${hasFw ? `const $fw = ${SYMBOLS.$_GET_FW}(this, arguments);` : ''}
-      const roots = [${results.join(', ')}];
-      return ${SYMBOLS.FINALIZE_COMPONENT}(roots, ${finContext});
+      ${maybeSlots}
+      ${maybeFw}
+      ${declareRoots}
+      ${declareReturn}
     }`
         : `(() => {
-      ${hasSlots ? slotsResolution : ''}
-      ${hasFw ? `const $fw = ${SYMBOLS.$_GET_FW}(this, arguments);` : ''}
-      const roots = [${results.join(', ')}];
-      return ${SYMBOLS.FINALIZE_COMPONENT}(roots, ${finContext});
+      ${maybeSlots}
+      ${maybeFw}
+      ${declareRoots}
+      ${declareReturn}
     })()`;
     }
 

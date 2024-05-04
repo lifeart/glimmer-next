@@ -216,14 +216,15 @@ export class MergedCell {
       return this.fn();
     }
 
+    let $tracker = tracker();
     try {
-      currentTracker = tracker();
+      setTracker($tracker)
       return this.fn();
     } finally {
-      bindAllCellsToTag(currentTracker!, this);
-      this.isConst = currentTracker!.size === 0;
-      this.relatedCells = currentTracker;
-      currentTracker = null;
+      bindAllCellsToTag($tracker, this);
+      this.isConst = $tracker.size === 0;
+      this.relatedCells = $tracker;
+      setTracker(null)
     }
   }
 }
@@ -328,9 +329,9 @@ export function cell<T>(value: T, debugName?: string) {
 
 export function inNewTrackingFrame(callback: () => void) {
   const existingTracker = currentTracker;
-  currentTracker = null;
+  setTracker(null);
   callback();
-  currentTracker = existingTracker;
+  setTracker(existingTracker);
 }
 
 export function getTracker() {

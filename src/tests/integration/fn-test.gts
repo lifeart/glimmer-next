@@ -18,6 +18,6 @@ module('Integration | InternalHelper | fn', function () {
       </template>,
     );
 
-    click('[data-test-button]');
+    await click('[data-test-button]');
   });
 });
