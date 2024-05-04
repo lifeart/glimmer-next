@@ -82,12 +82,10 @@ let unstableWrapperId: number = 0;
 let ROOT: Component<any> | null = null;
 
 export function $_TO_VALUE(reference: unknown) {
-  if (isPrimitive(reference) || isEmpty(reference)) {
-    return reference;
-  } else if (isTagLike(reference)) {
-    return formula(() => reference.value, '$_TO_VALUE');
-  } else {
+  if (isFn(reference)) {
     return resolveRenderable(reference as Function);
+  } else {
+    return reference;
   }
 }
 
