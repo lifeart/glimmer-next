@@ -248,8 +248,9 @@ export class BasicListComponent<T extends { id: number }> {
         const row = ItemComponent(item, idx, this as unknown as Component<any>);
         keyMap.set(key, row);
         indexMap.set(key, index);
+        const parentNode = api.parentNode(targetNode)!;
         row.forEach((item) => {
-          renderElement(targetNode.parentNode!, item, targetNode);
+          renderElement(parentNode, item, targetNode);
         });
       } else {
         seenKeys++;
@@ -265,23 +266,24 @@ export class BasicListComponent<T extends { id: number }> {
     rowsToMove.forEach(([row, index]) => {
       const nextItem = items[index + 1];
       if (nextItem === undefined) {
-        renderElement(bottomMarker.parentNode!, row, bottomMarker);
+        renderElement(api.parentNode(bottomMarker)!, row, bottomMarker);
       } else {
         const nextKey = keyForItem(nextItem);
         const nextRow = keyMap.get(nextKey)!;
         const firstNode = getFirstNode(nextRow);
         if (nextRow !== undefined && firstNode !== undefined) {
-          const parent = firstNode.parentNode!;
+          const parent = api.parentNode(firstNode)!;
           renderElement(parent, row, firstNode);
         }
       }
     });
 
     if (targetNode !== bottomMarker) {
-      const parent = targetNode.parentNode!;
-      const trueParent = bottomMarker.parentNode!;
+      const parent = api.parentNode(targetNode)!;
+      const trueParent = api.parentNode(bottomMarker)!;
       // parent may not exist in rehydration
       if (!IN_SSR_ENV) {
+        // TODO: move to dom API
         parent && parent.removeChild(targetNode);
       }
       if (trueParent !== parent) {

@@ -1,6 +1,6 @@
 import { getNodeCounter, incrementNodeCounter } from '@/utils/dom';
 import { IN_SSR_ENV, noop } from '../../shared';
-
+import type { Props } from '../../types';
 const FRAGMENT_TYPE = 11; // Node.DOCUMENT_FRAGMENT_NODE
 
 let $doc =
@@ -35,6 +35,9 @@ export const api = {
     element[name] = value;
     return value;
   },
+  parentNode(element: Node) {
+    return element.parentNode;
+  },
   comment(text = '') {
     if (IN_SSR_ENV) {
       incrementNodeCounter();
@@ -56,7 +59,7 @@ export const api = {
   fragment() {
     return $doc.createDocumentFragment();
   },
-  element(tagName = ''): HTMLElement {
+  element(tagName = '', namespace = '', ctx: any = null, props: Props = [[],[],[]]): HTMLElement {
     return $doc.createElement(tagName);
   },
   append(

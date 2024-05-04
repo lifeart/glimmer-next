@@ -4,6 +4,8 @@ import { deepArrayEqual, isHTMLTag, kebabToCamel } from './utils'
 
 import type { TresObject, TresObject3D, TresScene } from './types'
 import { catalogue } from './catalogue'
+import { Props } from '@/utils/types'
+import { isFn } from '@/utils/shared'
 
 function noop(fn: string): any {
   // eslint-disable-next-line no-unused-expressions
@@ -26,10 +28,17 @@ const supportedPointerEvents = [
 ]
 
 export const api = {
-  createElement(tag: string) {
-    const props = {
-      args: []
-    };
+  element(tag: string, _isSVG: string, _anchor: any, _props: Props) {
+    let props = {};
+    let args = _props[1];
+    args.forEach((arg) => {
+      props[arg[0]] = arg[1];
+    });
+    if (!props) { props = {} }
+
+    if (!props.args) {
+      props.args = []
+    }
     if (tag === 'template') { return null }
     if (isHTMLTag(tag)) { return null }
     let name = tag.replace('Tres', '')
@@ -81,7 +90,7 @@ export const api = {
 
     return instance
   },
-  insert(child, parent) {
+  append(parent, child) {
     if (parent && parent.isScene) { scene = parent as unknown as TresScene }
 
     const parentObject = parent || scene
@@ -116,7 +125,7 @@ export const api = {
       }
     }
   },
-  remove(node) {
+  destroy(node) {
     if (!node) { return }
     // remove is only called on the node being removed and not on child nodes.
 
@@ -175,7 +184,7 @@ export const api = {
 
     node.dispose?.()
   },
-  patchProp(node, prop, _prevValue, nextValue) {
+  prop(node, prop, nextValue) {
     if (node) {
       let root = node
       let key = prop
@@ -191,7 +200,7 @@ export const api = {
 
       if (key === 'args') {
         const prevNode = node as TresObject3D
-        const prevArgs = _prevValue ?? []
+        const prevArgs: any[] = [];
         const args = nextValue ?? []
         const instanceName = node.userData.tres__name || node.type
 
@@ -221,7 +230,7 @@ export const api = {
       let value = nextValue
       if (value === '') { value = true }
       // Set prop, prefer atomic methods if applicable
-      if (isFunction(target)) {
+      if (isFn(target)) {
         // don't call pointer event callback functions
         if (!supportedPointerEvents.includes(prop)) {
           if (Array.isArray(value)) { node[finalKey](...value) }
@@ -229,7 +238,7 @@ export const api = {
         }
         return
       }
-      if (!target?.set && !isFunction(target)) { root[finalKey] = value }
+      if (!target?.set && !isFn(target)) { root[finalKey] = value }
       else if (target.constructor === value.constructor && target?.copy) { target?.copy(value) }
       else if (Array.isArray(value)) { target.set(...value) }
       else if (!target.isColor && target.setScalar) { target.setScalar(value) }

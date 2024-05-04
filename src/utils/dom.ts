@@ -45,29 +45,16 @@ import {
 } from './shared';
 import { isRehydrationScheduled } from './ssr/rehydration';
 import { createHotReload } from './hmr';
-
-type RenderableType = Node | ComponentReturnType | string | number;
-type ShadowRootMode = 'open' | 'closed' | null;
-type ModifierFn = (
-  element: HTMLElement,
-  ...args: unknown[]
-) => void | DestructorFn;
-
-type Attr =
-  | MergedCell
-  | Cell
-  | string
-  | ((element: HTMLElement, attribute: string) => void);
-
-type TagAttr = [string, Attr];
-type TagProp = [string, Attr];
-type TagEvent = [string, EventListener | ModifierFn];
-type FwType = [TagProp[], TagAttr[], TagEvent[]];
-type Props = [TagProp[], TagAttr[], TagEvent[], FwType?];
-
-type Fn = () => unknown;
-type InElementFnArg = () => HTMLElement;
-type BranchCb = () => ComponentReturnType | Node;
+import type {
+  Props,
+  ModifierFn,
+  InElementFnArg,
+  ShadowRootMode,
+  BranchCb,
+  FwType,
+  RenderableType,
+  Fn,
+} from './types';
 
 // EMPTY DOM PROPS
 export const $_edp = [[], [], []] as Props;
@@ -365,7 +352,7 @@ function _DOM(
   ctx: any,
 ): Node {
   NODE_COUNTER++;
-  const element = api.element(tag);
+  const element = api.element(tag, '', ctx, tagProps);
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.push(`${tag}`);
   }
@@ -752,7 +739,10 @@ function mergeComponents(
       }
     }
     if (isFn(component)) {
-      component = text(resolveRenderable(component, 'merge-components'), $destructors);
+      component = text(
+        resolveRenderable(component, 'merge-components'),
+        $destructors,
+      );
     }
     if (isEmpty(component)) {
       return;
@@ -825,7 +815,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
         $destructors.push(() => {
           destroyElement(slotRoots);
         });
-        renderElement(slotPlaceholder.parentNode!, slotRoots, slotPlaceholder);
+        renderElement(api.parentNode(slotPlaceholder)!, slotRoots, slotPlaceholder);
         isRendered = true;
       },
       get() {
@@ -1053,7 +1043,7 @@ export function $_dc(
       destroyElementSync(result);
       result = component(value, args, ctx);
       result![$nodes].push(target!);
-      renderElement(target!.parentNode!, result, target!);
+      renderElement(api.parentNode(target!)!, result, target!);
     } else {
       result = component(value, args, ctx);
     }
