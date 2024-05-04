@@ -228,7 +228,7 @@ export function addChild(
   }
   const isObject = typeof child === 'object';
   if (isObject && $nodes in child) {
-    child[$nodes].forEach((node, i) => {
+    child[$nodes].forEach((node: Node, i: number) => {
       addChild(element, node, destructors, index + i);
     });
   } else if (isPrimitive(child)) {
@@ -352,7 +352,7 @@ function _DOM(
   ctx: any,
 ): Node {
   NODE_COUNTER++;
-  const element = api.element(tag, '', ctx, tagProps);
+  const element = api.element(tag);
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.push(`${tag}`);
   }

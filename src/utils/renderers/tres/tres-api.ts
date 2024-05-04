@@ -7,16 +7,12 @@ import { catalogue } from './catalogue'
 import { Props } from '@/utils/types'
 import { isFn } from '@/utils/shared'
 
-function noop(fn: string): any {
-  // eslint-disable-next-line no-unused-expressions
-  fn
-}
 
 let scene: TresScene | null = null
 
 const { logError } = {
-  logError() {
-    console.log(...arguments);
+  logError(msg: string) {
+    console.log(msg);
   }
 }
 
@@ -32,11 +28,14 @@ export const api = {
     let props = {};
     let args = _props[1];
     args.forEach((arg) => {
+      // @ts-expect-error
       props[arg[0]] = arg[1];
     });
     if (!props) { props = {} }
 
+    // @ts-expect-error
     if (!props.args) {
+      // @ts-expect-error
       props.args = []
     }
     if (tag === 'template') { return null }
@@ -45,9 +44,12 @@ export const api = {
     let instance
 
     if (tag === 'primitive') {
+      // @ts-expect-error
       if (props?.object === undefined) { logError('Tres primitives need a prop \'object\'') }
+      // @ts-expect-error
       const object = props.object as TresObject
       name = object.type
+      // @ts-expect-error
       instance = Object.assign(object, { type: name, attach: props.attach, primitive: true })
     }
     else {
@@ -56,18 +58,22 @@ export const api = {
         logError(`${name} is not defined on the THREE namespace. Use extend to add it to the catalog.`)
       }
       // eslint-disable-next-line new-cap
+      // @ts-expect-error
       instance = new target(...props.args)
     }
 
     if (instance.isCamera) {
+      // @ts-expect-error
       if (!props?.position) {
         instance.position.set(3, 3, 3)
       }
+      // @ts-expect-error
       if (!props?.lookAt) {
         instance.lookAt(0, 0, 0)
       }
     }
 
+    // @ts-expect-error
     if (props?.attach === undefined) {
       if (instance.isMaterial) { instance.attach = 'material' }
       else if (instance.isBufferGeometry) { instance.attach = 'geometry' }
@@ -77,7 +83,9 @@ export const api = {
     // prevent it's disposal when node is removed later in it's lifecycle
 
     if (instance.isObject3D) {
+      // @ts-expect-error
       if (props?.material?.isMaterial) { (instance as TresObject3D).userData.tres__materialViaProp = true }
+      // @ts-expect-error
       if (props?.geometry?.isBufferGeometry) { (instance as TresObject3D).userData.tres__geometryViaProp = true }
     }
 
@@ -90,6 +98,7 @@ export const api = {
 
     return instance
   },
+  // @ts-expect-error
   append(parent, child) {
     if (parent && parent.isScene) { scene = parent as unknown as TresScene }
 
@@ -125,6 +134,7 @@ export const api = {
       }
     }
   },
+  // @ts-expect-error
   destroy(node) {
     if (!node) { return }
     // remove is only called on the node being removed and not on child nodes.
@@ -184,6 +194,7 @@ export const api = {
 
     node.dispose?.()
   },
+  // @ts-expect-error
   prop(node, prop, nextValue) {
     if (node) {
       let root = node
@@ -222,9 +233,11 @@ export const api = {
       // Traverse pierced props (e.g. foo-bar=value => foo.bar = value)
       if (key.includes('-') && target === undefined) {
         const chain = key.split('-')
+        // @ts-expect-error
         target = chain.reduce((acc, key) => acc[kebabToCamel(key)], root)
         key = chain.pop() as string
         finalKey = key.toLowerCase()
+        // @ts-expect-error
         if (!target?.set) { root = chain.reduce((acc, key) => acc[kebabToCamel(key)], root) }
       }
       let value = nextValue
@@ -245,6 +258,7 @@ export const api = {
       else { target.set(value) }
     }
   },
+  // @ts-expect-error
   parentNode(node) {
     return node?.parent || null
   }

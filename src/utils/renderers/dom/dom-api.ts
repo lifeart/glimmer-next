@@ -59,7 +59,8 @@ export const api = {
   fragment() {
     return $doc.createDocumentFragment();
   },
-  element(tagName = '', namespace = '', ctx: any = null, props: Props = [[],[],[]]): HTMLElement {
+  // @ts-expect-error
+  element(tagName = '', namespace?: string, ctx?: any, props?: Props): HTMLElement {
     return $doc.createElement(tagName);
   },
   append(

@@ -247,6 +247,7 @@ export function createHighlightMesh(object: Object3D): Mesh {
   })
   // Clone the geometry of the object. You might need a more complex approach
   // if the object's geometry is not straightforward.
+    // @ts-expect-error
   const highlightMesh = new HightlightMesh(object.geometry.clone(), highlightMaterial)
 
   return highlightMesh
