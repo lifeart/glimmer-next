@@ -232,8 +232,7 @@ export function convert(
           return node.path.value;
         } else if (node.path.type === 'SubExpression') {
           return `${wrap ? `$:() => ` : ''}${ToJSType(node.path)}`;
-        }
-        if (node.path.type === 'StringLiteral') {
+        } else if (node.path.type === 'StringLiteral') {
           return escapeString(node.path.value);
         }
         return null;
