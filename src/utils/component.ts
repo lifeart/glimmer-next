@@ -234,7 +234,9 @@ export async function destroyElement(
       if (component.ctx) {
         const destructors: Array<Promise<void>> = [];
         runDestructors(component.ctx, destructors);
-        await Promise.all(destructors);
+        if (destructors.length) {
+          await Promise.all(destructors);
+        }
       }
       try {
         destroyNodes(component[$nodes]);
