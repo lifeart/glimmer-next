@@ -245,22 +245,7 @@ export const api = {
       else { target.set(value) }
     }
   },
-
   parentNode(node) {
     return node?.parent || null
-  },
-  createText: () => noop('createText'),
-  createComment: () => noop('createComment'),
-
-  setText: () => noop('setText'),
-
-  setElementText: () => noop('setElementText'),
-  nextSibling: () => noop('nextSibling'),
-
-  querySelector: () => noop('querySelector'),
-
-  setScopeId: () => noop('setScopeId'),
-  cloneNode: () => noop('cloneNode'),
-
-  insertStaticContent: () => noop('insertStaticContent'),
+  }
 }
