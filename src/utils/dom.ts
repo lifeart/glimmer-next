@@ -82,10 +82,10 @@ let unstableWrapperId: number = 0;
 let ROOT: Component<any> | null = null;
 
 export function $_TO_VALUE(reference: unknown) {
-  if (isPrimitive(reference)) {
+  if (isPrimitive(reference) || isEmpty(reference)) {
     return reference;
   } else if (isTagLike(reference)) {
-    return reference;
+    return formula(() => reference.value, '$_TO_VALUE');
   } else {
     return resolveRenderable(reference as Function);
   }
@@ -166,34 +166,25 @@ function $prop(
   value: unknown,
   destructors: DestructorFn[],
 ) {
-  if (isPrimitive(value)) {
-    api.prop(element, key, value);
-  } else if (isFn(value)) {
-    $prop(
-      element,
-      key,
-      resolveRenderable(value, `${element.tagName}.${key}`),
-      destructors,
-    );
-  } else if (value !== null && isTagLike(value)) {
+  const result = $_TO_VALUE(value);
+  if (isEmpty(result)) {
+    return;
+  }
+  if (isPrimitive(result)) {
+    if (isRehydrationScheduled()) {
+      return;
+    }
+    api.prop(element, key, result);
+  } else {
     let prevPropValue: any = undefined;
     destructors.push(
-      opcodeFor(value as AnyCell, (value) => {
+      opcodeFor(result as AnyCell, (value) => {
         if (value === prevPropValue) {
           return;
         }
         prevPropValue = api.prop(element, key, value);
       }),
     );
-  } else {
-    if (isRehydrationScheduled()) {
-      // we should have all static keys settled
-      return;
-    } else {
-      if (IS_DEV_MODE) {
-        throw new Error(`Unknown value ${typeof value} for property ${key}`);
-      }
-    }
   }
 }
 
@@ -203,27 +194,19 @@ function $attr(
   value: unknown,
   destructors: Destructors,
 ) {
-  if (isPrimitive(value)) {
-    // @ts-expect-error type casting
-    api.attr(element, key, value);
-  } else if (isFn(value)) {
-    $attr(
-      element,
-      key,
-      resolveRenderable(value, `${element.tagName}.${key}`),
-      destructors,
-    );
-  } else if (value !== null && isTagLike(value)) {
+  const result = $_TO_VALUE(value);
+  if (isEmpty(result)) {
+    return;
+  }
+  if (isPrimitive(result)) {
+    api.attr(element, key, result as string);
+  } else {
     destructors.push(
-      opcodeFor(value as AnyCell, (value) => {
+      opcodeFor(result as AnyCell, (value) => {
         // @ts-expect-error type casting
         api.attr(element, key, value);
       }),
     );
-  } else {
-    if (IS_DEV_MODE) {
-      throw new Error(`Unknown value ${typeof value} for attribute ${key}`);
-    }
   }
 }
 
@@ -240,7 +223,7 @@ function resolveRenderable(
     f.destroy();
     return componentProps;
   } else {
-    if (isPrimitive(componentProps)) {
+    if (isPrimitive(componentProps) || isEmpty(componentProps)) {
       return f;
     } else {
       // looks like a component
@@ -293,34 +276,18 @@ function $ev(
 ) {
   // textContent is a special case
   if (eventName === EVENT_TYPE.TEXT_CONTENT) {
-    if (isFn(fn)) {
-      const value = resolveRenderable(fn, `${element.tagName}.textContent`);
-      if (isPrimitive(value)) {
-        api.textContent(element, String(value));
-      } else if (isTagLike(value)) {
-        destructors.push(
-          opcodeFor(value, (value) => {
-            api.textContent(element, String(value));
-          }),
-        );
-      } else {
-        return value; // objet
-        // throw new Error('invalid textContent value');
-      }
+    const result = $_TO_VALUE(fn);
+    if (isEmpty(result)) {
+      return;
+    }
+    if (isPrimitive(result)) {
+      api.textContent(element, result as string);
     } else {
-      if (IS_GLIMMER_COMPAT_MODE) {
-        api.textContent(element, fn);
-      } else {
-        if (isPrimitive(fn)) {
-          api.textContent(element, String(fn));
-        } else if (isTagLike(fn)) {
-          destructors.push(
-            opcodeFor(fn, (value) => {
-              api.textContent(element, String(value));
-            }),
-          );
-        }
-      }
+      destructors.push(
+        opcodeFor(result as AnyCell, (value) => {
+          api.textContent(element, String(value));
+        }),
+      );
     }
     // modifier case
   } else if (eventName === EVENT_TYPE.ON_CREATED) {
@@ -789,6 +756,9 @@ function mergeComponents(
     if (isFn(component)) {
       component = text(resolveRenderable(component, 'merge-components'), $destructors);
     }
+    if (isEmpty(component)) {
+      return;
+    }
     if (isPrimitive(component)) {
       nodes.push(api.text(component));
     } else if ($nodes in component) {
@@ -890,20 +860,15 @@ function text(
   text: string | number | null | Cell | MergedCell | Fn | RenderableType,
   destructors: Destructors,
 ): Text {
-  if (isPrimitive(text)) {
-    return api.text(text);
-  } else if (text !== null && isTagLike(text)) {
-    return cellToText(text as AnyCell, destructors);
-  } else if (isFn(text)) {
-    // @ts-expect-error return type
-    return text(resolveRenderable(fn, `fnToText`), destructors);
+  const result = $_TO_VALUE(text);
+  if (isEmpty(result)) {
+    return api.text('');
+  } else if (isPrimitive(result)) {
+    return api.text(result);
+  } else {
+    // @ts-expect-error
+    return cellToText(typeof text === 'function' ? result : text, destructors);
   }
-  if (typeof text === 'object') {
-    // TODO: change fn name?
-    return text as Text;
-  }
-
-  return api.text('');
 }
 
 function ifCond(
