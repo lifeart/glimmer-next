@@ -221,11 +221,13 @@ export class BasicListComponent<T extends { id: number }> {
       ? this.getTargetNode(amountOfExistingKeys)
       : bottomMarker;
     let seenKeys = 0;
+    let targetParent = api.parentNode(targetNode)!;
     items.forEach((item, index) => {
       // @todo - fix here
       if (seenKeys === amountOfExistingKeys && targetNode === bottomMarker) {
         // optimization for appending items case
         targetNode = this.getTargetNode(0);
+        targetParent = api.parentNode(targetNode)!;
       }
       const key = keyForItem(item);
       const maybeRow = keyMap.get(key);
@@ -248,9 +250,8 @@ export class BasicListComponent<T extends { id: number }> {
         const row = ItemComponent(item, idx, this as unknown as Component<any>);
         keyMap.set(key, row);
         indexMap.set(key, index);
-        const parentNode = api.parentNode(targetNode)!;
         row.forEach((item) => {
-          renderElement(parentNode, item, targetNode);
+          renderElement(targetParent, item, targetNode);
         });
       } else {
         seenKeys++;
