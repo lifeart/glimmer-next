@@ -41,8 +41,7 @@ export function isPrimitive(value: unknown): value is string | number {
     vType === 'string' ||
     vType === 'number' ||
     vType === 'boolean' ||
-    vType === 'bigint' ||
-    vType === 'undefined'
+    vType === 'bigint'
   );
 }
 

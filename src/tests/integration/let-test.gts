@@ -73,7 +73,7 @@ module('Integration | InternalComponent | let', function () {
     </template>;
     const time = cell(Date.now(), 'time');
     function updateTime() {
-      time.update(Date.now());
+      time.update(Date.now() + 124);
     }
     await render(<template><Display @value={{time}} /></template>);
     assert.dom('[data-test-1]').hasText(`hello world!${time.value}`);
