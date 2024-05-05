@@ -84,26 +84,24 @@ let delegatedEvents: Record<string, WeakMap<HTMLElement, (e: Event) => void>> = 
   click: new WeakMap(),
 };
 
-function handleDelegatedEvent(e: Event) {
-  let target = e.target as HTMLElement;
-  const body = getDocument().body;
-  while (target && target !== body) {
-    if (delegatedEvents.click.has(target)) {
-      break;
+function handleDelegatedEvent(name: string) {
+  const eventsList = delegatedEvents[name];
+  return (e: Event) => {
+    let target = e.target as HTMLElement;
+    while (target) {
+      if (!target.isConnected) {
+        return;
+      } else if (eventsList.has(target)) {
+        break;
+      }
+      target = target.parentElement!;
     }
-    target = target.parentElement!;
-  }
-  if (!target.isConnected) {
-    return;
-  }
-  const fn = delegatedEvents.click.get(target);
-  if (fn) {
-    fn(e);
+    eventsList.get(target)!?.(e);
   }
 }
 
 Object.keys(delegatedEvents).forEach((name) => {
-  api.addEventListener(getDocument(), name, handleDelegatedEvent);
+  api.addEventListener(getDocument(), name, handleDelegatedEvent(name));
 });
 
 export function $_delegateEvent(element: HTMLElement, name: string, fn: (e: Event) => void) {
