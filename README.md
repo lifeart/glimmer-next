@@ -179,6 +179,10 @@ export function Icon() {
 
 ### Setup
 
+Start project from this template: https://github.com/lifeart/template-gxt
+
+or
+
 ```
 pnpm create vite my-app --template vanilla-ts
 pnpm install @lifeart/gxt
