@@ -27,7 +27,7 @@ import {
   destroy,
   registerDestructor,
 } from './glimmer/destroyable';
-import { api } from '@/utils/dom-api';
+import { api, getDocument } from '@/utils/dom-api';
 import {
   isFn,
   isPrimitive,
@@ -80,6 +80,33 @@ const $_className = 'className';
 
 let unstableWrapperId: number = 0;
 let ROOT: Component<any> | null = null;
+let delegatedEvents: Record<string, WeakMap<HTMLElement, (e: Event) => void>> = {
+  click: new WeakMap(),
+};
+
+function handleDelegatedEvent(name: string) {
+  const eventsList = delegatedEvents[name];
+  return (e: Event) => {
+    let target = e.target as HTMLElement;
+    while (target) {
+      if (!target.isConnected) {
+        return;
+      } else if (eventsList.has(target)) {
+        break;
+      }
+      target = target.parentElement!;
+    }
+    eventsList.get(target)!?.(e);
+  }
+}
+
+Object.keys(delegatedEvents).forEach((name) => {
+  api.addEventListener(getDocument(), name, handleDelegatedEvent(name));
+});
+
+export function $_delegateEvent(element: HTMLElement, name: string, fn: (e: Event) => void) {
+  delegatedEvents[name].set(element, fn);
+}
 
 export function $_TO_VALUE(reference: unknown) {
   if (isFn(reference)) {
@@ -324,6 +351,10 @@ function $ev(
       }
     }
   } else {
+    if (eventName === 'click') {
+      $_delegateEvent(element, eventName, fn as EventListener);
+      return;
+    }
     // event case (on modifier)
     if (RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES) {
       destructors.push(
