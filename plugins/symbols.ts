@@ -30,6 +30,7 @@ export const SYMBOLS = {
   $_ucw: '$_ucw',
   $__if: '$__if',
   $__eq: '$__eq',
+  $__not: '$__not',
   $__debugger: '$__debugger',
   $__log: '$__log',
   $__array: '$__array',

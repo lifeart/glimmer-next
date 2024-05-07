@@ -378,6 +378,11 @@ describe.each([
           $t<ASTv1.MustacheStatement>(`{{or foo "bar" "baz"}}`),
         ).toEqual(`$:() => $:$__or($:foo,"bar","baz")`);
       });
+      test('not helper properly mapped', () => {
+        expect(
+          $t<ASTv1.MustacheStatement>(`{{not foo "bar" "baz"}}`),
+        ).toEqual(`$:() => $:$__not($:foo,"bar","baz")`);
+      });
       test('hash helper properly mapped', () => {
         expect(
           $t<ASTv1.MustacheStatement>(`{{hash foo="bar" boo="baz"}}`),
