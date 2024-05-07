@@ -26,16 +26,14 @@ const p = new Preprocessor();
 export const preprocess: GlintExtensionPreprocess<PreprocessData> = (source, path) => {
   // NOTE: https://github.com/embroider-build/content-tag/issues/45
   //       All indicies are byte-index, not char-index.
-  let templates = p.parse(source, path);
+  let templates = p.parse(source, { filename: path });
 
   let templateLocations: Array<TemplateLocation> = [];
   let segments: Array<string> = [];
   let sourceOffsetBytes = 0;
   let deltaBytes = 0;
 
-  // @ts-expect-error TS couldn't find @types/node, which are specified
-  // in the root package.json
-  let sourceBuffer = Buffer.from(source);
+  let sourceBuffer = getBuffer(source);
 
   for (let template of templates) {
     let startTagLengthBytes = template.startRange.end - template.startRange.start;
@@ -72,16 +70,13 @@ export const preprocess: GlintExtensionPreprocess<PreprocessData> = (source, pat
 
     sourceOffsetBytes = endTagOffsetBytes + endTagLengthBytes;
 
-    // TODO: is there a way to convert bytes to chars?
-    //       I think maybe all of this code needs to live in content-tag,
-    //       and give us the option to generate this sort of structure
     templateLocations.push({
-      startTagOffset: startTagOffsetBytes,
-      endTagOffset: endTagOffsetBytes,
-      startTagLength: startTagLengthBytes,
-      endTagLength: endTagLengthBytes,
-      transformedStart: transformedStartBytes,
-      transformedEnd,
+      startTagOffset: byteToCharIndex(source, startTagOffsetBytes),
+      endTagOffset: byteToCharIndex(source, endTagOffsetBytes),
+      startTagLength: byteToCharIndex(source, startTagLengthBytes),
+      endTagLength: byteToCharIndex(source, endTagLengthBytes),
+      transformedStart: byteToCharIndex(source, transformedStartBytes),
+      transformedEnd: byteToCharIndex(source, transformedEnd),
     });
   }
 
@@ -94,3 +89,21 @@ export const preprocess: GlintExtensionPreprocess<PreprocessData> = (source, pat
     },
   };
 };
+
+function byteToCharIndex(str: string, byteOffset: number): number {
+  const buf = getBuffer(str);
+  return buf.slice(0, byteOffset).toString().length;
+}
+
+const BufferMap = new Map();
+
+// @ts-expect-error buffer type
+function getBuffer(str: string): Buffer {
+  let buf = BufferMap.get(str);
+  if (!buf) {
+    // @ts-expect-error buffer type
+    buf = Buffer.from(str);
+    BufferMap.set(str, buf);
+  }
+  return buf;
+}
