@@ -132,6 +132,9 @@ export function toOptionalChaining<
   if (typeof str !== 'string') {
     return str;
   }
+  if (str.includes('\'') || str.includes('"')) {
+    return str;
+  }
   // special control parts
   if (str.includes('$_')) {
     return str;

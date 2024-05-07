@@ -133,6 +133,22 @@ describe.each([
   beforeEach(() => {
     resetContextCounter();
   });
+  describe('support concat expressions', () => {
+    test('in attribute', () => {
+      const converted = $t<ASTv1.ElementNode>(`<Panel @title='1. {{t.document}}' />`);
+      expect(converted).toEqual($node({
+        tag: 'Panel',
+        attributes: [['@title', "$:() => [\"1. \",$:t.document].join('')"]],
+        selfClosing: true,
+      }));
+      const result = $s(converted);
+      if (flags.IS_GLIMMER_COMPAT_MODE) {
+        expect(result).toEqual(`$_c(Panel,${$args(`{title: () => ["1. ",$:t.document].join('')},{},$_edp`)},this)`);
+      } else {
+        expect(result).toEqual(`$_c(Panel,${$args(`{title: () => ["1. ",$:t.document].join('')}`)},this)`);
+      }
+    });
+  });
   describe('support dynamic components', () => {
     test('if component has path in name, it count it as dynamic', () => {
       const converted = $t<ASTv1.ElementNode>(`<this.Item />`);
@@ -252,7 +268,7 @@ describe.each([
           `$:this[$args].foo?.bar?.baz`,
         );
         expect($t<ASTv1.BlockStatement>(`{{@foo.bar}}`)).toEqual(
-          `$:this[$args].foo.bar`,
+          `$:this[$args].foo?.bar`,
         );
       });
       test('it works for sub expression paths in mustache', () => {
