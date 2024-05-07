@@ -1,7 +1,7 @@
 {
   "name": "@lifeart/gxt",
   "private": false,
-  "version": "0.0.41",
+  "version": "0.0.42",
   "type": "module",
   "license": "MIT",
   "author": "Aleksandr Kanunnikov <lifeart92@gmail.com>",
@@ -103,6 +103,6 @@
     "decorator-transforms": "1.1.0",
     "@babel/preset-typescript": "^7.23.3",
     "@glimmer/syntax": "^0.87.1",
-    "content-tag": "^1.2.2"
+    "content-tag": "2.0.1"
   }
 }
