@@ -34,6 +34,7 @@ interface Internal {
   fn: (...args: any) => (...args: any) => void;
   eq: (...args: any) => boolean;
   or: (...args: any) => any;
+  not: (value: any) => boolean;
   element: (tagName: string) => ComponentLike<{
     Element: Element;
     Blocks: {

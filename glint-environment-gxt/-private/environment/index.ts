@@ -61,6 +61,8 @@ export default function gxtEnvironment(
       'hash',
       'fn',
       'eq',
+      'not',
+      'or',
       'element',
       ...Object.keys(additionalGlobalSpecialForms),
       ...additionalGlobals,

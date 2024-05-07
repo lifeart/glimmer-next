@@ -51,6 +51,8 @@ function gxtEnvironment(options) {
             'hash',
             'fn',
             'eq',
+            'not',
+            'or',
             'element',
             ...Object.keys(additionalGlobalSpecialForms),
             ...additionalGlobals,
