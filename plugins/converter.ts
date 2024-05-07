@@ -222,7 +222,7 @@ export function convert(
     } else if (node.type === 'ElementNode') {
       return ElementToNode(node);
     } else if (node.type === 'PathExpression') {
-      return `$:${resolvePath(node.original)}`;
+      return `$:${toOptionalChaining(resolvePath(node.original))}`;
     } else if (node.type === 'MustacheStatement') {
       if (node.path.type !== 'PathExpression') {
         if (
