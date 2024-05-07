@@ -443,6 +443,7 @@ export function convert(
     // boolean attributes (https://meiert.com/en/blog/boolean-attributes-of-html/)
     'checked',
     'readonly',
+    'value',
     'autoplay',
     'allowfullscreen',
     'async',
