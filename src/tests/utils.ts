@@ -1,9 +1,10 @@
-import { type ComponentReturnType, renderComponent } from '@/utils/component';
+import { type ComponentReturnType, destroyElementSync, renderComponent } from '@/utils/component';
 import { getDocument } from '@/utils/dom-api';
 import { withRehydration } from '@/utils/ssr/rehydration';
 import { getRoot, resetNodeCounter, setRoot, resetRoot } from '@/utils/dom';
 import { renderInBrowser } from '@/utils/ssr/ssr';
 import { runDestructors } from '@/utils/component';
+import { registerDestructor } from '@/utils/glimmer/destroyable';
 
 export async function cleanupRender() {
   const root = getRoot();
@@ -64,7 +65,11 @@ export async function render(component: ComponentReturnType) {
   }
   // @ts-expect-error typings mismatch
   const cmp = new component();
+
   let renderResult = renderComponent(cmp, targetElement, cmp.ctx);
+  registerDestructor(cmp.ctx || cmp, () => {
+    destroyElementSync(cmp.nodes);
+  });
   // TODO: figure out what is root, at the moment it return node instance, not node.ctx
   if (!getRoot()) {
     throw new Error('Root does not exist');

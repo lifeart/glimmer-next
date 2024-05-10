@@ -869,14 +869,9 @@ function text(
   }
 }
 
-function ifCond(
-  cell: Cell<boolean>,
-  trueBranch: BranchCb,
-  falseBranch: BranchCb,
-  ctx: Component<any>,
-) {
+function getRenderTargets(debugName: string) {
   const ifPlaceholder = IS_DEV_MODE
-    ? api.comment('if-entry-placeholder')
+    ? api.comment(debugName)
     : api.comment('');
   const outlet = isRehydrationScheduled()
     ? ifPlaceholder.parentElement!
@@ -884,11 +879,27 @@ function ifCond(
   if (!ifPlaceholder.isConnected) {
     api.append(outlet, ifPlaceholder);
   }
+
+  return {
+    placeholder: ifPlaceholder,
+    outlet,
+  }
+}
+
+function ifCond(
+  cell: Cell<boolean>,
+  trueBranch: BranchCb,
+  falseBranch: BranchCb,
+  ctx: Component<any>,
+) {
+  const {
+    outlet, placeholder
+  } = getRenderTargets('if-entry-placeholder');
   const instance = new IfCondition(
     ctx,
     cell,
     outlet,
-    ifPlaceholder,
+    placeholder,
     trueBranch,
     falseBranch,
   );
@@ -902,15 +913,9 @@ export function $_eachSync<T extends { id: number }>(
   key: string | null = null,
   ctx: Component<any>,
 ) {
-  const eachPlaceholder = IS_DEV_MODE
-    ? api.comment('sync-each-placeholder')
-    : api.comment('');
-  const outlet = isRehydrationScheduled()
-    ? eachPlaceholder.parentElement!
-    : api.fragment();
-  if (!eachPlaceholder.isConnected) {
-    api.append(outlet, eachPlaceholder);
-  }
+  const {
+    outlet
+  } = getRenderTargets('sync-each-placeholder');
   const instance = new SyncListComponent(
     {
       tag: items as Cell<T[]>,
@@ -929,15 +934,9 @@ export function $_each<T extends { id: number }>(
   key: string | null = null,
   ctx: Component<any>,
 ) {
-  const eachPlaceholder = IS_DEV_MODE
-    ? api.comment('async-each-placeholder')
-    : api.comment('');
-  const outlet = isRehydrationScheduled()
-    ? eachPlaceholder.parentElement!
-    : api.fragment();
-  if (!eachPlaceholder.isConnected) {
-    api.append(outlet, eachPlaceholder);
-  }
+  const {
+    outlet
+  } = getRenderTargets('async-each-placeholder');
   const instance = new AsyncListComponent(
     {
       tag: items as Cell<T[]>,
