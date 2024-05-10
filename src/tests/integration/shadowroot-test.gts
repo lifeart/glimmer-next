@@ -14,7 +14,6 @@ module('Integration | InternalComponent | shadowroot', function () {
     );
     assert.dom('span[data-test]').doesNotExist();
     const root = document.querySelector('secret-content')!;
-    // @ts-expect-error ShadowRoot is not en Element
     assert.dom('span[data-test]', root.shadowRoot).doesNotExist();
   });
   test('it works for element helper [open]', async function (assert) {
@@ -29,7 +28,6 @@ module('Integration | InternalComponent | shadowroot', function () {
     );
     assert.dom('span[data-test]').doesNotExist();
     const root = document.querySelector('secret-content')!;
-    // @ts-expect-error ShadowRoot is not en Element
     assert.dom('span[data-test]', root.shadowRoot).exists();
   });
   test('it works for [div] html element [closed]', async function (assert) {
@@ -42,7 +40,6 @@ module('Integration | InternalComponent | shadowroot', function () {
     );
     assert.dom('span[data-test]').doesNotExist();
     const root = document.querySelector('[data-test-root-div]')!;
-    // @ts-expect-error ShadowRoot is not en Element
     assert.dom('span[data-test]', root.shadowRoot).doesNotExist();
   });
   test('it works for [div] html element [open]', async function (assert) {
@@ -55,7 +52,6 @@ module('Integration | InternalComponent | shadowroot', function () {
     );
     assert.dom('span[data-test]').doesNotExist();
     const root = document.querySelector('[data-test-root-div]')!;
-    // @ts-expect-error ShadowRoot is not en Element
     assert.dom('span[data-test]', root.shadowRoot).exists();
   });
 });

@@ -1,4 +1,4 @@
-import { module, test, skip } from 'qunit';
+import { module, test } from 'qunit';
 import { render, rerender } from '@lifeart/gxt/test-utils';
 import { cell } from '@lifeart/gxt';
 

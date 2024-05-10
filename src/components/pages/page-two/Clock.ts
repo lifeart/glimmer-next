@@ -1,6 +1,6 @@
 import { cell, registerDestructor, hbs, scope } from '@lifeart/gxt';
 
-function ifs(condition: number) {
+function ifs(condition: number | string) {
   return new Date(condition).toLocaleTimeString();
 }
 

@@ -5,6 +5,9 @@ class Link extends Component<{
   Args: {
     href: string;
   };
+  Blocks: {
+    default: [];
+  };
 }> {
   onClick = (e: Event) => {
     e.preventDefault();

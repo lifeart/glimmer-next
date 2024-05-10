@@ -4,7 +4,11 @@ import { tracked, Component } from '@lifeart/gxt';
 
 module('Integration | Internal | @tracked', function () {
   test('keep context for initializer', async function (assert) {
-    class MyComponent extends Component {
+    class MyComponent extends Component<{
+      Args: {
+        value: number;
+      };
+    }> {
       @tracked value = this.args.value;
       <template>{{this.value}}</template>
     }
