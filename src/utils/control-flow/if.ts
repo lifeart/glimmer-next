@@ -1,196 +1,198 @@
 import {
-  type Component,
+  associateDestroyable,
   destroyElement,
   type GenericReturnType,
-  removeDestructor,
   renderElement,
+  type Component,
 } from '@/utils/component';
+import { Destructors } from '@/utils/glimmer/destroyable';
 import {
+  deepFnValue,
   formula,
   type Cell,
   type MergedCell,
-  deepFnValue,
 } from '@/utils/reactive';
-import { opcodeFor } from '@/utils/vm';
-import { associateDestroyable } from '../component';
-import { api } from '@/utils/dom-api';
 import {
-  $DEBUG_REACTIVE_CONTEXTS,
   $_debug_args,
-  addToTree,
+  $DEBUG_REACTIVE_CONTEXTS,
+  IFS_FOR_HMR,
   isFn,
   isPrimitive,
-  IFS_FOR_HMR,
-} from '../shared';
+} from '@/utils/shared';
+import { opcodeFor } from '@/utils/vm';
 
-export function ifCondition(
-  ctx: Component<any>,
-  cell: Cell<boolean> | MergedCell,
-  outlet: DocumentFragment | HTMLElement,
-  trueBranch: (ifContext: Component<any>) => GenericReturnType,
-  falseBranch: (ifContext: Component<any>) => GenericReturnType,
-  placeholder: Comment,
-) {
-  const target = outlet;
-  let prevComponent: GenericReturnType = null;
-  let isDestructorRunning = false;
-  const runExistingDestructors = async () => {
-    isDestructorRunning = true;
-    if (prevComponent) {
-      await destroyElement(prevComponent);
-      prevComponent = null;
-    }
-  };
-  const originalCell = cell;
-  if (isFn(originalCell)) {
-    cell = formula(() => deepFnValue(originalCell), 'if-condition-wrapper-fn');
-  } else if (isPrimitive(originalCell)) {
-    cell = formula(() => originalCell, 'if-condition-primitive-wrapper');
-  }
-  let runNumber = 0;
-  let throwedError: Error | null = null;
-  let lastValue: unknown = undefined;
-
-  if (IS_DEV_MODE) {
-    // @ts-expect-error this any type
-    Object.defineProperty(this, $_debug_args, {
-      get() {
+export class IfCondition {
+  isDestructorRunning = false;
+  prevComponent: GenericReturnType | null = null;
+  condition!: MergedCell | Cell<boolean>;
+  destructors: Destructors = [];
+  runNumber: number = 0;
+  lastValue: boolean = false;
+  target: DocumentFragment | HTMLElement;
+  placeholder: Comment;
+  throwedError: Error | null = null;
+  destroyPromise: Promise<any> | null = null;
+  trueBranch: (ifContext: Component<any>) => GenericReturnType;
+  falseBranch: (ifContext: Component<any>) => GenericReturnType;
+  constructor(
+    parentContext: Component<any>,
+    maybeCondition: Cell<boolean>,
+    target: DocumentFragment | HTMLElement,
+    placeholder: Comment,
+    trueBranch: (ifContext: Component<any>) => GenericReturnType,
+    falseBranch: (ifContext: Component<any>) => GenericReturnType,
+  ) {
+    this.target = target;
+    this.placeholder = placeholder;
+    this.setupCondition(maybeCondition);
+    this.trueBranch = trueBranch;
+    this.falseBranch = falseBranch;
+    this.destructors.push(opcodeFor(this.condition, this.syncState.bind(this)));
+    associateDestroyable(parentContext, [this.destroy.bind(this)]);
+    if (IS_DEV_MODE) {
+      const instance = () => {
         return {
-          if: lastValue,
+          item: this.prevComponent,
+          set: (value: GenericReturnType) => {
+            this.prevComponent = value;
+          },
         };
-      },
-    });
-    const currentComponent = () => {
-      return {
-        item: prevComponent,
-        set(value: GenericReturnType) {
-          prevComponent = value;
-        }
-      }
-    }
-    IFS_FOR_HMR.add(currentComponent);
-    associateDestroyable(ctx, [
-      () => {
-        IFS_FOR_HMR.delete(currentComponent);
-      }
-    ]);
-  }
+      };
+      IFS_FOR_HMR.add(instance);
+      this.destructors.push(() => {
+        IFS_FOR_HMR.delete(instance);
+      });
 
-  associateDestroyable(ctx, [
-    () => {
-      if (placeholder.isConnected) {
-        placeholder.parentNode!.removeChild(placeholder);
-      }
-    },
-    runExistingDestructors,
-    opcodeFor(cell, (value) => {
-      if (throwedError) {
-        Promise.resolve().then(() => {
-          if (!placeholder.isConnected) {
-            // placeholder is disconnected, it means whole `if` is removed from DOM, no need to recover;
-            return;
-          }
-          const newPlaceholder = IS_DEV_MODE
-            ? api.comment('if-error-placeholder')
-            : api.comment('');
-          api.insert(placeholder.parentNode!, newPlaceholder, placeholder);
-          runExistingDestructors().then(async () => {
-            removeDestructor(ctx, runExistingDestructors);
-            if (!newPlaceholder.isConnected) {
-              // placeholder is disconnected, it means whole `if` is removed from DOM, no need to recover;
-              return;
-            }
-            if (prevComponent) {
-              throw new Error(`Component should be destroyed`);
-            }
-            // @ts-expect-error this any type
-            const el2 = new ifCondition(
-              ctx,
-              cell,
-              outlet,
-              trueBranch,
-              falseBranch,
-              newPlaceholder,
-            );
-            addToTree(ctx, el2, 'ifCondition');
-          });
-        });
-        throw throwedError;
-      }
-      runNumber++;
-      if (runNumber > 1) {
-        if (!!lastValue === !!value) {
-          return;
-        }
-      }
-      lastValue = value;
-      if (runNumber === 1) {
-        let nextBranch = value ? trueBranch : falseBranch;
-        if (IS_DEV_MODE) {
-          $DEBUG_REACTIVE_CONTEXTS.push(
-            `if:${value ? String(true) : String(false)}`,
-          );
-        }
-        // @ts-expect-error this any type
-        prevComponent = nextBranch(this as unknown as Component<any>);
-        if (IS_DEV_MODE) {
-          $DEBUG_REACTIVE_CONTEXTS.pop();
-        }
-        renderElement(
-          placeholder.parentNode || target,
-          prevComponent,
-          placeholder,
-        );
+      Object.defineProperty(this, $_debug_args, {
+        get() {
+          return {
+            if: this.lastValue,
+          };
+        },
+      });
+    }
+  }
+  checkStatement(value: boolean) {
+    this.runNumber++;
+    if (this.runNumber > 1) {
+      if (this.lastValue === !!value) {
         return;
       }
-      (async () => {
-        if (runNumber === 1 || isDestructorRunning) {
-          return;
-        }
-        let localRunNumber = runNumber;
-        let nextBranch = value ? trueBranch : falseBranch;
-        if (prevComponent) {
-          let prevCmp = prevComponent;
-          prevComponent = null;
-          // console.log('prevComponent', prevCmp);
-          await destroyElement(prevCmp);
-        }
-        if (localRunNumber !== runNumber) {
-          // @todo: run -re-inicialization logic here,
-          // because it may broke form overall syncLogic delay.
-          if (IS_DEV_MODE) {
-            throwedError = new Error(`
-              Woops, error in ifCondition, managed by ${cell._debugName}: 
-                Run number mismatch, looks like some modifier is removed longer than re-rendering takes. 
-                It may be a bug in your code. We can't sync DOM because it's always outdated.
-                Removing opcode to not break whole app.
-            `);
-          } else {
-            throwedError = new Error(`ERROR_0`);
-          }
-          return;
-        }
-        if (isDestructorRunning) {
-          return;
-        }
-        if (IS_DEV_MODE) {
-          $DEBUG_REACTIVE_CONTEXTS.push(
-            `if:${value ? String(true) : String(false)}`,
-          );
-        }
-        // @ts-expect-error this any type
-        prevComponent = nextBranch(this);
-        if (IS_DEV_MODE) {
-          $DEBUG_REACTIVE_CONTEXTS.pop();
-        }
-        renderElement(
-          placeholder.parentNode || target,
-          prevComponent,
-          placeholder,
-        );
-      })();
-    }),
-  ]);
-  // @ts-expect-error
-  return this as unknown as Component<any>;
+    }
+    if (this.isDestructorRunning) {
+      return;
+    }
+    this.lastValue = !!value as boolean;
+    return true;
+  }
+  async reInit() {
+    // here we assume we have concurrency error, related to async destructors
+    // updating opcode should be already executed and removed by vm
+    // we need to re-init it
+    this.destructors.shift(); // removing updating opcode
+    this.throwedError = null;
+    this.runNumber = 0;
+    this.destructors.unshift(
+      opcodeFor(this.condition, this.syncState.bind(this)),
+    );
+  }
+  syncState(value: unknown) {
+    if (this.throwedError) {
+      Promise.resolve().then(async () => {
+        await this.reInit();
+      });
+      throw this.throwedError;
+    }
+    if (!this.checkStatement(value as boolean)) {
+      return;
+    }
+    const nextBranch = value ? this.trueBranch : this.falseBranch;
+    this.renderBranch(nextBranch, this.runNumber);
+  }
+  async renderBranch(
+    nextBranch: (ifContext: Component<any>) => GenericReturnType,
+    runNumber: number,
+  ) {
+    if (this.destroyPromise) {
+      await this.destroyPromise.then(() => {
+        this.destroyPromise = null;
+      });
+    }
+    if (this.prevComponent) {
+      await this.destroyBranch();
+    }
+    if (!this.validateEpoch(runNumber)) {
+      return;
+    }
+    this.renderState(nextBranch);
+  }
+  validateEpoch(runNumber: number) {
+    if (this.isDestructorRunning) {
+      return false;
+    }
+    if (this.runNumber !== runNumber) {
+      // @todo: run -re-inicialization logic here,
+      // because it may broke form overall syncLogic delay.
+      if (IS_DEV_MODE) {
+        this.throwedError = new Error(`
+            Woops, error in ifCondition, managed by ${this.condition._debugName}: 
+              Run number mismatch, looks like some modifier is removed longer than re-rendering takes. 
+              It may be a bug in your code. We can't sync DOM because it's always outdated.
+              Removing opcode to not break whole app.
+          `);
+      } else {
+        this.throwedError = new Error(`ERROR_0`);
+      }
+      return false;
+    }
+    return true;
+  }
+  async destroyBranch() {
+    const branch = this.prevComponent;
+    if (branch === null) {
+      return;
+    } else {
+      this.prevComponent = null;
+    }
+    this.destroyPromise = destroyElement(branch);
+    await this.destroyPromise;
+  }
+  renderState(nextBranch: (ifContext: Component<any>) => GenericReturnType) {
+    if (IS_DEV_MODE) {
+      $DEBUG_REACTIVE_CONTEXTS.push(`if:${String(this.lastValue)}`);
+    }
+    this.prevComponent = nextBranch(this as unknown as Component<any>);
+    if (IS_DEV_MODE) {
+      $DEBUG_REACTIVE_CONTEXTS.pop();
+    }
+    renderElement(
+      this.placeholder.parentNode || this.target,
+      this.prevComponent,
+      this.placeholder,
+    );
+    return;
+  }
+  async destroy() {
+    this.isDestructorRunning = true;
+    if (this.placeholder.isConnected) {
+      this.placeholder.parentNode!.removeChild(this.placeholder);
+    }
+    await this.destroyBranch();
+    await Promise.all(this.destructors.map((destroyFn) => destroyFn()));
+  }
+  setupCondition(maybeCondition: Cell<boolean>) {
+    if (isFn(maybeCondition)) {
+      this.condition = formula(
+        () => deepFnValue(maybeCondition),
+        'if-condition-wrapper-fn',
+      );
+    } else if (isPrimitive(maybeCondition)) {
+      this.condition = formula(
+        () => maybeCondition,
+        'if-condition-primitive-wrapper',
+      );
+    } else {
+      this.condition = maybeCondition;
+    }
+  }
 }

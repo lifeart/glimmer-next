@@ -20,7 +20,6 @@ import {
   SyncListComponent,
   AsyncListComponent,
 } from '@/utils/control-flow/list';
-import { ifCondition } from '@/utils/control-flow/if';
 import {
   DestructorFn,
   Destructors,
@@ -45,6 +44,7 @@ import {
 } from './shared';
 import { isRehydrationScheduled } from './ssr/rehydration';
 import { createHotReload } from './hmr';
+import { IfCondition } from './control-flow/if';
 
 type RenderableType = Node | ComponentReturnType | string | number;
 type ShadowRootMode = 'open' | 'closed' | null;
@@ -884,15 +884,15 @@ function ifCond(
   if (!ifPlaceholder.isConnected) {
     api.append(outlet, ifPlaceholder);
   }
-  // @ts-expect-error new
-  const instance = new ifCondition(
+  const instance = new IfCondition(
     ctx,
     cell,
     outlet,
+    ifPlaceholder,
     trueBranch,
     falseBranch,
-    ifPlaceholder,
   );
+  // @ts-expect-error instance type mismatch
   addToTree(ctx, instance);
   return outlet;
 }
