@@ -138,6 +138,7 @@ export function renderComponent(
 
 export type Props = Record<string, unknown>;
 
+
 type Get<T, K, Otherwise = {}> = K extends keyof T
   ? Exclude<T[K], undefined>
   : Otherwise;
@@ -152,7 +153,7 @@ export class Component<T extends Props = any>
     Get<T, 'Element', null>
   >;
   declare [Invoke]: (
-    args: Get<T, 'Args'>,
+    args?: Get<T, 'Args'>,
   ) => ComponentReturn<Get<T, 'Blocks'>, Get<T, 'Element', null>>;
   nodes!: Node[];
   $fw: unknown;
@@ -162,6 +163,9 @@ export class Component<T extends Props = any>
   }
   template!: ComponentReturnType;
 }
+
+export type TOC<S extends Props = {}>  = (args?: Get<S, 'Args'>) => ComponentReturn<Get<S, 'Blocks'>, Get<S, 'Element', null>>
+
 function destroyNode(node: Node) {
   if (IS_DEV_MODE) {
     if (node === undefined) {

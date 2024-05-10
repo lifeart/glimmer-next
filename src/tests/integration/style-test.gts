@@ -30,7 +30,7 @@ module('Integration | Interal | style', function () {
     });
   });
   test('works with dynamic binding in class', async function (assert) {
-    class MyComponent {
+    class MyComponent extends Component {
       @tracked color = 'red';
       onClick = () => {
         this.color = 'blue';
