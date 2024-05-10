@@ -122,6 +122,13 @@ export function processTemplate(
                   path.node.arguments.pop();
                 }
               }
+            } else if (path.node.callee.name === 'getRenderTargets') {
+              if (mode === 'production') {
+                // remove last argument if two arguments
+                if (path.node.arguments.length === 1) {
+                  path.node.arguments.pop();
+                }
+              }
             }
           }
         },
@@ -216,7 +223,8 @@ export function stripGXTDebug(babel: { types: typeof Babel.types }) {
         }
       },
       FunctionDeclaration(path: any) {
-        if (path.node.id.name === 'formula' || path.node.id.name === 'cell') {
+        const nodeName = path.node.id.name;
+        if (nodeName === 'formula' || nodeName === 'cell') {
           path.node.params.pop();
         }
       },

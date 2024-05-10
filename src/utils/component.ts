@@ -162,7 +162,6 @@ export class Component<T extends Props = any>
   }
   template!: ComponentReturnType;
 }
-
 function destroyNode(node: Node) {
   if (IS_DEV_MODE) {
     if (node === undefined) {
@@ -200,7 +199,7 @@ export function destroyElementSync(
   if (isArray(component)) {
     component.map((component) => destroyElementSync(component));
   } else {
-    if (component === null) {
+    if (isEmpty(component)) {
       return;
     }
 
@@ -212,7 +211,7 @@ export function destroyElementSync(
         destroyNodes(component[$nodes]);
       } catch (e) {
         console.warn(
-          `Woops, looks like node we trying to destroy no more in DOM`,
+          `Woops, looks like node we trying to destroy no more in DOM 1`,
           e,
         );
       }
@@ -266,7 +265,7 @@ export async function destroyElement(
         destroyNodes(component[$nodes]);
       } catch (e) {
         console.warn(
-          `Woops, looks like node we trying to destroy no more in DOM`,
+          `Woops, looks like node we trying to destroy no more in DOM 2`,
           e,
         );
       }
