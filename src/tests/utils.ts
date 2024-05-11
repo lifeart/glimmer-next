@@ -70,6 +70,7 @@ export async function render(component: ComponentReturnType) {
   registerDestructor(cmp.ctx || cmp, () => {
     destroyElementSync(cmp.nodes);
   });
+  await rerender();
   // TODO: figure out what is root, at the moment it return node instance, not node.ctx
   if (!getRoot()) {
     throw new Error('Root does not exist');
