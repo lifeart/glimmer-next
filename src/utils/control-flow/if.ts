@@ -109,17 +109,21 @@ export class IfCondition {
     const nextBranch = value ? this.trueBranch : this.falseBranch;
     this.renderBranch(nextBranch, this.runNumber);
   }
-  async renderBranch(
+  renderBranch(
     nextBranch: (ifContext: Component<any>) => GenericReturnType,
     runNumber: number,
   ) {
     if (this.destroyPromise) {
-      await this.destroyPromise.then(() => {
+      this.destroyPromise.then(() => {
         this.destroyPromise = null;
+        this.renderBranch(nextBranch, runNumber);
       });
-    }
-    if (this.prevComponent) {
-      await this.destroyBranch();
+      return;
+    } else if (this.prevComponent) {
+      this.destroyBranch().then(() => {
+        this.renderBranch(nextBranch, runNumber);
+      });
+      return;
     }
     if (!this.validateEpoch(runNumber)) {
       return;
