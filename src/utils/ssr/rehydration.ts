@@ -11,9 +11,8 @@ export function lastItemInStack(target: 'text' | 'node' | 'comment') {
   if (target === 'text') {
     return withRehydrationStack[withRehydrationStack.length - 1];
   } else if (target === 'node') {
-    const maybeNextNode = document.querySelector(
-      `[data-node-id="${getNodeCounter()}"]`,
-    ) as HTMLElement;
+    const selector = `[data-node-id="${getNodeCounter()}"]`
+    const maybeNextNode = document.querySelector(selector) as HTMLElement;
     if (maybeNextNode) {
       // remove data attribute
       maybeNextNode.removeAttribute('data-node-id');
@@ -24,6 +23,16 @@ export function lastItemInStack(target: 'text' | 'node' | 'comment') {
         withRehydrationStack.push(maybeNextNode);
       }
       return maybeNextNode;
+    } else {
+      const shadowRoots = document.querySelectorAll('[data-shadow-node]');
+      for (const root of shadowRoots) {
+        const maybeNode = root.shadowRoot!.querySelector(
+          selector,
+        ) as HTMLElement;
+        if (maybeNode) {
+          return maybeNode;
+        }
+      }
     }
   } else if (target === 'comment') {
     const nodeCounter = getNodeCounter();
@@ -80,7 +89,7 @@ export function isRehydrationScheduled() {
 */
 
 function pushToStack(node: HTMLElement, isFirst = false) {
-  const childs = node.childNodes;
+  const childs = node.shadowRoot ? node.shadowRoot.childNodes : node.childNodes;
   if (!isFirst) {
     withRehydrationStack.push(node);
   }

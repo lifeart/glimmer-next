@@ -26,7 +26,7 @@ import {
   destroy,
   registerDestructor,
 } from './glimmer/destroyable';
-import { api } from '@/utils/dom-api';
+import { api, getDocument } from '@/utils/dom-api';
 import {
   isFn,
   isPrimitive,
@@ -458,13 +458,31 @@ function _DOM(
   }
 
   if (SUPPORT_SHADOW_DOM) {
-    const appendRef =
+    let appendRef =
       hasShadowMode !== null
-        ? element.attachShadow({ mode: hasShadowMode }) || element.shadowRoot
+        ? isRehydrationScheduled() ? element.shadowRoot : element.attachShadow({ mode: hasShadowMode }) || element.shadowRoot
         : element;
-    children.forEach((child, index) => {
-      addChild(appendRef, child, destructors, index);
-    });
+    if (import.meta.env.SSR) {
+      if (hasShadowMode) {
+        const tpl = getDocument().createElement('template');
+        tpl.setAttribute('shadowrootmode', 'open');
+        element.appendChild(tpl);
+        element.setAttribute('data-shadow-node', '');
+        children.forEach((child, index) => {
+          addChild(tpl, child, destructors, index);
+        });
+      } else {
+        children.forEach((child, index) => {
+          addChild(appendRef!, child, destructors, index);
+        });
+      }
+   
+    } else {
+      children.forEach((child, index) => {
+        addChild(appendRef, child, destructors, index);
+      });
+    }
+
   } else {
     children.forEach((child, index) => {
       addChild(element, child, destructors, index);
@@ -876,9 +894,10 @@ function getRenderTargets(debugName: string) {
   const ifPlaceholder = IS_DEV_MODE
     ? api.comment(debugName)
     : api.comment('');
-  const outlet = isRehydrationScheduled()
+  let outlet = isRehydrationScheduled()
     ? ifPlaceholder.parentElement!
     : api.fragment();
+
   if (!ifPlaceholder.isConnected) {
     api.append(outlet, ifPlaceholder);
   }
