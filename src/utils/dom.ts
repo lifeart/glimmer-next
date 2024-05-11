@@ -627,6 +627,9 @@ function component(
       if (import.meta.env.SSR) {
         throw e;
       }
+      if (isRehydrationScheduled()) {
+        throw e;
+      }
       if (IS_DEV_MODE) {
         let ErrorOverlayClass = customElements.get('vite-error-overlay');
         let errorOverlay!: HTMLElement;

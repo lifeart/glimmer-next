@@ -49,11 +49,13 @@ router.addResolver('isPolarisReady', async () => {
 router.addResolver('todomvc', async () => {
   // preload css   <link rel="preload" href="style.css" as="style" />
   console.log('todomvc');
-  const link = document.createElement('link');
-  link.rel = 'preload';
-  link.href = '/todomvc.css';
-  link.as = 'style';
-  document.head.appendChild(link);
+  if (!import.meta.env.SSR) {
+    const link = document.createElement('link');
+    link.rel = 'preload';
+    link.href = '/todomvc.css';
+    link.as = 'style';
+    document.head.appendChild(link);
+  }
   const { ToDoMVC } = await import(
     // @ts-ignore import
     '@/components/pages/ToDoMVC.gts'

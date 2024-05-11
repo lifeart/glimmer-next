@@ -3,8 +3,9 @@ import { Layout } from './todomvc/Layout.gts';
 import { Attribution } from './todomvc/Attribution.gts';
 import Page from './todomvc/page.gts';
 import { repo } from './todomvc/repo';
+import { getDocument } from '@/utils/dom-api';
 function pageTitle(text: string) {
-  document.title = text;
+  getDocument().title = text;
 }
 
 export class ToDoMVC extends Component {

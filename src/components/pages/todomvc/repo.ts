@@ -11,6 +11,9 @@ export type ToDoItem = {
 };
 
 function load() {
+  if (import.meta.env.SSR) {
+    return [];
+  }
   // localStorage has to be an array (required by the todomvc repo),
   // so let's convert to an object on id.
   const list = JSON.parse(window.localStorage.getItem('todos') || '[]');
