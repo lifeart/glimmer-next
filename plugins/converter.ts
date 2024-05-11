@@ -437,6 +437,34 @@ export function convert(
     return false;
   }
 
+  const booleanAttributes = [
+    'checked',
+    'readonly',
+    'autoplay',
+    'allowfullscreen',
+    'async',
+    'autofocus',
+    'autoplay',
+    'controls',
+    'default',
+    'defer',
+    'disabled',
+    'formnovalidate',
+    'inert',
+    'ismap',
+    'itemscope',
+    'loop',
+    'multiple',
+    'muted',
+    'nomodule',
+    'novalidate',
+    'open',
+    'playsinline',
+    'required',
+    'reversed',
+    'selected',
+  ];
+
   const propertyKeys = [
     'class',
     'shadowrootmode',
@@ -472,6 +500,7 @@ export function convert(
     class: '', // className
   };
 
+
   function isAttribute(name: string) {
     return !propertyKeys.includes(name);
   }
@@ -496,6 +525,7 @@ export function convert(
         `$:function($v,$n){$n.style.setProperty('${propertyName}',$v);}.bind(null,${SYMBOLS.$_TO_VALUE}(${isPath?`$:()=>${value}`: value}))`,
       ];
     });
+    const extraEvents: Array<[string, string]> = [];
     const node = {
       tag: element.tag,
       selfClosing: element.selfClosing,
@@ -512,6 +542,9 @@ export function convert(
         .filter((el) => !isAttribute(el.name))
         .map((attr) => {
           const rawValue = ToJSType(attr.value);
+          if (booleanAttributes.includes(attr.name) && attr.value.type === 'TextNode' && attr.value.chars === '') {
+            return [attr.name, true];
+          }
           // const value = rawValue.startsWith("$:") ? rawValue : escapeString(rawValue);
           const castedProp = propsToCast[attr.name as keyof typeof propsToCast];
           return [
@@ -519,7 +552,7 @@ export function convert(
             rawValue,
           ];
         }),
-      events: [...styleEvents,...element.modifiers
+      events: [...extraEvents,...styleEvents,...element.modifiers
         .map((mod) => {
           if (mod.path.type !== 'PathExpression') {
             return null;
