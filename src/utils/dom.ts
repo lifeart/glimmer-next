@@ -479,7 +479,7 @@ function _DOM(
    
     } else {
       children.forEach((child, index) => {
-        addChild(appendRef, child, destructors, index);
+        addChild(appendRef!, child, destructors, index);
       });
     }
 
