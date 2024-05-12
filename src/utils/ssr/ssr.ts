@@ -26,7 +26,7 @@ export async function render(
   componentRenderFn: (rootNode: HTMLElement) => ComponentReturnType,
   params: EnvironmentParams,
 ) {
-  const { Window } = await import('happy-dom');
+  const { Window, XMLSerializer } = await import('happy-dom');
   const win = new Window({ url: params.url });
   const doc = win.document;
   setDocument(doc as unknown as Document);
@@ -41,7 +41,9 @@ export async function render(
     setTimeout(resolve);
   });
 
-  const html = rootNode.innerHTML;
+  const s = new XMLSerializer();
+
+  const html = Array.from(rootNode.childNodes).map((n => s.serializeToString(n))).join('');
 
   const oldRoot = getRoot();
   if (oldRoot) {
