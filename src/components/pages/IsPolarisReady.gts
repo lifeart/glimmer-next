@@ -5,6 +5,7 @@ import { Component } from '@lifeart/gxt';
 // import { Filters } from './is-polaris-ready/filters';
 import { Header } from './is-polaris-ready/Header.gts';
 import { Section } from './is-polaris-ready/Section.gts';
+import { getDocument } from '@/utils/dom-api';
 
 const GetStarted = <template>
   To get started with a Polaris App:
@@ -20,7 +21,7 @@ const GetStarted = <template>
 </template>;
 
 function pageTitle(text: string) {
-  document.title = text;
+  getDocument().title = text;
 }
 
 export class IsPolarisReady extends Component {

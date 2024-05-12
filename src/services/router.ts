@@ -31,12 +31,13 @@ export const router = new GlimmerRouter({
 
 router.addResolver('isPolarisReady', async () => {
   // preload css   <link rel="preload" href="style.css" as="style" />
-
-  const link = document.createElement('link');
-  link.rel = 'preload';
-  link.href = '/is-polaris-ready.css';
-  link.as = 'style';
-  document.head.appendChild(link);
+  if (!import.meta.env.SSR) {
+    const link = document.createElement('link');
+    link.rel = 'preload';
+    link.href = '/is-polaris-ready.css';
+    link.as = 'style';
+    document.head.appendChild(link);
+  }
   const { IsPolarisReady } = await import(
     // @ts-ignore import
     '@/components/pages/IsPolarisReady.gts'
