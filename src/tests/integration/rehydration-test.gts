@@ -1,7 +1,6 @@
 import { module, test } from 'qunit';
 import { rehydrate, renderTarget, ssr } from '@lifeart/gxt/test-utils';
 import { cell } from '@/utils/reactive';
-import { Smile } from '@/components/pages/page-one/Smile';
 
 function qs(str: string) {
   return renderTarget().querySelector(str);

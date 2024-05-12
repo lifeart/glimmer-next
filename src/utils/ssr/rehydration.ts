@@ -6,13 +6,13 @@ const withRehydrationStack: HTMLElement[] = [];
 const commentsToRehydrate: Comment[] = [];
 let rehydrationScheduled = false;
 const nodesToRemove: Set<Node> = new Set();
-const nodesMap: Map<number, HTMLElement> = new Map();
+const nodesMap: Map<string, HTMLElement> = new Map();
 
 export function lastItemInStack(target: 'text' | 'node' | 'comment') {
   if (target === 'text') {
     return withRehydrationStack[withRehydrationStack.length - 1];
   } else if (target === 'node') {
-    const maybeNextNode = nodesMap.get(getNodeCounter());
+    const maybeNextNode = nodesMap.get(String(getNodeCounter()));
     if (maybeNextNode) {
       // remove data attribute
       // remove from stack
@@ -79,7 +79,7 @@ export function isRehydrationScheduled() {
 
 function pushToStack(node: HTMLElement, isFirst = false) {
   if (node.dataset.nodeId) {
-    nodesMap.set(parseInt(node.dataset.nodeId!, 10), node);
+    nodesMap.set(node.dataset.nodeId, node);
     node.removeAttribute('data-node-id');
   }
   const childs = node.shadowRoot ? node.shadowRoot.childNodes : node.childNodes;
