@@ -467,7 +467,6 @@ function _DOM(
         const tpl = getDocument().createElement('template');
         tpl.setAttribute('shadowrootmode', 'open');
         element.appendChild(tpl);
-        element.setAttribute('data-shadow-node', '');
         children.forEach((child, index) => {
           addChild(tpl, child, destructors, index);
         });
