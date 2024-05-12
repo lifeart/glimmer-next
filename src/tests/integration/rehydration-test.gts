@@ -233,4 +233,37 @@ module('Integration | Rehydration', function () {
     assert.equal(qs('ul'), ref1);
     assert.equal(qs('li'), ref2);
   });
+  test('internal content is escaped', async function (assert) {
+    const samples = [
+      {
+        id: 1,
+        href: 'https://github.com/ember-template-imports/ember-template-imports/issues/33',
+        text: '[ember-template-imports]: `<template>` Layering Proposal',
+      },
+      {
+        id: 2,
+        href: 'https://github.com/ember-template-imports/ember-template-imports/issues/35',
+        text: '[ember-template-imports]: The Road to Stable',
+      },
+      {
+        id: 3,
+        href: 'https://github.com/ember-template-imports/ember-template-imports/issues/31',
+        text: "[ember-template-imports]: < is not a valid character within attribute names: (error occurred in 'an unknown module' @ line 14 : column 8)",
+      },
+    ];
+    const Sample = <template>
+      {{#each samples as |sample|}}
+        <a
+          href={{sample.href}}
+          data-test-id={{sample.id}}
+          title={{sample.text}}
+        >{{sample.text}}</a>
+      {{/each}}
+    </template>;
+    await ssr(Sample);
+    await rehydrate(Sample);
+    assert.dom('a[data-test-id="1"]').hasTextContaining(samples[0].text);
+    assert.dom('a[data-test-id="2"]').hasTextContaining(samples[1].text);
+    assert.dom('a[data-test-id="3"]').hasTextContaining(samples[2].text);
+  });
 });

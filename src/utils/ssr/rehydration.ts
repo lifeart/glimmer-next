@@ -6,16 +6,15 @@ const withRehydrationStack: HTMLElement[] = [];
 const commentsToRehydrate: Comment[] = [];
 let rehydrationScheduled = false;
 const nodesToRemove: Set<Node> = new Set();
+const nodesMap: Map<string, HTMLElement> = new Map();
 
 export function lastItemInStack(target: 'text' | 'node' | 'comment') {
   if (target === 'text') {
     return withRehydrationStack[withRehydrationStack.length - 1];
   } else if (target === 'node') {
-    const selector = `[data-node-id="${getNodeCounter()}"]`
-    const maybeNextNode = document.querySelector(selector) as HTMLElement;
+    const maybeNextNode = nodesMap.get(String(getNodeCounter()));
     if (maybeNextNode) {
       // remove data attribute
-      maybeNextNode.removeAttribute('data-node-id');
       // remove from stack
       const indexInStack = withRehydrationStack.indexOf(maybeNextNode);
       if (indexInStack > -1) {
@@ -23,16 +22,6 @@ export function lastItemInStack(target: 'text' | 'node' | 'comment') {
         withRehydrationStack.push(maybeNextNode);
       }
       return maybeNextNode;
-    } else {
-      const shadowRoots = document.querySelectorAll('[data-shadow-node]');
-      for (const root of shadowRoots) {
-        const maybeNode = root.shadowRoot!.querySelector(
-          selector,
-        ) as HTMLElement;
-        if (maybeNode) {
-          return maybeNode;
-        }
-      }
     }
   } else if (target === 'comment') {
     const nodeCounter = getNodeCounter();
@@ -89,6 +78,10 @@ export function isRehydrationScheduled() {
 */
 
 function pushToStack(node: HTMLElement, isFirst = false) {
+  if (node.dataset.nodeId) {
+    nodesMap.set(node.dataset.nodeId, node);
+    node.removeAttribute('data-node-id');
+  }
   const childs = node.shadowRoot ? node.shadowRoot.childNodes : node.childNodes;
   if (!isFirst) {
     withRehydrationStack.push(node);
@@ -154,7 +147,6 @@ export function withRehydration(
     // @ts-expect-error
     nodesToRemove.forEach((node) => node.remove());
     // withRehydrationStack.reverse();
-    // debugger;
     // console.log('withRehydrationStack', withRehydrationStack);
     componentCreationCallback();
     if (withRehydrationStack.length > 0) {
@@ -165,10 +157,12 @@ export function withRehydration(
       withRehydrationStack.length = 0;
     }
     rehydrationScheduled = false;
+    nodesMap.clear();
     rollbackDOMAPI();
   } catch (e) {
     rehydrationScheduled = false;
     withRehydrationStack.length = 0;
+    nodesMap.clear();
     resetNodeCounter();
     rollbackDOMAPI();
     throw e;
