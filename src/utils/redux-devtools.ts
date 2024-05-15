@@ -95,7 +95,7 @@ export function supportChromeExtension( State ){
   ? window.__REDUX_DEVTOOLS_EXTENSION__()
   : (f) => f;
 	
-	compose(
+	return compose(
 		FreezerMiddleware( State ),
 		devtools
 	)(createStore)( function( state ){
