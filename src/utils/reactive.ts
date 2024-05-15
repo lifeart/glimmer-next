@@ -53,6 +53,32 @@ function keysFor(obj: object): Map<string | number | symbol, Cell<unknown>> {
   return map!;
 }
 
+const result = supportChromeExtension({
+  get() {
+    const cells = {};
+    getCells().forEach((cell, index) => {
+      cells[`${cell._debugName}:${index}`] = cell._value;
+    });
+    // console.log('get', cells);
+    return cells;
+  },
+  skipDispatch: 0,
+  set() {
+    console.log('set', ...arguments);
+  },
+  on(timeLine: string, fn: () => any) {
+    console.log('on', timeLine, fn);
+    setTimeout(() => {
+      // debugger;
+      fn.call(this, 'updates', {})
+    
+    }, 2000);
+  },
+  trigger() {
+    console.log('trigger', ...arguments);
+  }
+});
+
 export function tracked(
   klass: any,
   key: string,
@@ -123,6 +149,9 @@ export class Cell<T extends unknown = unknown> {
       this._debugName = debugContext(debugName);
       DEBUG_CELLS.add(this);
     }
+    result.dispatch({
+      type: 'CELL_CREATED',
+    });
   }
   get value() {
     if (currentTracker !== null) {
@@ -137,6 +166,9 @@ export class Cell<T extends unknown = unknown> {
     this._value = value;
     tagsToRevalidate.add(this);
     scheduleRevalidate();
+    result.dispatch({
+      type: 'CELL_UPDATED',
+    });
   }
 }
 
@@ -421,27 +453,6 @@ export function setTracker(tracker: Set<Cell> | null) {
   currentTracker = tracker;
 }
 
-supportChromeExtension({
-  get() {
-    const cells = {};
-    DEBUG_CELLS.forEach((cell, index) => {
-      cells[`${cell._debugName}:${index}`] = cell._value;
-    });
-    return cells;
-  },
-  skipDispatch: 0,
-  set() {
-    console.log('set', ...arguments);
-  },
-  on(timeLine: string, fn: () => any) {
-    console.log('on', timeLine, fn);
-    setTimeout(() => {
-      // debugger;
-      fn.call(this, 'updates', {})
-    
-    }, 2000);
-  },
-  trigger() {
-    console.log('trigger', ...arguments);
-  }
-});
+
+
+console.log('result', result);
