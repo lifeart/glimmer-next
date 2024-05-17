@@ -4,7 +4,7 @@
   We explicitly update DOM only when it's needed and only if tags are changed.
 */
 import { isFn, isTag, isTagLike, debugContext } from '@/utils/shared';
-import { Signal } from "signal-polyfill";
+import { Signal } from "../signal-polyfill";
 
 
 export const asyncOpcodes = new WeakSet<tagOp>();
