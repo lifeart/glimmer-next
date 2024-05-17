@@ -110,7 +110,6 @@ export class BasicListComponent<T extends { id: number }> {
     if (!isTagLike(tag)) {
       if (isArray(tag)) {
         console.warn('iterator for @each should be a cell');
-        // @ts-expect-error
         tag = new Cell(tag, 'list tag');
       } else if (isFn(originalTag)) {
         tag = formula(() => deepFnValue(originalTag), 'list tag');
@@ -298,7 +297,6 @@ export class SyncListComponent<
   constructor(params: ListComponentArgs<T>, outlet: RenderTarget) {
     super(params, outlet);
     associateDestroyable(params.ctx, [
-      // @ts-expect-error
       opcodeFor(this.tag, (value) => {
         this.syncList(value as T[]);
       }),
@@ -333,7 +331,6 @@ export class AsyncListComponent<
   constructor(params: ListComponentArgs<any>, outlet: RenderTarget) {
     super(params, outlet);
     associateDestroyable(params.ctx, [
-      // @ts-expect-error
       opcodeFor(this.tag, async (value) => {
         await this.syncList(value as T[]);
       }),

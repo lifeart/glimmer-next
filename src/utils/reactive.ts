@@ -104,7 +104,7 @@ export function setIsRendering(value: boolean) {
 
 // "data" cell, it's value can be updated, and it's used to create derived cells
 export class Cell<T extends unknown = unknown> {
-  _value!: Signal.State<T>;
+  _value!: any;
   declare toHTML: () => string;
   [Symbol.toPrimitive]() {
     return this.value;
@@ -115,7 +115,6 @@ export class Cell<T extends unknown = unknown> {
     this._value = new Signal.State(value);
     if (IS_DEV_MODE) {
       this._debugName = debugContext(debugName);
-      // @ts-expect-error
       DEBUG_CELLS.add(this);
     }
   }
@@ -202,7 +201,6 @@ export function cellFor<T extends object, K extends keyof T>(
     obj[key],
     `${obj.constructor.name}.${String(key)}`,
   );
-  // @ts-expect-error
   refs.set(key, cellValue);
   cellsMap.set(obj, refs);
   Object.defineProperty(obj, key, {
