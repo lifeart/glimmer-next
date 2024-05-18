@@ -55,7 +55,6 @@ export async function syncDom() {
   // sort tags in order of creation to avoid stale logic
   sharedTagsArray.sort((a, b) => a.id - b.id);
   for (const tag of sharedTagsArray) {
-    debugger;
     await executeTag(tag);
   }
   setIsRendering(false);
