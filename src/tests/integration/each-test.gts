@@ -12,6 +12,34 @@ module('Integration | InternalComponent | each', function (hooks) {
     users = cell([{ name: cell('Uef') }, { name: cell('Bi') }]);
   });
 
+  test('new item could be added in the middle', async function (assert) {
+    const items = cell(Array.from({ length: 30 }, (_, i) => ({ id: cell(i) })));
+    await render(
+      <template>
+        <ul>
+          {{#each items as |user i|}}
+            <li data-test-user={{i}}>
+              {{user.id}}
+            </li>
+          {{/each}}
+        </ul>
+      </template>,
+    );
+    assert.dom('[data-test-user]').exists({ count: 30 }, 'Number of elements');
+    assert.dom('[data-test-user="0"]').hasText('0', '0th element text');
+    assert.dom('[data-test-user="1"]').hasText('1', '1st element text');
+    const newUser = { id: cell(999) };
+    const leftPartOfItems = items.value.slice(0, 15);
+    const rightPartOfItems = items.value.slice(15);
+    items.update([...leftPartOfItems, newUser, ...rightPartOfItems]);
+    await rerender();
+    assert.dom('[data-test-user]').exists({ count: 31 }, 'Number of elements');
+    assert.dom('[data-test-user="15"]').hasText('999', '0th element text');
+    // assert dom order
+    const elements = document.querySelectorAll('[data-test-user]');
+    assert.equal(elements[15].textContent, '999');
+  });
+
   test('it not reactive if non-reactive getter used as source', async function (assert) {
     let iteration = 1;
     const ctx = {
