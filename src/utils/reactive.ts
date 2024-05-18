@@ -170,11 +170,13 @@ function bindAllCellsToTag(cells: Set<Cell>, tag: MergedCell) {
 }
 
 // "derived" cell, it's value is calculated from other cells, and it's value can't be updated
+let tagId = 0;
 export class MergedCell {
   fn: Fn | Function;
   declare toHTML: () => string;
   isConst: boolean = false;
   isDestroyed = false;
+  id = tagId++;
   [Symbol.toPrimitive]() {
     return this.value;
   }

@@ -49,9 +49,13 @@ export async function syncDom() {
     }
   }
   tagsToRevalidate.clear();
-  for (const tag of sharedTags) {
+  // sort shared tags by id
+  const sharedTagsArray = Array.from(sharedTags);
+  sharedTags.clear();
+  // sort tags in order of creation to avoid stale logic
+  sharedTagsArray.sort((a, b) => a.id - b.id);
+  for (const tag of sharedTagsArray) {
     await executeTag(tag);
   }
-  sharedTags.clear();
   setIsRendering(false);
 }
