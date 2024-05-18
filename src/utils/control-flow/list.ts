@@ -67,6 +67,7 @@ export class BasicListComponent<T extends { id: number }> {
   key: string = '@identity';
   tag!: Cell<T[]> | MergedCell;
   isSync = false;
+  isFirstRender = true;
   get ctx() {
     return this;
   }
@@ -92,9 +93,11 @@ export class BasicListComponent<T extends { id: number }> {
         },
       });
       LISTS_FOR_HMR.add(this);
-      associateDestroyable(ctx, [() => {
-        LISTS_FOR_HMR.delete(this);
-      }]);
+      associateDestroyable(ctx, [
+        () => {
+          LISTS_FOR_HMR.delete(this);
+        },
+      ]);
     }
     // "list bottom marker"
     if (IS_DEV_MODE) {
@@ -205,6 +208,7 @@ export class BasicListComponent<T extends { id: number }> {
     const rowsToMove: Array<[GenericReturnType, number]> = [];
     const amountOfExistingKeys = amountOfKeys - keysToRemove.length;
     const { indexMap, keyMap, bottomMarker, keyForItem, ItemComponent } = this;
+    const isFirstRender = this.isFirstRender;
     if (removedIndexes.length > 0 && keyMap.size > 0) {
       for (const key of keyMap.keys()) {
         let keyIndex = indexMap.get(key)!;
@@ -221,8 +225,13 @@ export class BasicListComponent<T extends { id: number }> {
       ? this.getTargetNode(amountOfExistingKeys)
       : bottomMarker;
     let seenKeys = 0;
+    const appendedIndexes = new Set<number>();
+    let isAppendOnly = isFirstRender;
     items.forEach((item, index) => {
       // @todo - fix here
+      if (seenKeys === amountOfExistingKeys) {
+        isAppendOnly = true;
+      }
       if (seenKeys === amountOfExistingKeys && targetNode === bottomMarker) {
         // optimization for appending items case
         targetNode = this.getTargetNode(0);
@@ -230,6 +239,9 @@ export class BasicListComponent<T extends { id: number }> {
       const key = keyForItem(item);
       const maybeRow = keyMap.get(key);
       if (!maybeRow) {
+        if (!isAppendOnly) {
+          appendedIndexes.add(index);
+        }
         let idx: number | MergedCell = index;
         if (IS_DEV_MODE) {
           // @todo - add `hasIndex` argument to compiler to tree-shake this
@@ -248,18 +260,28 @@ export class BasicListComponent<T extends { id: number }> {
         const row = ItemComponent(item, idx, this as unknown as Component<any>);
         keyMap.set(key, row);
         indexMap.set(key, index);
-        row.forEach((item) => {
-          renderElement(targetNode.parentNode!, item, targetNode);
-        });
+        if (isAppendOnly) {
+          renderElement(targetNode.parentNode!, row, targetNode);
+        } else {
+          rowsToMove.push([row, index]);
+          // TODO: optimize this
+          for (const key of keyMap.keys()) {
+            let keyIndex = indexMap.get(key)!;
+            if (keyIndex > index) {
+              keyIndex++;
+            }
+            this.indexMap.set(key, keyIndex);
+          }
+        }
       } else {
         seenKeys++;
-        if (indexMap.get(key) !== index) {
+        const expectedIndex = indexMap.get(key)!;
+        if (expectedIndex !== index && !appendedIndexes.has(expectedIndex)) {
           rowsToMove.push([maybeRow, index]);
           indexMap.set(key, index);
         }
       }
     });
-
     // iterate over rows to move and move them
 
     rowsToMove.forEach(([row, index]) => {
@@ -287,6 +309,9 @@ export class BasicListComponent<T extends { id: number }> {
       if (trueParent !== parent) {
         api.insert(trueParent, parent, bottomMarker);
       }
+    }
+    if (isFirstRender) {
+      this.isFirstRender = false;
     }
   }
 }
