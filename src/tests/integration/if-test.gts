@@ -1,9 +1,15 @@
 import { module, test } from 'qunit';
 import { render, rerender } from '@lifeart/gxt/test-utils';
-import { cell, type Cell } from '@lifeart/gxt';
+import {
+  cell,
+  type Cell,
+  Component,
+  tracked,
+  registerDestructor,
+} from '@lifeart/gxt';
 import { NestedRouter } from '@/components/pages/NestedRouter.gts';
 module('Integration | InternalComponent | if', function () {
-  test('logic inside if not updated if "if" is planned to be destroyed', async function (assert) {
+  test('logic inside "if" not updated if "if" is planned to be destroyed', async function (assert) {
     const nonEmptyString = cell('non-empty-string');
     const ctx = {
       nonEmptyString,
@@ -32,6 +38,65 @@ module('Integration | InternalComponent | if', function () {
     assert.dom('[data-test-value]').hasText('non-empty-string');
     assert.notOk(isErrored, 'no error thrown');
     nonEmptyString.update('');
+    await rerender();
+    assert.dom('[data-test-else]').hasText('empty');
+    assert.notOk(isErrored, 'no error thrown');
+  });
+  test('logic inside slot in "if" not updated if "if" is planned to be destroyed', async function (assert) {
+    let instance: App | null = null;
+    let isErrored = false;
+    const throwIfEmpty = (value: string) => {
+      if (!value) {
+        isErrored = true;
+        throw new Error('Value is empty');
+      }
+      return value;
+    };
+
+    type Item = {
+      id: string;
+      name: string;
+    };
+
+    class App extends Component {
+      constructor() {
+        super(...arguments);
+        instance = this;
+        const item = {
+          id: '1',
+          name: 'non-empty-string',
+        };
+        this.selectedItem = item;
+      }
+      @tracked selectedItem: null | Item = null;
+      <template>
+        <div>
+          {{#if this.selectedItem}}
+            <MyComponent @item={{this.selectedItem}}>
+              {{throwIfEmpty this.selectedItem.name}}
+            </MyComponent>
+          {{else}}
+            <div data-test-else>empty</div>
+          {{/if}}
+        </div>
+      </template>
+    }
+    class MyComponent extends Component<{
+      Args: {
+        item: Item;
+      };
+      Blocks: {
+        default: [];
+      };
+    }> {
+      <template>
+        <div>{{yield}}</div>
+      </template>
+    }
+
+    await render(<template><App /></template>);
+    assert.notOk(isErrored, 'no error thrown');
+    instance!.selectedItem = null;
     await rerender();
     assert.dom('[data-test-else]').hasText('empty');
     assert.notOk(isErrored, 'no error thrown');

@@ -38,7 +38,7 @@ export function isAllChildNodesSimpleElements(children: ASTv1.Node[]): boolean {
       if (child.path.type !== 'PathExpression') {
         return false;
       } else if (child.path.original === 'yield') {
-        return true;
+        return false;
       } else if (child.path.data) {
         return true;
       }
