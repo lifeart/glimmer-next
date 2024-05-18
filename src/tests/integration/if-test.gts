@@ -1,8 +1,41 @@
 import { module, test } from 'qunit';
 import { render, rerender } from '@lifeart/gxt/test-utils';
-import { cell, formula, Component } from '@lifeart/gxt';
+import { cell, type Cell } from '@lifeart/gxt';
 import { NestedRouter } from '@/components/pages/NestedRouter.gts';
 module('Integration | InternalComponent | if', function () {
+  test('logic inside if not updated if "if" is planned to be destroyed', async function (assert) {
+    const nonEmptyString = cell('non-empty-string');
+    const ctx = {
+      nonEmptyString,
+    };
+    let isErrored = false;
+    const throwIfEmpty = (value: Cell<string>) => {
+      if (!value) {
+        isErrored = true;
+        throw new Error('Value is empty');
+      }
+      return value;
+    };
+    const reverseString = (value: Cell<string>) => {
+      return value.value.split('').reverse().join('');
+    };
+    await render(
+      <template>
+        {{#if ctx.nonEmptyString}}
+          <div data-test-value>{{throwIfEmpty ctx.nonEmptyString}}</div>
+          <div>{{reverseString ctx.nonEmptyString}}</div>
+        {{else}}
+          <div data-test-else>empty</div>
+        {{/if}}
+      </template>,
+    );
+    assert.dom('[data-test-value]').hasText('non-empty-string');
+    assert.notOk(isErrored, 'no error thrown');
+    nonEmptyString.update('');
+    await rerender();
+    assert.dom('[data-test-else]').hasText('empty');
+    assert.notOk(isErrored, 'no error thrown');
+  });
   test('slots is properly destroyed', async function (assert) {
     const hasChildren = cell(false);
     const Page = <template>PAGE</template>;
