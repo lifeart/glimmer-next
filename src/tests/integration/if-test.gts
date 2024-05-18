@@ -6,6 +6,7 @@ import {
   Component,
   tracked,
   registerDestructor,
+  cellFor,
 } from '@lifeart/gxt';
 import { NestedRouter } from '@/components/pages/NestedRouter.gts';
 module('Integration | InternalComponent | if', function () {
@@ -96,6 +97,67 @@ module('Integration | InternalComponent | if', function () {
 
     await render(<template><App /></template>);
     assert.notOk(isErrored, 'no error thrown');
+    instance!.selectedItem = null;
+    await rerender();
+    assert.dom('[data-test-else]').hasText('empty');
+    assert.notOk(isErrored, 'no error thrown');
+  });
+  test('reactive logic inside slot in "if" not updated if "if" is planned to be destroyed', async function (assert) {
+    let instance: App | null = null;
+    let isErrored = false;
+    const throwIfEmpty = (value: string) => {
+      if (!value) {
+        isErrored = true;
+        throw new Error('Value is empty');
+      }
+      return value;
+    };
+
+    type Item = {
+      id: string;
+      name: string;
+    };
+
+    class App extends Component {
+      constructor() {
+        super(...arguments);
+        instance = this;
+        const item = {
+          id: '1',
+          name: 'non-empty-string',
+        };
+        cellFor(item, 'name');
+        this.selectedItem = item;
+      }
+      @tracked selectedItem: null | Item = null;
+      <template>
+        <div>
+          {{#if this.selectedItem}}
+            <MyComponent @item={{this.selectedItem}}>
+              {{throwIfEmpty this.selectedItem.name}}
+            </MyComponent>
+          {{else}}
+            <div data-test-else>empty</div>
+          {{/if}}
+        </div>
+      </template>
+    }
+    class MyComponent extends Component<{
+      Args: {
+        item: Item;
+      };
+      Blocks: {
+        default: [];
+      };
+    }> {
+      <template>
+        <div>{{yield}}</div>
+      </template>
+    }
+
+    await render(<template><App /></template>);
+    assert.notOk(isErrored, 'no error thrown');
+    instance!.selectedItem!.name = 'WOOPS';
     instance!.selectedItem = null;
     await rerender();
     assert.dom('[data-test-else]').hasText('empty');
