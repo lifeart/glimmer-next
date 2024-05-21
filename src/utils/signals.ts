@@ -1,4 +1,4 @@
-import { Signal } from "signal-polyfill";
+import { Signal } from "../signal-polyfill";
 import { isRehydrationScheduled } from "./rehydration";
 import { setIsRendering } from "./reactive";
 
