@@ -20,10 +20,6 @@ class $Signal {
     const Watchers: Set<Watcher> = new Set();
     COMPUTED_SIGNALS.get(this)?.forEach((computed) => {
       computed.isValid = false;
-      computed.relatedSignals.forEach((signal) => {
-        COMPUTED_SIGNALS.get(signal)!.delete(computed);
-      });
-      computed.relatedSignals = new Set();
       RELATED_WATCHERS.get(computed)!.forEach((watcher) => {
         if (watcher.isWatching) {
           watcher.pending.add(computed);
@@ -39,7 +35,6 @@ class $Signal {
 
 class Computed {
   fn: Function;
-  relatedSignals: Set<$Signal> = new Set();
   isValid = false;
   result: any;
   constructor(fn = () => {}) {
@@ -56,14 +51,13 @@ class Computed {
       this.isValid = true;
       return this.result;
     } finally {
-      this.relatedSignals = new Set(USED_SIGNALS);
-      USED_SIGNALS = oldSignals;
-      this.relatedSignals.forEach((signal) => {
+      USED_SIGNALS.forEach((signal) => {
         if (!COMPUTED_SIGNALS.has(signal)) {
           COMPUTED_SIGNALS.set(signal, new Set());
         }
         COMPUTED_SIGNALS.get(signal)!.add(this);
       });
+      USED_SIGNALS = oldSignals;
     }
   }
 }
