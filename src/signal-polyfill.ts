@@ -2,6 +2,7 @@ type Revision = number;
 
 interface Signal<T> {
   get(): T;
+  isDirty: boolean;
 }
 
 const $WATCHED = Symbol('watched');
@@ -11,24 +12,24 @@ const $WATCHER_NOTIFY = Symbol('watcher notify');
 
 const WATCHERS = new Set<Watcher>();
 
-let CONSUME_TAGS: boolean = true;
-let CURRENT_REVISION: Revision = 0;
-let CURRENT_COMPUTATION: Set<Tag> | null = null;
-let CURRENT_COMPUTED: Computed | null = null;
+let consumeTags: boolean = true;
+let currentRevision: Revision = 0;
+let currentComputation: Set<Tag> | null = null;
+// let currentComputed: Computed | null = null;
 
 class Tag {
-  [$REVISION]: Revision = CURRENT_REVISION;
+  [$REVISION]: Revision = currentRevision;
 }
 
 function dirtyTag(tag: Tag): void {
-  if (CURRENT_COMPUTATION?.has(tag))
+  if (currentComputation?.has(tag))
     throw new Error('cannot dirty tag that has been used during a computation');
-  tag[$REVISION] = ++CURRENT_REVISION;
+  tag[$REVISION] = ++currentRevision;
   notifyWatchers();
 }
 
 function consumeTag(tag: Tag): void {
-  if (CONSUME_TAGS) CURRENT_COMPUTATION?.add(tag);
+  if (consumeTags) currentComputation?.add(tag);
 }
 
 function notifyWatchers(): void {
@@ -41,11 +42,17 @@ function getMax(tags: Tag[]): Revision {
 
 class State<T> implements Signal<T> {
   private tag = new Tag();
+  private lastRevision: Revision;
   private equals = (a: T, b: T): boolean => a === b;
   private [$WATCHED] = (): void => {};
   private [$UNWATCHED] = (): void => {};
 
+  get isDirty() {
+    return this.lastRevision < this.tag[$REVISION];
+  }
+
   constructor(private value: T, options: SignalOptions<T> = {}) {
+    this.lastRevision = this.tag[$REVISION];
     this.equals = options.equals ?? this.equals;
     this[$WATCHED] = options[$WATCHED] ?? this[$WATCHED];
     this[$UNWATCHED] = options[$UNWATCHED] ?? this[$UNWATCHED];
@@ -53,6 +60,7 @@ class State<T> implements Signal<T> {
 
   get(): T {
     consumeTag(this.tag);
+    this.lastRevision = this.tag[$REVISION];
     return this.value;
   }
 
@@ -71,6 +79,10 @@ class Computed<T = unknown> implements Signal<T> {
   private [$WATCHED] = (): void => {};
   private [$UNWATCHED] = (): void => {};
 
+  get isDirty() {
+    return !(this.lastTags && getMax(this.lastTags) === this.lastRevision);
+  }
+
   constructor(private cb: (this: Computed<T>) => T, options: SignalOptions<T> = {}) {
     this.equals = options.equals ?? this.equals;
     this[$WATCHED] = options[$WATCHED] ?? this[$WATCHED];
@@ -78,26 +90,27 @@ class Computed<T = unknown> implements Signal<T> {
   }
 
   get(): T {
-    if (this.lastTags && getMax(this.lastTags) === this.lastRevision) {
-      if (CURRENT_COMPUTATION && this.lastTags.length > 0)
-        for (let tag of this.lastTags) CURRENT_COMPUTATION.add(tag);
+    if (this.lastTags && !this.isDirty) {
+      if (currentComputation && this.lastTags.length > 0)
+        for (let tag of this.lastTags) currentComputation.add(tag);
       return this.lastValue;
     }
 
-    let previousComputation = CURRENT_COMPUTATION;
+    let previousComputation = currentComputation;
+    currentComputation = new Set<Tag>();
 
     try {
       this.lastValue = this.cb.call(this);
     } finally {
-      let tags = Array.from(CURRENT_COMPUTATION ?? []);
+      let tags = Array.from(currentComputation ?? []);
       this.lastTags = tags;
       this.lastRevision = getMax(tags);
 
       if (previousComputation && tags.length > 0)
         for (let tag of tags) previousComputation.add(tag);
 
-      CURRENT_COMPUTATION = previousComputation;
-      CURRENT_COMPUTED = null;
+      currentComputation = previousComputation;
+      // currentComputed = null;
     }
 
     return this.lastValue;
@@ -109,17 +122,17 @@ class Computed<T = unknown> implements Signal<T> {
 // Analogous to `crypto.subtle`
 function untrack<T>(cb: () => T): T {
   try {
-    CONSUME_TAGS = false;
+    consumeTags = false;
     return cb();
   } finally {
-    CONSUME_TAGS = true;
+    consumeTags = true;
   }
 }
 
 // Get the current computed signal which is tracking any signal reads, if any
-function currentComputed(): Computed | null {
-  return CURRENT_COMPUTED;
-}
+// function currentComputed(): Computed | null {
+//   return currentComputed;
+// }
 
 // Returns ordered list of all signals which this one referenced
 // during the last time it was evaluated.
@@ -170,7 +183,11 @@ class Watcher {
   // Returns the set of sources in the Watcher's set which are still dirty, or is a computed signal
   // with a source which is dirty or pending and hasn't yet been re-evaluated
   getPending(): Signal<unknown>[] {
-    return Array.from(this.signals);
+    return Array.from(this.pending());
+  }
+
+  *pending(): Generator<Signal<unknown>> {
+    for (let signal of this.signals) if (signal.isDirty) yield signal;
   }
 
   [$WATCHER_NOTIFY](): void {
@@ -187,7 +204,7 @@ export const Signal = {
   Computed,
   subtle: {
     Watcher,
-    currentComputed,
+    // currentComputed,
     untrack,
     watched,
     unwatched,
