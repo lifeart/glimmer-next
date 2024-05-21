@@ -1,224 +1,109 @@
-type Revision = number;
+//gist.github.com/lifeart/b6fc9ec2e111a12bb78a0558ef5afa11
 
-interface Signal<T> {
-  get(): T;
-  isDirty: boolean;
-}
+// one of possible signals implementations
 
-const $WATCHED = Symbol('watched');
-const $UNWATCHED = Symbol('unwatched');
-const $REVISION = Symbol('revision');
-const $WATCHER_NOTIFY = Symbol('watcher notify');
+let USED_SIGNALS: Set<$Signal> | null = null;
+const RELATED_WATCHERS: WeakMap<Computed, Set<Watcher>> = new WeakMap();
+const COMPUTED_SIGNALS: WeakMap<$Signal, Set<Computed>> = new WeakMap();
 
-const WATCHERS = new Set<Watcher>();
-
-let consumeTags: boolean = true;
-let currentRevision: Revision = 0;
-let currentComputation: Set<Tag> | null = null;
-// let currentComputed: Computed | null = null;
-
-class Tag {
-  [$REVISION]: Revision = currentRevision;
-}
-
-function dirtyTag(tag: Tag): void {
-  if (currentComputation?.has(tag))
-    throw new Error('cannot dirty tag that has been used during a computation');
-  tag[$REVISION] = ++currentRevision;
-  notifyWatchers();
-}
-
-function consumeTag(tag: Tag): void {
-  if (consumeTags) currentComputation?.add(tag);
-}
-
-function notifyWatchers(): void {
-  for (let watcher of WATCHERS) watcher[$WATCHER_NOTIFY]();
-}
-
-function getMax(tags: Tag[]): Revision {
-  return Math.max(...tags.map((t) => t[$REVISION]));
-}
-
-class State<T> implements Signal<T> {
-  private tag = new Tag();
-  private lastRevision: Revision;
-  private equals = (a: T, b: T): boolean => a === b;
-  private [$WATCHED] = (): void => {};
-  private [$UNWATCHED] = (): void => {};
-
-  get isDirty() {
-    return this.lastRevision < this.tag[$REVISION];
+class $Signal {
+  value: any;
+  constructor(value: any) {
+    this.value = value;
   }
-
-  constructor(private value: T, options: SignalOptions<T> = {}) {
-    this.lastRevision = this.tag[$REVISION];
-    this.equals = options.equals ?? this.equals;
-    this[$WATCHED] = options[$WATCHED] ?? this[$WATCHED];
-    this[$UNWATCHED] = options[$UNWATCHED] ?? this[$UNWATCHED];
-  }
-
-  get(): T {
-    consumeTag(this.tag);
-    this.lastRevision = this.tag[$REVISION];
+  get() {
+    USED_SIGNALS?.add(this);
     return this.value;
   }
-
-  set(value: T): void {
-    if (this.equals(this.value, value)) return;
+  set(value: any) {
     this.value = value;
-    dirtyTag(this.tag);
+    const Watchers: Set<Watcher> = new Set();
+    COMPUTED_SIGNALS.get(this)?.forEach((computed) => {
+      computed.isValid = false;
+      computed.relatedSignals.forEach((signal) => {
+        COMPUTED_SIGNALS.get(signal)!.delete(computed);
+      });
+      computed.relatedSignals = new Set();
+      RELATED_WATCHERS.get(computed)!.forEach((watcher) => {
+        if (watcher.isWatching) {
+          watcher.pending.add(computed);
+          Watchers.add(watcher);
+        }
+      });
+    });
+    Watchers.forEach((watcher) => {
+      watcher.callback();
+    });
   }
 }
 
-class Computed<T = unknown> implements Signal<T> {
-  private lastTags: Tag[] | undefined;
-  private lastRevision: Revision | undefined;
-  private declare lastValue: T;
-  private equals = (a: T, b: T): boolean => a === b;
-  private [$WATCHED] = (): void => {};
-  private [$UNWATCHED] = (): void => {};
-
-  get isDirty() {
-    return !(this.lastTags && getMax(this.lastTags) === this.lastRevision);
+class Computed {
+  fn: Function;
+  relatedSignals: Set<$Signal> = new Set();
+  isValid = false;
+  result: any;
+  constructor(fn = () => {}) {
+    this.fn = fn;
   }
-
-  constructor(private cb: (this: Computed<T>) => T, options: SignalOptions<T> = {}) {
-    this.equals = options.equals ?? this.equals;
-    this[$WATCHED] = options[$WATCHED] ?? this[$WATCHED];
-    this[$UNWATCHED] = options[$UNWATCHED] ?? this[$UNWATCHED];
-  }
-
-  get(): T {
-    if (this.lastTags && !this.isDirty) {
-      if (currentComputation && this.lastTags.length > 0)
-        for (let tag of this.lastTags) currentComputation.add(tag);
-      return this.lastValue;
+  get() {
+    if (this.isValid) {
+      return this.result;
     }
-
-    let previousComputation = currentComputation;
-    currentComputation = new Set<Tag>();
-
+    const oldSignals = USED_SIGNALS;
+    USED_SIGNALS = new Set();
     try {
-      this.lastValue = this.cb.call(this);
+      this.result = this.fn();
+      this.isValid = true;
+      return this.result;
     } finally {
-      let tags = Array.from(currentComputation ?? []);
-      this.lastTags = tags;
-      this.lastRevision = getMax(tags);
-
-      if (previousComputation && tags.length > 0)
-        for (let tag of tags) previousComputation.add(tag);
-
-      currentComputation = previousComputation;
-      // currentComputed = null;
+      this.relatedSignals = new Set(USED_SIGNALS);
+      USED_SIGNALS = oldSignals;
+      this.relatedSignals.forEach((signal) => {
+        if (!COMPUTED_SIGNALS.has(signal)) {
+          COMPUTED_SIGNALS.set(signal, new Set());
+        }
+        COMPUTED_SIGNALS.get(signal)!.add(this);
+      });
     }
-
-    return this.lastValue;
   }
 }
-
-// This namespace includes "advanced" features that are better to
-// leave for framework authors rather than application developers.
-// Analogous to `crypto.subtle`
-function untrack<T>(cb: () => T): T {
-  try {
-    consumeTags = false;
-    return cb();
-  } finally {
-    consumeTags = true;
-  }
-}
-
-// Get the current computed signal which is tracking any signal reads, if any
-// function currentComputed(): Computed | null {
-//   return currentComputed;
-// }
-
-// Returns ordered list of all signals which this one referenced
-// during the last time it was evaluated.
-// For a Watcher, lists the set of signals which it is watching.
-// function introspectSources(s: Computed | Watcher): (State | Computed)[];
-
-// Returns the Watchers that this signal is contained in, plus any
-// Computed signals which read this signal last time they were evaluated,
-// if that computed signal is (recursively) watched.
-// function introspectSinks(s: State | Computed): (Computed | Watcher)[];
-
-// True if this signal is "live", in that it is watched by a Watcher,
-// or it is read by a Computed signal which is (recursively) live.
-// function hasSinks(s: State | Computed): boolean;
-
-// True if this element is "reactive", in that it depends
-// on some other signal. A Computed where hasSources is false
-// will always return the same constant.
-// function hasSources(s: Computed | Watcher): boolean;
-
 class Watcher {
-  private signals = new Set<Signal<unknown>>();
-
-  // When a (recursive) source of Watcher is written to, call this callback,
-  // if it hasn't already been called since the last `watch` call.
-  // No signals may be read or written during the notify.
-  constructor(readonly notify: (this: Watcher) => void) {}
-
-  // Add these signals to the Watcher's set, and set the watcher to run its
-  // notify callback next time any signal in the set (or one of its dependencies) changes.
-  // Can be called with no arguments just to reset the "notified" state, so that
-  // the notify callback will be invoked again.
-  watch(...signals: Signal<unknown>[]): void {
-    for (let signal of signals) {
-      this.signals.add(signal);
+  constructor(callback: Function) {
+    this.callback = callback;
+  }
+  watched: Set<Computed> = new Set();
+  pending: Set<Computed> = new Set();
+  callback: Function;
+  isWatching = true;
+  watch(computed?: Computed) {
+    if (!computed) {
+      this.isWatching = true;
+      return;
     }
-    if (this.signals.size > 0) WATCHERS.add(this);
-  }
-
-  // Remove these signals from the watched set (e.g., for an effect which is disposed)
-  unwatch(...signals: Signal<unknown>[]): void {
-    for (let signal of signals) {
-      this.signals.delete(signal);
+    if (!RELATED_WATCHERS.has(computed)) {
+      RELATED_WATCHERS.set(computed, new Set());
     }
-    if (this.signals.size === 0) WATCHERS.delete(this);
+    RELATED_WATCHERS.get(computed)!.add(this);
+    this.watched.add(computed);
   }
-
-  // Returns the set of sources in the Watcher's set which are still dirty, or is a computed signal
-  // with a source which is dirty or pending and hasn't yet been re-evaluated
-  getPending(): Signal<unknown>[] {
-    return Array.from(this.pending());
+  unwatch(computed: Computed) {
+    this.watched.delete(computed);
+    RELATED_WATCHERS.get(computed)!.delete(this);
   }
-
-  *pending(): Generator<Signal<unknown>> {
-    for (let signal of this.signals) if (signal.isDirty) yield signal;
-  }
-
-  [$WATCHER_NOTIFY](): void {
-    this.notify();
+  getPending() {
+    try {
+      return Array.from(this.pending);
+    } finally {
+      this.pending.clear();
+      this.isWatching = false;
+    }
   }
 }
-
-// Hooks to observe being watched or no longer watched
-const watched = $WATCHED;
-const unwatched = $UNWATCHED;
 
 export const Signal = {
-  State,
+  State: $Signal,
   Computed,
   subtle: {
     Watcher,
-    // currentComputed,
-    untrack,
-    watched,
-    unwatched,
   },
 };
-
-interface SignalOptions<T> {
-  // Custom comparison function between old and new value. Default: Object.is.
-  // The signal is passed in as the this value for context.
-  equals?: (this: Signal<T>, t: T, t2: T) => boolean;
-
-  // Callback called when isWatched becomes true, if it was previously false
-  [$WATCHED]?: (this: Signal<T>) => void;
-
-  // Callback called whenever isWatched becomes false, if it was previously true
-  [$UNWATCHED]?: (this: Signal<T>) => void;
-}
