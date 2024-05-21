@@ -3,6 +3,7 @@
 // one of possible signals implementations
 
 let USED_SIGNALS: Set<$Signal> | null = null;
+let totalWatchers = 0;
 const RELATED_WATCHERS: WeakMap<Computed, Set<Watcher>> = new WeakMap();
 const COMPUTED_SIGNALS: WeakMap<$Signal, Set<Computed>> = new WeakMap();
 
@@ -20,12 +21,15 @@ class $Signal {
     const Watchers: Set<Watcher> = new Set();
     COMPUTED_SIGNALS.get(this)?.forEach((computed) => {
       computed.isValid = false;
-      RELATED_WATCHERS.get(computed)!.forEach((watcher) => {
-        if (watcher.isWatching) {
-          watcher.pending.add(computed);
-          Watchers.add(watcher);
+      if (Watchers.size === totalWatchers) {
+        return;
+      }
+      for (const watcher of RELATED_WATCHERS.get(computed)!) {
+        Watchers.add(watcher);
+        if (Watchers.size === totalWatchers) {
+          return;
         }
-      });
+      }
     });
     Watchers.forEach((watcher) => {
       watcher.callback();
@@ -64,9 +68,9 @@ class Computed {
 class Watcher {
   constructor(callback: Function) {
     this.callback = callback;
+    totalWatchers++;
   }
   watched: Set<Computed> = new Set();
-  pending: Set<Computed> = new Set();
   callback: Function;
   isWatching = true;
   watch(computed?: Computed) {
@@ -85,10 +89,12 @@ class Watcher {
     RELATED_WATCHERS.get(computed)!.delete(this);
   }
   getPending() {
+    if (!this.isWatching) {
+      return [];
+    }
     try {
-      return Array.from(this.pending);
+      return Array.from(this.watched).filter((computed) => !computed.isValid);
     } finally {
-      this.pending.clear();
       this.isWatching = false;
     }
   }
