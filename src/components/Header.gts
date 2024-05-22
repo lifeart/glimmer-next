@@ -84,7 +84,8 @@ export const Header = <template>
     {{! @todo - fix conditional slots }}
     <!-- Mobile menu, show/hide based on menu open state. -->
     <div
-      class={{if isMobileDialogVisible '' 'hidden'}}
+      class={{if isMobileDialogVisible '' '-translate-x-full'}}
+      class='fixed inset-0 z-40 transition duration-300 transform ease-in-out'
       role='dialog'
       aria-modal='true'
       {{on 'click' onClick}}
