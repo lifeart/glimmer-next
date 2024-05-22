@@ -498,6 +498,7 @@ export function convert(
   ];
   const propsToCast = {
     class: '', // className
+    readonly: 'readOnly',
   };
 
 
@@ -543,7 +544,9 @@ export function convert(
         .map((attr) => {
           const rawValue = ToJSType(attr.value);
           if (booleanAttributes.includes(attr.name) && attr.value.type === 'TextNode' && attr.value.chars === '') {
-            return [attr.name, true];
+            const castedProp = propsToCast[attr.name as keyof typeof propsToCast];
+
+            return [typeof castedProp === 'string' ? castedProp : attr.name, true];
           }
           // const value = rawValue.startsWith("$:") ? rawValue : escapeString(rawValue);
           const castedProp = propsToCast[attr.name as keyof typeof propsToCast];
