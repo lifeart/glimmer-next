@@ -24,7 +24,7 @@ module('Integration | rendering | boolean attributes', function () {
   });
   test('readonly attribute', async function (assert) {
     await render(<template><input readonly /></template>);
-    assert.dom('input').hasProperty('readonly', true);
+    assert.dom('input').hasAttribute('readonly');
   });
   test('required attribute', async function (assert) {
     await render(<template><input required /></template>);
