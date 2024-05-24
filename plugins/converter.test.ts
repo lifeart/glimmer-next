@@ -774,6 +774,24 @@ describe.each([
       });
     });
     describe('each condition', () => {
+      test('it wraps index reference', () => {
+        const converted = $t<ASTv1.BlockStatement>(
+          `{{#each smf as |el idx|}}<div>{{el}}{{idx}}</div>{{/each}}`,
+        );
+        expect(converted).toEqual<HBSControlExpression>(
+          $control({
+            type: 'each',
+            condition: $glimmerCompat('$:smf'),
+            blockParams: ['el', 'idx'],
+            children: [$node({ tag: 'div', children: ['$:el', '$:idx'], hasStableChild: false })],
+          }),
+        );
+        expect($s(converted)).toEqual(
+          `$_each(${$glimmerCompat(
+            'smf',
+          )}, (el,idx,ctx0) => [$_tag('div', $_edp, [${$glimmerCompat('el')}, ${$glimmerCompat('idx.value')}], ctx0)], null, this)`,
+        );
+      });
       test('it support block-less case', () => {
         const converted = $t<ASTv1.BlockStatement>(
           `{{#each smf}}<div></div>{{/each}}`,

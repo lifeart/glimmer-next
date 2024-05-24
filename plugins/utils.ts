@@ -395,20 +395,27 @@ export function serializeNode(
       const FN_NAME = isSync ? SYMBOLS.EACH_SYNC : SYMBOLS.EACH;
       const EACH_KEY = eachKey ? escapeString(eachKey) : null;
       const FN_FN_ARGS = `${paramNames.join(',')},${newCtxName}`;
+      const indexParamName = paramNames[1];
+      const paramBounds = new RegExp(
+        `(?<!\\.)\\b${indexParamName}\\b(?!(=|'|\"|:)[^ ]*)`,
+        'g',
+      );
       // unstable childs need to be wrapped in a component function
       if (hasStableChild) {
-        return `${FN_NAME}(${arrayName}, (${FN_FN_ARGS}) => ${toChildArray(
+        let childText = toChildArray(
           childs,
           newCtxName,
-        )}, ${EACH_KEY}, ${ctxName})`;
+        ).split(paramBounds).filter(Boolean).join(`${indexParamName}.value`);
+        return `${FN_NAME}(${arrayName}, (${FN_FN_ARGS}) => ${childText}, ${EACH_KEY}, ${ctxName})`;
       } else {
         const extraContextName = nextCtxName();
-        return `${FN_NAME}(${arrayName}, (${FN_FN_ARGS}) => [${
-          SYMBOLS.$_ucw
-        }((${extraContextName}) => ${toChildArray(
+        let childText = toChildArray(
           childs,
           extraContextName,
-        )}, ${newCtxName})], ${EACH_KEY}, ${ctxName})`;
+        ).split(paramBounds).filter(Boolean).join(`${indexParamName}.value`);
+        return `${FN_NAME}(${arrayName}, (${FN_FN_ARGS}) => [${
+          SYMBOLS.$_ucw
+        }((${extraContextName}) => ${childText}, ${newCtxName})], ${EACH_KEY}, ${ctxName})`;
       }
     } else if (key === '@if') {
       let hasStableTrueChild = hasStableChildsForControlNode(childs);
