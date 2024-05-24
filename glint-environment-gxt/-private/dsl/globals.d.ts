@@ -88,9 +88,13 @@ type EventTypeMap = {
 type ResolveEventType<T extends string> =
   T extends keyof EventTypeMap ? EventTypeMap[T] :Event;
 
+type EventKeys<T> = Extract<keyof T, `on${string}`>;
+type RemoveOnPrefix<T> = T extends `on${infer U}` ? U : never;
+type EventsFromNode<T> = RemoveOnPrefix<EventKeys<T>>;
+
 // Generic event handler function type
 interface EventHandler {
-  <Y extends Element, T extends string, >(
+  <Y extends Element, T extends EventsFromNode<Y>>(
     element: Y,
     event: T,
     callback: (e: ResolveEventType<T>, element: Y) => void
