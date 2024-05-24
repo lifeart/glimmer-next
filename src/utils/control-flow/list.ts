@@ -129,14 +129,14 @@ export class BasicListComponent<T extends { id: number }> {
     if (this.key === '@identity') {
       let cnt = 0;
       const map: WeakMap<T, string> = new WeakMap();
-      this.keyForItem = (item: T) => {
+      this.keyForItem = (item: T, i: number) => {
         if (IS_DEV_MODE) {
           if (typeof item === 'undefined' || item === null) {
-            return Math.random().toString(36).slice(2);
+            return `${String(item)}:${i}`;
           }
           if (isPrimitive(item)) {
             console.warn(`Iteration over primitives is not supported yet`);
-            return String(item);
+            return `${String(item)}:${i}`;
           }
         }
         const key = map.get(item);
@@ -176,7 +176,7 @@ export class BasicListComponent<T extends { id: number }> {
     }
   }
   // @ts-expect-error non-string return type
-  keyForItem(item: T): string {
+  keyForItem(item: T, index: number): string {
     if (IS_DEV_MODE) {
       throw new Error(`Key for item not implemented, ${JSON.stringify(item)}`);
     }
@@ -236,7 +236,7 @@ export class BasicListComponent<T extends { id: number }> {
         // optimization for appending items case
         targetNode = this.getTargetNode(0);
       }
-      const key = keyForItem(item);
+      const key = keyForItem(item, index);
       const maybeRow = keyMap.get(key);
       if (!maybeRow) {
         if (!isAppendOnly) {
@@ -247,11 +247,11 @@ export class BasicListComponent<T extends { id: number }> {
           // @todo - add `hasIndex` argument to compiler to tree-shake this
           // for now reactive indexes works only in dev mode
           idx = formula(() => {
-            const values = this.tag.value;
+            const values = this.tag.value as T[];
             const itemIndex = values.indexOf(item);
             if (itemIndex === -1) {
-              return values.findIndex((value: T) => {
-                return keyForItem(value) === key;
+              return values.findIndex((value: T, i) => {
+                return keyForItem(value, i) === key;
               });
             }
             return itemIndex;
