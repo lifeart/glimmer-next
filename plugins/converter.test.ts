@@ -33,7 +33,7 @@ function $mm(name: string, params: string = '', hash: string = '{}') {
 }
 // Maybe helper
 function $mh(name: string, params: string = '', hash: string = '{}') {
-  const isBuiltin = ['or'].includes(name);
+  const isBuiltin = ['or','and'].includes(name);
   if (isBuiltin) {
     name = '$__' + name;
   }
@@ -388,6 +388,11 @@ describe.each([
         expect(
           $t<ASTv1.MustacheStatement>(`{{array foo "bar" "baz"}}`),
         ).toEqual(`$:() => $:$__array($:foo,"bar","baz")`);
+      });
+      test('and helper properly mapped', () => {
+        expect(
+          $t<ASTv1.MustacheStatement>(`{{and foo "bar" "baz"}}`),
+        ).toEqual(`$:() => $:$__and($:foo,"bar","baz")`);
       });
       test('or helper properly mapped', () => {
         expect(

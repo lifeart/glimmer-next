@@ -79,6 +79,8 @@ function patchNodePath(node: ASTv1.MustacheStatement | ASTv1.SubExpression, bind
     node.path.original = SYMBOLS.$__or;
   } else if (node.path.original === 'not') {
     node.path.original = SYMBOLS.$__not;
+  } else if (node.path.original === 'and') {
+    node.path.original = SYMBOLS.$__and;
   }
 
   if (node.path.original.includes('.')) {

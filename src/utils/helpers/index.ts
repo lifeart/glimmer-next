@@ -7,3 +7,4 @@ export { $__hash } from './hash';
 export { $__fn } from './fn';
 export { $__or } from './or';
 export { $__not } from './not';
+export { $__and } from './and';

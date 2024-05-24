@@ -289,7 +289,7 @@ export class BasicListComponent<T extends { id: number }> {
       if (nextItem === undefined) {
         renderElement(bottomMarker.parentNode!, row, bottomMarker);
       } else {
-        const nextKey = keyForItem(nextItem);
+        const nextKey = keyForItem(nextItem, index + 1);
         const nextRow = keyMap.get(nextKey)!;
         const firstNode = getFirstNode(nextRow);
         if (nextRow !== undefined && firstNode !== undefined) {
@@ -330,7 +330,7 @@ export class SyncListComponent<
   syncList(items: T[]) {
     const { keyMap, indexMap, keyForItem } = this;
     const existingKeys = Array.from(keyMap.keys());
-    const updatingKeys = new Set(items.map((item) => keyForItem(item)));
+    const updatingKeys = new Set(items.map((item, i) => keyForItem(item, i)));
     const removedIndexes: number[] = [];
     const keysToRemove = existingKeys.filter((key) => {
       const isRemoved = !updatingKeys.has(key);
@@ -364,7 +364,7 @@ export class AsyncListComponent<
   async syncList(items: T[]) {
     const { keyMap, indexMap, keyForItem } = this;
     const existingKeys = Array.from(keyMap.keys());
-    const updatingKeys = new Set(items.map((item) => keyForItem(item)));
+    const updatingKeys = new Set(items.map((item, i) => keyForItem(item, i)));
     const removedIndexes: number[] = [];
     const removeQueue: Array<Promise<void>> = [];
     const keysToRemove = existingKeys.filter((key) => {
