@@ -14,6 +14,7 @@ export const $args = 'args' as const;
 export const $_debug_args = '_debug_args' as const;
 export const $fwProp = '$fw' as const;
 export const noop = () => {};
+export const ALIVE_CELLS = new Set<AnyCell>();
 
 
 export const IN_SSR_ENV =
