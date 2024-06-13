@@ -8,7 +8,7 @@ import {
   inNewTrackingFrame,
 } from './reactive';
 import { isFn } from './shared';
-import { Signal } from "signal-polyfill";
+import { Signal } from "../signal-polyfill";
 
 import { w } from './signals';
 type maybeDestructor = undefined | (() => void);
