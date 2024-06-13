@@ -3,7 +3,7 @@
 // one of possible signals implementations
 
 let USED_SIGNALS: Set<$Signal> | null = null;
-let totalWatchers = 0;
+let inUntrackCall = false;
 const RELATED_WATCHERS: WeakMap<Computed, Set<Watcher>> = new WeakMap();
 const COMPUTED_SIGNALS: WeakMap<$Signal, Set<Computed>> = new WeakMap();
 
@@ -21,14 +21,8 @@ class $Signal {
     const Watchers: Set<Watcher> = new Set();
     COMPUTED_SIGNALS.get(this)?.forEach((computed) => {
       computed.isValid = false;
-      if (Watchers.size === totalWatchers) {
-        return;
-      }
       for (const watcher of RELATED_WATCHERS.get(computed)!) {
         Watchers.add(watcher);
-        if (Watchers.size === totalWatchers) {
-          return;
-        }
       }
     });
     Watchers.forEach((watcher) => {
@@ -36,6 +30,17 @@ class $Signal {
     });
   }
 }
+
+function untrack(fn = () => {}) {
+  inUntrackCall = true;
+  try {
+    fn();
+  } catch(e) {
+    // EOL
+  } finally {
+    inUntrackCall = false;
+  }
+};
 
 class Computed {
   fn: Function;
@@ -49,26 +54,27 @@ class Computed {
       return this.result;
     }
     const oldSignals = USED_SIGNALS;
-    USED_SIGNALS = new Set();
+    USED_SIGNALS = inUntrackCall ? USED_SIGNALS : new Set();
     try {
       this.result = this.fn();
       this.isValid = true;
       return this.result;
     } finally {
-      USED_SIGNALS.forEach((signal) => {
-        if (!COMPUTED_SIGNALS.has(signal)) {
-          COMPUTED_SIGNALS.set(signal, new Set());
-        }
-        COMPUTED_SIGNALS.get(signal)!.add(this);
-      });
-      USED_SIGNALS = oldSignals;
+      if (!inUntrackCall) {
+        USED_SIGNALS?.forEach((signal) => {
+          if (!COMPUTED_SIGNALS.has(signal)) {
+            COMPUTED_SIGNALS.set(signal, new Set());
+          }
+          COMPUTED_SIGNALS.get(signal)!.add(this);
+        });
+        USED_SIGNALS = oldSignals;
+      }
     }
   }
 }
 class Watcher {
   constructor(callback: Function) {
     this.callback = callback;
-    totalWatchers++;
   }
   watched: Set<Computed> = new Set();
   callback: Function;
@@ -103,6 +109,7 @@ class Watcher {
 export const Signal = {
   State: $Signal,
   Computed,
+  untrack,
   subtle: {
     Watcher,
   },
