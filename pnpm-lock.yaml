@@ -18,8 +18,8 @@ dependencies:
     specifier: 2.0.1
     version: 2.0.1
   decorator-transforms:
-    specifier: 1.1.0
-    version: 1.1.0(@babel/core@7.23.6)
+    specifier: 2.0.0
+    version: 2.0.0(@babel/core@7.23.6)
 
 devDependencies:
   '@glint/core':
@@ -2971,8 +2971,8 @@ packages:
     engines: {node: '>= 12.*'}
     dev: true
 
-  /babel-import-util@2.0.1:
-    resolution: {integrity: sha512-N1ZfNprtf/37x0R05J0QCW/9pCAcuI+bjZIK9tlu0JEkwEST7ssdD++gxHRbD58AiG5QE5OuNYhRoEFsc1wESw==}
+  /babel-import-util@3.0.0:
+    resolution: {integrity: sha512-4YNPkuVsxAW5lnSTa6cn4Wk49RX6GAB6vX+M6LqEtN0YePqoFczv1/x0EyLK/o+4E1j9jEuYj5Su7IEPab5JHQ==}
     engines: {node: '>= 12.*'}
     dev: false
 
@@ -3804,11 +3804,11 @@ packages:
     engines: {node: '>=0.10.0'}
     dev: true
 
-  /decorator-transforms@1.1.0(@babel/core@7.23.6):
-    resolution: {integrity: sha512-n3WCgc3PB2t9mLV4SJd87IjTbKeFUGw2sU5eEBYczSmcvj3guX4eMW4XOowlQqGk7I/da6+bwv1ydw1ZtNqWaw==}
+  /decorator-transforms@2.0.0(@babel/core@7.23.6):
+    resolution: {integrity: sha512-ETfQccGcotK01YJsoB0AGTdUp7kS9jI93mBzrRY5Oyo+bOJfa2UKTSjCNf+iRNwAWBmBKlbiCcyL4tkY4C4dZQ==}
     dependencies:
       '@babel/plugin-syntax-decorators': 7.23.3(@babel/core@7.23.6)
-      babel-import-util: 2.0.1
+      babel-import-util: 3.0.0
     transitivePeerDependencies:
       - '@babel/core'
     dev: false
@@ -4761,6 +4761,7 @@ packages:
 
   /glob@5.0.15:
     resolution: {integrity: sha512-c9IPMazfRITpmAAKi22dK1VKxGDX9ehhqfABDriL/lzO92xcUKEJPQHrVA/2YHSNFB4iFlykVmWvwo48nr3OxA==}
+    deprecated: Glob versions prior to v9 are no longer supported
     dependencies:
       inflight: 1.0.6
       inherits: 2.0.4
@@ -6778,6 +6779,7 @@ packages:
 
   /rimraf@2.7.1:
     resolution: {integrity: sha512-uWjbaKIK3T1OSVptzX7Nl6PvQ3qAGtKEtVRjRuazjfL3Bx5eI409VZSqgND+4UNnmzLVdPj9FqFJNPqBZFve4w==}
+    deprecated: Rimraf versions prior to v4 are no longer supported
     hasBin: true
     dependencies:
       glob: 7.2.3
