@@ -21,6 +21,14 @@ import {
 } from '@/utils/shared';
 import { opcodeFor } from '@/utils/vm';
 
+export function startViewTransition(callback) {
+  if (document.startViewTransition) {
+    return  document.startViewTransition(callback).ready;
+  } else {
+    return Promise.resolve().then(callback);
+  }
+}
+
 export class IfCondition {
   isDestructorRunning = false;
   prevComponent: GenericReturnType | null = null;
@@ -169,11 +177,14 @@ export class IfCondition {
     if (IS_DEV_MODE) {
       $DEBUG_REACTIVE_CONTEXTS.pop();
     }
-    renderElement(
-      this.placeholder.parentNode || this.target,
-      this.prevComponent,
-      this.placeholder,
-    );
+    startViewTransition(() => {
+      renderElement(
+        this.placeholder.parentNode || this.target,
+        this.prevComponent,
+        this.placeholder,
+      );
+    });
+
     return;
   }
   async destroy() {
