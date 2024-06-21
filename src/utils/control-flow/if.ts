@@ -21,9 +21,9 @@ import {
 } from '@/utils/shared';
 import { opcodeFor } from '@/utils/vm';
 
-export function startViewTransition(callback) {
+export function startViewTransition(callback: () => void | Promise<void>){
   if (document.startViewTransition) {
-    return  document.startViewTransition(callback).ready;
+    return document.startViewTransition(callback).ready;
   } else {
     return Promise.resolve().then(callback);
   }
