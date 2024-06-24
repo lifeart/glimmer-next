@@ -947,7 +947,12 @@ export function $_eachSync<T extends { id: number }>(
     outlet,
   );
   addToTree(ctx, instance as unknown as Component<any>);
-  return outlet;
+  return {
+    ctx: instance,
+    get [$nodes]() {
+      return Array.from(outlet.childNodes);
+    },
+  };
 }
 export function $_each<T extends { id: number }>(
   items: Cell<T[]> | MergedCell,
@@ -968,7 +973,10 @@ export function $_each<T extends { id: number }>(
     outlet,
   );
   addToTree(ctx, instance as unknown as Component<any>);
-  return outlet;
+  return {
+    ctx: instance,
+    [$nodes]: Array.from(outlet.childNodes),
+  };
 }
 const ArgProxyHandler = {
   get(target: Record<string, () => unknown>, prop: string) {

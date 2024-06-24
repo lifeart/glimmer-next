@@ -59,18 +59,9 @@ export function renderElement(
     if (isPrimitive(el)) {
       renderNode(target, api.text(el), placeholder);
     } else if ($nodes in el) {
-      const refsToKeep: Node[] = [];
       el[$nodes].forEach((node) => {
-        if (node.nodeType === FRAGMENT_TYPE) {
-          node.childNodes.forEach((child) => {
-            refsToKeep.push(child);
-          });
-        } else {
-          refsToKeep.push(node);
-        }
         renderElement(target, node, placeholder);
       });
-      el[$nodes] = refsToKeep;
     } else if (isFn(el)) {
       renderElement(target, el(), placeholder);
     } else {
