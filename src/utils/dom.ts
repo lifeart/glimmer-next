@@ -1094,6 +1094,9 @@ export function $_dc(
     get [$nodes]() {
       return result![$nodes];
     },
+    set [$nodes](value) {
+      result![$nodes] = value;
+    }
   };
 }
 export const $_component = (component: any) => {

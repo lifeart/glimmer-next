@@ -413,4 +413,69 @@ module('Integration | InternalComponent | each', function (hooks) {
         '1th element retains attribute',
       );
   });
+
+  test('it able to render nested each', async function (assert) {
+    const matrix = cell([
+      [1, 2, 3],
+      [4, 5, 6],
+      [7, 8, 9],
+    ]);
+    await render(
+      <template>
+        {{#each matrix as |row|}}
+          {{#each row as |cell|}}
+            <span data-test-cell>{{cell}}</span>
+          {{/each}}
+        {{/each}}
+      </template>,
+    );
+    assert.dom('[data-test-cell]').exists({ count: 9 }, 'Number of elements');
+
+    // assert dom order
+    const elements = document.querySelectorAll('[data-test-cell]');
+    assert.equal(elements[0].textContent, '1');
+    assert.equal(elements[1].textContent, '2');
+    assert.equal(elements[2].textContent, '3');
+    assert.equal(elements[3].textContent, '4');
+    assert.equal(elements[4].textContent, '5');
+    assert.equal(elements[5].textContent, '6');
+    assert.equal(elements[6].textContent, '7');
+    assert.equal(elements[7].textContent, '8');
+    assert.equal(elements[8].textContent, '9');
+    // assert rerender
+    matrix.update([
+      [9, 8, 7],
+      [6, 5, 4],
+      [3, 2, 1],
+    ]);
+    await rerender();
+    assert.dom('[data-test-cell]').exists({ count: 9 }, 'Number of elements');
+    // assert dom order
+    const elements2 = document.querySelectorAll('[data-test-cell]');
+    assert.equal(elements2[0].textContent, '9');
+    assert.equal(elements2[1].textContent, '8');
+    assert.equal(elements2[2].textContent, '7');
+    assert.equal(elements2[3].textContent, '6');
+    assert.equal(elements2[4].textContent, '5');
+    assert.equal(elements2[5].textContent, '4');
+    assert.equal(elements2[6].textContent, '3');
+    assert.equal(elements2[7].textContent, '2');
+    assert.equal(elements2[8].textContent, '1');
+  });
+  test('each indexes for primitives always updating', async function (assert) {
+    const items = cell([1, 1, 1]);
+    await render(
+      <template>
+        <ul>
+          {{#each items as |item i|}}
+            <li data-test-item={{i}}>{{item}}</li>
+          {{/each}}
+        </ul>
+      </template>,
+    );
+    assert.dom('[data-test-item]').exists({ count: 3 }, 'Number of elements');
+    assert.dom('[data-test-item="0"]').hasText('1', '0th element text');
+    assert.dom('[data-test-item="1"]').hasText('1', '1st element text');
+    assert.dom('[data-test-item="2"]').hasText('1', '2nd element text');
+  });
 });
