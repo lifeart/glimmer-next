@@ -41,6 +41,7 @@ import {
   IN_SSR_ENV,
   COMPONENTS_HMR,
   isEmpty,
+  FRAGMENT_TYPE,
 } from './shared';
 import { isRehydrationScheduled } from './ssr/rehydration';
 import { createHotReload } from './hmr';
@@ -907,6 +908,16 @@ function getRenderTargets(debugName: string) {
   }
 }
 
+function toNodeReturnType(outlet: HTMLElement | DocumentFragment, ctx: any = null) {
+  if (outlet.nodeType !== FRAGMENT_TYPE) {
+    return outlet;
+  }
+  return {
+    ctx,
+    [$nodes]: Array.from(outlet.childNodes),
+  };
+}
+
 function ifCond(
   cell: Cell<boolean>,
   trueBranch: BranchCb,
@@ -926,7 +937,7 @@ function ifCond(
   );
   // @ts-expect-error instance type mismatch
   addToTree(ctx, instance);
-  return outlet;
+  return toNodeReturnType(outlet, instance);
 }
 export function $_eachSync<T extends { id: number }>(
   items: Cell<T[]> | MergedCell,
@@ -947,12 +958,7 @@ export function $_eachSync<T extends { id: number }>(
     outlet,
   );
   addToTree(ctx, instance as unknown as Component<any>);
-  return {
-    ctx: instance,
-    get [$nodes]() {
-      return Array.from(outlet.childNodes);
-    },
-  };
+  return toNodeReturnType(outlet, instance);
 }
 export function $_each<T extends { id: number }>(
   items: Cell<T[]> | MergedCell,
@@ -973,10 +979,7 @@ export function $_each<T extends { id: number }>(
     outlet,
   );
   addToTree(ctx, instance as unknown as Component<any>);
-  return {
-    ctx: instance,
-    [$nodes]: Array.from(outlet.childNodes),
-  };
+  return toNodeReturnType(outlet, instance);
 }
 const ArgProxyHandler = {
   get(target: Record<string, () => unknown>, prop: string) {

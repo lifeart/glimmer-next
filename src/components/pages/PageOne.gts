@@ -9,7 +9,7 @@ function Controls() {
     color.update(Math.random() > 0.5 ? 'red' : 'blue');
   }, 1000);
 
-  function onDestroy() {
+  function onDestroy(_?: any) {
     return () => {
       console.log('destroying interval');
       clearInterval(intervalId);
