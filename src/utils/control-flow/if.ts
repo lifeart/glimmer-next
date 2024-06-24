@@ -7,7 +7,6 @@ import {
 } from '@/utils/component';
 import { Destructors } from '@/utils/glimmer/destroyable';
 import {
-  deepFnValue,
   formula,
   type Cell,
   type MergedCell,
