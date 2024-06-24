@@ -54,6 +54,10 @@ export function renderTarget() {
   return getDocument().getElementById('ember-testing')!;
 }
 
+class RenderFunctionOwner {
+  debugName = 'TestContainerRenderFunctionOwner';
+ }
+
 export async function render(component: ComponentReturnType) {
   const targetElement = getDocument().getElementById('ember-testing')!;
   if (getRoot()) {
@@ -63,12 +67,13 @@ export async function render(component: ComponentReturnType) {
     console.warn('testing container not empty, force cleanup');
     targetElement.innerHTML = '';
   }
-  // @ts-expect-error typings mismatch
-  const cmp = new component();
-
-  let renderResult = renderComponent(cmp, targetElement, cmp.ctx);
-  registerDestructor(cmp.ctx || cmp, () => {
-    destroyElementSync(cmp.nodes);
+  const owner = new RenderFunctionOwner();
+  let renderResult = renderComponent({
+    // @ts-expect-error typings mismatch
+    template: component,
+  }, targetElement, owner);
+  registerDestructor(owner, () => {
+    destroyElementSync(renderResult.nodes);
   });
   await rerender();
   // TODO: figure out what is root, at the moment it return node instance, not node.ctx

@@ -51,6 +51,7 @@ export function isTagLike(child: unknown): child is AnyCell {
 }
 
 export const RENDER_TREE = new WeakMap<Component<any>, Set<Component>>();
+export const PARENT_GRAPH = new WeakMap<Component<any>, Component<any>>();
 export const BOUNDS = new WeakMap<
   Component<any>,
   Array<HTMLElement | Comment>
@@ -145,6 +146,9 @@ export function addToTree(
     RENDER_TREE.set(ctx, new Set());
   }
   RENDER_TREE.get(ctx)!.add(node);
+  if (WITH_CONTEXT_API) {
+    PARENT_GRAPH.set(node, ctx);
+  }
 }
 
 /*

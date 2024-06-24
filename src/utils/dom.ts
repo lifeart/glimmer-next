@@ -153,6 +153,11 @@ export function resetRoot() {
   ROOT = null;
 }
 export function setRoot(root: Component<any>) {
+  if (IS_DEV_MODE) {
+    if (ROOT) {
+      throw new Error('Root already exists');
+    }
+  }
   ROOT = root;
 }
 export function getRoot() {
@@ -714,6 +719,7 @@ function _component(
   }
   // todo - fix typings here
   if ($template in instance) {
+    addToTree(ctx, instance);
     const result = (
       instance[$template] as unknown as () => ComponentReturnType
     )();
@@ -733,7 +739,9 @@ function _component(
     if (result.ctx !== null) {
       // here is workaround for simple components @todo - figure out how to show context-less components in tree
       // for now we don't adding it
-      addToTree(ctx, result.ctx);
+      if (result.ctx !== instance) {
+        throw new Error('Invalid context');
+      }
       if (IS_DEV_MODE) {
         setBounds(result);
       }
@@ -801,12 +809,13 @@ function createSlot(
   params: () => unknown[],
   name: string,
   $destructors: Destructors,
+  ctx: any,
 ) {
   // @todo - figure out destructors for slot (shoud work, bu need to be tested)
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.push(`:${name}`);
   }
-  const elements = value(...params());
+  const elements = value(...[...params(), ctx]);
   const nodes = mergeComponents(elements, $destructors);
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.pop();
@@ -842,7 +851,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
           }
         }
         slotValue = value;
-        const slotRoots = createSlot(slotValue, params, name, $destructors);
+        const slotRoots = createSlot(slotValue, params, name, $destructors, ctx);
         $destructors.push(() => {
           destroyElement(slotRoots);
         });
@@ -860,7 +869,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
     });
     return slotPlaceholder;
   }
-  const slotRoot = createSlot($slot[name], params, name, $destructors);
+  const slotRoot = createSlot($slot[name], params, name, $destructors, ctx);
   $destructors.push(() => {
     destroyElement(slotRoot);
   });

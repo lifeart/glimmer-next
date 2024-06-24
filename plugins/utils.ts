@@ -503,12 +503,13 @@ export function serializeNode(
         slots.push(node);
       }
       const serializedSlots = slots.map((slot) => {
-        const slotChildren = serializeChildren(slot.children, ctxName);
+        const sContext = nextCtxName();
+        const slotChildren = serializeChildren(slot.children, sContext);
         const hasBlockParams = slot.blockParams.length > 0;
         const slotName = slot.tag.startsWith(':')
           ? slot.tag.slice(1)
           : 'default';
-        return `${slotName}_: ${hasBlockParams},${slotName}: (${slot.blockParams.join(
+        return `${slotName}_: ${hasBlockParams},${slotName}: (${[...slot.blockParams,sContext].join(
           ',',
         )}) => [${slotChildren}]`;
       });

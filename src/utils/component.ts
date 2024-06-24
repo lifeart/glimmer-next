@@ -1,4 +1,4 @@
-import { DestructorFn, Destructors } from '@/utils/glimmer/destroyable';
+import { destroy, DestructorFn, Destructors } from '@/utils/glimmer/destroyable';
 import type {
   TemplateContext,
   Context,
@@ -17,6 +17,7 @@ import {
   isArray,
   isEmpty,
   FRAGMENT_TYPE,
+  PARENT_GRAPH,
 } from './shared';
 import { addChild, getRoot, setRoot } from './dom';
 
@@ -76,7 +77,8 @@ export function renderElement(
 export function renderComponent(
   component: ComponentReturnType,
   target: ComponentRenderTarget,
-  ctx?: any,
+  owner?: any,
+  skipRoot?: boolean,
 ): ComponentReturnType {
   if (import.meta.env.DEV) {
     if (target === undefined) {
@@ -84,21 +86,29 @@ export function renderComponent(
     }
   }
   const targetElement = targetFor(target);
+  const appRoot = getRoot();
+
+  if (!skipRoot) {
+    if (appRoot !== null && appRoot !== owner) {
+      if (import.meta.env.DEV) {
+        throw new Error(`Root already exists, it may lead to memory leaks, 
+          at the moment we allow only one root. Let us know if you need more.
+          To manually fix this issue you may save existing root reference and cleanup root.
+          try "getRoot()" to resolve root reference for last rendered root component,
+          and once you get it, call "resetRoot", and try to re-render component one more time.
+        `);
+      }
+    } else {
+      if (appRoot === null) {
+        setRoot(owner || component.ctx || (component as any));
+      }
+    }
+  }
+
+
 
   if ($template in component && isFn(component[$template])) {
-    return renderComponent(component[$template](), targetElement, component);
-  }
-  if (getRoot() !== null) {
-    if (import.meta.env.DEV) {
-      throw new Error(`Root already exists, it may lead to memory leaks, 
-        at the moment we allow only one root. Let us know if you need more.
-        To manually fix this issue you may save existing root reference and cleanup root.
-        try "getRoot()" to resolve root reference for last rendered root component,
-        and once you get it, call "resetRoot", and try to re-render component one more time.
-      `);
-    }
-  } else {
-    setRoot(component.ctx || (component as any));
+    return renderComponent(component[$template](), targetElement, component, true);
   }
 
   const destructors: Destructors = [];
@@ -114,10 +124,10 @@ export function renderComponent(
           i,
         );
       });
-      associateDestroyable(ctx || component, destructors);
+      associateDestroyable(owner || component, destructors);
     } catch (e) {
       destructors.forEach((fn) => fn());
-      runDestructorsSync(ctx || component);
+      runDestructorsSync(owner || component);
       throw e;
     }
   } else {
@@ -129,7 +139,7 @@ export function renderComponent(
         i,
       );
     });
-    associateDestroyable(ctx || component, destructors);
+    associateDestroyable(owner || component, destructors);
   }
 
   return component;
@@ -200,7 +210,7 @@ export function destroyElementSync(
     | null[],
 ) {
   if (isArray(component)) {
-    component.map((component) => destroyElementSync(component));
+    component.forEach((component) => destroyElementSync(component));
   } else {
     if (isEmpty(component)) {
       return;
@@ -315,11 +325,15 @@ export function removeDestructor(ctx: any, destructor: DestructorFn) {
 }
 
 function runDestructorsSync(targetNode: Component<any>) {
+  destroy(targetNode);
   if ($newDestructors.has(targetNode)) {
     $newDestructors.get(targetNode)!.forEach((fn) => {
       fn();
     });
     $newDestructors.delete(targetNode);
+  }
+  if (WITH_CONTEXT_API) {
+    PARENT_GRAPH.delete(targetNode);
   }
   const nodesToRemove = RENDER_TREE.get(targetNode);
   if (nodesToRemove) {
@@ -339,6 +353,7 @@ export function runDestructors(
   target: Component<any>,
   promises: Array<Promise<void>> = [],
 ): Array<Promise<void>> {
+  destroy(target);
   if ($newDestructors.has(target)) {
     $newDestructors.get(target)!.forEach((fn) => {
       const promise = fn();
@@ -349,6 +364,9 @@ export function runDestructors(
     $newDestructors.delete(target);
   } else {
     // console.info(`No destructors found for component`);
+  }
+  if (WITH_CONTEXT_API) {
+    PARENT_GRAPH.delete(target);
   }
   const nodesToRemove = RENDER_TREE.get(target);
   if (nodesToRemove) {
