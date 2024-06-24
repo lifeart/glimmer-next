@@ -247,6 +247,9 @@ export class BasicListComponent<T extends { id: number }> {
           // @todo - add `hasIndex` argument to compiler to tree-shake this
           // for now reactive indexes works only in dev mode
           idx = formula(() => {
+            if (isPrimitive(item)) {
+              return index;
+            }
             const values = this.tag.value as T[];
             const itemIndex = values.indexOf(item);
             if (itemIndex === -1) {

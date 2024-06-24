@@ -16,10 +16,9 @@ import {
   isPrimitive,
   isArray,
   isEmpty,
+  FRAGMENT_TYPE,
 } from './shared';
 import { addChild, getRoot, setRoot } from './dom';
-
-const FRAGMENT_TYPE = 11; // Node.DOCUMENT_FRAGMENT_NODE
 
 export type ComponentRenderTarget =
   | HTMLElement
