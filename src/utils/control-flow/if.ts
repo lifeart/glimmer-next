@@ -16,8 +16,11 @@ import {
   $_debug_args,
   $DEBUG_REACTIVE_CONTEXTS,
   IFS_FOR_HMR,
+  isEmpty,
   isFn,
   isPrimitive,
+  isTag,
+  isTagLike,
 } from '@/utils/shared';
 import { opcodeFor } from '@/utils/vm';
 
@@ -187,7 +190,16 @@ export class IfCondition {
   setupCondition(maybeCondition: Cell<boolean>) {
     if (isFn(maybeCondition)) {
       this.condition = formula(
-        () => deepFnValue(maybeCondition),
+        () => {
+          const v = maybeCondition();
+          if (isPrimitive(v) || isEmpty(v)) {
+            return !!v;
+          } else if (isTagLike(v)){
+            return !!v.value;
+          } else {
+            return !!v;
+          }
+        },
         'if-condition-wrapper-fn',
       );
     } else if (isPrimitive(maybeCondition)) {

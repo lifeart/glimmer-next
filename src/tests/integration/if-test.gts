@@ -1,15 +1,28 @@
 import { module, test } from 'qunit';
 import { render, rerender } from '@lifeart/gxt/test-utils';
-import {
-  cell,
-  type Cell,
-  Component,
-  tracked,
-  registerDestructor,
-  cellFor,
-} from '@lifeart/gxt';
+import { cell, type Cell, Component, tracked, cellFor } from '@lifeart/gxt';
 import { NestedRouter } from '@/components/pages/NestedRouter.gts';
 module('Integration | InternalComponent | if', function () {
+  test('we could check functional property for existance using block-if', async function (assert) {
+    assert.expect(1);
+    const myObject = {
+      foo() {
+        // this should not be called
+        throw new Error('foo is not a function');
+      },
+    };
+    await render(
+      <template>
+        {{#if myObject.foo}}
+          <div data-test-value>foo</div>
+        {{else}}
+          <div data-test-else>empty</div>
+        {{/if}}
+      </template>,
+    );
+    assert.dom('[data-test-value]').hasText('foo');
+  });
+
   test('logic inside "if" not updated if "if" is planned to be destroyed', async function (assert) {
     const nonEmptyString = cell('non-empty-string');
     const ctx = {
