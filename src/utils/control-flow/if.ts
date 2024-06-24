@@ -19,7 +19,6 @@ import {
   isEmpty,
   isFn,
   isPrimitive,
-  isTag,
   isTagLike,
 } from '@/utils/shared';
 import { opcodeFor } from '@/utils/vm';
