@@ -19,6 +19,23 @@ declare global {
   const REACTIVE_MODIFIERS: boolean;
   const WITH_HELPER_MANAGER: boolean;
   const WITH_MODIFIER_MANAGER: boolean;
+
+  interface Document {
+    startViewTransition(
+      updateCallback: () => Promise<void> | void,
+    ): ViewTransition;
+  }
+
+  interface ViewTransition {
+    finished: Promise<void>;
+    ready: Promise<void>;
+    updateCallbackDone: Promise<void>;
+    skipTransition(): void;
+  }
+
+  interface CSSStyleDeclaration {
+    viewTransitionName: string;
+  }
 }
 
 declare module 'glint-environment-gxt/globals' {
