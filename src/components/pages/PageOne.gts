@@ -2,6 +2,10 @@ import { type Cell, cell } from '@lifeart/gxt';
 import { Smile } from './page-one/Smile';
 import { Table } from './page-one/Table.gts';
 import { CanvasRenderer } from '@/utils/renderers/canvas';
+import { Suspense, lazy } from '@/utils/suspense';
+import Fallback from '@/components/Fallback';
+
+const LoadMeAsync = lazy(() => import('@/components/LoadMeAsync'));
 
 function QuoteHeader() {
   const color = cell('rgb(59, 130, 246)');
@@ -179,6 +183,33 @@ export function PageOne() {
               {{/if}}
             </CanvasRenderer>
           </div>
+        </div>
+      </div>
+
+      {{! Suspense Demo }}
+      <div class="mb-10">
+        <div class="flex items-center gap-3 mb-4">
+          <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center">
+            <span class="text-sm">⏳</span>
+          </div>
+          <h2 class="text-xl font-semibold">Suspense Demo</h2>
+        </div>
+        <div class="bg-slate-800/40 backdrop-blur rounded-2xl border border-slate-700/50 p-4">
+          <Suspense @fallback={{Fallback}}>
+            <LoadMeAsync @name='foo' />
+            <Suspense @fallback={{Fallback}}>
+              <LoadMeAsync @name='bar' />
+              <Suspense @fallback={{Fallback}}>
+                <LoadMeAsync @name='baz' />
+                <Suspense @fallback={{Fallback}}>
+                  <LoadMeAsync @name='boo' />
+                  <Suspense @fallback={{Fallback}}>
+                    <LoadMeAsync @name='doo' />
+                  </Suspense>
+                </Suspense>
+              </Suspense>
+            </Suspense>
+          </Suspense>
         </div>
       </div>
 
