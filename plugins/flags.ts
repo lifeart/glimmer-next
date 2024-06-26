@@ -6,6 +6,7 @@ export type Flags = {
   REACTIVE_MODIFIERS: boolean;
   WITH_HELPER_MANAGER: boolean;
   WITH_MODIFIER_MANAGER: boolean;
+  WITH_CONTEXT_API: boolean;
 };
 
 export function defaultFlags() {
@@ -17,5 +18,6 @@ export function defaultFlags() {
     REACTIVE_MODIFIERS: true,
     WITH_HELPER_MANAGER: false,
     WITH_MODIFIER_MANAGER: false,
+    WITH_CONTEXT_API: true,
   } as Flags;
 }
