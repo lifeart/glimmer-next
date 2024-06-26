@@ -45,17 +45,10 @@ export function resetContextCounter() {
 }
 
 export function escapeString(str: string) {
-  const lines = str.split('\n');
-  if (lines.length === 1) {
-    if (str.startsWith("'")) {
-      return str;
-    } else if (str.startsWith('"')) {
-      return str;
-    } else {
-      return `"${str}"`;
-    }
-  } else {
-    return `\`${str}\``;
+  try {
+    return JSON.stringify(JSON.parse(str));
+  } catch (e) {
+    return JSON.stringify(str);
   }
 }
 
