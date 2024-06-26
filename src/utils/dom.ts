@@ -45,8 +45,8 @@ import {
 } from './shared';
 import { isRehydrationScheduled } from './ssr/rehydration';
 import { createHotReload } from './hmr';
-import { IfCondition } from './control-flow/if';
 import { CONSTANTS } from '../../plugins/symbols';
+import { IfCondition, type IfFunction } from './control-flow/if';
 
 type RenderableType = Node | ComponentReturnType | string | number;
 type ShadowRootMode = 'open' | 'closed' | null;
@@ -69,7 +69,7 @@ type Props = [TagProp[], TagAttr[], TagEvent[], FwType?];
 
 type Fn = () => unknown;
 type InElementFnArg = () => HTMLElement;
-type BranchCb = () => ComponentReturnType | Node;
+type BranchCb = (ctx: IfCondition) => ComponentReturnType | Node | null;
 
 // EMPTY DOM PROPS
 export const $_edp = [[], [], []] as Props;
@@ -77,6 +77,7 @@ export const $_emptySlot = Object.seal(Object.freeze({}));
 
 export const $SLOTS_SYMBOL = Symbol('slots');
 export const $PROPS_SYMBOL = Symbol('props');
+export const $PARENT_SYMBOL = Symbol('parent');
 
 const $_className = 'className';
 
@@ -657,7 +658,7 @@ export function $_inElement(
 export function $_ucw(
   roots: (context: Component<any>) => (Node | ComponentReturnType)[],
   ctx: any,
-) {
+): ComponentReturnType {
   return component(
     function UnstableChildWrapper(this: Component<any>) {
       if (IS_DEV_MODE) {
@@ -668,7 +669,7 @@ export function $_ucw(
     } as unknown as Component<any>,
     {},
     ctx,
-  );
+  ) as ComponentReturnType;
 }
 
 if (IS_DEV_MODE) {
@@ -854,6 +855,8 @@ function _component(
       comp = comp.value;
     }
   }
+  // @ts-expect-error index type
+  args[$PARENT_SYMBOL] = ctx;
   let instance =
     // @ts-expect-error construct signature
     comp.prototype === undefined
@@ -1086,8 +1089,9 @@ function toNodeReturnType(
   };
 }
 
+
 function ifCond(
-  cell: Cell<boolean>,
+  cell: Cell<boolean> | MergedCell | IfFunction,
   trueBranch: BranchCb,
   falseBranch: BranchCb,
   ctx: Component<any>,

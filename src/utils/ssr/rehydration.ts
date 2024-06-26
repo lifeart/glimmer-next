@@ -164,6 +164,7 @@ export function withRehydration(
     withRehydrationStack.length = 0;
     nodesMap.clear();
     resetNodeCounter();
+    console.log('rollbackDOMAPI');
     rollbackDOMAPI();
     throw e;
   }

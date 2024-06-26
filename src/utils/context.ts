@@ -1,11 +1,25 @@
 import { registerDestructor } from './glimmer/destroyable';
 import { Component } from './component';
-import { PARENT_GRAPH } from './shared';
-import { getRoot } from './dom';
+import { $args, PARENT_GRAPH } from './shared';
+import { $PARENT_SYMBOL, getRoot } from './dom';
 
 const CONTEXTS = new WeakMap<Component<any>, Map<symbol, any>>();
 
-export function context(contextKey: symbol): (klass: any, key: string, descriptor?: PropertyDescriptor & { initializer?: () => any } ) => void {
+export function getAnyContext<T>(ctx: Component<any>, key: symbol): T | null {
+  return (
+    getContext(ctx, key) ||
+    getContext(ctx[$args][$PARENT_SYMBOL], key) ||
+    getContext(getRoot()!, key)
+  );
+}
+
+export function context(
+  contextKey: symbol,
+): (
+  klass: any,
+  key: string,
+  descriptor?: PropertyDescriptor & { initializer?: () => any },
+) => void {
   return function contextDecorator(
     _: any,
     __: string,
@@ -13,11 +27,13 @@ export function context(contextKey: symbol): (klass: any, key: string, descripto
   ) {
     return {
       get() {
-        return getContext(this, contextKey) || getContext(getRoot()!, contextKey) || descriptor!.initializer?.call(this);
+        return (
+          getAnyContext(this, contextKey) || descriptor!.initializer?.call(this)
+        );
       },
-    }
-  }
-};
+    };
+  };
+}
 
 export function getContext<T>(ctx: Component<any>, key: symbol): T | null {
   let current: Component<any> | null = ctx;
