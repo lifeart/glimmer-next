@@ -38,6 +38,18 @@ export function PageOne() {
       <br />
       <Suspense @fallback={{Fallback}}>
         <LoadMeAsync @name='foo' />
+        <Suspense @fallback={{Fallback}}>
+          <LoadMeAsync @name='bar' />
+          <Suspense @fallback={{Fallback}}>
+            <LoadMeAsync @name='baz' />
+            <Suspense @fallback={{Fallback}}>
+              <LoadMeAsync @name='boo' />
+              <Suspense @fallback={{Fallback}}>
+                <LoadMeAsync @name='doo' />
+              </Suspense>
+            </Suspense>
+          </Suspense>
+        </Suspense>
       </Suspense>
       <div>Imagine a world where the robust, mature ecosystems of development
         tools meet the cutting-edge performance of modern compilers. That's what
