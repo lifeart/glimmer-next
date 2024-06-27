@@ -46,6 +46,12 @@ export function resetContextCounter() {
 
 export function escapeString(str: string) {
   try {
+    if (typeof str !== 'string') {
+      throw new Error('Not a string');
+    }
+    if (typeof JSON.parse(str) !== 'string') {
+      return JSON.stringify(str);
+    }
     return JSON.stringify(JSON.parse(str));
   } catch (e) {
     return JSON.stringify(str);

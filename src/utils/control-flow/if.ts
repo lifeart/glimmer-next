@@ -178,6 +178,9 @@ export class IfCondition {
     return;
   }
   async destroy() {
+    if (this.isDestructorRunning) {
+      throw new Error('Already destroying');
+    }
     this.isDestructorRunning = true;
     if (this.placeholder.isConnected) {
       this.placeholder.parentNode!.removeChild(this.placeholder);
