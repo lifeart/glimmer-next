@@ -96,6 +96,9 @@ export class Suspense extends Component {
   @tracked pendingAmount = 0;
   isReleased = false;
   start() {
+    if (isDestroyed(this)) {
+      return;
+    }
     if (this.isReleased) {
       console.error('Suspense is already released');
       return;
@@ -103,6 +106,9 @@ export class Suspense extends Component {
     this.pendingAmount++;
   }
   end() {
+    if (isDestroyed(this)) {
+      return;
+    }
     if (this.isReleased) {
       console.error('Suspense is already released');
       return;
