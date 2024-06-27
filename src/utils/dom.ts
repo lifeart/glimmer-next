@@ -76,6 +76,7 @@ export const $_emptySlot = Object.seal(Object.freeze({}));
 
 export const $SLOTS_SYMBOL = Symbol('slots');
 export const $PROPS_SYMBOL = Symbol('props');
+export const $PARENT_SYMBOL = Symbol('parent');
 
 const $_className = 'className';
 
@@ -712,6 +713,8 @@ function _component(
       comp = comp.value;
     }
   }
+  // @ts-expect-error index type
+  args[$PARENT_SYMBOL] = ctx;
   // @ts-expect-error construct signature
   let instance = comp.prototype === undefined ? comp(args, fw) : new (comp as unknown as Component<any>)(args, fw);
   if (isFn(instance)) {

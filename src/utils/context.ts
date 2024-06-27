@@ -1,7 +1,7 @@
 import { registerDestructor } from './glimmer/destroyable';
 import { Component } from './component';
 import { PARENT_GRAPH } from './shared';
-import { getRoot } from './dom';
+import { $PARENT_SYMBOL, getRoot } from './dom';
 
 const CONTEXTS = new WeakMap<Component<any>, Map<symbol, any>>();
 
@@ -13,7 +13,8 @@ export function context(contextKey: symbol): (klass: any, key: string, descripto
   ) {
     return {
       get() {
-        return getContext(this, contextKey) || getContext(getRoot()!, contextKey) || descriptor!.initializer?.call(this);
+        // console.log(this.args[$PARENT_SYMBOL],  'getContext');
+        return getContext(this, contextKey) || getContext(this.args[$PARENT_SYMBOL], contextKey) || getContext(getRoot()!, contextKey) || descriptor!.initializer?.call(this);
       },
     }
   }

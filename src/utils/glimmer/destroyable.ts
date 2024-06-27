@@ -7,13 +7,13 @@ const destroyedObjects = new WeakSet<object>();
 const destroyStack = new WeakMap<object, any>();
 export function destroy(ctx: object) {
   if (destroyedObjects.has(ctx)) {
-    console.info('Already destroyed', ctx.debugName || ctx.constructor.name);
-    console.warn(new Error().stack);
-    console.warn(destroyStack.get(ctx));
+    // console.info('Already destroyed', ctx.debugName || ctx.constructor.name);
+    // console.warn(new Error().stack);
+    // console.warn(destroyStack.get(ctx));
     return;
   }
   destroyedObjects.add(ctx);
-  destroyStack.set(ctx, new Error().stack);
+  // destroyStack.set(ctx, new Error().stack);
   if (!$dfi.has(ctx)) {
     return;
   }

@@ -13,7 +13,7 @@ import { tracked } from './reactive';
 import { $template } from './shared';
 import { isDestroyed } from './glimmer/destroyable';
 
-const SUSPENSE_CONTEXT = Symbol('suspense');
+export const SUSPENSE_CONTEXT = Symbol('suspense');
 
 let i = 0;
 export function lazy(factory: () => Promise<{ default: Component<any> }>) {
@@ -39,8 +39,8 @@ export function lazy(factory: () => Promise<{ default: Component<any> }>) {
       return this.state.component as unknown as Component<any>;
     }
     @context(SUSPENSE_CONTEXT) suspense!: {
-      fallback: Component<any>;
-      pendingAmount: number;
+      start: () => void;
+      end: () => void;
     };
     async load() {
       const { default: component } = await factory();
@@ -49,11 +49,10 @@ export function lazy(factory: () => Promise<{ default: Component<any> }>) {
       }
       // @ts-ignore component type
       this.state = { loading: false, component };
-      this.suspense.pendingAmount--;
     }
     _template() {
       Promise.resolve().then(() => {
-        this.suspense.pendingAmount++;
+        this.suspense.start();
       });
       // @ts-ignore
       return $_fin(
@@ -66,7 +65,11 @@ export function lazy(factory: () => Promise<{ default: Component<any> }>) {
             },
             // @ts-ignore this type
             () => {
-              return $_c(this.contentComponent, this.params, this);
+              try {
+                return $_c(this.contentComponent, this.params, this);
+              } finally {
+                this.suspense.end();
+              }
             },
             this,
           ),
@@ -91,6 +94,22 @@ export class Suspense extends Component {
     this[$template] = this._template;
   }
   @tracked pendingAmount = 0;
+  isReleased = false;
+  start() {
+    if (this.isReleased) {
+      console.error('Suspense is already released');
+      return;
+    }
+    this.pendingAmount++;
+  }
+  end() {
+    if (this.isReleased) {
+      console.error('Suspense is already released');
+      return;
+    }
+    this.pendingAmount--;
+    this.isReleased = this.pendingAmount === 0;
+  }
   get fallback() {
     return this.args.fallback;
   }
