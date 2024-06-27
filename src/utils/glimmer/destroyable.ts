@@ -4,7 +4,7 @@ export type Destructors = Array<DestructorFn>;
 // destructorsForInstance
 const $dfi: WeakMap<object, Destructors> = new WeakMap();
 const destroyedObjects = new WeakSet<object>();
-const destroyStack = new WeakMap<object, any>();
+// const destroyStack = new WeakMap<object, any>();
 export function destroy(ctx: object) {
   if (destroyedObjects.has(ctx)) {
     // console.info('Already destroyed', ctx.debugName || ctx.constructor.name);

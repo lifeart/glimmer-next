@@ -1,4 +1,4 @@
-import { Component, renderComponent } from './component';
+import { Component, type ComponentReturnType, renderComponent } from './component';
 import { context, provideContext } from './context';
 import {
   $_fin,
@@ -10,7 +10,7 @@ import {
   $_ucw,
 } from './dom';
 import { tracked } from './reactive';
-import { $template } from './shared';
+import { $nodes, $template } from './shared';
 import { isDestroyed } from './glimmer/destroyable';
 
 export const SUSPENSE_CONTEXT = Symbol('suspense');
@@ -132,7 +132,7 @@ export class Suspense extends Component {
           (c: any) => {
             if (trueBranch === null) {
               trueBranch = $_ucw((c) => {
-                return $_slot('default', () => [], $slots, c).nodes;
+                return ($_slot('default', () => [], $slots, c) as ComponentReturnType)[$nodes];
               }, c);
               renderComponent(trueBranch, fragment, c, true);
               return $_c(this.fallback, {}, c);
