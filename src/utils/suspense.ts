@@ -38,7 +38,7 @@ export function lazy<T>(factory: () => Promise<{ default: T }>) {
     get contentComponent() {
       return this.state.component as unknown as Component<any>;
     }
-    @context(SUSPENSE_CONTEXT) suspense!: {
+    @context(SUSPENSE_CONTEXT) suspense?: {
       start: () => void;
       end: () => void;
     };
@@ -52,7 +52,7 @@ export function lazy<T>(factory: () => Promise<{ default: T }>) {
     }
     _template() {
       Promise.resolve().then(() => {
-        this.suspense.start();
+        this.suspense?.start();
       });
       // @ts-ignore
       return $_fin(
@@ -68,7 +68,7 @@ export function lazy<T>(factory: () => Promise<{ default: T }>) {
               try {
                 return $_c(this.contentComponent, this.params, c);
               } finally {
-                this.suspense.end();
+                this.suspense?.end();
               }
             },
             this,

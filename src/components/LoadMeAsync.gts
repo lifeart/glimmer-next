@@ -9,7 +9,7 @@ export default class LoadMeAsync extends Component<{
     // @ts-ignore
     super(...arguments);
     console.log('LoadMeAsync created');
-    this.suspense.start();
+    this.suspense?.start();
   }
   @context(SUSPENSE_CONTEXT) suspense!: {
     start: () => void;
@@ -17,7 +17,7 @@ export default class LoadMeAsync extends Component<{
   };
   loadData = (_: HTMLElement) => {
     setTimeout(() => {
-      this.suspense.end();
+      this.suspense?.end();
       console.log('Data loaded');
     }, 2000);
   };
