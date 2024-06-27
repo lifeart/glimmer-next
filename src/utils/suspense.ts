@@ -64,9 +64,9 @@ export function lazy(factory: () => Promise<{ default: Component<any> }>) {
               return null;
             },
             // @ts-ignore this type
-            () => {
+            (c) => {
               try {
-                return $_c(this.contentComponent, this.params, this);
+                return $_c(this.contentComponent, this.params, c);
               } finally {
                 this.suspense.end();
               }
