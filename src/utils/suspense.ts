@@ -49,12 +49,10 @@ export function lazy(factory: () => Promise<{ default: Component<any> }>) {
       }
       // @ts-ignore component type
       this.state = { loading: false, component };
-      setTimeout(() => {
-        this.suspense.pendingAmount--;
-      });
+      this.suspense.pendingAmount--;
     }
     _template() {
-      setTimeout(() => {
+      Promise.resolve().then(() => {
         this.suspense.pendingAmount++;
       });
       // @ts-ignore
@@ -108,12 +106,10 @@ export class Suspense extends Component {
           () => this.pendingAmount === 0,
           (c: any) => {
             if (trueBranch === null) {
-              setTimeout(() => {
-                trueBranch = $_ucw((c) => {
-                  return $_slot('default', () => [], $slots, c).nodes;
-                }, c);
-                renderComponent(trueBranch, fragment, c, true);
-              });
+              trueBranch = $_ucw((c) => {
+                return $_slot('default', () => [], $slots, c).nodes;
+              }, c);
+              renderComponent(trueBranch, fragment, c, true);
               return $_c(this.fallback, {}, c);
             } else {
               return {
