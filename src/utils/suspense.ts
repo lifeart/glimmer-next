@@ -16,7 +16,7 @@ import { isDestroyed } from './glimmer/destroyable';
 export const SUSPENSE_CONTEXT = Symbol('suspense');
 
 let i = 0;
-export function lazy(factory: () => Promise<{ default: Component<any> }>) {
+export function lazy<T>(factory: () => Promise<{ default: T }>) {
   class LazyComponent extends Component {
     constructor(params: any) {
       super(params);

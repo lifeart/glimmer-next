@@ -2,7 +2,9 @@ import { context } from '@/utils/context';
 import { SUSPENSE_CONTEXT } from '@/utils/suspense';
 import { Component } from '@lifeart/gxt';
 
-export default class LoadMeAsync extends Component {
+export default class LoadMeAsync extends Component<{
+  Args: { name: string };
+}> {
   constructor() {
     // @ts-ignore
     super(...arguments);
