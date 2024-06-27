@@ -1,12 +1,8 @@
-import { Component, cell } from '@lifeart/gxt';
+import { cell } from '@lifeart/gxt';
 import { Smile } from './page-one/Smile';
 import { Table } from './page-one/Table.gts';
 import { Suspense, lazy } from '@/utils/suspense';
 import Fallback from '@/components/Fallback';
-
-export class Default extends Component {
-  <template>{{yield}}</template>
-}
 
 const LoadMeAsync = lazy(() => import('@/components/LoadMeAsync'));
 
