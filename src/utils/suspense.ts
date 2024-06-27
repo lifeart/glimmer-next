@@ -8,10 +8,12 @@ import {
   $_slot,
   $_GET_ARGS,
   $_ucw,
+  getRoot,
 } from './dom';
 import { tracked } from './reactive';
 import { $nodes, $template } from './shared';
 import { isDestroyed } from './glimmer/destroyable';
+import { api } from './dom-api';
 
 export const SUSPENSE_CONTEXT = Symbol('suspense');
 
@@ -54,6 +56,9 @@ export function lazy<T>(factory: () => Promise<{ default: T }>) {
       Promise.resolve().then(() => {
         this.suspense?.start();
       });
+      const root = getRoot()!;
+      console.log(`lazy: ${root.version}`);
+
       // @ts-ignore
       return $_fin(
         [
@@ -66,6 +71,12 @@ export function lazy<T>(factory: () => Promise<{ default: T }>) {
             // @ts-ignore this type
             (c) => {
               try {
+                if (isDestroyed(c)) {
+                  debugger;
+                }
+                if (isDestroyed(root)) {
+                  debugger;
+                }
                 return $_c(this.contentComponent, this.params, c);
               } finally {
                 this.suspense?.end();
@@ -123,7 +134,10 @@ export class Suspense extends Component {
     $_GET_ARGS(this, arguments);
     const $slots = $_GET_SLOTS(this, arguments);
     let trueBranch: any = null;
-    let fragment = document.createDocumentFragment();
+    let fragment = api.fragment();
+    const root = getRoot()!;
+    console.log(`Suspense: ${root.version}`);
+
     return $_fin(
       [
         $_if(
@@ -132,6 +146,12 @@ export class Suspense extends Component {
           (c: any) => {
             if (trueBranch === null) {
               trueBranch = $_ucw((c) => {
+                if (isDestroyed(c)) {
+                  debugger;
+                }
+                if (isDestroyed(root)) {
+                  debugger;
+                }
                 return ($_slot('default', () => [], $slots, c) as ComponentReturnType)[$nodes];
               }, c);
               renderComponent(trueBranch, fragment, c, true);
