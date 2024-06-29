@@ -180,7 +180,8 @@ export class IfCondition {
   async destroy() {
     this.isDestructorRunning = true;
     if (this.placeholder.isConnected) {
-      this.placeholder.parentNode!.removeChild(this.placeholder);
+      // should be handled on the top level
+      // this.placeholder.parentNode!.removeChild(this.placeholder);
     }
     await this.destroyBranch();
     await Promise.all(this.destructors.map((destroyFn) => destroyFn()));

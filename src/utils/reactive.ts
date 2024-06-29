@@ -136,6 +136,35 @@ export class Cell<T extends unknown = unknown> {
   }
 }
 
+export class LazyCell<T extends unknown = unknown> extends Cell<()=>T> {
+  __value!: T;
+  constructor(v: ()=>T, debugName?: string) {
+    // @ts-expect-error
+    super(null, debugName);
+    let isResolved = false;
+    Object.defineProperty(this, '_value', {
+      get() {
+        if (!isResolved) {
+          let val: unknown = undefined;
+          try {
+            val = v();
+            isResolved = true;
+          } catch(e) {
+            throw e;
+          }
+          this.__value = val;
+        }
+        return this.__value;
+      },
+      set(v) {
+        if (!isResolved) {
+          isResolved = true;
+        }
+        this.__value = v;
+      }
+    })
+  }
+}
 export function listDependentCells(cells: Array<AnyCell>, cell: MergedCell) {
   const msg = [cell._debugName, 'depends on:'];
   cells.forEach((cell) => {
@@ -281,9 +310,24 @@ export async function executeTag(tag: Cell | MergedCell) {
     }
   }
 }
-
-// this is function to create a reactive cell from an object property
-export function cellFor<T extends object, K extends keyof T>(
+export function lazyRawCellFor<T extends object, K extends keyof T>(  obj: T,
+  key: K,
+  init?: () => T[K]
+): Cell<T[K]> {
+  const refs = cellsMap.get(obj) || new Map<string | number | symbol, Cell>();
+  if (refs.has(key)) {
+    return refs.get(key) as Cell<T[K]>;
+  }
+  // make value lazy
+  const cellValue = new LazyCell<T[K]>(
+    () => typeof init === 'function' ? init() : obj[key],
+    `${obj.constructor.name}.${String(key)}`,
+  );
+  refs.set(key, cellValue);
+  cellsMap.set(obj, refs);
+  return cellValue as unknown as Cell<T[K]>;
+}
+export function rawCellFor<T extends object, K extends keyof T>(
   obj: T,
   key: K,
 ): Cell<T[K]> {
@@ -291,12 +335,27 @@ export function cellFor<T extends object, K extends keyof T>(
   if (refs.has(key)) {
     return refs.get(key) as Cell<T[K]>;
   }
+  // make value lazy
   const cellValue = new Cell<T[K]>(
     obj[key],
     `${obj.constructor.name}.${String(key)}`,
   );
   refs.set(key, cellValue);
   cellsMap.set(obj, refs);
+  return cellValue;
+}
+// this is function to create a reactive cell from an object property
+export function cellFor<T extends object, K extends keyof T>(
+  obj: T,
+  key: K,
+  skipDefine = false,
+): Cell<T[K]> {
+  // make value lazy
+  const cellValue = rawCellFor(obj, key);
+  if (skipDefine) {
+    return cellValue;
+  }
+  // remove below for ember
   Object.defineProperty(obj, key, {
     get() {
       return cellValue.value;
