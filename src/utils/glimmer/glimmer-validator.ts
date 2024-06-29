@@ -1,18 +1,19 @@
 import {
   type Cell,
-  cellFor,
   cellsMap,
   getTracker,
   isRendering,
   setIsRendering,
   cell,
+  lazyRawCellFor as internalLazyCellFor,
 } from '../reactive';
 
-export { cellFor as tagFor } from '@lifeart/gxt';
+
+export const tagFor = internalLazyCellFor;
 
 export function dirtyTagFor(obj: object, key: string | number | symbol): void {
   // @ts-expect-error
-  const cell = cellFor(obj, key);
+  const cell = internalLazyCellFor(obj, key);
   cell.update(cell.value);
 }
 export function tagMetaFor(obj: object): any {
@@ -37,28 +38,15 @@ export function trackedData<T extends object, K extends keyof T>(
   key: K,
   initializer?: (this: T) => T[K],
 ): { getter: Getter<T, K>; setter: Setter<T, K> } {
-  let values = new WeakMap<T, T[K]>();
-  let hasInitializer = typeof initializer === 'function';
-
   function getter(self: T) {
-    consumeTag(cellFor(self, key));
-
-    let value;
-
-    // If the field has never been initialized, we should initialize it
-    if (hasInitializer && !values.has(self)) {
-      value = initializer!.call(self);
-      values.set(self, value);
-    } else {
-      value = values.get(self);
-    }
-
-    return value;
+    const tag = internalLazyCellFor(self, key, initializer);
+ 
+    return tag.value;
   }
 
   function setter(self: T, value: T[K]): void {
-    dirtyTagFor(self, key);
-    values.set(self, value);
+    const tag = internalLazyCellFor(self, key, initializer);
+    tag.update(value);
   }
 
   return { getter, setter };

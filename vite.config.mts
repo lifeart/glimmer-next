@@ -164,6 +164,12 @@ export default defineConfig(({ mode }) => ({
         "utils","inspector",
         "ember-inspector.ts",
       ),
+      "@lifeart/gxt/glimmer-compatibility": path.join(
+        currentPath,
+        "src",
+        "utils","glimmer",
+        "glimmer-compat.ts",
+      ),
       "@lifeart/gxt/test-utils": path.join(
         currentPath,
         "src",

@@ -82,6 +82,64 @@ const $_className = 'className';
 let unstableWrapperId: number = 0;
 let ROOT: Component<any> | null = null;
 
+export const $_MANAGERS = {
+  component: {
+    // @ts-expect-error unused
+    canHandle(component: any) {
+      return false;
+    },
+    handle(
+      // @ts-expect-error unused
+
+      component: any,
+      // @ts-expect-error unused
+
+      args: any,
+      // @ts-expect-error unused
+
+      fw: any,
+      // @ts-expect-error unused
+
+      ctx: any,
+    ): ComponentReturnType | Component {
+      // @ts-expect-error unused
+      return;
+    },
+  },
+  modifier: {
+    // @ts-expect-error unused
+    canHandle(modifier: any) {
+      return false;
+    },
+    handle(
+      // @ts-expect-error unused
+
+      modifier: any,
+      // @ts-expect-error unused
+
+      element: Element,
+      // @ts-expect-error unused
+
+      props: unknown[],
+      // @ts-expect-error unused
+
+      args: () => Record<string, unknown>,
+    ) {
+      return;
+    },
+  },
+  helper: {
+    // @ts-expect-error unused
+    canHandle(helper: any) {
+      return false;
+    },
+    // @ts-expect-error unused
+    handle(helper: any, params: any, hash: any) {
+      return;
+    },
+  },
+};
+
 export function $_TO_VALUE(reference: unknown) {
   if (isFn(reference)) {
     return resolveRenderable(reference as Function);
@@ -145,6 +203,11 @@ export function $_helperHelper(params: any, hash: any) {
     EmberFunctionalHelpers.add(wrappedHelper);
     return wrappedHelper;
   } else {
+    if (WITH_EMBER_INTEGRATION) {
+      if ($_MANAGERS.helper.canHandle(helperFn)) {
+        return $_MANAGERS.helper.handle(helperFn, params, hash);
+      }
+    }
     throw new Error('Unable to use helper with non-ember helpers');
   }
 }
@@ -466,7 +529,9 @@ function _DOM(
   if (SUPPORT_SHADOW_DOM) {
     let appendRef =
       hasShadowMode !== null
-        ? isRehydrationScheduled() ? element.shadowRoot : element.attachShadow({ mode: hasShadowMode }) || element.shadowRoot
+        ? isRehydrationScheduled()
+          ? element.shadowRoot
+          : element.attachShadow({ mode: hasShadowMode }) || element.shadowRoot
         : element;
     if (import.meta.env.SSR) {
       if (hasShadowMode) {
@@ -481,13 +546,11 @@ function _DOM(
           addChild(appendRef!, child, destructors, index);
         });
       }
-   
     } else {
       children.forEach((child, index) => {
         addChild(appendRef!, child, destructors, index);
       });
     }
-
   } else {
     children.forEach((child, index) => {
       addChild(element, child, destructors, index);
@@ -696,11 +759,17 @@ function component(
 }
 // hello, basic component manager
 function _component(
-  comp: ComponentReturnType | Component,
+  _comp: ComponentReturnType | Component,
   args: Record<string, unknown>,
   fw: FwType,
   ctx: Component<any>,
 ) {
+  let comp = _comp;
+  if (WITH_EMBER_INTEGRATION) {
+    if ($_MANAGERS.component.canHandle(_comp)) {
+      comp = $_MANAGERS.component.handle(_comp, args, fw, ctx);
+    }
+  }
   if (IS_DEV_MODE) {
     if (!COMPONENTS_HMR.has(comp)) {
       COMPONENTS_HMR.set(comp, new Set());
@@ -712,8 +781,13 @@ function _component(
       comp = comp.value;
     }
   }
-  // @ts-expect-error construct signature
-  let instance = comp.prototype === undefined ? comp(args, fw) : new (comp as unknown as Component<any>)(args, fw);
+  let instance =
+    // @ts-expect-error construct signature
+    comp.prototype === undefined
+      ? // @ts-expect-error construct signature
+        comp(args, fw)
+      : // @ts-expect-error construct signature
+        new (comp as unknown as Component<any>)(args, fw);
   if (isFn(instance)) {
     instance = new instance(args, fw);
   }
@@ -781,7 +855,10 @@ function mergeComponents(
       }
     }
     if (isFn(component)) {
-      component = text(resolveRenderable(component, 'merge-components'), $destructors);
+      component = text(
+        resolveRenderable(component, 'merge-components'),
+        $destructors,
+      );
     }
     if (isEmpty(component)) {
       return;
@@ -851,7 +928,13 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
           }
         }
         slotValue = value;
-        const slotRoots = createSlot(slotValue, params, name, $destructors, ctx);
+        const slotRoots = createSlot(
+          slotValue,
+          params,
+          name,
+          $destructors,
+          ctx,
+        );
         $destructors.push(() => {
           destroyElement(slotRoots);
         });
@@ -900,9 +983,7 @@ function text(
 }
 
 function getRenderTargets(debugName: string) {
-  const ifPlaceholder = IS_DEV_MODE
-    ? api.comment(debugName)
-    : api.comment('');
+  const ifPlaceholder = IS_DEV_MODE ? api.comment(debugName) : api.comment('');
   let outlet = isRehydrationScheduled()
     ? ifPlaceholder.parentElement!
     : api.fragment();
@@ -914,10 +995,13 @@ function getRenderTargets(debugName: string) {
   return {
     placeholder: ifPlaceholder,
     outlet,
-  }
+  };
 }
 
-function toNodeReturnType(outlet: HTMLElement | DocumentFragment, ctx: any = null) {
+function toNodeReturnType(
+  outlet: HTMLElement | DocumentFragment,
+  ctx: any = null,
+) {
   if (outlet.nodeType !== FRAGMENT_TYPE) {
     return outlet;
   }
@@ -933,9 +1017,7 @@ function ifCond(
   falseBranch: BranchCb,
   ctx: Component<any>,
 ) {
-  const {
-    outlet, placeholder
-  } = getRenderTargets('if-entry-placeholder');
+  const { outlet, placeholder } = getRenderTargets('if-entry-placeholder');
   const instance = new IfCondition(
     ctx,
     cell,
@@ -954,9 +1036,7 @@ export function $_eachSync<T extends { id: number }>(
   key: string | null = null,
   ctx: Component<any>,
 ) {
-  const {
-    outlet
-  } = getRenderTargets('sync-each-placeholder');
+  const { outlet } = getRenderTargets('sync-each-placeholder');
   const instance = new SyncListComponent(
     {
       tag: items as Cell<T[]>,
@@ -975,9 +1055,7 @@ export function $_each<T extends { id: number }>(
   key: string | null = null,
   ctx: Component<any>,
 ) {
-  const {
-    outlet
-  } = getRenderTargets('async-each-placeholder');
+  const { outlet } = getRenderTargets('async-each-placeholder');
   const instance = new AsyncListComponent(
     {
       tag: items as Cell<T[]>,
@@ -1116,7 +1194,7 @@ export function $_dc(
     },
     set [$nodes](value) {
       result![$nodes] = value;
-    }
+    },
   };
 }
 export const $_component = (component: any) => {
@@ -1129,6 +1207,11 @@ export const $_maybeModifier = (
   props: any[],
   hashArgs: () => Record<string, unknown>,
 ) => {
+  if (WITH_EMBER_INTEGRATION) {
+    if ($_MANAGERS.modifier.canHandle(modifier)) {
+      return $_MANAGERS.modifier.handle(modifier, element, props, hashArgs);
+    }
+  }
   if ('emberModifier' in modifier) {
     const instance = new modifier();
     instance.modify = instance.modify.bind(instance);

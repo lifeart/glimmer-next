@@ -19,6 +19,7 @@ declare global {
   const REACTIVE_MODIFIERS: boolean;
   const WITH_HELPER_MANAGER: boolean;
   const WITH_MODIFIER_MANAGER: boolean;
+  const WITH_EMBER_INTEGRATION: boolean;
   const WITH_CONTEXT_API: boolean;
 }
 

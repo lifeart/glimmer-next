@@ -9,6 +9,7 @@ export {
 export {
   renderComponent,
   runDestructors,
+  destroyElementSync,
   Component,
   type ComponentReturnType,
 } from '@/utils/component';

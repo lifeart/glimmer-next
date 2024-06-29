@@ -37,7 +37,7 @@ export function isAllChildNodesSimpleElements(children: ASTv1.Node[]): boolean {
     } else if (child.type === 'MustacheStatement') {
       if (child.path.type !== 'PathExpression') {
         return false;
-      } else if (child.path.original === 'yield') {
+      } else if (child.path.original === 'yield' || child.path.original === 'outlet') {
         return false;
       } else if (child.path.data) {
         return true;
