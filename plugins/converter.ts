@@ -250,7 +250,7 @@ export function convert(
         },
       );
 
-      if (node.path.original === 'yield') {
+      if (node.path.original === 'yield' || node.path.original === 'outlet') {
         let slotName =
           node.hash.pairs.find((p) => p.key === 'to')?.value || 'default';
         if (typeof slotName !== 'string') {
