@@ -8,14 +8,24 @@ import {
 import { isRehydrationScheduled } from './ssr/rehydration';
 
 let revalidateScheduled = false;
+let hasExternalUpdate = false;
 type voidFn = () => void;
 let resolveRender: undefined | voidFn = undefined;
 
 export function setResolveRender(value: () => void) {
   resolveRender = value;
 }
-
+export function takeRenderingControl() {
+  hasExternalUpdate = true;
+  return () => {
+    hasExternalUpdate = false;
+  }
+}
+  
 export function scheduleRevalidate() {
+  if (hasExternalUpdate) {
+    return;
+  }
   if (!revalidateScheduled) {
     if (IS_DEV_MODE) {
       if (isRehydrationScheduled()) {

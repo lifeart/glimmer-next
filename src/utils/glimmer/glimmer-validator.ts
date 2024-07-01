@@ -67,6 +67,24 @@ export function endTrackFrame() {
   }
 }
 
+export function track(cb: () => unknown): unknown {
+  beginTrackFrame();
+  try {
+    return cb();
+  } finally {
+    endTrackFrame();
+  }
+}
+
+export function untrack(cb: () => unknown): unknown {
+  beginUntrackFrame();
+  try {
+    return cb();
+  } finally {
+    endUntrackFrame();
+  }
+}
+
 export function beginUntrackFrame() {
   renderingStateBeforeBegin = isRendering();
   if (renderingStateBeforeBegin) {
