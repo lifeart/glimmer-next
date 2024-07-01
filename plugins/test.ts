@@ -1,7 +1,12 @@
 // https://astexplorer.net/#/gist/c2f0f7e4bf505471c94027c580af8329/c67119639ba9e8fd61a141e8e2f4cbb6f3a31de9
 // https://astexplorer.net/#/gist/4e3b4c288e176bb7ce657f9dea95f052/8dcabe8144c7dc337d21e8c771413db30ca5d397
 import { preprocess, traverse, type ASTv1 } from '@glimmer/syntax';
-import { type PluginItem, transformSync } from '@babel/core';
+import {
+  type PluginItem,
+  transformSync,
+  transformAsync,
+  BabelFileResult,
+} from '@babel/core';
 import {
   type HBSControlExpression,
   type HBSNode,
@@ -37,7 +42,10 @@ export function isAllChildNodesSimpleElements(children: ASTv1.Node[]): boolean {
     } else if (child.type === 'MustacheStatement') {
       if (child.path.type !== 'PathExpression') {
         return false;
-      } else if (child.path.original === 'yield' || child.path.original === 'outlet') {
+      } else if (
+        child.path.original === 'yield' ||
+        child.path.original === 'outlet'
+      ) {
         return false;
       } else if (child.path.data) {
         return true;
@@ -47,39 +55,21 @@ export function isAllChildNodesSimpleElements(children: ASTv1.Node[]): boolean {
   });
 }
 
-export function transform(
-  source: string,
-  fileName: string,
-  mode: 'development' | 'production',
-  isLibBuild: boolean = false,
+type Programs = {
+  meta: ResolvedHBS['flags'];
+  bindings: ResolvedHBS['bindings'];
+  template: Array<HBSNode | HBSControlExpression>;
+}[];
+
+function processTransformedFiles(
+  babelResult: BabelFileResult | null,
+  hbsToProcess: ResolvedHBS[],
+  seenNodes: Set<ASTv1.Node>,
   flags: Flags,
+  fileName: string,
+  programs: Programs,
+  programResults: string[],
 ) {
-  const programs: {
-    meta: ResolvedHBS['flags'];
-    bindings: ResolvedHBS['bindings'];
-    template: Array<HBSNode | HBSControlExpression>;
-  }[] = [];
-  const seenNodes: Set<ASTv1.Node> = new Set();
-  const rawTxt: string = source;
-  const hbsToProcess: ResolvedHBS[] = [];
-  const programResults: string[] = [];
-
-  const plugins: PluginItem[] = [processTemplate(hbsToProcess, mode)];
-  if (!isLibBuild) {
-    plugins.push('module:decorator-transforms');
-  }
-
-  const babelResult = transformSync(rawTxt, {
-    plugins,
-    filename: fileName.replace('.gts', '.ts').replace('.gjs', '.js'),
-    presets: [
-      [
-        '@babel/preset-typescript',
-        { allExtensions: true, onlyRemoveTypeImports: true },
-      ],
-    ],
-  });
-
   const txt = babelResult?.code ?? '';
 
   const { ToJSType, ElementToNode } = convert(seenNodes, flags);
@@ -158,7 +148,9 @@ export function transform(
     const hasFw = results.some((el) => el.includes('$fw'));
     const hasSlots = results.some((el) => el.includes('$slots'));
     const slotsResolution = `const $slots = ${SYMBOLS.$_GET_SLOTS}(this, arguments);`;
-    const maybeFw = `${hasFw ? `const $fw = ${SYMBOLS.$_GET_FW}(this, arguments);` : ''}`;
+    const maybeFw = `${
+      hasFw ? `const $fw = ${SYMBOLS.$_GET_FW}(this, arguments);` : ''
+    }`;
     const maybeSlots = `${hasSlots ? slotsResolution : ''}`;
     const declareRoots = `const roots = [${results.join(', ')}];`;
     const declareReturn = `return ${SYMBOLS.FINALIZE_COMPONENT}(roots, ${finContext});`;
@@ -197,4 +189,62 @@ export function transform(
   });
 
   return src.split('$:').join('');
+}
+
+export function transform(
+  source: string,
+  fileName: string,
+  mode: 'development' | 'production',
+  isLibBuild: boolean = false,
+  flags: Flags,
+) {
+  const programs: Programs = [];
+  const seenNodes: Set<ASTv1.Node> = new Set();
+  const rawTxt: string = source;
+  const hbsToProcess: ResolvedHBS[] = [];
+  const programResults: string[] = [];
+  const isAsync = flags.ASYNC_COMPILE_TRANSFORMS;
+
+  const plugins: PluginItem[] = [processTemplate(hbsToProcess, mode)];
+  if (!isLibBuild) {
+    plugins.push('module:decorator-transforms');
+  }
+  const replacedFileName = fileName
+    .replace('.gts', '.ts')
+    .replace('.gjs', '.js');
+  const babelConfig = {
+    plugins,
+    filename: replacedFileName,
+    presets: [
+      [
+        '@babel/preset-typescript',
+        { allExtensions: true, onlyRemoveTypeImports: true },
+      ],
+    ],
+  };
+
+  if (isAsync) {
+    return transformAsync(rawTxt, babelConfig).then((babelResult) => {
+      return processTransformedFiles(
+        babelResult,
+        hbsToProcess,
+        seenNodes,
+        flags,
+        fileName,
+        programs,
+        programResults,
+      );
+    });
+  } else {
+    const babelResult = transformSync(rawTxt, babelConfig);
+    return processTransformedFiles(
+      babelResult,
+      hbsToProcess,
+      seenNodes,
+      flags,
+      fileName,
+      programs,
+      programResults,
+    );
+  }
 }

@@ -8,6 +8,7 @@ export type Flags = {
   WITH_MODIFIER_MANAGER: boolean;
   WITH_EMBER_INTEGRATION: boolean,
   WITH_CONTEXT_API: boolean;
+  ASYNC_COMPILE_TRANSFORMS: boolean;
 };
 
 export function defaultFlags() {
@@ -21,5 +22,6 @@ export function defaultFlags() {
     WITH_MODIFIER_MANAGER: false,
     WITH_EMBER_INTEGRATION: false,
     WITH_CONTEXT_API: true,
+    ASYNC_COMPILE_TRANSFORMS: true,
   } as Flags;
 }
