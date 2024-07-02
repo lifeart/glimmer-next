@@ -3,7 +3,7 @@ import {
   type ComponentReturnType,
   renderComponent,
 } from './component';
-import { context, provideContext } from './context';
+import { context, getAnyContext, provideContext } from './context';
 import {
   $_fin,
   $_if,
@@ -23,6 +23,22 @@ import type { IfCondition } from './control-flow/if';
 export const SUSPENSE_CONTEXT = Symbol('suspense');
 
 let i = 0;
+
+type SuspenseContext = {
+  start: () => void;
+  end: () => void;
+};
+
+export function followPromise<T extends Promise<any>>(ctx: Component<any>, promise: T): T {
+  getAnyContext<SuspenseContext>(ctx, SUSPENSE_CONTEXT)?.start();
+  promise.finally(() => {
+    Promise.resolve().then(() => {
+      getAnyContext<SuspenseContext>(ctx, SUSPENSE_CONTEXT)?.end();
+    });
+  });
+  return promise;
+}
+
 export function lazy<T>(factory: () => Promise<{ default: T }>) {
   class LazyComponent extends Component {
     constructor(params: any) {
@@ -45,10 +61,7 @@ export function lazy<T>(factory: () => Promise<{ default: T }>) {
     get contentComponent() {
       return this.state.component as unknown as Component<any>;
     }
-    @context(SUSPENSE_CONTEXT) suspense?: {
-      start: () => void;
-      end: () => void;
-    };
+    @context(SUSPENSE_CONTEXT) suspense?: SuspenseContext;
     async load() {
       const { default: component } = await factory();
       if (isDestroyed(this)) {
