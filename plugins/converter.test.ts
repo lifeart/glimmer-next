@@ -34,11 +34,15 @@ function $mm(name: string, params: string = '', hash: string = '{}') {
 // Maybe helper
 function $mh(name: string, params: string = '', hash: string = '{}') {
   const isBuiltin = ['or','and'].includes(name);
+  const isFromScope = name.includes('-');
   if (isBuiltin) {
     name = '$__' + name;
   }
-  if (!isBuiltin && flags.WITH_HELPER_MANAGER) {
-    return `$:$_maybeHelper(${name},[${params}],${hash})`;
+  if (isFromScope || (!isBuiltin && flags.WITH_HELPER_MANAGER)) {
+    if (isFromScope) {
+      hash = '{$_scope: ()=>this[$args]?.$_scope}';
+    }
+    return `$:$_maybeHelper(${isFromScope ? JSON.stringify(name) : name},[${params}],${hash})`;
   } else {
     return `$:${name}(${params})`;
   }
@@ -65,9 +69,9 @@ function $glimmerCompat(str: string) {
 function $s<T extends ComplexJSType>(node: T): string | null | undefined {
   return serializeNode(node);
 }
-function $t<T extends ASTv1.Node>(tpl: string): ComplexJSType {
+function $t<T extends ASTv1.Node>(tpl: string, scopes: string[] = []): ComplexJSType {
   const seenNodes: Set<ASTv1.Node> = new Set();
-  const { ToJSType } = convert(seenNodes, flags);
+  const { ToJSType } = convert(seenNodes, flags, new Set(scopes));
   const ast = preprocess(tpl);
   const node = ast.body[0] as T;
   return ToJSType(node);
@@ -135,7 +139,7 @@ describe.each([
   });
   describe('support concat expressions', () => {
     test('in attribute', () => {
-      const converted = $t<ASTv1.ElementNode>(`<Panel @title='1. {{t.document}}' />`);
+      const converted = $t<ASTv1.ElementNode>(`<Panel @title='1. {{t.document}}' />`,['t']);
       expect(converted).toEqual($node({
         tag: 'Panel',
         attributes: [['@title', "$:() => [\"1. \",$:t.document].join('')"]],
@@ -229,7 +233,7 @@ describe.each([
       test('it has proper chains', () => {
         expect(
           $t<ASTv1.MustacheStatement>(
-            `{{toInitials @name @initialLength @initials}}`,
+            `{{toInitials @name @initialLength @initials}}`,['toInitials']
           ),
         ).toEqual(
           `$:() => ` +
@@ -241,6 +245,7 @@ describe.each([
         expect(
           $t<ASTv1.MustacheStatement>(
             `{{toInitials @name @initialLength.a @initials}}`,
+            ['toInitials'],
           ),
         ).toEqual(
           `$:() => ` +
@@ -260,10 +265,10 @@ describe.each([
         expect($t<ASTv1.BlockStatement>(`{{this.foo.bar}}`)).toEqual(
           `$:this.foo?.bar`,
         );
-        expect($t<ASTv1.BlockStatement>(`{{foo.bar.baz}}`)).toEqual(
+        expect($t<ASTv1.BlockStatement>(`{{foo.bar.baz}}`, ['foo'])).toEqual(
           `$:foo?.bar?.baz`,
         );
-        expect($t<ASTv1.BlockStatement>(`{{foo.bar}}`)).toEqual(`$:foo.bar`);
+        expect($t<ASTv1.BlockStatement>(`{{foo.bar}}`, ['foo'])).toEqual(`$:foo.bar`);
         expect($t<ASTv1.BlockStatement>(`{{@foo.bar.baz}}`)).toEqual(
           `$:this[$args].foo?.bar?.baz`,
         );
@@ -274,7 +279,7 @@ describe.each([
       test('it works for sub expression paths in mustache', () => {
         expect(
           $t<ASTv1.ElementNode>(
-            `<div class={{maybeClass  (if @arrowProps.className @arrowProps.className)}}></div>`,
+            `<div class={{maybeClass  (if @arrowProps.className @arrowProps.className)}}></div>`, ['maybeClass'],
           ),
         ).toEqual(
           $node({
@@ -437,43 +442,43 @@ describe.each([
     });
     describe('Builtin helpers in SubExpression', () => {
       test('fn helper properly mapped', () => {
-        expect($t<ASTv1.MustacheStatement>(`{{q (fn a b (if c d))}}`)).toEqual(
+        expect($t<ASTv1.MustacheStatement>(`{{q (fn a b (if c d))}}`, ['q'])).toEqual(
           `$:() => ${$mh('q', `$:$__fn($:a,$:b,$:$__if($:c,$:d))`)}`,
         );
       });
       test('if helper properly mapped', () => {
-        expect($t<ASTv1.MustacheStatement>(`{{q (if a b (if c d))}}`)).toEqual(
+        expect($t<ASTv1.MustacheStatement>(`{{q (if a b (if c d))}}`, ['q'])).toEqual(
           `$:() => ${$mh('q', `$:$__if($:a,$:b,$:$__if($:c,$:d))`)}`,
         );
       });
       test('unless helper properly mapped', () => {
         expect(
-          $t<ASTv1.MustacheStatement>(`{{q (unless a b (if c d))}}`),
+          $t<ASTv1.MustacheStatement>(`{{q (unless a b (if c d))}}`,['q']),
         ).toEqual(`$:() => ${$mh('q', `$:$__if($:a,$:$__if($:c,$:d),$:b)`)}`);
       });
       test('eq helper properly mapped', () => {
-        expect($t<ASTv1.MustacheStatement>(`{{q (eq a b)}}`)).toEqual(
+        expect($t<ASTv1.MustacheStatement>(`{{q (eq a b)}}`,['q'])).toEqual(
           `$:() => ${$mh('q', `$:$__eq($:a,$:b)`)}`,
         );
       });
       test('debugger helper properly mapped', () => {
-        expect($t<ASTv1.MustacheStatement>(`{{q (debugger a)}}`)).toEqual(
+        expect($t<ASTv1.MustacheStatement>(`{{q (debugger a)}}`,['q'])).toEqual(
           `$:() => ${$mh('q', `$:$__debugger.call($:this,$:a)`)}`,
         );
       });
       test('log helper properly mapped', () => {
-        expect($t<ASTv1.MustacheStatement>(`{{q (log a b)}}`)).toEqual(
+        expect($t<ASTv1.MustacheStatement>(`{{q (log a b)}}`,['q'])).toEqual(
           `$:() => ${$mh('q', `$:$__log($:a,$:b)`)}`,
         );
       });
       test('array helper properly mapped', () => {
         expect(
-          $t<ASTv1.MustacheStatement>(`{{q (array foo "bar" "baz")}}`),
+          $t<ASTv1.MustacheStatement>(`{{q (array foo "bar" "baz")}}`, ['q']),
         ).toEqual(`$:() => ${$mh('q', `$:$__array($:foo,"bar","baz")`)}`);
       });
       test('hash helper properly mapped', () => {
         expect(
-          $t<ASTv1.MustacheStatement>(`{{q (hash foo="bar" boo="baz")}}`),
+          $t<ASTv1.MustacheStatement>(`{{q (hash foo="bar" boo="baz")}}`, ['q']),
         ).toEqual(`$:() => ${$mh('q', `$:$__hash({foo: "bar", boo: "baz"})`)}`);
       });
     });
@@ -499,7 +504,7 @@ describe.each([
     });
     describe('MustacheStatement', () => {
       test('converts a args-less path', () => {
-        expect($t<ASTv1.MustacheStatement>(`{{foo-bar}}`)).toEqual(`$:foo-bar`);
+        expect($t<ASTv1.MustacheStatement>(`{{foo-bar}}`)).toEqual(`${$mh('foo-bar')}`);
       });
       test('converts a path with args', () => {
         expect($t<ASTv1.MustacheStatement>(`{{foo-bar bas boo}}`)).toEqual(
@@ -532,7 +537,7 @@ describe.each([
       });
       test('support bool,  null, undefined as helper args', () => {
         expect(
-          $t<ASTv1.MustacheStatement>(`{{foo true null undefined}}`),
+          $t<ASTv1.MustacheStatement>(`{{foo true null undefined}}`, ['foo']),
         ).toEqual(`$:() => ${$mh('foo', 'true,null,undefined')}`);
       });
     });
@@ -568,7 +573,7 @@ describe.each([
       });
       test('converts a simple element with concat string attribute', () => {
         expect(
-          $t<ASTv1.ElementNode>(`<div class="{{foo}} bar {{boo baks}}"></div>`),
+          $t<ASTv1.ElementNode>(`<div class="{{foo}} bar {{boo baks}}"></div>`, ['foo', 'boo']),
         ).toEqual(
           $node({
             tag: 'div',
@@ -579,7 +584,7 @@ describe.each([
         );
       });
       test('converts a simple element with path attribute', () => {
-        expect($t<ASTv1.ElementNode>(`<div class={{foo}}></div>`)).toEqual(
+        expect($t<ASTv1.ElementNode>(`<div class={{foo}}></div>`, ['foo'])).toEqual(
           $node({
             tag: 'div',
             properties: [['', '$:foo']],
@@ -588,7 +593,7 @@ describe.each([
       });
       test('converts a simple element with path attribute with string literal', () => {
         expect(
-          $t<ASTv1.ElementNode>(`<div class={{foo "bar"}}></div>`),
+          $t<ASTv1.ElementNode>(`<div class={{foo "bar"}}></div>`,['foo']),
         ).toEqual(
           $node({
             tag: 'div',
@@ -597,7 +602,7 @@ describe.each([
         );
       });
       test('converts a simple element with path attribute with path literal', () => {
-        expect($t<ASTv1.ElementNode>(`<div class={{foo bar}}></div>`)).toEqual(
+        expect($t<ASTv1.ElementNode>(`<div class={{foo bar}}></div>`, ['foo'])).toEqual(
           $node({
             tag: 'div',
             properties: [['', `$:() => ${$mh('foo', '$:bar')}`]],
@@ -616,7 +621,7 @@ describe.each([
       test('converts a simple element with `on` modifier, with composed args', () => {
         // @todo - likely need to return proper closure here (arrow function)
         expect(
-          $t<ASTv1.ElementNode>(`<div {{on "click" (foo bar baz)}}></div>`),
+          $t<ASTv1.ElementNode>(`<div {{on "click" (foo bar baz)}}></div>`,['foo']),
         ).toEqual(
           $node({
             tag: 'div',
@@ -636,7 +641,7 @@ describe.each([
       });
       test('support helper as on modifier argument', () => {
         const result = $t<ASTv1.ElementNode>(
-          `<div {{on "click" (optional tab.onClick a=12)}}></div>`,
+          `<div {{on "click" (optional tab.onClick a=12)}}></div>`,['optional'],
         );
         expect(result).toEqual(
           $node({
@@ -714,7 +719,7 @@ describe.each([
 
       test('helper in condition', () => {
         expect(
-          $t<ASTv1.BlockStatement>(`{{#if (foo bar)}}123{{else}}456{{/if}}`),
+          $t<ASTv1.BlockStatement>(`{{#if (foo bar)}}123{{else}}456{{/if}}`, ['foo']),
         ).toEqual<HBSControlExpression>(
           $control({
             type: 'if',
@@ -727,6 +732,7 @@ describe.each([
         expect(
           $t<ASTv1.BlockStatement>(
             `{{#unless (foo bar)}}123{{else}}456{{/unless}}`,
+            ['foo'],
           ),
         ).toEqual<HBSControlExpression>(
           $control({

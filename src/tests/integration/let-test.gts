@@ -149,4 +149,16 @@ module('Integration | InternalComponent | let', function () {
     );
     assert.dom('[data-test="123"]').hasText('123');
   });
+  test('let scope values resolvable', async function (assert) {
+    await render(
+      <template>
+        {{#let (hash foo='foo' bar='bar') as |scope|}}
+          <div data-test-foo>{{scope.foo}}</div>
+          <div data-test-bar>{{scope.bar}}</div>
+        {{/let}}
+      </template>,
+    );
+    assert.dom('[data-test-foo]').hasText('foo');
+    assert.dom('[data-test-bar]').hasText('bar');
+  });
 });

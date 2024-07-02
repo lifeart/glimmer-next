@@ -11,7 +11,6 @@ import {
   type HBSControlExpression,
   type HBSNode,
   serializeNode,
-  setBindings,
 } from './utils';
 import { processTemplate, type ResolvedHBS } from './babel';
 import { convert } from './converter';
@@ -70,13 +69,14 @@ function processTransformedFiles(
   programs: Programs,
   programResults: string[],
 ) {
+
   const txt = babelResult?.code ?? '';
 
-  const { ToJSType, ElementToNode } = convert(seenNodes, flags);
+  const globalFlags = flags;
 
   hbsToProcess.forEach((content) => {
     const flags = content.flags;
-    setBindings(content.bindings);
+    const { ToJSType, ElementToNode } = convert(seenNodes, globalFlags, content.bindings);
     const ast = preprocess(content.template);
     const program: (typeof programs)[number] = {
       meta: flags,
@@ -116,13 +116,24 @@ function processTransformedFiles(
         // @ts-expect-error fix-here
         program.template.push(ToJSType(node));
       },
-      ElementNode(node) {
-        if (seenNodes.has(node)) {
-          return;
+      ElementNode: {
+        enter(node) {
+          if (seenNodes.has(node)) {
+            return;
+          }
+          node.blockParams.forEach((p) => {
+            content.bindings.add(p);
+          });
+          seenNodes.add(node);
+          program.template.push(ElementToNode(node));
+          
+        },
+        exit(node) {
+          node.blockParams.forEach((p) => {
+            content.bindings.delete(p);
+          });
         }
-        seenNodes.add(node);
-        program.template.push(ElementToNode(node));
-      },
+      }
     });
     programs.push(program);
   });
