@@ -46,6 +46,7 @@ import {
 import { isRehydrationScheduled } from './ssr/rehydration';
 import { createHotReload } from './hmr';
 import { IfCondition } from './control-flow/if';
+import { CONSTANTS } from '../../plugins/symbols';
 
 type RenderableType = Node | ComponentReturnType | string | number;
 type ShadowRootMode = 'open' | 'closed' | null;
@@ -663,17 +664,35 @@ if (!import.meta.env.SSR) {
   }
 }
 
+export function $_GET_SCOPES(hash: Record<string, unknown>) {
+  // @ts-expect-error typings
+  return hash[CONSTANTS.SCOPE_KEY]?.() || [];
+}
+
 export const $_maybeHelper = (
   value: any,
-  // @ts-expect-error
   args: any[],
   _hash: Record<string, unknown>,
 ) => {
   // @ts-expect-error amount of args
   const hash = $_args(_hash, false);
+  if (WITH_EMBER_INTEGRATION) {
+    if ($_MANAGERS.helper.canHandle(value)) {
+      return $_MANAGERS.helper.handle(value, args, _hash);
+    }
+  }
   // helper manager
   if (isPrimitive(value)) {
-    return value;
+    const scopes = $_GET_SCOPES(hash);
+    const needleScope = scopes.find((scope: Record<string, unknown>) => {
+      return value in scope;
+    });
+
+    if (needleScope) {
+      return needleScope[value](...args);
+    } else {
+      return value;
+    }
     // @ts-expect-error
   } else if (EmberFunctionalHelpers.has(value)) {
     return (...args: any[]) => {

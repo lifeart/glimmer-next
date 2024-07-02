@@ -14,8 +14,9 @@ import {
   toOptionalChaining,
   toSafeJSPath,
 } from './utils';
-import { EVENT_TYPE, SYMBOLS } from './symbols';
+import { CONSTANTS, EVENT_TYPE, SYMBOLS } from './symbols';
 import type { Flags } from './flags';
+import { booleanAttributes, COMPILE_TIME_HELPERS, propertyKeys } from './constants';
 
 const SPECIAL_HELPERS = [
   SYMBOLS.HELPER_HELPER,
@@ -130,19 +131,32 @@ export function convert(
     }
   }
 
+  function hasResolvedBinding(fnPath: string) {
+    let hasBinding = fnPath.startsWith('$_') || fnPath.startsWith('this.') || fnPath.startsWith('this[') || bindings.has(fnPath.split('.')[0]?.split('?')[0]);
+    if (COMPILE_TIME_HELPERS.includes(fnPath)) { 
+      hasBinding = false;
+    }
+    return hasBinding;
+  }
+
   function toHelper(
     nodePath: string,
     params: any[],
     hash: [string, PrimitiveJSType][],
   ) {
     const fnPath = resolvePath(nodePath);
+   
     if (SPECIAL_HELPERS.includes(fnPath)) {
       return `$:${fnPath}([${params
         .map((p) => serializeParam(p))
         .join(',')}],${toObject(hash)})`;
     }
-    if (flags.WITH_HELPER_MANAGER && !nodePath.startsWith('$_')) {
-      return `$:${SYMBOLS.$_maybeHelper}(${fnPath},[${params
+    let hasBinding = hasResolvedBinding(fnPath);
+    if ((!hasBinding || flags.WITH_HELPER_MANAGER) && !nodePath.startsWith('$_')) {
+      if (!hasBinding) {
+        hash.push([CONSTANTS.SCOPE_KEY, `$:()=>this[${SYMBOLS.$args}]?.${CONSTANTS.SCOPE_KEY}`]);
+      }
+      return `$:${SYMBOLS.$_maybeHelper}(${hasBinding ? fnPath : JSON.stringify(fnPath)},[${params
         .map((p) => serializeParam(p))
         .join(',')}],${toObject(hash)})`;
     } else {
@@ -275,7 +289,13 @@ export function convert(
           )})`;
         }
         if (hashArgs.length === 0) {
-          return ToJSType(node.path);
+          const fnPath = resolvePath(node.path.original);
+          let hasBinding = hasResolvedBinding(fnPath);
+          if (!hasBinding) {
+            return toHelper(node.path.original, [], hashArgs);
+          } else {
+            return ToJSType(node.path);
+          }
         }
         return toHelper(node.path.original, [], hashArgs);
       } else {
@@ -289,7 +309,12 @@ export function convert(
       if (!node.params.length) {
         return null;
       }
+      node.program.blockParams.forEach((p) => {
+        bindings.add(p);
+      });
       const childElements = resolvedChildren(node.program.body);
+
+
       const elseChildElements = node.inverse?.body
         ? resolvedChildren(node.inverse.body)
         : undefined;
@@ -322,7 +347,9 @@ export function convert(
 
       const children = childElements?.map((el) => ToJSType(el)) ?? null;
       const inverse = elseChildElements?.map((el) => ToJSType(el)) ?? null;
-
+      node.program.blockParams.forEach((p) => {
+        bindings.delete(p);
+      });
       if (name === 'in-element') {
         return {
           type: 'in-element',
@@ -439,65 +466,9 @@ export function convert(
     return false;
   }
 
-  const booleanAttributes = [
-    'checked',
-    'readonly',
-    'autoplay',
-    'allowfullscreen',
-    'async',
-    'autofocus',
-    'autoplay',
-    'controls',
-    'default',
-    'defer',
-    'disabled',
-    'formnovalidate',
-    'inert',
-    'ismap',
-    'itemscope',
-    'loop',
-    'multiple',
-    'muted',
-    'nomodule',
-    'novalidate',
-    'open',
-    'playsinline',
-    'required',
-    'reversed',
-    'selected',
-  ];
+ 
 
-  const propertyKeys = [
-    'class',
-    'shadowrootmode',
-    // boolean attributes (https://meiert.com/en/blog/boolean-attributes-of-html/)
-    'checked',
-    'readonly',
-    'value',
-    'autoplay',
-    'allowfullscreen',
-    'async',
-    'autofocus',
-    'autoplay',
-    'controls',
-    'default',
-    'defer',
-    'disabled',
-    'formnovalidate',
-    'inert',
-    'ismap',
-    'itemscope',
-    'loop',
-    'multiple',
-    'muted',
-    'nomodule',
-    'novalidate',
-    'open',
-    'playsinline',
-    'required',
-    'reversed',
-    'selected',
-  ];
+
   const propsToCast = {
     class: '', // className
     readonly: 'readOnly',
@@ -509,9 +480,15 @@ export function convert(
   }
 
   function ElementToNode(element: ASTv1.ElementNode): HBSNode {
+    element.blockParams.forEach((p) => {
+      bindings.add(p);
+    });
     const children = resolvedChildren(element.children)
       .map((el) => ToJSType(el))
       .filter((el) => el !== null);
+      element.blockParams.forEach((p) => {
+        bindings.delete(p);
+      });
     
     const rawStyleEvents = element.attributes.filter((attr) => {
       return attr.name.startsWith('style.');

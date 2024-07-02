@@ -40,6 +40,10 @@ export const SYMBOLS = {
   $__and: '$__and',
 };
 
+export const CONSTANTS = {
+  SCOPE_KEY: '$_scope',
+}
+
 export const EVENT_TYPE = {
   ON_CREATED: '0',
   TEXT_CONTENT: '1',

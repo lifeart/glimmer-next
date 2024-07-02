@@ -8,4 +8,11 @@ module('Integration | InternalHelper | or', function () {
     await render(<template>{{if (or 0 false 2) 1}}</template>);
     assert.dom().hasText('1');
   });
+  test('custom or helper could be used if located in scope', async function (assert) {
+    const or = () => 42;
+    await render(<template>{{or 0 1}}</template>);
+    assert.dom().hasText('42');
+    await render(<template>{{or 0 false 2}}</template>);
+    assert.dom().hasText('42');
+  });
 });
