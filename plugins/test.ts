@@ -11,7 +11,6 @@ import {
   type HBSControlExpression,
   type HBSNode,
   serializeNode,
-  setBindings,
 } from './utils';
 import { processTemplate, type ResolvedHBS } from './babel';
 import { convert } from './converter';
