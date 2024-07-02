@@ -1,6 +1,10 @@
-import { Component, cell } from '@lifeart/gxt';
+import { cell } from '@lifeart/gxt';
 import { Smile } from './page-one/Smile';
 import { Table } from './page-one/Table.gts';
+import { Suspense, lazy } from '@/utils/suspense';
+import Fallback from '@/components/Fallback';
+
+const LoadMeAsync = lazy(() => import('@/components/LoadMeAsync'));
 
 function Controls() {
   const color = cell('red');
@@ -28,7 +32,21 @@ export function PageOne() {
     <div class='text-white p-3'>
       <Controls />
       <br />
-
+      <Suspense @fallback={{Fallback}}>
+        <LoadMeAsync @name='foo' />
+        <Suspense @fallback={{Fallback}}>
+          <LoadMeAsync @name='bar' />
+          <Suspense @fallback={{Fallback}}>
+            <LoadMeAsync @name='baz' />
+            <Suspense @fallback={{Fallback}}>
+              <LoadMeAsync @name='boo' />
+              <Suspense @fallback={{Fallback}}>
+                <LoadMeAsync @name='doo' />
+              </Suspense>
+            </Suspense>
+          </Suspense>
+        </Suspense>
+      </Suspense>
       <div>Imagine a world where the robust, mature ecosystems of development
         tools meet the cutting-edge performance of modern compilers. That's what
         we're building here! Our platform takes the best of established
