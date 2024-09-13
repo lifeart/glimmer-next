@@ -331,6 +331,19 @@ export class SyncListComponent<
     ]);
   }
   syncList(items: T[]) {
+    if (items.length === 0) {
+      const parent = this.bottomMarker.parentElement;
+      if (parent && parent.lastChild === this.bottomMarker) {
+        parent.innerHTML = '';
+        parent.append(this.bottomMarker);
+        this.keyMap.forEach((value) => {
+          destroyElementSync(value, true);
+        })
+        this.keyMap.clear();
+        this.indexMap.clear();
+        return;
+      } 
+    }
     const { keyMap, indexMap, keyForItem } = this;
     const existingKeys = Array.from(keyMap.keys());
     const updatingKeys = new Set(items.map((item, i) => keyForItem(item, i)));
@@ -365,6 +378,19 @@ export class AsyncListComponent<
     ]);
   }
   async syncList(items: T[]) {
+    if (items.length === 0) {
+      const parent = this.bottomMarker.parentElement;
+      if (parent && parent.lastChild === this.bottomMarker) {
+        parent.innerHTML = '';
+        parent.append(this.bottomMarker);
+        this.keyMap.forEach((value) => {
+          destroyElementSync(value, true);
+        })
+        this.keyMap.clear();
+        this.indexMap.clear();
+        return;
+      } 
+    }
     const { keyMap, indexMap, keyForItem } = this;
     const existingKeys = Array.from(keyMap.keys());
     const updatingKeys = new Set(items.map((item, i) => keyForItem(item, i)));

@@ -208,9 +208,10 @@ export function destroyElementSync(
     | Array<ComponentReturnType | Node>
     | null
     | null[],
+  skipDom = false
 ) {
   if (isArray(component)) {
-    component.forEach((component) => destroyElementSync(component));
+    component.forEach((component) => destroyElementSync(component, skipDom));
   } else {
     if (isEmpty(component)) {
       return;
@@ -219,6 +220,9 @@ export function destroyElementSync(
     if ($nodes in component) {
       if (component.ctx !== null) {
         runDestructorsSync(component.ctx);
+      }
+      if (skipDom) {
+        return;
       }
       try {
         destroyNodes(component[$nodes]);
