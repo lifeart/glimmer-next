@@ -428,6 +428,63 @@ export function $_hasBlockParams(
   return slots[`${slotName}_`];
 }
 
+function addAttrs(
+  arr: TagAttr[],
+  element: HTMLElement,
+  seenKeys: Set<string>,
+  destructors: Destructors,
+) {
+  for (let i = 0; i < arr.length; i++) {
+    const key = arr[i][0];
+    if (seenKeys.has(key)) {
+      continue;
+    }
+    seenKeys.add(key);
+    if (IS_DEV_MODE) {
+      $DEBUG_REACTIVE_CONTEXTS.push(`[${key}]`);
+    }
+    $attr(element, key, arr[i][1], destructors);
+    if (IS_DEV_MODE) {
+      $DEBUG_REACTIVE_CONTEXTS.pop();
+    }
+  }
+}
+
+function addProperties(
+  properties: TagProp[],
+  element: HTMLElement,
+  seenKeys: Set<string>,
+  destructors: Destructors,
+  classNameModifiers: Attr[],
+  setShadowMode: (value: NonNullable<ShadowRootMode>) => void,
+) {
+  for (let i = 0; i < properties.length; i++) {
+    const key = properties[i][0];
+    const value = properties[i][1];
+    if (key === '') {
+      classNameModifiers.push(value);
+      continue;
+    }
+    if (SUPPORT_SHADOW_DOM) {
+      if (key === 'shadowrootmode') {
+        setShadowMode(value as NonNullable<ShadowRootMode>);
+        continue;
+      }
+    }
+    if (seenKeys.has(key)) {
+      continue;
+    }
+    seenKeys.add(key);
+    if (IS_DEV_MODE) {
+      $DEBUG_REACTIVE_CONTEXTS.push(`[${key}]`);
+    }
+    $prop(element, key, value, destructors);
+    if (IS_DEV_MODE) {
+      $DEBUG_REACTIVE_CONTEXTS.pop();
+    }
+  }
+}
+
 function _DOM(
   tag: string,
   tagProps: Props,
@@ -446,56 +503,51 @@ function _DOM(
     api.attr(element, 'data-node-id', String(NODE_COUNTER));
   }
   const destructors: Destructors = [];
-  const props = tagProps[0];
-  const attrs = tagProps[1];
-  const _events = tagProps[2];
-  const hasSplatAttrs = typeof tagProps[3] === 'object';
-  const properties = hasSplatAttrs ? [...tagProps[3]![0], ...props] : props;
-  const attributes = hasSplatAttrs ? [...tagProps[3]![1], ...attrs] : attrs;
-  const events = hasSplatAttrs ? [...tagProps[3]![2], ..._events] : _events;
-  events.forEach(([eventName, fn]) => {
-    $ev(element, eventName, fn, destructors);
-  });
   const seenKeys = new Set<string>();
-  attributes.forEach(([key, value]) => {
-    if (seenKeys.has(key)) {
-      return;
-    }
-    seenKeys.add(key);
-    if (IS_DEV_MODE) {
-      $DEBUG_REACTIVE_CONTEXTS.push(`[${key}]`);
-    }
-    $attr(element, key, value, destructors);
-    if (IS_DEV_MODE) {
-      $DEBUG_REACTIVE_CONTEXTS.pop();
-    }
-  });
   const classNameModifiers: Attr[] = [];
-  let hasShadowMode: ShadowRootMode = null;
-  properties.forEach(([key, value]) => {
-    if (key === '') {
-      classNameModifiers.push(value);
-      return;
-    }
-    if (SUPPORT_SHADOW_DOM) {
-      if (key === 'shadowrootmode') {
-        hasShadowMode = value as NonNullable<ShadowRootMode>;
-        return;
-      }
-    }
 
-    if (seenKeys.has(key)) {
-      return;
+  const hasSplatAttrs = typeof tagProps[3] === 'object';
+
+  let hasShadowMode: ShadowRootMode = null;
+
+  const setShadowNode = (value: ShadowRootMode) => {
+    hasShadowMode = value;
+  };
+
+  if (hasSplatAttrs === true) {
+    for (let i = 0; i < tagProps[3]![2].length; i++) {
+      $ev(element, tagProps[3]![2][i][0], tagProps[3]![2][i][1], destructors);
     }
-    seenKeys.add(key);
-    if (IS_DEV_MODE) {
-      $DEBUG_REACTIVE_CONTEXTS.push(`[${key}]`);
-    }
-    $prop(element, key, value, destructors);
-    if (IS_DEV_MODE) {
-      $DEBUG_REACTIVE_CONTEXTS.pop();
-    }
-  });
+  }
+
+  for (let i = 0; i < tagProps[2].length; i++) {
+    $ev(element, tagProps[2][i][0], tagProps[2][i][1], destructors);
+  }
+
+  if (hasSplatAttrs === true) {
+    addAttrs(tagProps[3]![1], element, seenKeys, destructors);
+  }
+  addAttrs(tagProps[1], element, seenKeys, destructors);
+
+  if (hasSplatAttrs === true) {
+    addProperties(
+      tagProps[3]![0],
+      element,
+      seenKeys,
+      destructors,
+      classNameModifiers,
+      setShadowNode,
+    );
+  }
+  addProperties(
+    tagProps[0],
+    element,
+    seenKeys,
+    destructors,
+    classNameModifiers,
+    setShadowNode,
+  );
+
   if (classNameModifiers.length > 0) {
     if (IS_DEV_MODE) {
       $DEBUG_REACTIVE_CONTEXTS.push(`[class]`);
@@ -553,9 +605,9 @@ function _DOM(
       });
     }
   } else {
-    children.forEach((child, index) => {
-      addChild(element, child, destructors, index);
-    });
+    for (let i = 0; i < children.length; i++) {
+      addChild(element, children[i], destructors, i);
+    }
   }
 
   associateDestroyable(ctx, destructors);
@@ -1112,7 +1164,9 @@ export function $_GET_SLOTS(ctx: any, args: any) {
   return (args[0] || {})[$SLOTS_SYMBOL] || ctx[$args]?.[$SLOTS_SYMBOL] || {};
 }
 export function $_GET_FW(ctx: any, args: any) {
-  return (args[0] || {})[$PROPS_SYMBOL] || ctx[$args]?.[$PROPS_SYMBOL] || undefined;
+  return (
+    (args[0] || {})[$PROPS_SYMBOL] || ctx[$args]?.[$PROPS_SYMBOL] || undefined
+  );
 }
 export function $_args(
   args: Record<string, unknown>,

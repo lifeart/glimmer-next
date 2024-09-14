@@ -1,4 +1,8 @@
-import { destroy, DestructorFn, Destructors } from '@/utils/glimmer/destroyable';
+import {
+  destroy,
+  DestructorFn,
+  Destructors,
+} from '@/utils/glimmer/destroyable';
 import type {
   TemplateContext,
   Context,
@@ -105,10 +109,13 @@ export function renderComponent(
     }
   }
 
-
-
   if ($template in component && isFn(component[$template])) {
-    return renderComponent(component[$template](), targetElement, component, true);
+    return renderComponent(
+      component[$template](),
+      targetElement,
+      component,
+      true,
+    );
   }
 
   const destructors: Destructors = [];
@@ -147,7 +154,6 @@ export function renderComponent(
 
 export type Props = Record<string, unknown>;
 
-
 type Get<T, K, Otherwise = {}> = K extends keyof T
   ? Exclude<T[K], undefined>
   : Otherwise;
@@ -173,7 +179,9 @@ export class Component<T extends Props = any>
   template!: ComponentReturnType;
 }
 
-export type TOC<S extends Props = {}>  = (args?: Get<S, 'Args'>) => ComponentReturn<Get<S, 'Blocks'>, Get<S, 'Element', null>>
+export type TOC<S extends Props = {}> = (
+  args?: Get<S, 'Args'>,
+) => ComponentReturn<Get<S, 'Blocks'>, Get<S, 'Element', null>>;
 
 function destroyNode(node: Node) {
   if (IS_DEV_MODE) {
@@ -208,7 +216,7 @@ export function destroyElementSync(
     | Array<ComponentReturnType | Node>
     | null
     | null[],
-  skipDom = false
+  skipDom = false,
 ) {
   if (isArray(component)) {
     component.forEach((component) => destroyElementSync(component, skipDom));
@@ -271,7 +279,9 @@ export async function destroyElement(
   skipDom = false,
 ) {
   if (isArray(component)) {
-    await Promise.all(component.map((component) => destroyElement(component, skipDom)));
+    await Promise.all(
+      component.map((component) => destroyElement(component, skipDom)),
+    );
   } else {
     if (component === null) {
       return;
@@ -320,9 +330,13 @@ export function associateDestroyable(ctx: any, destructors: Destructors) {
       throw new Error(`Invalid context`);
     }
   }
-  const oldDestructors = $newDestructors.get(ctx) || [];
-  oldDestructors.push(...destructors);
-  $newDestructors.set(ctx, oldDestructors);
+  const existingDestructors = $newDestructors.get(ctx);
+
+  if (existingDestructors !== undefined) {
+    existingDestructors.push(...destructors);
+  } else {
+    $newDestructors.set(ctx, destructors);
+  }
 }
 
 export function removeDestructor(ctx: any, destructor: DestructorFn) {
@@ -331,36 +345,57 @@ export function removeDestructor(ctx: any, destructor: DestructorFn) {
       throw new Error(`Invalid context`);
     }
   }
-  const oldDestructors = $newDestructors.get(ctx) || [];
-  $newDestructors.set(
-    ctx,
-    oldDestructors.filter((fn) => fn !== destructor),
-  );
+
+  const destructors = $newDestructors.get(ctx);
+
+  if (destructors === undefined) {
+    // No destructors to remove
+    return;
+  }
+
+  const index = destructors.indexOf(destructor);
+
+  if (index !== -1) {
+    // Remove the destructor in-place
+    destructors.splice(index, 1);
+
+    if (destructors.length === 0) {
+      // Remove the entry from the map if no destructors are left
+      $newDestructors.delete(ctx);
+    }
+    // No need to set the array back into the map since it's modified in-place
+  }
 }
 
 function runDestructorsSync(targetNode: Component<any>) {
-  destroy(targetNode);
-  if ($newDestructors.has(targetNode)) {
-    $newDestructors.get(targetNode)!.forEach((fn) => {
-      fn();
-    });
-    $newDestructors.delete(targetNode);
-  }
-  if (WITH_CONTEXT_API) {
-    PARENT_GRAPH.delete(targetNode);
-  }
-  const nodesToRemove = RENDER_TREE.get(targetNode);
-  if (nodesToRemove) {
-    /*
-      we need slice here because of search for it:
-      @todo - case 42 (associateDestroyable)
-      tldr list may be mutated during removal and forEach is stopped
-    */
-    Array.from(nodesToRemove).forEach((node) => {
-      runDestructorsSync(node);
-      // RENDER_TREE.delete(node as any);
-    });
-    // RENDER_TREE.delete(targetNode);
+
+  const stack = [targetNode];
+
+  while (stack.length > 0) {
+    const currentNode = stack.pop()!;
+
+    destroy(currentNode);
+
+    const destructors = $newDestructors.get(currentNode);
+  
+    if (destructors !== undefined) {
+      for (const fn of destructors) {
+        fn();
+      }
+      $newDestructors.delete(currentNode);
+    }
+    if (WITH_CONTEXT_API) {
+      PARENT_GRAPH.delete(currentNode);
+    }
+    const nodesToRemove = RENDER_TREE.get(currentNode);
+    if (nodesToRemove !== undefined) {
+      /*
+        we need slice here because of search for it:
+        @todo - case 42 (associateDestroyable)
+        tldr list may be mutated during removal and forEach is stopped
+      */
+      stack.push(...nodesToRemove);
+    }
   }
 }
 export function runDestructors(

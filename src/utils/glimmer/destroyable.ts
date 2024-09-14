@@ -7,13 +7,14 @@ const destroyedObjects = new WeakSet<object>();
 
 export function destroy(ctx: object) {
   destroyedObjects.add(ctx);
-  if (!$dfi.has(ctx)) {
+  const destructors = $dfi.get(ctx);
+  if (destructors === undefined) {
     return;
   }
-  $dfi.get(ctx)!.forEach((d) => {
-    d();
-  });
   $dfi.delete(ctx);
+  for (let i = 0; i < destructors.length; i++) {
+    destructors[i]();
+  }
 }
 export function registerDestructor(ctx: object, fn: DestructorFn) {
   const existingDestructors = $dfi.get(ctx) ?? [];
