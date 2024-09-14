@@ -428,8 +428,50 @@ export function $_hasBlockParams(
   return slots[`${slotName}_`];
 }
 
-const seenKeys = new Set<string>();
-const classNameModifiers: Attr[] = [];
+function addAttrs(arr: TagAttr[], element: HTMLElement, seenKeys: Set<string>, destructors: Destructors) {
+  for (let i = 0; i < arr.length; i++) {
+    const key = arr[i][0];
+    if (seenKeys.has(key)) {
+      continue;
+    }
+    seenKeys.add(key);
+    if (IS_DEV_MODE) {
+      $DEBUG_REACTIVE_CONTEXTS.push(`[${key}]`);
+    }
+    $attr(element, key, arr[i][1], destructors);
+    if (IS_DEV_MODE) {
+      $DEBUG_REACTIVE_CONTEXTS.pop();
+    }
+  }
+}
+
+function addProperties(properties: TagProp[], element: HTMLElement, seenKeys: Set<string>, destructors: Destructors, classNameModifiers: Attr[], setShadowMode: (value: NonNullable<ShadowRootMode>) => void) {
+  for (let i = 0; i < properties.length; i++) {
+    const key = properties[i][0];
+    const value = properties[i][1];
+    if (key === '') {
+      classNameModifiers.push(value);
+      continue;
+    }
+    if (SUPPORT_SHADOW_DOM) {
+      if (key === 'shadowrootmode') {
+        setShadowMode(value as NonNullable<ShadowRootMode>)
+        continue;
+      }
+    }
+    if (seenKeys.has(key)) {
+      continue;
+    }
+    seenKeys.add(key);
+    if (IS_DEV_MODE) {
+      $DEBUG_REACTIVE_CONTEXTS.push(`[${key}]`);
+    }
+    $prop(element, key, value, destructors);
+    if (IS_DEV_MODE) {
+      $DEBUG_REACTIVE_CONTEXTS.pop();
+    }
+  }
+}
 
 function _DOM(
   tag: string,
@@ -449,18 +491,16 @@ function _DOM(
     api.attr(element, 'data-node-id', String(NODE_COUNTER));
   }
   const destructors: Destructors = [];
-  seenKeys.clear();
-  classNameModifiers.length = 0;
+  const seenKeys = new Set<string>();
+  const classNameModifiers: Attr[] = [];
 
   const hasSplatAttrs = typeof tagProps[3] === 'object';
-  const properties = hasSplatAttrs
-    ? [...tagProps[3]![0], ...tagProps[0]]
-    : tagProps[0];
-  const attributes = hasSplatAttrs
-    ? [...tagProps[3]![1], ...tagProps[1]]
-    : tagProps[1];
 
   let hasShadowMode: ShadowRootMode = null;
+
+  const setShadowNode = (value: ShadowRootMode) => {
+    hasShadowMode = value;
+  }
 
   if (hasSplatAttrs === true) {
     for (let i = 0; i < tagProps[3]![2].length; i++) {
@@ -472,46 +512,17 @@ function _DOM(
     $ev(element, tagProps[2][i][0], tagProps[2][i][1], destructors);
   }
 
-  for (let i = 0; i < attributes.length; i++) {
-    const key = attributes[i][0];
-    if (seenKeys.has(key)) {
-      continue;
-    }
-    seenKeys.add(key);
-    if (IS_DEV_MODE) {
-      $DEBUG_REACTIVE_CONTEXTS.push(`[${key}]`);
-    }
-    $attr(element, key, attributes[i][1], destructors);
-    if (IS_DEV_MODE) {
-      $DEBUG_REACTIVE_CONTEXTS.pop();
-    }
+  if (hasSplatAttrs === true) {
+    addAttrs(tagProps[3]![1], element, seenKeys, destructors);
   }
+  addAttrs(tagProps[1], element, seenKeys, destructors);
 
-  for (let i = 0; i < properties.length; i++) {
-    const key = properties[i][0];
-    const value = properties[i][1];
-    if (key === '') {
-      classNameModifiers.push(value);
-      continue;
-    }
-    if (SUPPORT_SHADOW_DOM) {
-      if (key === 'shadowrootmode') {
-        hasShadowMode = value as NonNullable<ShadowRootMode>;
-        continue;
-      }
-    }
-    if (seenKeys.has(key)) {
-      continue;
-    }
-    seenKeys.add(key);
-    if (IS_DEV_MODE) {
-      $DEBUG_REACTIVE_CONTEXTS.push(`[${key}]`);
-    }
-    $prop(element, key, value, destructors);
-    if (IS_DEV_MODE) {
-      $DEBUG_REACTIVE_CONTEXTS.pop();
-    }
+
+
+  if (hasSplatAttrs === true) {
+    addProperties(tagProps[3]![0], element, seenKeys, destructors, classNameModifiers, setShadowNode);
   }
+  addProperties(tagProps[0], element, seenKeys, destructors, classNameModifiers, setShadowNode);
 
   if (classNameModifiers.length > 0) {
     if (IS_DEV_MODE) {
@@ -543,7 +554,6 @@ function _DOM(
       $DEBUG_REACTIVE_CONTEXTS.pop();
     }
   }
-
 
   if (SUPPORT_SHADOW_DOM) {
     let appendRef =
