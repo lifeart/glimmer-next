@@ -304,9 +304,6 @@ export class BasicListComponent<T extends { id: number }> {
       }
     });
 
-    if (rowsToMove.length > 0) {
-      console.log('rows-to-move:' + rowsToMove.length);
-    }
     rowsToMove
       .sort((r1, r2) => {
         return r2[1] - r1[1];
