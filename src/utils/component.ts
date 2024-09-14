@@ -335,12 +335,28 @@ export function removeDestructor(ctx: any, destructor: DestructorFn) {
       throw new Error(`Invalid context`);
     }
   }
-  const oldDestructors = $newDestructors.get(ctx) || [];
-  $newDestructors.set(
-    ctx,
-    oldDestructors.filter((fn) => fn !== destructor),
-  );
+
+  const destructors = $newDestructors.get(ctx);
+
+  if (destructors === undefined) {
+    // No destructors to remove
+    return;
+  }
+
+  const index = destructors.indexOf(destructor);
+
+  if (index !== -1) {
+    // Remove the destructor in-place
+    destructors.splice(index, 1);
+
+    if (destructors.length === 0) {
+      // Remove the entry from the map if no destructors are left
+      $newDestructors.delete(ctx);
+    }
+    // No need to set the array back into the map since it's modified in-place
+  }
 }
+
 
 function runDestructorsSync(targetNode: Component<any>) {
   destroy(targetNode);
