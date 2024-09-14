@@ -1055,7 +1055,7 @@ export function $_eachSync<T extends { id: number }>(
   key: string | null = null,
   ctx: Component<any>,
 ) {
-  const { outlet } = getRenderTargets('sync-each-placeholder');
+  const { outlet, placeholder } = getRenderTargets('sync-each-placeholder');
   const instance = new SyncListComponent(
     {
       tag: items as Cell<T[]>,
@@ -1064,6 +1064,7 @@ export function $_eachSync<T extends { id: number }>(
       key,
     },
     outlet,
+    placeholder,
   );
   addToTree(ctx, instance as unknown as Component<any>);
   return toNodeReturnType(outlet, instance);
@@ -1074,7 +1075,7 @@ export function $_each<T extends { id: number }>(
   key: string | null = null,
   ctx: Component<any>,
 ) {
-  const { outlet } = getRenderTargets('async-each-placeholder');
+  const { outlet, placeholder } = getRenderTargets('async-each-placeholder');
   const instance = new AsyncListComponent(
     {
       tag: items as Cell<T[]>,
@@ -1083,6 +1084,7 @@ export function $_each<T extends { id: number }>(
       ctx,
     },
     outlet,
+    placeholder,
   );
   addToTree(ctx, instance as unknown as Component<any>);
   return toNodeReturnType(outlet, instance);

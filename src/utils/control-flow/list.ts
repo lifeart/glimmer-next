@@ -64,6 +64,7 @@ export class BasicListComponent<T extends { id: number }> {
     ctx: Component<any>,
   ) => GenericReturnType;
   bottomMarker!: Comment;
+  topMarker!: Comment;
   key: string = '@identity';
   tag!: Cell<T[]> | MergedCell;
   isSync = false;
@@ -74,6 +75,7 @@ export class BasicListComponent<T extends { id: number }> {
   constructor(
     { tag, ctx, key, ItemComponent }: ListComponentArgs<T>,
     outlet: RenderTarget,
+    topMarker: Comment,
   ) {
     this.ItemComponent = ItemComponent;
     this.parentCtx = ctx;
@@ -105,7 +107,9 @@ export class BasicListComponent<T extends { id: number }> {
     } else {
       this.bottomMarker = api.comment();
     }
+    this.topMarker = topMarker;
 
+    api.append(mainNode, this.topMarker);
     api.append(mainNode, this.bottomMarker);
 
     const originalTag = tag;
@@ -322,8 +326,8 @@ export class BasicListComponent<T extends { id: number }> {
 export class SyncListComponent<
   T extends { id: number },
 > extends BasicListComponent<T> {
-  constructor(params: ListComponentArgs<T>, outlet: RenderTarget) {
-    super(params, outlet);
+  constructor(params: ListComponentArgs<T>, outlet: RenderTarget, topMarker: Comment) {
+    super(params, outlet, topMarker);
     associateDestroyable(params.ctx, [
       opcodeFor(this.tag, (value) => {
         this.syncList(value as T[]);
@@ -331,6 +335,20 @@ export class SyncListComponent<
     ]);
   }
   syncList(items: T[]) {
+    if (items.length === 0) {
+      const parent = this.bottomMarker.parentElement;
+      if (parent && parent.lastChild === this.bottomMarker && parent.firstChild === this.topMarker) {
+        this.keyMap.forEach((value) => {
+          destroyElementSync(value, true);
+        });
+        parent.innerHTML = '';
+        parent.append(this.topMarker);
+        parent.append(this.bottomMarker);
+        this.keyMap.clear();
+        this.indexMap.clear();
+        return;
+      } 
+    }
     const { keyMap, indexMap, keyForItem } = this;
     const existingKeys = Array.from(keyMap.keys());
     const updatingKeys = new Set(items.map((item, i) => keyForItem(item, i)));
@@ -356,8 +374,8 @@ export class SyncListComponent<
 export class AsyncListComponent<
   T extends { id: number },
 > extends BasicListComponent<T> {
-  constructor(params: ListComponentArgs<any>, outlet: RenderTarget) {
-    super(params, outlet);
+  constructor(params: ListComponentArgs<any>, outlet: RenderTarget, topMarker: Comment) {
+    super(params, outlet, topMarker);
     associateDestroyable(params.ctx, [
       opcodeFor(this.tag, async (value) => {
         await this.syncList(value as T[]);
@@ -365,6 +383,25 @@ export class AsyncListComponent<
     ]);
   }
   async syncList(items: T[]) {
+    if (items.length === 0) {
+      const parent = this.bottomMarker.parentElement;
+      if (parent && parent.lastChild === this.bottomMarker && parent.firstChild === this.topMarker) {
+        const promises = new Array(this.keyMap.size);
+        let i = 0;
+        this.keyMap.forEach((value) => {
+          promises[i] = destroyElement(value, true);
+          i++;
+        });
+        await Promise.all(promises);
+        promises.length = 0;
+        parent.innerHTML = '';
+        parent.append(this.topMarker);
+        parent.append(this.bottomMarker);
+        this.keyMap.clear();
+        this.indexMap.clear();
+        return;
+      } 
+    }
     const { keyMap, indexMap, keyForItem } = this;
     const existingKeys = Array.from(keyMap.keys());
     const updatingKeys = new Set(items.map((item, i) => keyForItem(item, i)));
