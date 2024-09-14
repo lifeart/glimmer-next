@@ -233,6 +233,9 @@ export function destroyElementSync(
         );
       }
     } else {
+      if (skipDom) {
+        return;
+      }
       destroyNode(component);
     }
   }
@@ -265,9 +268,10 @@ export async function destroyElement(
     | Array<ComponentReturnType | Node>
     | null
     | null[],
+  skipDom = false,
 ) {
   if (isArray(component)) {
-    await Promise.all(component.map((component) => destroyElement(component)));
+    await Promise.all(component.map((component) => destroyElement(component, skipDom)));
   } else {
     if (component === null) {
       return;
@@ -278,6 +282,9 @@ export async function destroyElement(
         runDestructors(component.ctx, destructors);
         await Promise.all(destructors);
       }
+      if (skipDom) {
+        return;
+      }
       try {
         destroyNodes(component[$nodes]);
       } catch (e) {
@@ -287,6 +294,9 @@ export async function destroyElement(
         );
       }
     } else {
+      if (skipDom) {
+        return;
+      }
       await destroyNode(component);
     }
   }
