@@ -320,9 +320,13 @@ export function associateDestroyable(ctx: any, destructors: Destructors) {
       throw new Error(`Invalid context`);
     }
   }
-  const oldDestructors = $newDestructors.get(ctx) || [];
-  oldDestructors.push(...destructors);
-  $newDestructors.set(ctx, oldDestructors);
+  const existingDestructors = $newDestructors.get(ctx);
+
+  if (existingDestructors !== undefined) {
+    existingDestructors.push(...destructors);
+  } else {
+    $newDestructors.set(ctx, destructors);
+  }
 }
 
 export function removeDestructor(ctx: any, destructor: DestructorFn) {
