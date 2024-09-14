@@ -1,4 +1,8 @@
-import { destroy, DestructorFn, Destructors } from '@/utils/glimmer/destroyable';
+import {
+  destroy,
+  DestructorFn,
+  Destructors,
+} from '@/utils/glimmer/destroyable';
 import type {
   TemplateContext,
   Context,
@@ -105,10 +109,13 @@ export function renderComponent(
     }
   }
 
-
-
   if ($template in component && isFn(component[$template])) {
-    return renderComponent(component[$template](), targetElement, component, true);
+    return renderComponent(
+      component[$template](),
+      targetElement,
+      component,
+      true,
+    );
   }
 
   const destructors: Destructors = [];
@@ -147,7 +154,6 @@ export function renderComponent(
 
 export type Props = Record<string, unknown>;
 
-
 type Get<T, K, Otherwise = {}> = K extends keyof T
   ? Exclude<T[K], undefined>
   : Otherwise;
@@ -173,7 +179,9 @@ export class Component<T extends Props = any>
   template!: ComponentReturnType;
 }
 
-export type TOC<S extends Props = {}>  = (args?: Get<S, 'Args'>) => ComponentReturn<Get<S, 'Blocks'>, Get<S, 'Element', null>>
+export type TOC<S extends Props = {}> = (
+  args?: Get<S, 'Args'>,
+) => ComponentReturn<Get<S, 'Blocks'>, Get<S, 'Element', null>>;
 
 function destroyNode(node: Node) {
   if (IS_DEV_MODE) {
@@ -208,7 +216,7 @@ export function destroyElementSync(
     | Array<ComponentReturnType | Node>
     | null
     | null[],
-  skipDom = false
+  skipDom = false,
 ) {
   if (isArray(component)) {
     component.forEach((component) => destroyElementSync(component, skipDom));
@@ -271,7 +279,9 @@ export async function destroyElement(
   skipDom = false,
 ) {
   if (isArray(component)) {
-    await Promise.all(component.map((component) => destroyElement(component, skipDom)));
+    await Promise.all(
+      component.map((component) => destroyElement(component, skipDom)),
+    );
   } else {
     if (component === null) {
       return;
@@ -356,7 +366,6 @@ export function removeDestructor(ctx: any, destructor: DestructorFn) {
     // No need to set the array back into the map since it's modified in-place
   }
 }
-
 
 function runDestructorsSync(targetNode: Component<any>) {
   destroy(targetNode);
