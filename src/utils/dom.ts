@@ -428,6 +428,9 @@ export function $_hasBlockParams(
   return slots[`${slotName}_`];
 }
 
+const seenKeys = new Set<string>();
+const classNameModifiers: Attr[] = [];
+
 function _DOM(
   tag: string,
   tagProps: Props,
@@ -446,8 +449,9 @@ function _DOM(
     api.attr(element, 'data-node-id', String(NODE_COUNTER));
   }
   const destructors: Destructors = [];
-  const seenKeys = new Set<string>();
-  const classNameModifiers: Attr[] = [];
+  seenKeys.clear();
+  classNameModifiers.length = 0;
+
   const hasSplatAttrs = typeof tagProps[3] === 'object';
   const properties = hasSplatAttrs
     ? [...tagProps[3]![0], ...tagProps[0]]
@@ -540,8 +544,6 @@ function _DOM(
     }
   }
 
-  seenKeys.clear();
-  classNameModifiers.length = 0;
 
   if (SUPPORT_SHADOW_DOM) {
     let appendRef =
