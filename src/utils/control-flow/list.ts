@@ -219,7 +219,12 @@ export class BasicListComponent<T extends { id: number }> {
       return marker;
     }
   }
-  updateItems(items: T[], amountOfKeys: number, keysToRemove: string[]) {
+  updateItems(
+    items: T[],
+    amountOfKeys: number,
+    keysToRemove: string[],
+    removedIndexes: number[],
+  ) {
     const {
       indexMap,
       keyMap,
@@ -232,9 +237,7 @@ export class BasicListComponent<T extends { id: number }> {
     const amountOfExistingKeys = amountOfKeys - keysToRemove.length;
 
     if (keysToRemove.length > 0 && keyMap.size > 0) {
-      const removedIndexes = keysToRemove
-        .map((key) => indexMap.get(key)!)
-        .sort((a, b) => a - b);
+      removedIndexes.sort((a, b) => a - b);
       for (const key of keyMap.keys()) {
         let keyIndex = indexMap.get(key)!;
         const count = countLessThan(removedIndexes, keyIndex);
@@ -318,7 +321,6 @@ export class BasicListComponent<T extends { id: number }> {
           : bottomMarker;
         renderElement(insertBeforeNode.parentNode!, row, insertBeforeNode);
       });
-
     if (targetNode !== bottomMarker) {
       const parent = targetNode.parentNode!;
       const trueParent = bottomMarker.parentNode!;
@@ -373,7 +375,7 @@ export class SyncListComponent<
     }
   }
   syncList(items: T[]) {
-    const { keyMap, keyForItem } = this;
+    const { keyMap, keyForItem, indexMap } = this;
     if (items.length === 0) {
       if (this.fastCleanup()) {
         return;
@@ -382,12 +384,14 @@ export class SyncListComponent<
     let amountOfKeys = keyMap.size;
     const updatingKeys = new Set(this.keyGenerator(items, keyForItem));
     const keysToRemove: string[] = [];
+    const indexesToRemove: number[] = [];
     const rowsToRemove: GenericReturnType[] = [];
     keyMap.forEach((row, key) => {
       const isRemoved = !updatingKeys.has(key);
       if (isRemoved) {
         keysToRemove.push(key);
         rowsToRemove.push(row);
+        indexesToRemove.push(indexMap.get(key)!);
       }
     });
     if (keysToRemove.length) {
@@ -395,13 +399,14 @@ export class SyncListComponent<
         if (this.fastCleanup()) {
           amountOfKeys = 0;
           keysToRemove.length = 0;
+          indexesToRemove.length = 0;
         }
       }
       for (let i = 0; i < keysToRemove.length; i++) {
         this.destroyItem(rowsToRemove[i], keysToRemove[i]);
       }
     }
-    this.updateItems(items, amountOfKeys, keysToRemove);
+    this.updateItems(items, amountOfKeys, keysToRemove, indexesToRemove);
   }
   destroyItem(row: GenericReturnType, key: string) {
     this.keyMap.delete(key);
@@ -455,17 +460,19 @@ export class AsyncListComponent<
         return;
       }
     }
-    const { keyMap, keyForItem } = this;
+    const { keyMap, keyForItem, indexMap } = this;
     const removeQueue: Array<Promise<void>> = [];
     let amountOfKeys = keyMap.size;
     const updatingKeys = new Set(this.keyGenerator(items, keyForItem));
     const keysToRemove: string[] = [];
     const rowsToRemove: GenericReturnType[] = [];
+    const indexesToRemove: number[] = [];
     keyMap.forEach((row, key) => {
       const isRemoved = !updatingKeys.has(key);
       if (isRemoved) {
         keysToRemove.push(key);
         rowsToRemove.push(row);
+        indexesToRemove.push(indexMap.get(key)!);
       }
     });
     if (keysToRemove.length) {
@@ -473,6 +480,7 @@ export class AsyncListComponent<
         if (await this.fastCleanup()) {
           amountOfKeys = 0;
           keysToRemove.length = 0;
+          indexesToRemove.length = 0;
         }
       }
       for (let i = 0; i < keysToRemove.length; i++) {
@@ -491,7 +499,7 @@ export class AsyncListComponent<
         removeDestructor(this.parentCtx, destroyFn);
       });
     }
-    this.updateItems(items, amountOfKeys, keysToRemove);
+    this.updateItems(items, amountOfKeys, keysToRemove, indexesToRemove);
   }
   async destroyItem(row: GenericReturnType, key: string) {
     this.keyMap.delete(key);
