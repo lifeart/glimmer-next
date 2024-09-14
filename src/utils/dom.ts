@@ -446,46 +446,58 @@ function _DOM(
     api.attr(element, 'data-node-id', String(NODE_COUNTER));
   }
   const destructors: Destructors = [];
-  const props = tagProps[0];
-  const attrs = tagProps[1];
-  const _events = tagProps[2];
-  const hasSplatAttrs = typeof tagProps[3] === 'object';
-  const properties = hasSplatAttrs ? [...tagProps[3]![0], ...props] : props;
-  const attributes = hasSplatAttrs ? [...tagProps[3]![1], ...attrs] : attrs;
-  const events = hasSplatAttrs ? [...tagProps[3]![2], ..._events] : _events;
-  events.forEach(([eventName, fn]) => {
-    $ev(element, eventName, fn, destructors);
-  });
   const seenKeys = new Set<string>();
-  attributes.forEach(([key, value]) => {
+  const classNameModifiers: Attr[] = [];
+  const hasSplatAttrs = typeof tagProps[3] === 'object';
+  const properties = hasSplatAttrs
+    ? [...tagProps[3]![0], ...tagProps[0]]
+    : tagProps[0];
+  const attributes = hasSplatAttrs
+    ? [...tagProps[3]![1], ...tagProps[1]]
+    : tagProps[1];
+
+  let hasShadowMode: ShadowRootMode = null;
+
+  if (hasSplatAttrs === true) {
+    for (let i = 0; i < tagProps[3]![2].length; i++) {
+      $ev(element, tagProps[3]![2][i][0], tagProps[3]![2][i][1], destructors);
+    }
+  }
+
+  for (let i = 0; i < tagProps[2].length; i++) {
+    $ev(element, tagProps[2][i][0], tagProps[2][i][1], destructors);
+  }
+
+  for (let i = 0; i < attributes.length; i++) {
+    const key = attributes[i][0];
     if (seenKeys.has(key)) {
-      return;
+      continue;
     }
     seenKeys.add(key);
     if (IS_DEV_MODE) {
       $DEBUG_REACTIVE_CONTEXTS.push(`[${key}]`);
     }
-    $attr(element, key, value, destructors);
+    $attr(element, key, attributes[i][1], destructors);
     if (IS_DEV_MODE) {
       $DEBUG_REACTIVE_CONTEXTS.pop();
     }
-  });
-  const classNameModifiers: Attr[] = [];
-  let hasShadowMode: ShadowRootMode = null;
-  properties.forEach(([key, value]) => {
+  }
+
+  for (let i = 0; i < properties.length; i++) {
+    const key = properties[i][0];
+    const value = properties[i][1];
     if (key === '') {
       classNameModifiers.push(value);
-      return;
+      continue;
     }
     if (SUPPORT_SHADOW_DOM) {
       if (key === 'shadowrootmode') {
         hasShadowMode = value as NonNullable<ShadowRootMode>;
-        return;
+        continue;
       }
     }
-
     if (seenKeys.has(key)) {
-      return;
+      continue;
     }
     seenKeys.add(key);
     if (IS_DEV_MODE) {
@@ -495,7 +507,8 @@ function _DOM(
     if (IS_DEV_MODE) {
       $DEBUG_REACTIVE_CONTEXTS.pop();
     }
-  });
+  }
+
   if (classNameModifiers.length > 0) {
     if (IS_DEV_MODE) {
       $DEBUG_REACTIVE_CONTEXTS.push(`[class]`);
@@ -527,6 +540,9 @@ function _DOM(
     }
   }
 
+  seenKeys.clear();
+  classNameModifiers.length = 0;
+
   if (SUPPORT_SHADOW_DOM) {
     let appendRef =
       hasShadowMode !== null
@@ -553,9 +569,9 @@ function _DOM(
       });
     }
   } else {
-    children.forEach((child, index) => {
-      addChild(element, child, destructors, index);
-    });
+    for (let i = 0; i < children.length; i++) {
+      addChild(element, children[i], destructors, i);
+    }
   }
 
   associateDestroyable(ctx, destructors);
@@ -1112,7 +1128,9 @@ export function $_GET_SLOTS(ctx: any, args: any) {
   return (args[0] || {})[$SLOTS_SYMBOL] || ctx[$args]?.[$SLOTS_SYMBOL] || {};
 }
 export function $_GET_FW(ctx: any, args: any) {
-  return (args[0] || {})[$PROPS_SYMBOL] || ctx[$args]?.[$PROPS_SYMBOL] || undefined;
+  return (
+    (args[0] || {})[$PROPS_SYMBOL] || ctx[$args]?.[$PROPS_SYMBOL] || undefined
+  );
 }
 export function $_args(
   args: Record<string, unknown>,
