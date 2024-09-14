@@ -368,28 +368,34 @@ export function removeDestructor(ctx: any, destructor: DestructorFn) {
 }
 
 function runDestructorsSync(targetNode: Component<any>) {
-  destroy(targetNode);
-  if ($newDestructors.has(targetNode)) {
-    $newDestructors.get(targetNode)!.forEach((fn) => {
-      fn();
-    });
-    $newDestructors.delete(targetNode);
-  }
-  if (WITH_CONTEXT_API) {
-    PARENT_GRAPH.delete(targetNode);
-  }
-  const nodesToRemove = RENDER_TREE.get(targetNode);
-  if (nodesToRemove) {
-    /*
-      we need slice here because of search for it:
-      @todo - case 42 (associateDestroyable)
-      tldr list may be mutated during removal and forEach is stopped
-    */
-    Array.from(nodesToRemove).forEach((node) => {
-      runDestructorsSync(node);
-      // RENDER_TREE.delete(node as any);
-    });
-    // RENDER_TREE.delete(targetNode);
+
+  const stack = [targetNode];
+
+  while (stack.length > 0) {
+    const currentNode = stack.pop()!;
+
+    destroy(currentNode);
+
+    const destructors = $newDestructors.get(currentNode);
+  
+    if (destructors !== undefined) {
+      for (const fn of destructors) {
+        fn();
+      }
+      $newDestructors.delete(currentNode);
+    }
+    if (WITH_CONTEXT_API) {
+      PARENT_GRAPH.delete(currentNode);
+    }
+    const nodesToRemove = RENDER_TREE.get(currentNode);
+    if (nodesToRemove !== undefined) {
+      /*
+        we need slice here because of search for it:
+        @todo - case 42 (associateDestroyable)
+        tldr list may be mutated during removal and forEach is stopped
+      */
+      stack.push(...nodesToRemove);
+    }
   }
 }
 export function runDestructors(
