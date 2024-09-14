@@ -12,6 +12,146 @@ module('Integration | InternalComponent | each', function (hooks) {
     users = cell([{ name: cell('Uef') }, { name: cell('Bi') }]);
   });
 
+  function shuffleArray(array: unknown[]) {
+    for (let i = array.length - 1; i >= 0; i--) {
+      let j = Math.floor(Math.random() * (i + 1));
+      let temp = array[i];
+      array[i] = array[j];
+      array[j] = temp;
+    }
+  }
+
+  test('remove first element', async function (assert) {
+    const amountOfItemsToTest = 10;
+    const items = cell(
+      Array.from({ length: amountOfItemsToTest }, (_, i) => ({ id: cell(i) })),
+    );
+    await render(
+      <template>
+        <ul>
+          {{#each items sync=true as |user|}}
+            <li data-test-user>
+              {{user.id}}
+            </li>
+          {{/each}}
+        </ul>
+      </template>,
+    );
+    assert
+      .dom('[data-test-user]')
+      .exists({ count: amountOfItemsToTest }, 'Number of elements');
+    const values = [...items.value.slice(-9)];
+    items.update(values);
+    await rerender();
+    const elements = Array.from(document.querySelectorAll('[data-test-user]'));
+    assert.equal(elements.length, 9);
+    elements.forEach((node, index) => {
+      assert.equal(node.textContent, String(items.value[index].id.value));
+    });
+  });
+
+  test('random array sort is properly working', async function (assert) {
+    const amountOfItemsToTest = 30;
+    const items = cell(
+      Array.from({ length: amountOfItemsToTest }, (_, i) => ({ id: cell(i) })),
+    );
+    await render(
+      <template>
+        <ul>
+          {{#each items sync=true as |user|}}
+            <li data-test-user>
+              {{user.id}}
+            </li>
+          {{/each}}
+        </ul>
+      </template>,
+    );
+    assert
+      .dom('[data-test-user]')
+      .exists({ count: amountOfItemsToTest }, 'Number of elements');
+    const values = [...items.value];
+    shuffleArray(values);
+    items.update(values);
+    await rerender();
+    const elements = Array.from(document.querySelectorAll('[data-test-user]'));
+    elements.forEach((node, index) => {
+      assert.equal(node.textContent, String(items.value[index].id.value));
+    });
+  });
+
+  test('random array sort with append is properly working', async function (assert) {
+    const amountOfItemsToTest = 30;
+    const items = cell(
+      Array.from({ length: amountOfItemsToTest }, (_, i) => ({ id: cell(i) })),
+    );
+    const items2 = Array.from({ length: amountOfItemsToTest * 2 }, (_, i) => ({
+      id: cell(i),
+    })).slice(-29);
+
+    await render(
+      <template>
+        <ul>
+          {{#each items sync=true as |user|}}
+            <li data-test-user>
+              {{user.id}}
+            </li>
+          {{/each}}
+        </ul>
+      </template>,
+    );
+    assert
+      .dom('[data-test-user]')
+      .exists({ count: amountOfItemsToTest }, 'Number of elements');
+    const values = [...items.value, ...items2];
+    shuffleArray(values);
+    items.update(values);
+    await rerender();
+    const elements = Array.from(document.querySelectorAll('[data-test-user]'));
+    elements.forEach((node, index) => {
+      assert.equal(node.textContent, String(items.value[index].id.value));
+    });
+  });
+
+  test('random array sort with append and removal is properly working', async function (assert) {
+    const amountOfItemsToTest = 30;
+    const items = cell(
+      Array.from({ length: amountOfItemsToTest }, (_, i) => ({ id: cell(i) })),
+    );
+    const items2 = Array.from({ length: amountOfItemsToTest * 2 }, (_, i) => ({
+      id: cell(i),
+    })).slice(-29);
+
+    await render(
+      <template>
+        <ul>
+          {{#each items sync=true as |user|}}
+            <li data-test-user>
+              {{user.id}}
+            </li>
+          {{/each}}
+        </ul>
+      </template>,
+    );
+    assert
+      .dom('[data-test-user]')
+      .exists({ count: amountOfItemsToTest }, 'Number of elements');
+    const values = [...items.value.slice(0, 15), ...items2];
+    shuffleArray(values);
+    items.update(values);
+    await rerender();
+    const elements1 = Array.from(document.querySelectorAll('[data-test-user]'));
+    elements1.forEach((node, index) => {
+      assert.equal(node.textContent, String(items.value[index].id.value));
+    });
+    shuffleArray(values);
+    items.update(values);
+    await rerender();
+    const elements2 = Array.from(document.querySelectorAll('[data-test-user]'));
+    elements2.forEach((node, index) => {
+      assert.equal(node.textContent, String(items.value[index].id.value));
+    });
+  });
+
   test('new item could be added in the middle', async function (assert) {
     const items = cell(Array.from({ length: 30 }, (_, i) => ({ id: cell(i) })));
     await render(

@@ -53,6 +53,21 @@ type ListComponentArgs<T> = {
   ItemComponent: (item: T, index?: number | MergedCell) => GenericReturnType;
 };
 type RenderTarget = HTMLElement | DocumentFragment;
+
+// Helper function for binary search
+function countLessThan(arr: number[], target: number) {
+  let low = 0,
+    high = arr.length;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (arr[mid] < target) {
+      low = mid + 1;
+    } else {
+      high = mid;
+    }
+  }
+  return low;
+}
 export class BasicListComponent<T extends { id: number }> {
   keyMap: Map<string, GenericReturnType> = new Map();
   indexMap: Map<string, number> = new Map();
@@ -136,6 +151,7 @@ export class BasicListComponent<T extends { id: number }> {
       this.keyForItem = (item: T, i: number) => {
         if (IS_DEV_MODE) {
           if (typeof item === 'undefined' || item === null) {
+            console.warn(`Iteration over null, undefined is not supported yet`);
             return `${String(item)}:${i}`;
           }
           if (isPrimitive(item)) {
@@ -143,15 +159,10 @@ export class BasicListComponent<T extends { id: number }> {
             return `${String(item)}:${i}`;
           }
         }
-        const key = map.get(item);
-        if (typeof key === 'string') {
-          return key;
-        } else {
-          cnt++;
-          let value = String(cnt);
-          map.set(item, value);
-          return value;
+        if (!map.has(item)) {
+          map.set(item, String(++cnt));
         }
+        return map.get(item)!;
       };
     } else {
       this.keyForItem = (item: T) => {
@@ -211,17 +222,22 @@ export class BasicListComponent<T extends { id: number }> {
   ) {
     const rowsToMove: Array<[GenericReturnType, number]> = [];
     const amountOfExistingKeys = amountOfKeys - keysToRemove.length;
-    const { indexMap, keyMap, bottomMarker, keyForItem, ItemComponent } = this;
-    const isFirstRender = this.isFirstRender;
+    const {
+      indexMap,
+      keyMap,
+      bottomMarker,
+      keyForItem,
+      ItemComponent,
+      isFirstRender,
+    } = this;
+
     if (removedIndexes.length > 0 && keyMap.size > 0) {
       for (const key of keyMap.keys()) {
         let keyIndex = indexMap.get(key)!;
-        removedIndexes.forEach((index) => {
-          if (keyIndex > index) {
-            keyIndex--;
-          }
-        });
-        this.indexMap.set(key, keyIndex);
+        const count = countLessThan(removedIndexes, keyIndex);
+        if (count !== 0) {
+          indexMap.set(key, keyIndex - count);
+        }
       }
     }
 
@@ -271,40 +287,37 @@ export class BasicListComponent<T extends { id: number }> {
           renderElement(targetNode.parentNode!, row, targetNode);
         } else {
           rowsToMove.push([row, index]);
-          // TODO: optimize this
-          for (const key of keyMap.keys()) {
-            let keyIndex = indexMap.get(key)!;
-            if (keyIndex > index) {
-              keyIndex++;
+          // TODO: optimize
+          for (let [mapKey, value] of indexMap) {
+            if (value === index && key !== mapKey) {
+              indexMap.set(mapKey, index + 1);
             }
-            this.indexMap.set(key, keyIndex);
           }
         }
       } else {
         seenKeys++;
         const expectedIndex = indexMap.get(key)!;
         if (expectedIndex !== index && !appendedIndexes.has(expectedIndex)) {
-          rowsToMove.push([maybeRow, index]);
           indexMap.set(key, index);
+          rowsToMove.push([maybeRow, index]);
         }
       }
     });
-    // iterate over rows to move and move them
 
-    rowsToMove.forEach(([row, index]) => {
-      const nextItem = items[index + 1];
-      if (nextItem === undefined) {
-        renderElement(bottomMarker.parentNode!, row, bottomMarker);
-      } else {
-        const nextKey = keyForItem(nextItem, index + 1);
-        const nextRow = keyMap.get(nextKey)!;
-        const firstNode = getFirstNode(nextRow);
-        if (nextRow !== undefined && firstNode !== undefined) {
-          const parent = firstNode.parentNode!;
-          renderElement(parent, row, firstNode);
-        }
-      }
-    });
+    if (rowsToMove.length > 0) {
+      console.log('rows-to-move:' + rowsToMove.length);
+    }
+    rowsToMove
+      .sort((r1, r2) => {
+        return r2[1] - r1[1];
+      })
+      .forEach(([row, index]) => {
+        const nextItem = items[index + 1];
+        const insertBeforeNode = nextItem
+          ? getFirstNode(keyMap.get(keyForItem(nextItem, index + 1))!)
+          : bottomMarker;
+        renderElement(insertBeforeNode.parentNode!, row, insertBeforeNode);
+      });
 
     if (targetNode !== bottomMarker) {
       const parent = targetNode.parentNode!;
@@ -326,7 +339,11 @@ export class BasicListComponent<T extends { id: number }> {
 export class SyncListComponent<
   T extends { id: number },
 > extends BasicListComponent<T> {
-  constructor(params: ListComponentArgs<T>, outlet: RenderTarget, topMarker: Comment) {
+  constructor(
+    params: ListComponentArgs<T>,
+    outlet: RenderTarget,
+    topMarker: Comment,
+  ) {
     super(params, outlet, topMarker);
     associateDestroyable(params.ctx, [
       opcodeFor(this.tag, (value) => {
@@ -337,7 +354,11 @@ export class SyncListComponent<
   syncList(items: T[]) {
     if (items.length === 0) {
       const parent = this.bottomMarker.parentElement;
-      if (parent && parent.lastChild === this.bottomMarker && parent.firstChild === this.topMarker) {
+      if (
+        parent &&
+        parent.lastChild === this.bottomMarker &&
+        parent.firstChild === this.topMarker
+      ) {
         this.keyMap.forEach((value) => {
           destroyElementSync(value, true);
         });
@@ -347,7 +368,7 @@ export class SyncListComponent<
         this.keyMap.clear();
         this.indexMap.clear();
         return;
-      } 
+      }
     }
     const { keyMap, indexMap, keyForItem } = this;
     const existingKeys = Array.from(keyMap.keys());
@@ -363,7 +384,12 @@ export class SyncListComponent<
       return isRemoved;
     });
     const amountOfKeys = existingKeys.length;
-    this.updateItems(items, amountOfKeys, keysToRemove, removedIndexes);
+    this.updateItems(
+      items,
+      amountOfKeys,
+      keysToRemove,
+      removedIndexes.sort((a, b) => a - b),
+    );
   }
   destroyItem(row: GenericReturnType, key: string) {
     this.keyMap.delete(key);
@@ -374,7 +400,11 @@ export class SyncListComponent<
 export class AsyncListComponent<
   T extends { id: number },
 > extends BasicListComponent<T> {
-  constructor(params: ListComponentArgs<any>, outlet: RenderTarget, topMarker: Comment) {
+  constructor(
+    params: ListComponentArgs<any>,
+    outlet: RenderTarget,
+    topMarker: Comment,
+  ) {
     super(params, outlet, topMarker);
     associateDestroyable(params.ctx, [
       opcodeFor(this.tag, async (value) => {
@@ -385,7 +415,11 @@ export class AsyncListComponent<
   async syncList(items: T[]) {
     if (items.length === 0) {
       const parent = this.bottomMarker.parentElement;
-      if (parent && parent.lastChild === this.bottomMarker && parent.firstChild === this.topMarker) {
+      if (
+        parent &&
+        parent.lastChild === this.bottomMarker &&
+        parent.firstChild === this.topMarker
+      ) {
         const promises = new Array(this.keyMap.size);
         let i = 0;
         this.keyMap.forEach((value) => {
@@ -400,7 +434,7 @@ export class AsyncListComponent<
         this.keyMap.clear();
         this.indexMap.clear();
         return;
-      } 
+      }
     }
     const { keyMap, indexMap, keyForItem } = this;
     const existingKeys = Array.from(keyMap.keys());
@@ -429,7 +463,12 @@ export class AsyncListComponent<
         removeDestructor(this.parentCtx, destroyFn);
       });
     }
-    this.updateItems(items, amountOfKeys, keysToRemove, removedIndexes);
+    this.updateItems(
+      items,
+      amountOfKeys,
+      keysToRemove,
+      removedIndexes.sort((a, b) => a - b),
+    );
   }
   async destroyItem(row: GenericReturnType, key: string) {
     this.keyMap.delete(key);

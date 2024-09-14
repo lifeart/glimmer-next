@@ -428,7 +428,12 @@ export function $_hasBlockParams(
   return slots[`${slotName}_`];
 }
 
-function addAttrs(arr: TagAttr[], element: HTMLElement, seenKeys: Set<string>, destructors: Destructors) {
+function addAttrs(
+  arr: TagAttr[],
+  element: HTMLElement,
+  seenKeys: Set<string>,
+  destructors: Destructors,
+) {
   for (let i = 0; i < arr.length; i++) {
     const key = arr[i][0];
     if (seenKeys.has(key)) {
@@ -445,7 +450,14 @@ function addAttrs(arr: TagAttr[], element: HTMLElement, seenKeys: Set<string>, d
   }
 }
 
-function addProperties(properties: TagProp[], element: HTMLElement, seenKeys: Set<string>, destructors: Destructors, classNameModifiers: Attr[], setShadowMode: (value: NonNullable<ShadowRootMode>) => void) {
+function addProperties(
+  properties: TagProp[],
+  element: HTMLElement,
+  seenKeys: Set<string>,
+  destructors: Destructors,
+  classNameModifiers: Attr[],
+  setShadowMode: (value: NonNullable<ShadowRootMode>) => void,
+) {
   for (let i = 0; i < properties.length; i++) {
     const key = properties[i][0];
     const value = properties[i][1];
@@ -455,7 +467,7 @@ function addProperties(properties: TagProp[], element: HTMLElement, seenKeys: Se
     }
     if (SUPPORT_SHADOW_DOM) {
       if (key === 'shadowrootmode') {
-        setShadowMode(value as NonNullable<ShadowRootMode>)
+        setShadowMode(value as NonNullable<ShadowRootMode>);
         continue;
       }
     }
@@ -500,7 +512,7 @@ function _DOM(
 
   const setShadowNode = (value: ShadowRootMode) => {
     hasShadowMode = value;
-  }
+  };
 
   if (hasSplatAttrs === true) {
     for (let i = 0; i < tagProps[3]![2].length; i++) {
@@ -517,12 +529,24 @@ function _DOM(
   }
   addAttrs(tagProps[1], element, seenKeys, destructors);
 
-
-
   if (hasSplatAttrs === true) {
-    addProperties(tagProps[3]![0], element, seenKeys, destructors, classNameModifiers, setShadowNode);
+    addProperties(
+      tagProps[3]![0],
+      element,
+      seenKeys,
+      destructors,
+      classNameModifiers,
+      setShadowNode,
+    );
   }
-  addProperties(tagProps[0], element, seenKeys, destructors, classNameModifiers, setShadowNode);
+  addProperties(
+    tagProps[0],
+    element,
+    seenKeys,
+    destructors,
+    classNameModifiers,
+    setShadowNode,
+  );
 
   if (classNameModifiers.length > 0) {
     if (IS_DEV_MODE) {
