@@ -19,9 +19,9 @@ export function takeRenderingControl() {
   hasExternalUpdate = true;
   return () => {
     hasExternalUpdate = false;
-  }
+  };
 }
-  
+
 export function scheduleRevalidate() {
   if (hasExternalUpdate) {
     return;
@@ -33,13 +33,16 @@ export function scheduleRevalidate() {
       }
     }
     revalidateScheduled = true;
-    Promise.resolve().then(async () => {
-      await syncDom();
-      if (resolveRender !== undefined) {
-        resolveRender();
-        resolveRender = undefined;
+    queueMicrotask(async () => {
+      try {
+        await syncDom();
+        if (resolveRender !== undefined) {
+          resolveRender();
+          resolveRender = undefined;
+        }
+      } finally {
+        revalidateScheduled = false;
       }
-      revalidateScheduled = false;
     });
   }
 }
@@ -48,9 +51,9 @@ export async function syncDom() {
   setIsRendering(true);
   for (const cell of tagsToRevalidate) {
     await executeTag(cell);
-    // we always have related tags
-    if (relatedTags.has(cell)) {
-      const subTags = relatedTags.get(cell)!;
+
+    const subTags = relatedTags.get(cell);
+    if (subTags !== undefined) {
       relatedTags.delete(cell);
       subTags.forEach((tag) => {
         sharedTags.add(tag);
@@ -61,7 +64,6 @@ export async function syncDom() {
   tagsToRevalidate.clear();
   // sort shared tags by id
   const sharedTagsArray = Array.from(sharedTags);
-  sharedTags.clear();
   // sort tags in order of creation to avoid stale logic
   sharedTagsArray.sort((a, b) => a.id - b.id);
   for (const tag of sharedTagsArray) {
