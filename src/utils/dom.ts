@@ -311,9 +311,9 @@ export function addChild(
   }
   const isObject = typeof child === 'object';
   if (isObject && $nodes in child) {
-    child[$nodes].forEach((node, i) => {
-      addChild(element, node, destructors, index + i);
-    });
+    for (let i = 0; i < child[$nodes].length; i++) {
+      addChild(element, child[$nodes][i], destructors, index + i);
+    }
   } else if (isPrimitive(child)) {
     api.append(element, api.text(child), index);
   } else if (isTagLike(child)) {
@@ -916,7 +916,8 @@ function mergeComponents(
 ) {
   const nodes: Array<Node> = [];
   const contexts: Array<Component> = [];
-  components.forEach((component) => {
+  for (let i = 0; i < components.length; i++) {
+    let component = components[i];
     if (IS_DEV_MODE) {
       if (typeof component === 'boolean' || typeof component === 'undefined') {
         throw new Error(`
@@ -925,6 +926,7 @@ function mergeComponents(
         `);
       }
     }
+
     if (isFn(component)) {
       component = text(
         resolveRenderable(component, 'merge-components'),
@@ -932,7 +934,7 @@ function mergeComponents(
       );
     }
     if (isEmpty(component)) {
-      return;
+      continue;
     }
     if (isPrimitive(component)) {
       nodes.push(api.text(component));
@@ -941,10 +943,10 @@ function mergeComponents(
         contexts.push(component.ctx);
       }
       nodes.push(...component[$nodes]);
-    } else if (!isEmpty(component)) {
+    } else {
       nodes.push(component);
     }
-  });
+  }
   return {
     [$nodes]: nodes,
     // @todo - fix proper ctx merging here;
