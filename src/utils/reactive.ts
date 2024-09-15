@@ -249,9 +249,8 @@ export class MergedCell {
       return this.fn();
     }
 
-    let $tracker!: Set<Cell>;
+    let $tracker = tracker();
     try {
-      $tracker = tracker();
       setTracker($tracker);
       return this.fn();
     } finally {
