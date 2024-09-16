@@ -219,12 +219,7 @@ export class BasicListComponent<T extends { id: number }> {
       return marker;
     }
   }
-  updateItems(
-    items: T[],
-    amountOfKeys: number,
-    keysToRemove: string[],
-    removedIndexes: number[],
-  ) {
+  updateItems(items: T[], amountOfKeys: number, removedIndexes: number[]) {
     const {
       indexMap,
       keyMap,
@@ -234,9 +229,9 @@ export class BasicListComponent<T extends { id: number }> {
       isFirstRender,
     } = this;
     const rowsToMove: Array<[GenericReturnType, number]> = [];
-    const amountOfExistingKeys = amountOfKeys - keysToRemove.length;
+    const amountOfExistingKeys = amountOfKeys - removedIndexes.length;
 
-    if (keysToRemove.length > 0 && keyMap.size > 0) {
+    if (removedIndexes.length > 0 && keyMap.size > 0) {
       removedIndexes.sort((a, b) => a - b);
       for (const key of keyMap.keys()) {
         let keyIndex = indexMap.get(key)!;
@@ -257,11 +252,12 @@ export class BasicListComponent<T extends { id: number }> {
       // @todo - fix here
       if (seenKeys === amountOfExistingKeys) {
         isAppendOnly = true;
+        if (targetNode === bottomMarker) {
+          // optimization for appending items case
+          targetNode = this.getTargetNode(0);
+        }
       }
-      if (seenKeys === amountOfExistingKeys && targetNode === bottomMarker) {
-        // optimization for appending items case
-        targetNode = this.getTargetNode(0);
-      }
+
       const key = keyForItem(item, index);
       const maybeRow = keyMap.get(key);
       if (!maybeRow) {
@@ -361,9 +357,9 @@ export class SyncListComponent<
       parent.lastChild === bottomMarker &&
       parent.firstChild === topMarker
     ) {
-      keyMap.forEach((value) => {
+      for (const value of keyMap.values()) {
         destroyElementSync(value, true);
-      });
+      }
       parent.innerHTML = '';
       parent.append(topMarker);
       parent.append(bottomMarker);
@@ -382,31 +378,37 @@ export class SyncListComponent<
       }
     }
     let amountOfKeys = keyMap.size;
-    const updatingKeys = new Set(this.keyGenerator(items, keyForItem));
-    const keysToRemove: string[] = [];
+
     const indexesToRemove: number[] = [];
-    const rowsToRemove: GenericReturnType[] = [];
-    keyMap.forEach((row, key) => {
-      const isRemoved = !updatingKeys.has(key);
-      if (isRemoved) {
+
+    if (amountOfKeys > 0) {
+      const updatingKeys = new Set(this.keyGenerator(items, keyForItem));
+      const keysToRemove: string[] = [];
+      const rowsToRemove: GenericReturnType[] = [];
+
+      for (const [key, row] of keyMap.entries()) {
+        if (updatingKeys.has(key)) {
+          continue;
+        }
         keysToRemove.push(key);
         rowsToRemove.push(row);
         indexesToRemove.push(indexMap.get(key)!);
       }
-    });
-    if (keysToRemove.length) {
-      if (keysToRemove.length === amountOfKeys) {
-        if (this.fastCleanup()) {
-          amountOfKeys = 0;
-          keysToRemove.length = 0;
-          indexesToRemove.length = 0;
+      if (keysToRemove.length) {
+        if (keysToRemove.length === amountOfKeys) {
+          if (this.fastCleanup()) {
+            amountOfKeys = 0;
+            keysToRemove.length = 0;
+            indexesToRemove.length = 0;
+          }
+        }
+        for (let i = 0; i < keysToRemove.length; i++) {
+          this.destroyItem(rowsToRemove[i], keysToRemove[i]);
         }
       }
-      for (let i = 0; i < keysToRemove.length; i++) {
-        this.destroyItem(rowsToRemove[i], keysToRemove[i]);
-      }
     }
-    this.updateItems(items, amountOfKeys, keysToRemove, indexesToRemove);
+
+    this.updateItems(items, amountOfKeys, indexesToRemove);
   }
   destroyItem(row: GenericReturnType, key: string) {
     this.keyMap.delete(key);
@@ -430,25 +432,26 @@ export class AsyncListComponent<
     ]);
   }
   async fastCleanup() {
-    const parent = this.bottomMarker.parentElement;
+    const { bottomMarker, topMarker, keyMap, indexMap } = this;
+    const parent = bottomMarker.parentElement;
     if (
       parent &&
-      parent.lastChild === this.bottomMarker &&
-      parent.firstChild === this.topMarker
+      parent.lastChild === bottomMarker &&
+      parent.firstChild === topMarker
     ) {
-      const promises = new Array(this.keyMap.size);
+      const promises = new Array(keyMap.size);
       let i = 0;
-      this.keyMap.forEach((value) => {
+      for (const value of keyMap.values()) {
         promises[i] = destroyElement(value, true);
         i++;
-      });
+      }
       await Promise.all(promises);
       promises.length = 0;
       parent.innerHTML = '';
-      parent.append(this.topMarker);
-      parent.append(this.bottomMarker);
-      this.keyMap.clear();
-      this.indexMap.clear();
+      parent.append(topMarker);
+      parent.append(bottomMarker);
+      keyMap.clear();
+      indexMap.clear();
       return true;
     } else {
       return false;
@@ -461,45 +464,49 @@ export class AsyncListComponent<
       }
     }
     const { keyMap, keyForItem, indexMap } = this;
-    const removeQueue: Array<Promise<void>> = [];
     let amountOfKeys = keyMap.size;
-    const updatingKeys = new Set(this.keyGenerator(items, keyForItem));
-    const keysToRemove: string[] = [];
-    const rowsToRemove: GenericReturnType[] = [];
     const indexesToRemove: number[] = [];
-    keyMap.forEach((row, key) => {
-      const isRemoved = !updatingKeys.has(key);
-      if (isRemoved) {
+
+    if (amountOfKeys > 0) {
+      const keysToRemove: string[] = [];
+      const rowsToRemove: GenericReturnType[] = [];
+      const removeQueue: Array<Promise<void>> = [];
+
+      const updatingKeys = new Set(this.keyGenerator(items, keyForItem));
+      for (const [key, row] of keyMap.entries()) {
+        if (updatingKeys.has(key)) {
+          continue;
+        }
         keysToRemove.push(key);
         rowsToRemove.push(row);
         indexesToRemove.push(indexMap.get(key)!);
       }
-    });
-    if (keysToRemove.length) {
-      if (keysToRemove.length === amountOfKeys) {
-        if (await this.fastCleanup()) {
-          amountOfKeys = 0;
-          keysToRemove.length = 0;
-          indexesToRemove.length = 0;
+      if (keysToRemove.length) {
+        if (keysToRemove.length === amountOfKeys) {
+          if (await this.fastCleanup()) {
+            amountOfKeys = 0;
+            keysToRemove.length = 0;
+            indexesToRemove.length = 0;
+          }
+        }
+        for (let i = 0; i < keysToRemove.length; i++) {
+          removeQueue.push(this.destroyItem(rowsToRemove[i], keysToRemove[i]));
         }
       }
-      for (let i = 0; i < keysToRemove.length; i++) {
-        removeQueue.push(this.destroyItem(rowsToRemove[i], keysToRemove[i]));
+
+      const removePromise = Promise.all(removeQueue);
+
+      if (removeQueue.length) {
+        const destroyFn = async () => {
+          await removePromise;
+        };
+        associateDestroyable(this.parentCtx, [destroyFn]);
+        removePromise.then(() => {
+          removeDestructor(this.parentCtx, destroyFn);
+        });
       }
     }
-
-    const removePromise = Promise.all(removeQueue);
-
-    if (removeQueue.length) {
-      const destroyFn = async () => {
-        await removePromise;
-      };
-      associateDestroyable(this.parentCtx, [destroyFn]);
-      removePromise.then(() => {
-        removeDestructor(this.parentCtx, destroyFn);
-      });
-    }
-    this.updateItems(items, amountOfKeys, keysToRemove, indexesToRemove);
+    this.updateItems(items, amountOfKeys, indexesToRemove);
   }
   async destroyItem(row: GenericReturnType, key: string) {
     this.keyMap.delete(key);
