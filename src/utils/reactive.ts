@@ -44,10 +44,12 @@ if (IS_DEV_MODE) {
 }
 
 function keysFor(obj: object): Map<string | number | symbol, Cell<unknown>> {
-  if (!cellsMap.has(obj)) {
-    cellsMap.set(obj, new Map());
+  let map = cellsMap.get(obj);
+  if (map === undefined) {
+    map = new Map();
+    cellsMap.set(obj, map);
   }
-  return cellsMap.get(obj)!;
+  return map!;
 }
 
 export function tracked(
@@ -136,9 +138,9 @@ export class Cell<T extends unknown = unknown> {
   }
 }
 
-export class LazyCell<T extends unknown = unknown> extends Cell<()=>T> {
+export class LazyCell<T extends unknown = unknown> extends Cell<() => T> {
   __value!: T;
-  constructor(v: ()=>T, debugName?: string) {
+  constructor(v: () => T, debugName?: string) {
     // @ts-expect-error
     super(null, debugName);
     let isResolved = false;
@@ -149,7 +151,7 @@ export class LazyCell<T extends unknown = unknown> extends Cell<()=>T> {
           try {
             val = v();
             isResolved = true;
-          } catch(e) {
+          } catch (e) {
             throw e;
           }
           this.__value = val;
@@ -161,8 +163,8 @@ export class LazyCell<T extends unknown = unknown> extends Cell<()=>T> {
           isResolved = true;
         }
         this.__value = v;
-      }
-    })
+      },
+    });
   }
 }
 export function listDependentCells(cells: Array<AnyCell>, cell: MergedCell) {
@@ -174,21 +176,21 @@ export function listDependentCells(cells: Array<AnyCell>, cell: MergedCell) {
 }
 
 export function opsFor(cell: AnyCell) {
-  if (!opsForTag.has(cell)) {
-    const ops: tagOp[] = [];
+  let ops = opsForTag.get(cell);
+  if (ops === undefined) {
+    ops = [];
     opsForTag.set(cell, ops);
-    return ops;
   }
-  return opsForTag.get(cell)!;
+  return ops;
 }
 
 export function relatedTagsForCell(cell: Cell) {
-  if (!relatedTags.has(cell)) {
-    const tags = new Set<MergedCell>();
+  let tags = relatedTags.get(cell);
+  if (tags === undefined) {
+    tags = new Set<MergedCell>();
     relatedTags.set(cell, tags);
-    return tags;
   }
-  return relatedTags.get(cell)!;
+  return tags;
 }
 
 function bindAllCellsToTag(cells: Set<Cell>, tag: MergedCell) {
@@ -247,15 +249,16 @@ export class MergedCell {
       return this.fn();
     }
 
-    let $tracker = tracker();
+    let $tracker!: Set<Cell>;
     try {
-      setTracker($tracker)
+      $tracker = tracker();
+      setTracker($tracker);
       return this.fn();
     } finally {
       bindAllCellsToTag($tracker, this);
       this.isConst = $tracker.size === 0;
       this.relatedCells = $tracker;
-      setTracker(null)
+      setTracker(null);
     }
   }
 }
@@ -310,9 +313,10 @@ export async function executeTag(tag: Cell | MergedCell) {
     }
   }
 }
-export function lazyRawCellFor<T extends object, K extends keyof T>(  obj: T,
+export function lazyRawCellFor<T extends object, K extends keyof T>(
+  obj: T,
   key: K,
-  init?: () => T[K]
+  init?: () => T[K],
 ): Cell<T[K]> {
   const refs = cellsMap.get(obj) || new Map<string | number | symbol, Cell>();
   if (refs.has(key)) {
@@ -320,7 +324,7 @@ export function lazyRawCellFor<T extends object, K extends keyof T>(  obj: T,
   }
   // make value lazy
   const cellValue = new LazyCell<T[K]>(
-    () => typeof init === 'function' ? init() : obj[key],
+    () => (typeof init === 'function' ? init() : obj[key]),
     `${obj.constructor.name}.${String(key)}`,
   );
   refs.set(key, cellValue);
@@ -331,19 +335,22 @@ export function rawCellFor<T extends object, K extends keyof T>(
   obj: T,
   key: K,
 ): Cell<T[K]> {
-  const refs = cellsMap.get(obj) || new Map<string | number | symbol, Cell>();
+  let refs = cellsMap.get(obj);
+  if (refs === undefined) {
+    refs = new Map<string | number | symbol, Cell>();
+    cellsMap.set(obj, refs);
+  }
   if (refs.has(key)) {
     return refs.get(key) as Cell<T[K]>;
   }
-  // make value lazy
   const cellValue = new Cell<T[K]>(
     obj[key],
     `${obj.constructor.name}.${String(key)}`,
   );
   refs.set(key, cellValue);
-  cellsMap.set(obj, refs);
   return cellValue;
 }
+
 // this is function to create a reactive cell from an object property
 export function cellFor<T extends object, K extends keyof T>(
   obj: T,
