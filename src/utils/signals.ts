@@ -9,6 +9,7 @@ export const w = new Signal.subtle.Watcher(() => {
     scheduleRevalidate();
 });
 
+export let signalsToUnwatch: Signal.Computed<any>[] = [];
 export function setResolveRender(value: () => void) {
   resolveRender = value;
 }
@@ -36,6 +37,7 @@ export async function syncDom() {
   w.getPending().forEach((cell) => {
     cell.get();
   });
+  w.unwatch(...signalsToUnwatch);
   w.watch();
   setIsRendering(false);
 }
