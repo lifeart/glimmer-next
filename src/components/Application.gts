@@ -3,6 +3,7 @@ import {
   runDestructors,
   Component,
   tracked,
+  getRoot,
 } from '@lifeart/gxt';
 import { PageOne } from './pages/PageOne.gts';
 import { PageTwo } from './pages/PageTwo.gts';
@@ -11,8 +12,10 @@ import { Benchmark } from './pages/Benchmark.gts';
 import { NestedRouter } from './pages/NestedRouter.gts';
 import { router } from './../services/router';
 
+let version = 0;
 export class Application extends Component {
   router = router;
+  version = version++;
   @tracked
   now = Date.now();
   rootNode!: HTMLElement;
@@ -23,7 +26,7 @@ export class Application extends Component {
     benchmark: Benchmark,
   };
   async destroy() {
-    await Promise.all(runDestructors(this));
+    await Promise.all(runDestructors(getRoot()!));
     this.rootNode.innerHTML = '';
     this.rootNode = null!;
   }

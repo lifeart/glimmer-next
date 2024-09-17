@@ -6,6 +6,9 @@ const $dfi: WeakMap<object, Destructors> = new WeakMap();
 const destroyedObjects = new WeakSet<object>();
 
 export function destroy(ctx: object) {
+  if (destroyedObjects.has(ctx)) {
+    return;
+  }
   destroyedObjects.add(ctx);
   const destructors = $dfi.get(ctx);
   if (destructors === undefined) {
