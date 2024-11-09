@@ -9,7 +9,7 @@ import type {
   Invoke,
   ComponentReturn,
 } from '@glint/template/-private/integration';
-import { api } from '@/utils/dom-api';
+import { api, RENDERING_CONTEXT } from '@/utils/dom-api';
 import {
   isFn,
   $template,
@@ -24,6 +24,7 @@ import {
   PARENT_GRAPH,
 } from './shared';
 import { addChild, getRoot, setRoot } from './dom';
+import { provideContext } from './context';
 
 export type ComponentRenderTarget =
   | HTMLElement
@@ -108,6 +109,9 @@ export function renderComponent(
       }
     }
   }
+
+  console.log('context provided', getRoot(),  api);
+  provideContext(getRoot()!, RENDERING_CONTEXT, api);
 
   if ($template in component && isFn(component[$template])) {
     return renderComponent(

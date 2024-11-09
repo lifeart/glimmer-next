@@ -102,6 +102,9 @@ export function addToTree(
   node: Component<any>,
   debugName?: string,
 ) {
+  // if (node.toString() === '[object Object]') {
+  //   debugger;
+  // }
   if (IS_DEV_MODE) {
     if ('nodeType' in node) {
       throw new Error('invalid node');

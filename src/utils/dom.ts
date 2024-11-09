@@ -26,7 +26,7 @@ import {
   destroy,
   registerDestructor,
 } from './glimmer/destroyable';
-import { api, getDocument } from '@/utils/dom-api';
+import { api as HTMLAPI, getDocument, RENDERING_CONTEXT } from '@/utils/dom-api';
 import {
   isFn,
   isPrimitive,
@@ -47,6 +47,7 @@ import { isRehydrationScheduled } from './ssr/rehydration';
 import { createHotReload } from './hmr';
 import { IfCondition } from './control-flow/if';
 import { CONSTANTS } from '../../plugins/symbols';
+import { getContext } from './context';
 
 type RenderableType = Node | ComponentReturnType | string | number;
 type ShadowRootMode = 'open' | 'closed' | null;
@@ -82,6 +83,7 @@ const $_className = 'className';
 
 let unstableWrapperId: number = 0;
 let ROOT: Component<any> | null = null;
+let api = HTMLAPI;
 
 export const $_MANAGERS = {
   component: {
@@ -494,6 +496,11 @@ function _DOM(
   ctx: any,
 ): Node {
   NODE_COUNTER++;
+  api = getContext<typeof HTMLAPI>(ctx, RENDERING_CONTEXT)!;
+  if (!api) {
+    debugger;
+    api = getContext<typeof HTMLAPI>(ctx, RENDERING_CONTEXT)!;
+  }
   const element = api.element(tag);
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.push(`${tag}`);
@@ -626,6 +633,7 @@ export function $_inElement(
 ) {
   return component(
     function UnstableChildWrapper(this: Component<any>) {
+      $_GET_ARGS(this, arguments);
       if (IS_DEV_MODE) {
         // @ts-expect-error construct signature
         this.debugName = `InElement-${unstableWrapperId++}`;
@@ -660,6 +668,9 @@ export function $_ucw(
 ) {
   return component(
     function UnstableChildWrapper(this: Component<any>) {
+      // console.log(this, ...arguments);
+      $_GET_ARGS(this, arguments);
+      // debugger;
       if (IS_DEV_MODE) {
         // @ts-expect-error construct signature
         this.debugName = `UnstableChildWrapper-${unstableWrapperId++}`;
@@ -837,6 +848,7 @@ function _component(
   fw: FwType,
   ctx: Component<any>,
 ) {
+  args['_context'] = ctx;
   let comp = _comp;
   if (WITH_EMBER_INTEGRATION) {
     if ($_MANAGERS.component.canHandle(_comp)) {
@@ -897,7 +909,10 @@ function _component(
   }
   if (instance.ctx !== null) {
     // for now we adding only components with context
+    // debugger;
     addToTree(ctx, instance.ctx);
+    // addToTree(ctx, instance);
+
     if (IS_DEV_MODE) {
       setBounds(instance);
     }
@@ -1163,6 +1178,13 @@ const ArgProxyHandler = {
 };
 export function $_GET_ARGS(ctx: any, args: any) {
   ctx[$args] = ctx[$args] || args[0] || {};
+  const parentContext = ctx[$args]['_context'];
+  if (parentContext) {
+    // console.log('context', parentContext, ctx);
+    addToTree(parentContext, ctx);
+  } else {
+    addToTree(getRoot()!, ctx);
+  }
 }
 export function $_GET_SLOTS(ctx: any, args: any) {
   return (args[0] || {})[$SLOTS_SYMBOL] || ctx[$args]?.[$SLOTS_SYMBOL] || {};
@@ -1238,6 +1260,7 @@ export function $_dc(
   const destructor = opcodeFor(_cmp, (value: any) => {
     if (typeof value !== 'function') {
       result = value;
+      addToTree(ctx, result);
       return;
     }
     if (value !== ref) {

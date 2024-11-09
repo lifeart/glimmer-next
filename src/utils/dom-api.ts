@@ -1,6 +1,8 @@
 import { getNodeCounter, incrementNodeCounter } from '@/utils/dom';
 import { IN_SSR_ENV, noop } from './shared';
 
+export const RENDERING_CONTEXT = Symbol('RENDERING_CONTEXT');
+
 let $doc =
   typeof document !== 'undefined'
     ? document

@@ -19,6 +19,7 @@ import {
   isPrimitive,
   isTagLike,
   LISTS_FOR_HMR,
+  addToTree,
 } from '@/utils/shared';
 import { isRehydrationScheduled } from '@/utils/ssr/rehydration';
 
@@ -98,6 +99,7 @@ export class BasicListComponent<T extends { id: number }> {
     topMarker: Comment,
   ) {
     this.ItemComponent = ItemComponent;
+    addToTree(ctx, this);
     this.parentCtx = ctx;
     const mainNode = outlet;
     this[$nodes] = [];

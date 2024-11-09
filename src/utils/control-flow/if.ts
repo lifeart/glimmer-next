@@ -19,6 +19,7 @@ import {
   isFn,
   isPrimitive,
   isTagLike,
+  addToTree
 } from '@/utils/shared';
 import { opcodeFor } from '@/utils/vm';
 
@@ -48,6 +49,7 @@ export class IfCondition {
     this.setupCondition(maybeCondition);
     this.trueBranch = trueBranch;
     this.falseBranch = falseBranch;
+    addToTree(parentContext, this);
     this.destructors.push(opcodeFor(this.condition, this.syncState.bind(this)));
     associateDestroyable(parentContext, [this.destroy.bind(this)]);
     if (IS_DEV_MODE) {
