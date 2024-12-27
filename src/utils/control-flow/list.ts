@@ -344,6 +344,7 @@ export class SyncListComponent<
   ) {
     super(params, outlet, topMarker);
     associateDestroyable(params.ctx, [
+      () => this.syncList([]),
       opcodeFor(this.tag, (value) => {
         this.syncList(value as T[]);
       }),
@@ -426,6 +427,9 @@ export class AsyncListComponent<
   ) {
     super(params, outlet, topMarker);
     associateDestroyable(params.ctx, [
+      async () => { 
+        await this.syncList([]);
+       },
       opcodeFor(this.tag, async (value) => {
         await this.syncList(value as T[]);
       }),
