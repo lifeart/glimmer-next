@@ -1,11 +1,12 @@
-import { type AnyCell } from '../reactive';
+import { isTag } from "./-private";
+
 export function $__if(
   condition: unknown,
   ifTrue: unknown,
   ifFalse: unknown = '',
 ) {
-  if (typeof condition === 'object') {
-    return (condition as AnyCell).value ? ifTrue : ifFalse;
+  if (isTag(condition)) {
+    return condition.value ? ifTrue : ifFalse;
   }
   return condition ? ifTrue : ifFalse;
 }

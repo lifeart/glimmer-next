@@ -1,5 +1,5 @@
 import type { ASTv1 } from '@glimmer/syntax';
-import { SYMBOLS } from './symbols';
+import { EVENT_TYPE, SYMBOLS } from './symbols';
 import type { Flags } from './flags';
 import type { ComplexJSType } from './converter';
 
@@ -340,6 +340,9 @@ function hasStableChildsForControlNode(
     if ('isControl' in child) {
       hasStableChild = false;
     } else {
+      if (child.events.filter(([id]) => id === EVENT_TYPE.ON_CREATED).length) {
+        return false;
+      }
       hasStableChild = true;
     }
   }

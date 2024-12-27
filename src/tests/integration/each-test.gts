@@ -1,7 +1,7 @@
 import { module, test } from 'qunit';
 import { render, rerender, click } from '@/tests/utils';
 import { cell } from '@lifeart/gxt';
-import { type Cell } from '@/utils/reactive';
+import { formula, type Cell } from '@/utils/reactive';
 import { step } from '../utils';
 
 module('Integration | InternalComponent | each', function (hooks) {
@@ -20,6 +20,52 @@ module('Integration | InternalComponent | each', function (hooks) {
       array[j] = temp;
     }
   }
+
+  test('it properly remove all list items if its rendered with update', async function (assert) {
+    function toNamedObject(arr: number[]) {
+      return arr.map((el) => {
+        return { name: el };
+      });
+    }
+    const items = cell(toNamedObject([1]));
+    const isFirstRender = cell(true);
+
+    function PageOne() {
+      const isExpanded = formula(() => {
+        return items.value.length === 3 || isFirstRender.value === true;
+      });
+      const toggle = () => {
+        if (items.value.length === 3) {
+          items.update(toNamedObject([2]));
+        } else {
+          items.update(toNamedObject([1, 2, 3]));
+        }
+      };
+      return <template>
+        <div class='text-white p-3'>
+          <button type='button' {{on 'click' toggle}}>toggle</button>
+          <ul>
+            {{#if (not isExpanded)}}
+              <div data-test-not-expanded>NOT EXPANDED</div>
+            {{else if isExpanded}}
+              {{#each items as |item|}}
+                <li data-test-item>{{item.name}}</li>
+              {{/each}}
+            {{/if}}
+          </ul>
+        </div>
+      </template>;
+    }
+    await render(<template><PageOne /></template>);
+    assert.dom('[data-test-item]').exists({ count: 1 }, 'Render first item');
+    items.update(toNamedObject([1, 2, 3]));
+    isFirstRender.update(false);
+    await rerender();
+    assert.dom('[data-test-item]').exists({ count: 3 }, 'Render all items');
+    await click('button');
+    assert.dom('[data-test-item]').doesNotExist('No list tails left');
+    assert.dom('[data-test-not-expanded]').exists({ count: 1 }, 'if toggled');
+  });
 
   test('remove first element', async function (assert) {
     const amountOfItemsToTest = 10;
