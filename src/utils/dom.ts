@@ -82,6 +82,11 @@ export const $PROPS_SYMBOL = Symbol('props');
 const $_className = 'className';
 
 let unstableWrapperId: number = 0;
+/* 
+  Root is basically owner in ember naming.
+  Referencing to top-level application context,
+  Acting as main DI container and metadata storage.
+*/
 export class Root {};
 let ROOT: Root | null = null;
 let api = HTMLAPI;
