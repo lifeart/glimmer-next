@@ -1,7 +1,7 @@
 import { type ComponentReturnType, destroyElementSync, renderComponent } from '@/utils/component';
 import { getDocument } from '@/utils/dom-api';
 import { withRehydration } from '@/utils/ssr/rehydration';
-import { getRoot, resetNodeCounter, setRoot, resetRoot } from '@/utils/dom';
+import { getRoot, resetNodeCounter, setRoot, resetRoot, createRoot } from '@/utils/dom';
 import { renderInBrowser } from '@/utils/ssr/ssr';
 import { runDestructors } from '@/utils/component';
 import { registerDestructor } from '@/utils/glimmer/destroyable';
@@ -17,14 +17,14 @@ export async function cleanupRender() {
 
 export function rehydrate(component: ComponentReturnType) {
   let cmp: any = null;
+  let root = createRoot();
+  setRoot(root);
   withRehydration(() => {
     // @ts-expect-error typings mismatch
     cmp = new component();
     return cmp;
   }, renderTarget());
-  if (!getRoot()) {
-    setRoot(cmp.ctx || cmp);
-  }
+
 }
 export async function ssr(component: any) {
   if (getRoot()) {
@@ -32,8 +32,10 @@ export async function ssr(component: any) {
   }
   resetNodeCounter();
   let cmp: any = null;
+  let root = {};
+  setRoot(root);
   const content = await renderInBrowser(() => {
-    cmp = new component({});
+    cmp = new component(root);
     return cmp;
   });
   renderTarget().innerHTML = content;
@@ -42,7 +44,6 @@ export async function ssr(component: any) {
   } else {
     await Promise.all(runDestructors(cmp));
   }
-  const root = getRoot();
   if (root && cmp !== root) {
     await Promise.all(runDestructors(root));
   }

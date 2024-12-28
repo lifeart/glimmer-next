@@ -23,7 +23,7 @@ import {
   FRAGMENT_TYPE,
   PARENT_GRAPH,
 } from './shared';
-import { addChild, getRoot, setRoot } from './dom';
+import { addChild, createRoot, getRoot, Root, setRoot } from './dom';
 import { provideContext } from './context';
 
 export type ComponentRenderTarget =
@@ -105,12 +105,12 @@ export function renderComponent(
       }
     } else {
       if (appRoot === null) {
-        setRoot(owner || component.ctx || (component as any));
+        setRoot(createRoot());
       }
     }
   }
 
-  console.log('context provided', getRoot(),  api);
+  // console.log('context provided', getRoot(),  api);
   provideContext(getRoot()!, RENDERING_CONTEXT, api);
 
   if ($template in component && isFn(component[$template])) {
@@ -403,7 +403,7 @@ function runDestructorsSync(targetNode: Component<any>) {
   }
 }
 export function runDestructors(
-  target: Component<any>,
+  target: Component<any> | Root,
   promises: Array<Promise<void>> = [],
 ): Array<Promise<void>> {
   destroy(target);

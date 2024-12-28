@@ -82,7 +82,8 @@ export const $PROPS_SYMBOL = Symbol('props');
 const $_className = 'className';
 
 let unstableWrapperId: number = 0;
-let ROOT: Component<any> | null = null;
+export class Root {};
+let ROOT: Root | null = null;
 let api = HTMLAPI;
 
 export const $_MANAGERS = {
@@ -214,11 +215,14 @@ export function $_helperHelper(params: any, hash: any) {
     throw new Error('Unable to use helper with non-ember helpers');
   }
 }
-
+export function createRoot() {
+  const root = new Root();
+  return root;
+}
 export function resetRoot() {
   ROOT = null;
 }
-export function setRoot(root: Component<any>) {
+export function setRoot(root: Root) {
   if (IS_DEV_MODE) {
     if (ROOT) {
       throw new Error('Root already exists');
@@ -496,10 +500,13 @@ function _DOM(
   ctx: any,
 ): Node {
   NODE_COUNTER++;
+  let oldAPI = api;
   api = getContext<typeof HTMLAPI>(ctx, RENDERING_CONTEXT)!;
   if (!api) {
-    debugger;
     api = getContext<typeof HTMLAPI>(ctx, RENDERING_CONTEXT)!;
+  }
+  if (!api) {
+    api = oldAPI;
   }
   const element = api.element(tag);
   if (IS_DEV_MODE) {
@@ -1075,7 +1082,7 @@ function text(
 function getRenderTargets(debugName: string) {
   const ifPlaceholder = IS_DEV_MODE ? api.comment(debugName) : api.comment('');
   let outlet = isRehydrationScheduled()
-    ? ifPlaceholder.parentElement!
+    ? (ifPlaceholder.parentElement || api.fragment())
     : api.fragment();
 
   if (!ifPlaceholder.isConnected) {

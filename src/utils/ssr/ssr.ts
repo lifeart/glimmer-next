@@ -13,10 +13,15 @@ type EnvironmentParams = {
 export async function renderInBrowser(
   componentRenderFn: (rootNode: HTMLElement) => ComponentReturnType,
 ) {
+  if (import.meta.env.DEV) {
+    if (!getRoot()) {
+      throw new Error('Unable to detect render root');
+    }
+  }
   const doc = getDocument();
   const rootNode = doc.createElement('div');
   // @todo - add destructor
-  renderComponent(componentRenderFn(rootNode), rootNode);
+  renderComponent(componentRenderFn(rootNode), rootNode, getRoot());
   const html = rootNode.innerHTML;
   rootNode.remove();
   return html;

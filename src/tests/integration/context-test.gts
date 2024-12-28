@@ -49,7 +49,7 @@ class ThemedButton extends Component {
     buttonClass: '',
   };
 }
-
+//
 module('Integration | Context API', function () {
   test('context decorator falling back to root context', async function (assert) {
     await render(

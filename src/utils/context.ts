@@ -1,9 +1,9 @@
 import { registerDestructor } from './glimmer/destroyable';
 import { Component } from './component';
 import { PARENT_GRAPH } from './shared';
-import { getRoot } from './dom';
+import { getRoot, Root } from './dom';
 
-const CONTEXTS = new WeakMap<Component<any>, Map<symbol, any>>();
+const CONTEXTS = new WeakMap<Component<any> | Root, Map<symbol, any>>();
 
 export function context(contextKey: symbol): (klass: any, key: string, descriptor?: PropertyDescriptor & { initializer?: () => any } ) => void {
   return function contextDecorator(
@@ -19,8 +19,8 @@ export function context(contextKey: symbol): (klass: any, key: string, descripto
   }
 };
 
-export function getContext<T>(ctx: Component<any>, key: symbol): T | null {
-  let current: Component<any> | null = ctx;
+export function getContext<T>(ctx: Component<any> | Root, key: symbol): T | null {
+  let current: Component<any> | Root | null = ctx;
   while (current) {
     const context = CONTEXTS.get(current);
     if (context?.has(key)) {
@@ -35,7 +35,7 @@ export function getContext<T>(ctx: Component<any>, key: symbol): T | null {
 }
 
 export function provideContext<T>(
-  ctx: Component<any>,
+  ctx: Component<any> | Root,
   key: symbol,
   value: T,
 ): void {
@@ -50,6 +50,6 @@ export function provideContext<T>(
   });
 }
 
-function findParentComponent(component: Component<any>): Component<any> | null {
+function findParentComponent(component: Component<any> | Root): Component<any> | Root | null {
   return PARENT_GRAPH.get(component)! ?? null;
 }

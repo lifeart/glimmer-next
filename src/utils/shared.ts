@@ -6,6 +6,7 @@ import {
 } from '@/utils/component';
 import { type AnyCell } from './reactive';
 import { type BasicListComponent } from './control-flow/list';
+import { Root } from './dom';
 
 export const isTag = Symbol('isTag');
 export const $template = 'template' as const;
@@ -51,7 +52,7 @@ export function isTagLike(child: unknown): child is AnyCell {
 }
 
 export const RENDER_TREE = new WeakMap<Component<any>, Set<Component>>();
-export const PARENT_GRAPH = new WeakMap<Component<any>, Component<any>>();
+export const PARENT_GRAPH = new WeakMap<Component<any> | Root, Component<any>>();
 export const BOUNDS = new WeakMap<
   Component<any>,
   Array<HTMLElement | Comment>
@@ -118,7 +119,10 @@ export function addToTree(
   // @todo - case 42
   associateDestroyable(node, [
     () => {
-      const tree = RENDER_TREE.get(ctx)!;
+      const tree = RENDER_TREE.get(ctx);
+      if (tree === undefined) {
+        return;
+      }
       tree.delete(node);
       if (tree.size === 0) {
         RENDER_TREE.delete(ctx);
