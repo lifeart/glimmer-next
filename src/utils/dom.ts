@@ -47,7 +47,8 @@ import { isRehydrationScheduled } from './ssr/rehydration';
 import { createHotReload } from './hmr';
 import { IfCondition } from './control-flow/if';
 import { CONSTANTS } from '../../plugins/symbols';
-import { getContext } from './context';
+import { getContext, provideContext } from './context';
+import { svgDomApi } from './provider';
 
 type RenderableType = Node | ComponentReturnType | string | number;
 type ShadowRootMode = 'open' | 'closed' | null;
@@ -505,6 +506,9 @@ function _DOM(
   ctx: any,
 ): Node {
   NODE_COUNTER++;
+  if (tag === 'svg') {
+    provideContext(ctx, RENDERING_CONTEXT, svgDomApi);
+  }
   let oldAPI = api;
   api = getContext<typeof HTMLAPI>(ctx, RENDERING_CONTEXT)!;
   if (!api) {

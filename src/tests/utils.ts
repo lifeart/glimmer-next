@@ -90,10 +90,16 @@ export async function rerender(timeout = 16) {
   });
 }
 
-export async function click(selector: string) {
+
+export function find(selector: string) {
   const element = getDocument()
     .getElementById('ember-testing')!
     .querySelector(selector);
+  return element;
+}
+
+export async function click(selector: string) {
+  const element = find(selector);
   if (!element) {
     throw new Error(
       `Unable to find DOM element matching selector: ${selector}`,
