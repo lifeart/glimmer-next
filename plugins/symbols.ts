@@ -1,4 +1,7 @@
 export const SYMBOLS = {
+  HTML_NAMESPACE: '$_HTMLProvider',
+  SVG_NAMESPACE: '$_SVGProvider',
+  MATH_NAMESPACE: '$_MathMLProvider',
   FINALIZE_COMPONENT: '$_fin',
   TAG: '$_tag',
   IF: '$_if',

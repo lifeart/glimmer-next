@@ -48,7 +48,7 @@ import { createHotReload } from './hmr';
 import { IfCondition } from './control-flow/if';
 import { CONSTANTS } from '../../plugins/symbols';
 import { getContext, provideContext } from './context';
-import { svgDomApi } from './provider';
+import { svgDomApi ,SVGProvider, HTMLProvider, MathMLProvider} from './provider';
 
 type RenderableType = Node | ComponentReturnType | string | number;
 type ShadowRootMode = 'open' | 'closed' | null;
@@ -79,6 +79,9 @@ export const $_emptySlot = Object.seal(Object.freeze({}));
 
 export const $SLOTS_SYMBOL = Symbol('slots');
 export const $PROPS_SYMBOL = Symbol('props');
+export const $_SVGProvider = SVGProvider;
+export const $_HTMLProvider = HTMLProvider;
+export const $_MathMLProvider = MathMLProvider;
 
 const $_className = 'className';
 

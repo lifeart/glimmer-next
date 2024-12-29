@@ -1,4 +1,5 @@
 import type { ASTv1 } from '@glimmer/syntax';
+import { builders } from '@glimmer/syntax';
 import {
   type HBSControlExpression,
   type HBSNode,
@@ -478,8 +479,29 @@ export function convert(
   function isAttribute(name: string) {
     return !propertyKeys.includes(name);
   }
+  const convertedNodes = new WeakSet();
 
   function ElementToNode(element: ASTv1.ElementNode): HBSNode {
+    if (element.tag === 'math' && !convertedNodes.has(element)) {
+      convertedNodes.add(element);
+      const parent = builders.element(`$:${SYMBOLS.MATH_NAMESPACE}`, {
+        children: [element]
+      });
+      return ElementToNode(parent);
+    } else if (element.tag === 'svg' && !convertedNodes.has(element)) {
+      convertedNodes.add(element);
+      const parent = builders.element(`$:${SYMBOLS.SVG_NAMESPACE}`, {
+        children: [element]
+      });
+      return ElementToNode(parent);
+    } else if (element.tag === 'foreignObject' && !convertedNodes.has(element)) {
+      convertedNodes.add(element);
+      const parent = builders.element(`$:${SYMBOLS.HTML_NAMESPACE}`, {
+        children: element.children
+      });
+      element.children = [parent];
+      return ElementToNode(parent);
+    }
     element.blockParams.forEach((p) => {
       bindings.add(p);
     });

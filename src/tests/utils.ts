@@ -91,11 +91,11 @@ export async function rerender(timeout = 16) {
 }
 
 
-export function find(selector: string) {
+export function find(selector: string): Element {
   const element = getDocument()
     .getElementById('ember-testing')!
     .querySelector(selector);
-  return element;
+  return element as Element;
 }
 
 export async function click(selector: string) {
