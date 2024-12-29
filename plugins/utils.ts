@@ -451,7 +451,12 @@ export function serializeNode(
       return `${SYMBOLS.IF}(${arrayName}, ${trueBranch}, ${falseBranch}, ${ctxName})`;
     }
   } else if (
-    typeof node === 'object' &&
+    typeof node === 'object' && ((function() {
+      if (node.tag === 'MySecret') {
+        console.log(bindings, node, new Error('foo').stack);
+      }
+      return true;
+    })()) &&
     node.tag && (bindings.has(node.tag) || node.tag.startsWith('$:$_') || node.tag.includes('.'))
   ) {
     const hasSplatAttrs = node.attributes.find((attr) => {

@@ -11,6 +11,7 @@ import {
   type HBSControlExpression,
   type HBSNode,
   serializeNode,
+  setBindings,
 } from './utils';
 import { processTemplate, type ResolvedHBS } from './babel';
 import { convert } from './converter';
@@ -76,11 +77,12 @@ function processTransformedFiles(
 
   hbsToProcess.forEach((content) => {
     const flags = content.flags;
-    const { ToJSType, ElementToNode } = convert(seenNodes, globalFlags, content.bindings);
+    const bindings = content.bindings;
+    const { ToJSType, ElementToNode } = convert(seenNodes, globalFlags, bindings);
     const ast = preprocess(content.template);
     const program: (typeof programs)[number] = {
       meta: flags,
-      bindings: content.bindings,
+      bindings,
       template: [],
     };
     traverse(ast, {
@@ -113,8 +115,22 @@ function processTransformedFiles(
           return;
         }
         seenNodes.add(node);
+
+        if (node.program) {
+          node.program.blockParams.forEach((p) => {
+            bindings.add(p);
+          });
+        }
+        if (node.program.blockParams.length && node.program.blockParams.includes('MySecret')) {
+          console.log('----BlockStatement-----', node.program.blockParams, bindings);
+        }
         // @ts-expect-error fix-here
         program.template.push(ToJSType(node));
+        // if (node.program) {
+        //   node.program.blockParams.forEach((p) => {
+        //     bindings.delete(p);
+        //   });
+        // }
       },
       ElementNode: {
         enter(node) {
@@ -122,7 +138,7 @@ function processTransformedFiles(
             return;
           }
           node.blockParams.forEach((p) => {
-            content.bindings.add(p);
+            bindings.add(p);
           });
           seenNodes.add(node);
           program.template.push(ElementToNode(node));
@@ -130,7 +146,7 @@ function processTransformedFiles(
         },
         exit(node) {
           node.blockParams.forEach((p) => {
-            content.bindings.delete(p);
+            bindings.delete(p);
           });
         }
       }
@@ -141,6 +157,7 @@ function processTransformedFiles(
   programs.forEach((program) => {
     const input: Array<HBSNode | HBSControlExpression> = program.template;
 
+    setBindings(program.bindings);
     const results = input.reduce((acc, node) => {
       const serializedNode = serializeNode(node);
       if (typeof serializedNode === 'string') {
