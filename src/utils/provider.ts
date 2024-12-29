@@ -1,7 +1,7 @@
 import { hbs } from '@lifeart/gxt';
 import { provideContext } from './context';
 import { getDocument, RENDERING_CONTEXT, api } from './dom-api';
-import { NS_SVG, NS_MATHML } from '@/utils/namespaces';
+import { NS_SVG, NS_MATHML, NS_XMLNS, NS_XLINK } from '@/utils/namespaces';
 
 // SVG DOM API
 export const svgDomApi = {
@@ -18,7 +18,21 @@ export const svgDomApi = {
   },
   attr: (element: SVGElement, name: string, value: string) => {
     if (name.includes(':')) {
-      element.setAttributeNS(NS_SVG, name, value);
+      // console.log(element, name, value);
+      if (name.startsWith('xmlns')) {
+        element.setAttributeNS(NS_XMLNS, name, value);
+      } else if (name.startsWith('xlink')) {
+        element.setAttributeNS(NS_XLINK, name, value);
+      } else {
+        element.setAttributeNS(NS_SVG, name, value);
+      }
+    } else {
+      element.setAttribute(name, value);
+    }
+  },
+  prop: (element: SVGElement, name: string, value: string) => {
+    if (name === 'className') {
+      element.setAttribute('class', value);
     } else {
       element.setAttribute(name, value);
     }
@@ -46,6 +60,9 @@ export const mathDomApi = {
     } else {
       element.setAttribute(name, value);
     }
+  },
+  prop: (element: SVGElement, name: string, value: string) => {
+    element.setAttribute(name, value);
   },
   append: (parent: SVGElement, child: SVGElement) => {
     parent.appendChild(child);

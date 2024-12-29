@@ -452,7 +452,7 @@ export function serializeNode(
     }
   } else if (
     typeof node === 'object' &&
-    node.tag && (bindings.has(node.tag) || node.tag.startsWith('$:$_'))
+    node.tag && (bindings.has(node.tag) || node.tag.startsWith('$:$_') || node.tag.includes('.'))
   ) {
     const hasSplatAttrs = node.attributes.find((attr) => {
       return attr[0] === '...attributes';
