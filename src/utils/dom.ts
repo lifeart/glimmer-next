@@ -378,10 +378,13 @@ function $ev(
   } else if (eventName === EVENT_TYPE.ON_CREATED) {
     if (REACTIVE_MODIFIERS) {
       let destructor = () => void 0;
-      const updatingCell = formula(() => {
-        destructor();
-        return (fn as ModifierFn)(element);
-      }, `${element.tagName}.modifier`);
+      const updatingCell = formula(
+        () => {
+          destructor();
+          return (fn as ModifierFn)(element);
+        },
+        `${element.tagName}.modifier`,
+      );
       const opcodeDestructor = opcodeFor(updatingCell, (dest: any) => {
         if (isFn(dest)) {
           destructor = dest as any;
@@ -512,14 +515,7 @@ function _DOM(
   if (tag === 'svg') {
     provideContext(ctx, RENDERING_CONTEXT, svgDomApi);
   }
-  let oldAPI = api;
   api = getContext<typeof HTMLAPI>(ctx, RENDERING_CONTEXT)!;
-  if (!api) {
-    api = getContext<typeof HTMLAPI>(ctx, RENDERING_CONTEXT)!;
-  }
-  if (!api) {
-    api = oldAPI;
-  }
   const element = api.element(tag);
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.push(`${tag}`);
