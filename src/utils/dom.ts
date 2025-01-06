@@ -1189,7 +1189,7 @@ export function $_each<T extends { id: number }>(
   addToTree(ctx, instance as unknown as Component<any>);
   return toNodeReturnType(outlet, instance);
 }
-const ArgProxyHandler = {
+const ArgProxyHandler: ProxyHandler<{}> = {
   get(target: Record<string, () => unknown>, prop: string) {
     if (prop in target) {
       if (!isFn(target[prop])) {
@@ -1199,10 +1199,16 @@ const ArgProxyHandler = {
     }
     return undefined;
   },
-  set() {
+  set(target, prop, value) {
+    if (prop === $context) {
+      // @ts-expect-error unknown property
+      target[prop] = value;
+      return true;
+    }
     if (IS_DEV_MODE) {
       throw new Error('args are readonly');
     }
+    return false;
   },
 };
 export function $_GET_ARGS(ctx: any, args: any) {
@@ -1261,7 +1267,6 @@ export function $_args(
         value: props ?? {},
         enumerable: false,
       });
-      // @ts-expect-error ArgProxyHandler
       return new Proxy(args, ArgProxyHandler);
     }
   } else {

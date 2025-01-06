@@ -1,5 +1,5 @@
 import { renderComponent, type ComponentReturnType } from '@/utils/component';
-import { getNodeCounter, getRoot, resetNodeCounter } from '@/utils/dom';
+import { createRoot, getNodeCounter, getRoot, resetNodeCounter, setRoot } from '@/utils/dom';
 import { api as rehydrationDomApi } from '@/utils/ssr/rehydration-dom-api';
 import { api, RENDERING_CONTEXT } from '@/utils/dom-api';
 import { $args, $context, $template } from '../shared';
@@ -121,7 +121,8 @@ export function withRehydration(
     rehydrationScheduled = true;
     pushToStack(targetNode, true);
     resetNodeCounter();
-    const root = getRoot()!;
+    const root = getRoot() || createRoot();
+    setRoot(root);
     provideContext(root, RENDERING_CONTEXT, rehydrationDomApi);
 
     // @ts-expect-error

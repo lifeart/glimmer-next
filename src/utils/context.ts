@@ -60,6 +60,11 @@ export function provideContext<T>(
   value: T,
 ): void {
   if (!CONTEXTS.has(ctx)) {
+    if (import.meta.env.DEV) {
+      if (!ctx) {
+        throw new Error("Unable to provide context to empty root");
+      }
+    }
     CONTEXTS.set(ctx, new Map());
   }
 
