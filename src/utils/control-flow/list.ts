@@ -326,7 +326,7 @@ export class BasicListComponent<T extends { id: number }> {
       if (!IN_SSR_ENV) {
         parent && parent.removeChild(targetNode);
       }
-      if (trueParent !== parent) {
+      if (parent && trueParent !== parent) {
         api.insert(trueParent, parent, bottomMarker);
       }
     }

@@ -115,22 +115,8 @@ function processTransformedFiles(
           return;
         }
         seenNodes.add(node);
-
-        if (node.program) {
-          node.program.blockParams.forEach((p) => {
-            bindings.add(p);
-          });
-        }
-        if (node.program.blockParams.length && node.program.blockParams.includes('MySecret')) {
-          console.log('----BlockStatement-----', node.program.blockParams, bindings);
-        }
         // @ts-expect-error fix-here
         program.template.push(ToJSType(node));
-        // if (node.program) {
-        //   node.program.blockParams.forEach((p) => {
-        //     bindings.delete(p);
-        //   });
-        // }
       },
       ElementNode: {
         enter(node) {

@@ -131,7 +131,7 @@ export function toOptionalChaining<
   if (typeof str !== 'string') {
     return str;
   }
-  if (str.includes('\'') || str.includes('"')) {
+  if (str.includes("'") || str.includes('"')) {
     return str;
   }
   // special control parts
@@ -404,20 +404,18 @@ export function serializeNode(
       );
       // unstable childs need to be wrapped in a component function
       if (hasStableChild) {
-        let childText = toChildArray(
-          childs,
-          newCtxName,
-        ).split(paramBounds).filter(Boolean).join(`${indexParamName}.value`);
+        let childText = toChildArray(childs, newCtxName)
+          .split(paramBounds)
+          .filter(Boolean)
+          .join(`${indexParamName}.value`);
         return `${FN_NAME}(${arrayName}, (${FN_FN_ARGS}) => ${childText}, ${EACH_KEY}, ${ctxName})`;
       } else {
         const extraContextName = nextCtxName();
-        let childText = toChildArray(
-          childs,
-          extraContextName,
-        ).split(paramBounds).filter(Boolean).join(`${indexParamName}.value`);
-        return `${FN_NAME}(${arrayName}, (${FN_FN_ARGS}) => [${
-          SYMBOLS.$_ucw
-        }((${extraContextName}) => ${childText}, ${newCtxName})], ${EACH_KEY}, ${ctxName})`;
+        let childText = toChildArray(childs, extraContextName)
+          .split(paramBounds)
+          .filter(Boolean)
+          .join(`${indexParamName}.value`);
+        return `${FN_NAME}(${arrayName}, (${FN_FN_ARGS}) => [${SYMBOLS.$_ucw}((${extraContextName}) => ${childText}, ${newCtxName})], ${EACH_KEY}, ${ctxName})`;
       }
     } else if (key === '@if') {
       let hasStableTrueChild = hasStableChildsForControlNode(childs);
@@ -451,13 +449,11 @@ export function serializeNode(
       return `${SYMBOLS.IF}(${arrayName}, ${trueBranch}, ${falseBranch}, ${ctxName})`;
     }
   } else if (
-    typeof node === 'object' && ((function() {
-      if (node.tag === 'MySecret') {
-        console.log(bindings, node, new Error('foo').stack);
-      }
-      return true;
-    })()) &&
-    node.tag && (bindings.has(node.tag) || node.tag.startsWith('$:$_') || node.tag.includes('.'))
+    typeof node === 'object' &&
+    node.tag &&
+    (bindings.has(node.tag) ||
+      node.tag.startsWith('$:$_') ||
+      node.tag.includes('.'))
   ) {
     const hasSplatAttrs = node.attributes.find((attr) => {
       return attr[0] === '...attributes';
@@ -515,9 +511,10 @@ export function serializeNode(
         const slotName = slot.tag.startsWith(':')
           ? slot.tag.slice(1)
           : 'default';
-        return `${slotName}_: ${hasBlockParams},${slotName}: (${[...slot.blockParams,sContext].join(
-          ',',
-        )}) => [${slotChildren}]`;
+        return `${slotName}_: ${hasBlockParams},${slotName}: (${[
+          ...slot.blockParams,
+          sContext,
+        ].join(',')}) => [${slotChildren}]`;
       });
       const slotsObj = `{${serializedSlots.join(',')}}`;
       // @todo - we could pass `hasStableChild` ans hasBlock / hasBlockParams to the DOM helper

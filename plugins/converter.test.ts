@@ -139,7 +139,7 @@ describe.each([
   });
   describe('support concat expressions', () => {
     test('in attribute', () => {
-      const converted = $t<ASTv1.ElementNode>(`<Panel @title='1. {{t.document}}' />`,['t']);
+      const converted = $t<ASTv1.ElementNode>(`<Panel @title='1. {{t.document}}' />`,['t', 'Panel']);
       expect(converted).toEqual($node({
         tag: 'Panel',
         attributes: [['@title', "$:() => [\"1. \",$:t.document].join('')"]],
@@ -201,7 +201,7 @@ describe.each([
     });
     test('works for component nodes inside if', () => {
       const converted = $t<ASTv1.ElementNode>(
-        `{{#if true}}<Smile ...attributes />{{/if}}`,
+        `{{#if true}}<Smile ...attributes />{{/if}}`,['Smile']
       );
       expect(converted).toEqual(
         $control({
@@ -354,7 +354,7 @@ describe.each([
     describe('basic element helper support', () => {
       test('it return kinda valid component-like code', () => {
         expect($t<ASTv1.BlockStatement>(`{{(element "tag")}}`)).toEqual(
-          `$:() => $:function(args){const $fw = $_GET_FW(this, arguments);const $slots = $_GET_SLOTS(this, arguments);return{[$nodes]:[$_tag("tag", $fw,[()=>$_slot('default',()=>[],$slots)], this)], ctx: this};}`,
+          `$:() => $:function(args){$_GET_ARGS(this, arguments);const $fw = $_GET_FW(this, arguments);const $slots = $_GET_SLOTS(this, arguments);return{[$nodes]:[$_tag("tag", $fw,[()=>$_slot('default',()=>[],$slots,this)], this)], ctx: this};}`,
         );
       });
     });
@@ -771,7 +771,7 @@ describe.each([
       });
       test('it not override arg assign case', () => {
         const result = $t<ASTv1.BlockStatement>(
-          `{{#let foo "name" as |bar k|}}<Div @bar={{bar}} bar={{if bar bar}} />{{/let}}`,
+          `{{#let foo "name" as |bar k|}}<Div @bar={{bar}} bar={{if bar bar}} />{{/let}}`,['Div']
         );
         if (flags.IS_GLIMMER_COMPAT_MODE) {
           expect(result).toEqual(
@@ -859,8 +859,7 @@ describe.each([
       });
       test('it do not add UnstableChildWrapper if we have component surrounded by empty text', () => {
         const converted = $t<ASTv1.BlockStatement>(
-          `{{#each foo as |bar|}}   <Smile />   {{/each}}`,
-        );
+          `{{#each foo as |bar|}}   <Smile />   {{/each}}`, ['Smile']);
         expect($s(converted)).toEqual(
           `$_each(${$glimmerCompat(
             'foo',
@@ -869,9 +868,9 @@ describe.each([
           )},ctx0)], null, this)`,
         );
       });
-      test('it add UnstableChildWrapper if component surrounded my meaningful text', () => {
+      test('it add UnstableChildWrapper if component surrounded my meaningful text245', () => {
         const converted = $t<ASTv1.BlockStatement>(
-          `{{#each foo as |bar|}}1<Smile />{{/each}}`,
+          `{{#each foo as |bar|}}1<Smile />{{/each}}`, ['Smile']
         );
         expect($s(converted)).toEqual(
           `$_each(${$glimmerCompat(
