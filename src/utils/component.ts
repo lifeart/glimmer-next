@@ -1,7 +1,9 @@
 import {
   destroy,
+  registerDestructor,
   DestructorFn,
   Destructors,
+  unregisterDestructor,
 } from '@/utils/glimmer/destroyable';
 import type {
   TemplateContext,
@@ -316,31 +318,11 @@ export async function destroyElement(
   }
 }
 
-var $newDestructors = new WeakMap<any, Destructors>();
-
-if (!import.meta.env.SSR) {
-  if (IS_DEV_MODE) {
-    window['getDestructors'] = () => $newDestructors;
-  }
-}
-
 export function associateDestroyable(ctx: any, destructors: Destructors) {
   if (destructors.length === 0) {
     return;
   }
-
-  if (IS_DEV_MODE) {
-    if (ctx.ctx && ctx.ctx !== ctx) {
-      throw new Error(`Invalid context`);
-    }
-  }
-  const existingDestructors = $newDestructors.get(ctx);
-
-  if (existingDestructors !== undefined) {
-    existingDestructors.push(...destructors);
-  } else {
-    $newDestructors.set(ctx, destructors);
-  }
+  registerDestructor(ctx, ...destructors);
 }
 
 export function removeDestructor(ctx: any, destructor: DestructorFn) {
@@ -349,26 +331,7 @@ export function removeDestructor(ctx: any, destructor: DestructorFn) {
       throw new Error(`Invalid context`);
     }
   }
-
-  const destructors = $newDestructors.get(ctx);
-
-  if (destructors === undefined) {
-    // No destructors to remove
-    return;
-  }
-
-  const index = destructors.indexOf(destructor);
-
-  if (index !== -1) {
-    // Remove the destructor in-place
-    destructors.splice(index, 1);
-
-    if (destructors.length === 0) {
-      // Remove the entry from the map if no destructors are left
-      $newDestructors.delete(ctx);
-    }
-    // No need to set the array back into the map since it's modified in-place
-  }
+  unregisterDestructor(ctx, destructor);
 }
 
 function runDestructorsSync(targetNode: Component<any>) {
@@ -379,14 +342,6 @@ function runDestructorsSync(targetNode: Component<any>) {
 
     destroy(currentNode);
 
-    const destructors = $newDestructors.get(currentNode);
-
-    if (destructors !== undefined) {
-      for (const fn of destructors) {
-        fn();
-      }
-      $newDestructors.delete(currentNode);
-    }
     if (WITH_CONTEXT_API) {
       PARENT_GRAPH.delete(currentNode);
     }
@@ -405,18 +360,7 @@ export function runDestructors(
   target: Component<any> | Root,
   promises: Array<Promise<void>> = [],
 ): Array<Promise<void>> {
-  destroy(target);
-  if ($newDestructors.has(target)) {
-    $newDestructors.get(target)!.forEach((fn) => {
-      const promise = fn();
-      if (promise) {
-        promises.push(promise);
-      }
-    });
-    $newDestructors.delete(target);
-  } else {
-    // console.info(`No destructors found for component`);
-  }
+  promises.push(...destroy(target));
   if (WITH_CONTEXT_API) {
     PARENT_GRAPH.delete(target);
   }
