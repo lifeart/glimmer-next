@@ -3,7 +3,6 @@ import { render } from '@lifeart/gxt/test-utils';
 
 module('Integration | InternalComponent | shadowroot', function () {
   test('it works for element helper [closed]', async function (assert) {
-    debugger;
     await render(
       <template>
         {{#let (element 'secret-content') as |MySecret|}}
