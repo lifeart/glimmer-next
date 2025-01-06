@@ -5,6 +5,7 @@ import {
 } from '@/utils/component';
 import { setDocument, getDocument } from '../dom-api';
 import { getRoot, resetNodeCounter, resetRoot } from '@/utils/dom';
+import { $template } from '../shared';
 
 type EnvironmentParams = {
   url: string;
@@ -21,7 +22,11 @@ export async function renderInBrowser(
   const doc = getDocument();
   const rootNode = doc.createElement('div');
   // @todo - add destructor
-  renderComponent(componentRenderFn(rootNode), rootNode, getRoot());
+  renderComponent({
+    [$template]: function() {
+      return new componentRenderFn(...arguments);
+    },
+  }, rootNode, getRoot());
   const html = rootNode.innerHTML;
   rootNode.remove();
   return html;

@@ -47,8 +47,8 @@ import { isRehydrationScheduled } from './ssr/rehydration';
 import { createHotReload } from './hmr';
 import { IfCondition } from './control-flow/if';
 import { CONSTANTS } from '../../plugins/symbols';
-import { getContext, provideContext } from './context';
-import { svgDomApi ,SVGProvider, HTMLProvider, MathMLProvider} from './provider';
+import { getContext } from './context';
+import { SVGProvider, HTMLProvider, MathMLProvider} from './provider';
 
 type RenderableType = Node | ComponentReturnType | string | number;
 type ShadowRootMode = 'open' | 'closed' | null;
@@ -93,7 +93,7 @@ let unstableWrapperId: number = 0;
 */
 export class Root {};
 let ROOT: Root | null = null;
-let api = HTMLAPI;
+let api!: typeof HTMLAPI;
 
 export const $_MANAGERS = {
   component: {
@@ -317,6 +317,9 @@ function resolveRenderable(
 
 const isRenderObject = (el: unknown): el is ComponentReturnType => typeof el === 'object' && el !== null && $nodes in el;
 
+export function initDOM(ctx: Component<any> | Root) {
+  api = getContext<typeof HTMLAPI>(ctx, RENDERING_CONTEXT)!;
+}
 
 export function addChild(
   element: HTMLElement | ShadowRoot,
@@ -512,10 +515,10 @@ function _DOM(
   ctx: any,
 ): Node {
   NODE_COUNTER++;
-  if (tag === 'svg') {
-    provideContext(ctx, RENDERING_CONTEXT, svgDomApi);
-  }
   api = getContext<typeof HTMLAPI>(ctx, RENDERING_CONTEXT)!;
+  if (!api) {
+    debugger;
+  }
   const element = api.element(tag);
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.push(`${tag}`);
@@ -604,6 +607,7 @@ function _DOM(
   }
 
   if (SUPPORT_SHADOW_DOM) {
+    console.log('element', element);
     let appendRef =
       hasShadowMode !== null
         ? isRehydrationScheduled()

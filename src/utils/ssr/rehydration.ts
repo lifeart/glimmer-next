@@ -1,7 +1,9 @@
-import { type ComponentReturnType } from '@/utils/component';
-import { getNodeCounter, resetNodeCounter } from '@/utils/dom';
+import { renderComponent, type ComponentReturnType } from '@/utils/component';
+import { getNodeCounter, getRoot, resetNodeCounter } from '@/utils/dom';
 import { api as rehydrationDomApi } from '@/utils/ssr/rehydration-dom-api';
-import { api as domApi } from '@/utils/dom-api';
+import { api, RENDERING_CONTEXT } from '@/utils/dom-api';
+import { $template } from '../shared';
+import { provideContext } from '../context';
 const withRehydrationStack: HTMLElement[] = [];
 const commentsToRehydrate: Comment[] = [];
 let rehydrationScheduled = false;
@@ -111,29 +113,6 @@ function pushToStack(node: HTMLElement, isFirst = false) {
   }
 }
 
-const originalDomAPI = { ...domApi };
-function patchDOMAPI() {
-  domApi.attr = rehydrationDomApi.attr;
-  domApi.comment = rehydrationDomApi.comment;
-  // @ts-expect-error
-  domApi.text = rehydrationDomApi.text;
-  domApi.textContent = rehydrationDomApi.textContent;
-  domApi.fragment = rehydrationDomApi.fragment;
-  domApi.element = rehydrationDomApi.element;
-  domApi.append = rehydrationDomApi.append;
-  domApi.insert = rehydrationDomApi.insert;
-}
-function rollbackDOMAPI() {
-  domApi.attr = originalDomAPI.attr;
-  domApi.comment = originalDomAPI.comment;
-  domApi.text = originalDomAPI.text;
-  domApi.textContent = originalDomAPI.textContent;
-  domApi.fragment = originalDomAPI.fragment;
-  domApi.element = originalDomAPI.element;
-  domApi.append = originalDomAPI.append;
-  domApi.insert = originalDomAPI.insert;
-}
-
 export function withRehydration(
   componentCreationCallback: () => ComponentReturnType,
   targetNode: HTMLElement, // the node to render the component into
@@ -142,13 +121,19 @@ export function withRehydration(
     rehydrationScheduled = true;
     pushToStack(targetNode, true);
     resetNodeCounter();
-    patchDOMAPI();
+    const root = getRoot()!;
+    provideContext(root, RENDERING_CONTEXT, rehydrationDomApi);
 
     // @ts-expect-error
     nodesToRemove.forEach((node) => node.remove());
     // withRehydrationStack.reverse();
     // console.log('withRehydrationStack', withRehydrationStack);
-    componentCreationCallback();
+    const wrapper = {
+      [$template]: function() {
+        return new componentCreationCallback(...arguments);
+      }
+    } as ComponentReturnType;
+    renderComponent(wrapper, targetNode, root, true)
     if (withRehydrationStack.length > 0) {
       console.warn('withRehydrationStack is not empty', withRehydrationStack);
       // withRehydrationStack.forEach((node) => {
@@ -158,13 +143,14 @@ export function withRehydration(
     }
     rehydrationScheduled = false;
     nodesMap.clear();
-    rollbackDOMAPI();
+    // rollbackDOMAPI();
   } catch (e) {
     rehydrationScheduled = false;
     withRehydrationStack.length = 0;
     nodesMap.clear();
     resetNodeCounter();
-    rollbackDOMAPI();
+    const root = getRoot()!;
+    provideContext(root, RENDERING_CONTEXT, api);
     throw e;
   }
 }

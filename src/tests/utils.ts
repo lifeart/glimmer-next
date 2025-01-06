@@ -16,37 +16,20 @@ export async function cleanupRender() {
 }
 
 export function rehydrate(component: ComponentReturnType) {
-  let cmp: any = null;
   let root = createRoot();
   setRoot(root);
-  withRehydration(() => {
-    // @ts-expect-error typings mismatch
-    cmp = new component();
-    return cmp;
-  }, renderTarget());
-
+  withRehydration(component, renderTarget());
 }
 export async function ssr(component: any) {
   if (getRoot()) {
     throw new Error('Root already exists');
   }
   resetNodeCounter();
-  let cmp: any = null;
-  let root = {};
+  let root = createRoot();
   setRoot(root);
-  const content = await renderInBrowser(() => {
-    cmp = new component(root);
-    return cmp;
-  });
+  const content = await renderInBrowser(component);
   renderTarget().innerHTML = content;
-  if (cmp.ctx) {
-    await Promise.all(runDestructors(cmp.ctx));
-  } else {
-    await Promise.all(runDestructors(cmp));
-  }
-  if (root && cmp !== root) {
-    await Promise.all(runDestructors(root));
-  }
+  await Promise.all(runDestructors(root));
   resetNodeCounter();
   resetRoot();
 }

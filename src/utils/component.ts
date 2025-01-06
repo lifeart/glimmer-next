@@ -23,7 +23,7 @@ import {
   FRAGMENT_TYPE,
   PARENT_GRAPH,
 } from './shared';
-import { addChild, createRoot, getRoot, Root, setRoot } from './dom';
+import { addChild, createRoot, getRoot, initDOM, Root, setRoot } from './dom';
 import { provideContext } from './context';
 
 export type ComponentRenderTarget =
@@ -108,10 +108,10 @@ export function renderComponent(
         setRoot(createRoot());
       }
     }
+    // console.log('context provided', getRoot(),  api);
+    provideContext(getRoot()!, RENDERING_CONTEXT, api);
+    initDOM(getRoot()!);
   }
-
-  // console.log('context provided', getRoot(),  api);
-  provideContext(getRoot()!, RENDERING_CONTEXT, api);
 
   if ($template in component && isFn(component[$template])) {
     return renderComponent(
@@ -124,6 +124,7 @@ export function renderComponent(
 
   const destructors: Destructors = [];
   const children = component[$nodes];
+
 
   if (TRY_CATCH_ERROR_HANDLING) {
     try {
