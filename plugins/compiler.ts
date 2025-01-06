@@ -60,9 +60,11 @@ export function compiler(mode: string, options: Options = {}): Plugin {
     },
     transform(code: string, file: string) {
       if (templateFileRegex.test(file)) {
-        const intermediate = fixContentTagOutput(p.process(code, {
-          filename: file,
-        }));
+        const intermediate = fixContentTagOutput(
+          p.process(code, {
+            filename: file,
+          }),
+        );
 
         if (mode === 'development') {
           const shouldHotReload = options.disableHMR

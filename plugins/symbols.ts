@@ -45,7 +45,7 @@ export const SYMBOLS = {
 
 export const CONSTANTS = {
   SCOPE_KEY: '$_scope',
-}
+};
 
 export const EVENT_TYPE = {
   ON_CREATED: '0',

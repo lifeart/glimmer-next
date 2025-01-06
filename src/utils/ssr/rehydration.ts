@@ -2,7 +2,7 @@ import { renderComponent, type ComponentReturnType } from '@/utils/component';
 import { getNodeCounter, getRoot, resetNodeCounter } from '@/utils/dom';
 import { api as rehydrationDomApi } from '@/utils/ssr/rehydration-dom-api';
 import { api, RENDERING_CONTEXT } from '@/utils/dom-api';
-import { $template } from '../shared';
+import { $args, $context, $template } from '../shared';
 import { provideContext } from '../context';
 const withRehydrationStack: HTMLElement[] = [];
 const commentsToRehydrate: Comment[] = [];
@@ -128,12 +128,17 @@ export function withRehydration(
     nodesToRemove.forEach((node) => node.remove());
     // withRehydrationStack.reverse();
     // console.log('withRehydrationStack', withRehydrationStack);
+    // @ts-expect-error typings mismatch
     const wrapper = {
-      [$template]: function() {
+      [$args]: {
+        [$context]: root,
+      },
+      [$template]: function () {
+        // @ts-expect-error typings mismatch
         return new componentCreationCallback(...arguments);
-      }
+      },
     } as ComponentReturnType;
-    renderComponent(wrapper, targetNode, root, true)
+    renderComponent(wrapper, targetNode, root, true);
     if (withRehydrationStack.length > 0) {
       console.warn('withRehydrationStack is not empty', withRehydrationStack);
       // withRehydrationStack.forEach((node) => {
@@ -143,6 +148,7 @@ export function withRehydration(
     }
     rehydrationScheduled = false;
     nodesMap.clear();
+    provideContext(root, RENDERING_CONTEXT, api);
     // rollbackDOMAPI();
   } catch (e) {
     rehydrationScheduled = false;

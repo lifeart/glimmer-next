@@ -4,7 +4,6 @@ import { toSafeJSPath, escapeString } from './utils';
 const f = (str: string) => toSafeJSPath(str);
 const e = (str: any) => escapeString(str as string);
 
-
 describe('escapeString', () => {
   test('works for classic case', () => {
     expect(e('this.foo.bar.baz')).toEqual(`"this.foo.bar.baz"`);
@@ -31,13 +30,12 @@ describe('escapeString', () => {
     expect(e('123.123.123')).toEqual(`"123.123.123"`);
   });
   test('throw error if input is not a string', () => {
-    expect(() => e(123)).toThrow('Not a string')
+    expect(() => e(123)).toThrow('Not a string');
   });
   test('skip already escaped strings', () => {
     expect(e('"this.foo.bar.baz"')).toEqual(`"this.foo.bar.baz"`);
   });
 });
-
 
 describe('toSafeJSPath', () => {
   test('works for classic case', () => {

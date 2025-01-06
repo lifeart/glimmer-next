@@ -501,6 +501,7 @@ const EmberProxy: any = new Proxy(
 
         return function () {
           const root = getRoot();
+          // @ts-expect-error typings error
           return [componentToRenderTree(root!)];
         };
       } else if (key === 'guidFor') {

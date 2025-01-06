@@ -125,7 +125,6 @@ export function renderComponent(
   const destructors: Destructors = [];
   const children = component[$nodes];
 
-
   if (TRY_CATCH_ERROR_HANDLING) {
     try {
       children.forEach((child, i) => {
@@ -373,7 +372,6 @@ export function removeDestructor(ctx: any, destructor: DestructorFn) {
 }
 
 function runDestructorsSync(targetNode: Component<any>) {
-
   const stack = [targetNode];
 
   while (stack.length > 0) {
@@ -382,7 +380,7 @@ function runDestructorsSync(targetNode: Component<any>) {
     destroy(currentNode);
 
     const destructors = $newDestructors.get(currentNode);
-  
+
     if (destructors !== undefined) {
       for (const fn of destructors) {
         fn();

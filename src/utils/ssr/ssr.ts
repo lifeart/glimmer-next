@@ -22,11 +22,17 @@ export async function renderInBrowser(
   const doc = getDocument();
   const rootNode = doc.createElement('div');
   // @todo - add destructor
-  renderComponent({
-    [$template]: function() {
-      return new componentRenderFn(...arguments);
+  renderComponent(
+    {
+      // @ts-expect-error typings error
+      [$template]: function () {
+        // @ts-expect-error typings error
+        return new componentRenderFn(...arguments);
+      },
     },
-  }, rootNode, getRoot());
+    rootNode,
+    getRoot(),
+  );
   const html = rootNode.innerHTML;
   rootNode.remove();
   return html;
@@ -53,7 +59,9 @@ export async function render(
 
   const s = new XMLSerializer();
 
-  const html = Array.from(rootNode.childNodes).map((n => s.serializeToString(n))).join('');
+  const html = Array.from(rootNode.childNodes)
+    .map((n) => s.serializeToString(n))
+    .join('');
 
   const oldRoot = getRoot();
   if (oldRoot) {

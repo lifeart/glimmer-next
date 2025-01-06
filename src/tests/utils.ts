@@ -1,10 +1,22 @@
-import { type ComponentReturnType, destroyElementSync, renderComponent } from '@/utils/component';
+import {
+  type ComponentReturnType,
+  destroyElementSync,
+  renderComponent,
+} from '@/utils/component';
 import { getDocument } from '@/utils/dom-api';
 import { withRehydration } from '@/utils/ssr/rehydration';
-import { getRoot, resetNodeCounter, setRoot, resetRoot, createRoot } from '@/utils/dom';
+import {
+  getRoot,
+  resetNodeCounter,
+  setRoot,
+  resetRoot,
+  createRoot,
+} from '@/utils/dom';
 import { renderInBrowser } from '@/utils/ssr/ssr';
 import { runDestructors } from '@/utils/component';
 import { registerDestructor } from '@/utils/glimmer/destroyable';
+import { $args } from '../utils';
+import { $context } from '@/utils/shared';
 
 export async function cleanupRender() {
   const root = getRoot();
@@ -18,6 +30,7 @@ export async function cleanupRender() {
 export function rehydrate(component: ComponentReturnType) {
   let root = createRoot();
   setRoot(root);
+  // @ts-expect-error typings mismatch
   withRehydration(component, renderTarget());
 }
 export async function ssr(component: any) {
@@ -38,10 +51,6 @@ export function renderTarget() {
   return getDocument().getElementById('ember-testing')!;
 }
 
-class RenderFunctionOwner {
-  debugName = 'TestContainerRenderFunctionOwner';
- }
-
 export async function render(component: ComponentReturnType) {
   const targetElement = getDocument().getElementById('ember-testing')!;
   if (getRoot()) {
@@ -49,13 +58,23 @@ export async function render(component: ComponentReturnType) {
   }
   if (targetElement.childNodes.length) {
     console.warn('testing container not empty, force cleanup');
+    console.info(targetElement.innerHTML);
     targetElement.innerHTML = '';
   }
-  const owner = new RenderFunctionOwner();
-  let renderResult = renderComponent({
-    // @ts-expect-error typings mismatch
-    template: component,
-  }, targetElement, owner);
+  const owner = createRoot();
+  setRoot(owner);
+  let renderResult = renderComponent(
+    {
+      // @ts-expect-error typings mismatch
+      [$args]: {
+        [$context]: owner,
+      },
+      template: component,
+    },
+    targetElement,
+    owner,
+    false,
+  );
   registerDestructor(owner, () => {
     destroyElementSync(renderResult.nodes);
   });
@@ -72,7 +91,6 @@ export async function rerender(timeout = 16) {
     setTimeout(resolve, timeout);
   });
 }
-
 
 export function find(selector: string): Element {
   const element = getDocument()

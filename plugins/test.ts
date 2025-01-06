@@ -70,7 +70,6 @@ function processTransformedFiles(
   programs: Programs,
   programResults: string[],
 ) {
-
   const txt = babelResult?.code ?? '';
 
   const globalFlags = flags;
@@ -78,7 +77,11 @@ function processTransformedFiles(
   hbsToProcess.forEach((content) => {
     const flags = content.flags;
     const bindings = content.bindings;
-    const { ToJSType, ElementToNode } = convert(seenNodes, globalFlags, bindings);
+    const { ToJSType, ElementToNode } = convert(
+      seenNodes,
+      globalFlags,
+      bindings,
+    );
     const ast = preprocess(content.template);
     const program: (typeof programs)[number] = {
       meta: flags,
@@ -128,14 +131,13 @@ function processTransformedFiles(
           });
           seenNodes.add(node);
           program.template.push(ElementToNode(node));
-          
         },
         exit(node) {
           node.blockParams.forEach((p) => {
             bindings.delete(p);
           });
-        }
-      }
+        },
+      },
     });
     programs.push(program);
   });
@@ -186,6 +188,7 @@ function processTransformedFiles(
       ${declareReturn}
     }`
         : `(() => {
+      ${SYMBOLS.$_GET_ARGS}(this, arguments);
       ${maybeSlots}
       ${maybeFw}
       ${declareRoots}

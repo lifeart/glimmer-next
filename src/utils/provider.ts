@@ -12,9 +12,7 @@ export const svgDomApi = {
     node.textContent = text;
   },
   element: (tagName: string): SVGElement => {
-    return getDocument().createElementNS(NS_SVG,
-      tagName,
-    ) as SVGElement;
+    return getDocument().createElementNS(NS_SVG, tagName) as SVGElement;
   },
   attr: (element: SVGElement, name: string, value: string) => {
     if (name.includes(':')) {
@@ -50,9 +48,7 @@ export const mathDomApi = {
     node.textContent = text;
   },
   element: (tagName: string): SVGElement => {
-    return getDocument().createElementNS(NS_MATHML,
-      tagName,
-    ) as SVGElement;
+    return getDocument().createElementNS(NS_MATHML, tagName) as SVGElement;
   },
   attr: (element: SVGElement, name: string, value: string) => {
     if (name.includes(':')) {
@@ -70,16 +66,19 @@ export const mathDomApi = {
 };
 
 export function SVGProvider() {
+  // @ts-expect-error typings error
   provideContext(this, RENDERING_CONTEXT, svgDomApi);
   return hbs`{{yield}}`;
 }
 
 export function HTMLProvider() {
+  // @ts-expect-error typings error
   provideContext(this, RENDERING_CONTEXT, api);
   return hbs`{{yield}}`;
 }
 
 export function MathMLProvider() {
+  // @ts-expect-error typings error
   provideContext(this, RENDERING_CONTEXT, mathDomApi);
   return hbs`{{yield}}`;
 }

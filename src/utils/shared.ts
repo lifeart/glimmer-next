@@ -10,13 +10,13 @@ import { Root } from './dom';
 
 export const isTag = Symbol('isTag');
 export const $template = 'template' as const;
+export const $context = '_context' as const;
 export const $nodes = 'nodes' as const;
 export const $args = 'args' as const;
 export const $_debug_args = '_debug_args' as const;
 export const $fwProp = '$fw' as const;
 export const noop = () => {};
 export const FRAGMENT_TYPE = 11; // Node.DOCUMENT_FRAGMENT_NODE
-
 
 export const IN_SSR_ENV =
   import.meta.env.SSR || location.pathname === '/tests.html';
@@ -36,7 +36,7 @@ export function isFn(value: unknown): value is Function {
 }
 export function isEmpty(value: unknown): value is null | undefined {
   return value === null || value === undefined;
-} 
+}
 export function isPrimitive(value: unknown): value is string | number {
   const vType = typeof value;
   return (
@@ -51,8 +51,11 @@ export function isTagLike(child: unknown): child is AnyCell {
   return (child as AnyCell)[isTag];
 }
 
-export const RENDER_TREE = new WeakMap<Component<any>, Set<Component>>();
-export const PARENT_GRAPH = new WeakMap<Component<any> | Root, Component<any>>();
+export const RENDER_TREE = new WeakMap<Component<any> | Root, Set<Component>>();
+export const PARENT_GRAPH = new WeakMap<
+  Component<any> | Root,
+  Component<any>
+>();
 export const BOUNDS = new WeakMap<
   Component<any>,
   Array<HTMLElement | Comment>
@@ -163,7 +166,9 @@ HMR stuff
 */
 
 export const LISTS_FOR_HMR: Set<BasicListComponent<any>> = new Set();
-export const IFS_FOR_HMR: Set<()=>{item: GenericReturnType, set: (item: GenericReturnType) => void}> = new Set();
+export const IFS_FOR_HMR: Set<
+  () => { item: GenericReturnType; set: (item: GenericReturnType) => void }
+> = new Set();
 export const COMPONENTS_HMR = new WeakMap<
   Component | ComponentReturnType,
   Set<{

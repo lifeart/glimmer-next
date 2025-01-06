@@ -228,7 +228,9 @@ export function convert(
 
       if (node.path.original === 'element') {
         // @todo  - write test to catch props issue here
-        return `$:function(args){${SYMBOLS.$_GET_ARGS}(this, arguments);const $fw = ${
+        return `$:function(args){${
+          SYMBOLS.$_GET_ARGS
+        }(this, arguments);const $fw = ${
           SYMBOLS.$_GET_FW
         }(this, arguments);const $slots = ${
           SYMBOLS.$_GET_SLOTS

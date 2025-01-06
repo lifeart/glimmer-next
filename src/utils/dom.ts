@@ -26,7 +26,11 @@ import {
   destroy,
   registerDestructor,
 } from './glimmer/destroyable';
-import { api as HTMLAPI, getDocument, RENDERING_CONTEXT } from '@/utils/dom-api';
+import {
+  api as HTMLAPI,
+  getDocument,
+  RENDERING_CONTEXT,
+} from '@/utils/dom-api';
 import {
   isFn,
   isPrimitive,
@@ -42,13 +46,14 @@ import {
   COMPONENTS_HMR,
   isEmpty,
   FRAGMENT_TYPE,
+  $context,
 } from './shared';
 import { isRehydrationScheduled } from './ssr/rehydration';
 import { createHotReload } from './hmr';
 import { IfCondition } from './control-flow/if';
 import { CONSTANTS } from '../../plugins/symbols';
 import { getContext } from './context';
-import { SVGProvider, HTMLProvider, MathMLProvider} from './provider';
+import { SVGProvider, HTMLProvider, MathMLProvider } from './provider';
 
 type RenderableType = Node | ComponentReturnType | string | number;
 type ShadowRootMode = 'open' | 'closed' | null;
@@ -91,7 +96,7 @@ let unstableWrapperId: number = 0;
   Referencing to top-level application context,
   Acting as main DI container and metadata storage.
 */
-export class Root {};
+export class Root {}
 let ROOT: Root | null = null;
 let api!: typeof HTMLAPI;
 
@@ -315,7 +320,8 @@ function resolveRenderable(
   }
 }
 
-const isRenderObject = (el: unknown): el is ComponentReturnType => typeof el === 'object' && el !== null && $nodes in el;
+const isRenderObject = (el: unknown): el is ComponentReturnType =>
+  typeof el === 'object' && el !== null && $nodes in el;
 
 export function initDOM(ctx: Component<any> | Root) {
   api = getContext<typeof HTMLAPI>(ctx, RENDERING_CONTEXT)!;
@@ -381,13 +387,10 @@ function $ev(
   } else if (eventName === EVENT_TYPE.ON_CREATED) {
     if (REACTIVE_MODIFIERS) {
       let destructor = () => void 0;
-      const updatingCell = formula(
-        () => {
-          destructor();
-          return (fn as ModifierFn)(element);
-        },
-        `${element.tagName}.modifier`,
-      );
+      const updatingCell = formula(() => {
+        destructor();
+        return (fn as ModifierFn)(element);
+      }, `${element.tagName}.modifier`);
       const opcodeDestructor = opcodeFor(updatingCell, (dest: any) => {
         if (isFn(dest)) {
           destructor = dest as any;
@@ -516,8 +519,16 @@ function _DOM(
 ): Node {
   NODE_COUNTER++;
   api = getContext<typeof HTMLAPI>(ctx, RENDERING_CONTEXT)!;
-  if (!api) {
-    debugger;
+  if (import.meta.env.DEV) {
+    if (!getContext<typeof HTMLAPI>(getRoot()!, RENDERING_CONTEXT)) {
+      console.error('Unable to resolve root rendering context');
+    }
+  }
+  if (import.meta.env.DEV) {
+    if (!api) {
+      debugger;
+      api = getContext<typeof HTMLAPI>(ctx, RENDERING_CONTEXT)!;
+    }
   }
   const element = api.element(tag);
   if (IS_DEV_MODE) {
@@ -607,7 +618,6 @@ function _DOM(
   }
 
   if (SUPPORT_SHADOW_DOM) {
-    console.log('element', element);
     let appendRef =
       hasShadowMode !== null
         ? isRehydrationScheduled()
@@ -867,7 +877,7 @@ function _component(
   fw: FwType,
   ctx: Component<any>,
 ) {
-  args['_context'] = ctx;
+  args[$context] = ctx;
   let comp = _comp;
   if (WITH_EMBER_INTEGRATION) {
     if ($_MANAGERS.component.canHandle(_comp)) {
@@ -1094,7 +1104,7 @@ function text(
 function getRenderTargets(debugName: string) {
   const ifPlaceholder = IS_DEV_MODE ? api.comment(debugName) : api.comment('');
   let outlet = isRehydrationScheduled()
-    ? (ifPlaceholder.parentElement || api.fragment())
+    ? ifPlaceholder.parentElement || api.fragment()
     : api.fragment();
 
   if (!ifPlaceholder.isConnected) {
@@ -1197,11 +1207,12 @@ const ArgProxyHandler = {
 };
 export function $_GET_ARGS(ctx: any, args: any) {
   ctx[$args] = ctx[$args] || args[0] || {};
-  const parentContext = ctx[$args]['_context'];
+  const parentContext = ctx[$args][$context];
   if (parentContext) {
     // console.log('context', parentContext, ctx);
     addToTree(parentContext, ctx);
   } else {
+    // @ts-expect-error typings error
     addToTree(getRoot()!, ctx);
   }
 }
@@ -1279,6 +1290,7 @@ export function $_dc(
   const destructor = opcodeFor(_cmp, (value: any) => {
     if (typeof value !== 'function') {
       result = value;
+      // @ts-expect-error typings error
       addToTree(ctx, result);
       return;
     }

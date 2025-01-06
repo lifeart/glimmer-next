@@ -11,19 +11,23 @@ interface OwnedObject<O extends object> {
   Glimmer is unopinionated about this owner, but will forward it through its
   internal resolution system, and through its managers if it is provided.
 */
-export function getOwner<O extends object = object>(object: object): O | undefined {
+export function getOwner<O extends object = object>(
+  object: object,
+): O | undefined {
   return (object as OwnedObject<O>)[OWNER];
 }
 
 /**
   `setOwner` set's an object's owner
 */
-export function setOwner<O extends object = object>(object: object, owner: O): void {
+export function setOwner<O extends object = object>(
+  object: object,
+  owner: O,
+): void {
   (object as OwnedObject<O>)[OWNER] = owner;
 }
 
-
 export function createOwner() {
-    // returning owner object
-    return {};
+  // returning owner object
+  return {};
 }

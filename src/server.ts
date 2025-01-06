@@ -11,7 +11,7 @@ const queue: Promise<any>[] = [];
 export async function render(url: string) {
   await Promise.all(queue);
   let resolve = () => void 0;
-  const p = new Promise((_resolve)=> {
+  const p = new Promise((_resolve) => {
     resolve = _resolve as any;
   });
   queue.push(p);

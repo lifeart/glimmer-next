@@ -99,6 +99,7 @@ export class BasicListComponent<T extends { id: number }> {
     topMarker: Comment,
   ) {
     this.ItemComponent = ItemComponent;
+    // @ts-expect-error typings error
     addToTree(ctx, this);
     this.parentCtx = ctx;
     const mainNode = outlet;
@@ -429,9 +430,9 @@ export class AsyncListComponent<
   ) {
     super(params, outlet, topMarker);
     associateDestroyable(params.ctx, [
-      async () => { 
+      async () => {
         await this.syncList([]);
-       },
+      },
       opcodeFor(this.tag, async (value) => {
         await this.syncList(value as T[]);
       }),

@@ -6,11 +6,7 @@ import {
   type Component,
 } from '@/utils/component';
 import { Destructors } from '@/utils/glimmer/destroyable';
-import {
-  formula,
-  type Cell,
-  type MergedCell,
-} from '@/utils/reactive';
+import { formula, type Cell, type MergedCell } from '@/utils/reactive';
 import {
   $_debug_args,
   $DEBUG_REACTIVE_CONTEXTS,
@@ -19,7 +15,7 @@ import {
   isFn,
   isPrimitive,
   isTagLike,
-  addToTree
+  addToTree,
 } from '@/utils/shared';
 import { opcodeFor } from '@/utils/vm';
 
@@ -49,6 +45,7 @@ export class IfCondition {
     this.setupCondition(maybeCondition);
     this.trueBranch = trueBranch;
     this.falseBranch = falseBranch;
+    // @ts-expect-error typings error
     addToTree(parentContext, this);
     this.destructors.push(opcodeFor(this.condition, this.syncState.bind(this)));
     associateDestroyable(parentContext, [this.destroy.bind(this)]);
@@ -190,19 +187,16 @@ export class IfCondition {
   }
   setupCondition(maybeCondition: Cell<boolean>) {
     if (isFn(maybeCondition)) {
-      this.condition = formula(
-        () => {
-          const v = maybeCondition();
-          if (isPrimitive(v) || isEmpty(v)) {
-            return !!v;
-          } else if (isTagLike(v)){
-            return !!v.value;
-          } else {
-            return !!v;
-          }
-        },
-        'if-condition-wrapper-fn',
-      );
+      this.condition = formula(() => {
+        const v = maybeCondition();
+        if (isPrimitive(v) || isEmpty(v)) {
+          return !!v;
+        } else if (isTagLike(v)) {
+          return !!v.value;
+        } else {
+          return !!v;
+        }
+      }, 'if-condition-wrapper-fn');
     } else if (isPrimitive(maybeCondition)) {
       this.condition = formula(
         () => maybeCondition,
