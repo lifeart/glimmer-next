@@ -28,8 +28,6 @@ export async function cleanupRender() {
 }
 
 export function rehydrate(component: ComponentReturnType) {
-  let root = createRoot();
-  setRoot(root);
   // @ts-expect-error typings mismatch
   withRehydration(component, renderTarget());
 }

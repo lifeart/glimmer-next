@@ -121,7 +121,7 @@ export function withRehydration(
     rehydrationScheduled = true;
     pushToStack(targetNode, true);
     resetNodeCounter();
-    const root = getRoot() || createRoot();
+    const root = createRoot();
     setRoot(root);
     provideContext(root, RENDERING_CONTEXT, rehydrationDomApi);
 
