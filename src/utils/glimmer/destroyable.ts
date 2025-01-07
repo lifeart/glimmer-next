@@ -11,6 +11,12 @@ if (!import.meta.env.SSR) {
   }
 }
 export function destroy(ctx: object) {
+  if (destroyedObjects.has(ctx)) {
+    if (import.meta.env.DEV) {
+      console.warn(`Trying to destroy already destroyed node`);
+    }
+    return [];
+  }
   destroyedObjects.add(ctx);
   const destructors = $dfi.get(ctx);
   if (destructors === undefined) {
@@ -18,18 +24,22 @@ export function destroy(ctx: object) {
   }
   $dfi.delete(ctx);
   const results: Promise<void>[] = [];
+  let result;
   for (let i = 0; i < destructors.length; i++) {
-    let result = destructors[i]();
+    result = destructors[i]();
     if (result) {
-      results.push(result as unknown as Promise<void>);
+      results.push(result as Promise<void>);
     }
   }
   return results;
 }
 export function registerDestructor(ctx: object, ...fn: Destructors) {
-  const existingDestructors = $dfi.get(ctx) ?? [];
+  let existingDestructors = $dfi.get(ctx);
+  if (existingDestructors === undefined) {
+    existingDestructors = [];
+    $dfi.set(ctx, existingDestructors);
+  }
   existingDestructors.push(...fn);
-  $dfi.set(ctx, existingDestructors);
 }
 
 export function isDestroyed(ctx: object) {
