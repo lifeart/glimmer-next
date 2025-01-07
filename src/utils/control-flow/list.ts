@@ -3,7 +3,6 @@ import {
   associateDestroyable,
   destroyElement,
   destroyElementSync,
-  removeDestructor,
   renderElement,
   type Component,
 } from '@/utils/component';
@@ -427,6 +426,7 @@ export class SyncListComponent<
 export class AsyncListComponent<
   T extends { id: number },
 > extends BasicListComponent<T> {
+  destroyPromise: Promise<void[]> | null = null;
   constructor(
     params: ListComponentArgs<any>,
     outlet: RenderTarget,
@@ -434,6 +434,11 @@ export class AsyncListComponent<
   ) {
     super(params, outlet, topMarker);
     associateDestroyable(params.ctx, [
+      () => {
+        if (this.destroyPromise) {
+          return this.destroyPromise;
+        }
+      },
       async () => {
         await this.syncList([]);
       },
@@ -508,12 +513,9 @@ export class AsyncListComponent<
       const removePromise = Promise.all(removeQueue);
 
       if (removeQueue.length) {
-        const destroyFn = async () => {
-          await removePromise;
-        };
-        associateDestroyable(this.parentCtx, [destroyFn]);
+        this.destroyPromise = removePromise;
         removePromise.then(() => {
-          removeDestructor(this.parentCtx, destroyFn);
+          this.destroyPromise = null;
         });
       }
     }

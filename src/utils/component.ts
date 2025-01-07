@@ -3,7 +3,6 @@ import {
   registerDestructor,
   DestructorFn,
   Destructors,
-  unregisterDestructor,
 } from '@/utils/glimmer/destroyable';
 import type {
   TemplateContext,
@@ -114,7 +113,6 @@ export function renderComponent(
     if (!initDOM(getRoot()!)) {
       // setting default dom api
       provideContext(getRoot()!, RENDERING_CONTEXT, DEFAULT_API);
-      initDOM(getRoot()!);
     }
   }
 
@@ -327,15 +325,6 @@ export function associateDestroyable(ctx: any, destructors: Destructors) {
     return;
   }
   registerDestructor(ctx, ...destructors);
-}
-
-export function removeDestructor(ctx: any, destructor: DestructorFn) {
-  if (IS_DEV_MODE) {
-    if (ctx.ctx && ctx.ctx !== ctx) {
-      throw new Error(`Invalid context`);
-    }
-  }
-  unregisterDestructor(ctx, destructor);
 }
 
 function runDestructorsSync(targetNode: Component<any>) {

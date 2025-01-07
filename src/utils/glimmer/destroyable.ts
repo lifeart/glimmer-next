@@ -31,12 +31,6 @@ export function registerDestructor(ctx: object, ...fn: Destructors) {
   existingDestructors.push(...fn);
   $dfi.set(ctx, existingDestructors);
 }
-export function unregisterDestructor(ctx: object, ...fn: Destructors) {
-  const existingDestructors = $dfi.get(ctx) ?? [];
-  $dfi.set(ctx, existingDestructors.filter((d) => {
-    return !fn.includes(d);
-  }));
-}
 
 export function isDestroyed(ctx: object) {
   return destroyedObjects.has(ctx);
