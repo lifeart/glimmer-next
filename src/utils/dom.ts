@@ -1,5 +1,4 @@
 import {
-  associateDestroyable,
   type ComponentReturnType,
   type Slots,
   type Component,
@@ -649,7 +648,7 @@ function _DOM(
     }
   }
 
-  associateDestroyable(ctx, destructors);
+  registerDestructor(ctx, ...destructors);
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.pop();
   }
@@ -684,7 +683,7 @@ export function $_inElement(
       destructors.push(() => {
         appendRef.innerHTML = '';
       });
-      associateDestroyable(ctx, destructors);
+      registerDestructor(ctx, ...destructors);
       return $_fin([], this);
     } as unknown as Component<any>,
     {},
@@ -1026,12 +1025,9 @@ function createSlot(
 function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
   const api = initDOM(ctx);
   const $destructors: Destructors = [];
-  associateDestroyable(ctx, [
-    () => {
-      $destructors.forEach((fn) => fn());
-    },
-  ]);
-
+  registerDestructor(ctx, () => {
+    $destructors.forEach((fn) => fn());
+  });
   if (!(name in $slot)) {
     const slotPlaceholder: Comment = IS_DEV_MODE
       ? api.comment(`slot-{{${name}}}-placeholder`)
@@ -1324,7 +1320,7 @@ export function $_dc(
     result!.nodes.push(
       IS_DEV_MODE ? api.comment('placeholder') : api.comment(),
     );
-    associateDestroyable(ctx, [destructor]);
+    registerDestructor(ctx, destructor);
   } else {
     _cmp.destroy();
     destructor();
@@ -1438,7 +1434,7 @@ export function $_fin(
     $destructors.push(() => {
       destroy(ctx as unknown as object);
     });
-    associateDestroyable(ctx, $destructors);
+    registerDestructor(ctx, ...$destructors);
   }
 
   return {

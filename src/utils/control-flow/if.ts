@@ -1,11 +1,10 @@
 import {
-  associateDestroyable,
   destroyElement,
   type GenericReturnType,
   renderElement,
   type Component,
 } from '@/utils/component';
-import { Destructors } from '@/utils/glimmer/destroyable';
+import { Destructors, registerDestructor } from '@/utils/glimmer/destroyable';
 import { formula, type Cell, type MergedCell } from '@/utils/reactive';
 import {
   $_debug_args,
@@ -49,7 +48,7 @@ export class IfCondition {
     // @ts-expect-error typings error
     addToTree(parentContext, this);
     this.destructors.push(opcodeFor(this.condition, this.syncState.bind(this)));
-    associateDestroyable(parentContext, [this.destroy.bind(this)]);
+    registerDestructor(parentContext, this.destroy.bind(this));
     if (IS_DEV_MODE) {
       const instance = () => {
         return {

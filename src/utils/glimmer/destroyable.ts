@@ -1,4 +1,4 @@
-export type DestructorFn = () => void | Promise<void>;
+export type DestructorFn = () => void | Promise<void> | Promise<void[]>;
 export type Destructors = Array<DestructorFn>;
 
 // destructorsForInstance

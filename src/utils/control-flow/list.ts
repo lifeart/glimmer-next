@@ -1,6 +1,5 @@
 import {
   ComponentReturnType,
-  associateDestroyable,
   destroyElement,
   destroyElementSync,
   renderElement,
@@ -22,6 +21,7 @@ import {
 } from '@/utils/shared';
 import { isRehydrationScheduled } from '@/utils/ssr/rehydration';
 import { initDOM } from '@/utils/context';
+import { registerDestructor } from '../glimmer/destroyable';
 
 export function getFirstNode(
   rawItem:
@@ -120,11 +120,9 @@ export class BasicListComponent<T extends { id: number }> {
         },
       });
       LISTS_FOR_HMR.add(this);
-      associateDestroyable(ctx, [
-        () => {
-          LISTS_FOR_HMR.delete(this);
-        },
-      ]);
+      registerDestructor(ctx, () => {
+        LISTS_FOR_HMR.delete(this);
+      });
     }
     // "list bottom marker"
     if (IS_DEV_MODE) {
@@ -145,11 +143,9 @@ export class BasicListComponent<T extends { id: number }> {
         tag = new Cell(tag, 'list tag');
       } else if (isFn(originalTag)) {
         tag = formula(() => deepFnValue(originalTag), 'list tag');
-        associateDestroyable(ctx, [
-          () => {
-            (tag as MergedCell).destroy();
-          },
-        ]);
+        registerDestructor(ctx, () => {
+          (tag as MergedCell).destroy();
+        });
       }
     }
     this.tag = tag;
@@ -349,12 +345,12 @@ export class SyncListComponent<
     topMarker: Comment,
   ) {
     super(params, outlet, topMarker);
-    associateDestroyable(params.ctx, [
+    registerDestructor(params.ctx,
       () => this.syncList([]),
       opcodeFor(this.tag, (value) => {
         this.syncList(value as T[]);
       }),
-    ]);
+    );
   }
   fastCleanup() {
     const { keyMap, indexMap, bottomMarker, topMarker } = this;
@@ -433,7 +429,7 @@ export class AsyncListComponent<
     topMarker: Comment,
   ) {
     super(params, outlet, topMarker);
-    associateDestroyable(params.ctx, [
+    registerDestructor(params.ctx,
       () => {
         if (this.destroyPromise) {
           return this.destroyPromise;
@@ -445,7 +441,7 @@ export class AsyncListComponent<
       opcodeFor(this.tag, async (value) => {
         await this.syncList(value as T[]);
       }),
-    ]);
+    );
   }
   async fastCleanup() {
     const { bottomMarker, topMarker, keyMap, indexMap } = this;

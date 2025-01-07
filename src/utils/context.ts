@@ -39,6 +39,9 @@ export function getContext<T>(
   ctx: Component<any> | Root,
   key: symbol,
 ): T | null {
+  if (!WITH_CONTEXT_API) {
+    ctx = getRoot()!;
+  }
   let current: Component<any> | Root | null = ctx;
   while (current) {
     const context = CONTEXTS.get(current);
@@ -66,6 +69,9 @@ export function provideContext<T>(
   key: symbol,
   value: T,
 ): void {
+  if (!WITH_CONTEXT_API) {
+    ctx = getRoot()!;
+  }
   if (!CONTEXTS.has(ctx)) {
     if (import.meta.env.DEV) {
       if (!ctx) {

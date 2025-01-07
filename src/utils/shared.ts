@@ -1,5 +1,4 @@
 import {
-  associateDestroyable,
   type GenericReturnType,
   type Component,
   type ComponentReturnType,
@@ -7,6 +6,7 @@ import {
 import { type AnyCell } from './reactive';
 import { type BasicListComponent } from './control-flow/list';
 import { Root } from './dom';
+import { registerDestructor } from './glimmer/destroyable';
 
 export const isTag = Symbol('isTag');
 export const $template = 'template' as const;
@@ -95,17 +95,23 @@ export function setBounds(component: ComponentReturnType) {
     return;
   }
   BOUNDS.set(ctx, flattenBounds);
-  associateDestroyable(ctx, [
-    () => {
-      BOUNDS.delete(ctx);
-    },
-  ]);
+  registerDestructor(ctx, () => {
+    BOUNDS.delete(ctx);
+  });
 }
+const SEEN_TREE_NODES = new WeakSet();
+
 export function addToTree(
   ctx: Component<any>,
   node: Component<any>,
   debugName?: string,
 ) {
+  if (SEEN_TREE_NODES.has(node)) {
+    // GET_ARGS may re-add node to tree (depending on component type)
+    return;
+    // throw new Error('Node is already added to tree');
+  }
+  SEEN_TREE_NODES.add(node);
   // if (node.toString() === '[object Object]') {
   //   debugger;
   // }
@@ -120,8 +126,9 @@ export function addToTree(
     }
   }
   // @todo - case 42
-  associateDestroyable(node, [
+  registerDestructor(node, 
     () => {
+      SEEN_TREE_NODES.delete(node);
       const tree = RENDER_TREE.get(ctx);
       if (tree === undefined) {
         return;
@@ -131,7 +138,7 @@ export function addToTree(
         RENDER_TREE.delete(ctx);
       }
     },
-  ]);
+  );
 
   if (IS_DEV_MODE) {
     if (debugName) {

@@ -1,7 +1,6 @@
 import {
   destroy,
   registerDestructor,
-  DestructorFn,
   Destructors,
 } from '@/utils/glimmer/destroyable';
 import type {
@@ -139,7 +138,7 @@ export function renderComponent(
           i,
         );
       });
-      associateDestroyable(owner || component, destructors);
+      registerDestructor(owner || component, ...destructors);
     } catch (e) {
       destructors.forEach((fn) => fn());
       runDestructorsSync(owner || component);
@@ -154,7 +153,7 @@ export function renderComponent(
         i,
       );
     });
-    associateDestroyable(owner || component, destructors);
+    registerDestructor(owner || component, ...destructors);
   }
 
   return component;
@@ -318,13 +317,6 @@ export async function destroyElement(
       await destroyNode(component);
     }
   }
-}
-
-export function associateDestroyable(ctx: any, destructors: Destructors) {
-  if (destructors.length === 0) {
-    return;
-  }
-  registerDestructor(ctx, ...destructors);
 }
 
 function runDestructorsSync(targetNode: Component<any>) {
