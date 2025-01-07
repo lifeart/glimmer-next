@@ -29,17 +29,31 @@ export function context(
   };
 }
 
+const LOOKUP_CACHE: WeakMap<Component<any> | Root, Map<symbol, unknown>> = new WeakMap();
+
 export function getContext<T>(
   ctx: Component<any> | Root,
   key: symbol,
 ): T | null {
+  if (!LOOKUP_CACHE.has(ctx)) {
+    LOOKUP_CACHE.set(ctx, new Map());
+    registerDestructor(ctx, () => {
+      LOOKUP_CACHE.delete(ctx);
+    });
+  }
+  const cache = LOOKUP_CACHE.get(ctx)!;
+  if (cache.has(key)) {
+    return cache.get(key) as T;
+  }
   let current: Component<any> | Root | null = ctx;
   while (current) {
     const context = CONTEXTS.get(current);
 
     if (context?.has(key)) {
       const value = context.get(key);
-      return typeof value === 'function' ? value() : value;
+      const result = typeof value === 'function' ? value() : value;
+      cache.set(key, value);
+      return result;
     }
 
     const parent = findParentComponent(current);
@@ -66,13 +80,12 @@ export function provideContext<T>(
       }
     }
     CONTEXTS.set(ctx, new Map());
+    registerDestructor(ctx, () => {
+      CONTEXTS.delete(ctx);
+    });
   }
 
   CONTEXTS.get(ctx)!.set(key, value);
-
-  registerDestructor(ctx, () => {
-    CONTEXTS.get(ctx)!.delete(key);
-  });
 }
 
 function findParentComponent(
