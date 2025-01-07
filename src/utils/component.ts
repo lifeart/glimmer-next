@@ -128,7 +128,7 @@ export function renderComponent(
   const destructors: Destructors = [];
   const children = component[$nodes];
 
-  const dom = initDOM(component) || initDOM(getRoot()!);
+  const dom = initDOM(owner || component) || initDOM(getRoot()!);
   if (TRY_CATCH_ERROR_HANDLING) {
     try {
       children.forEach((child, i) => {
