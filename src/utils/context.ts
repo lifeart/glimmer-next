@@ -1,6 +1,6 @@
 import { registerDestructor } from './glimmer/destroyable';
 import { Component } from './component';
-import { PARENT_GRAPH } from './shared';
+import { isFn, PARENT_GRAPH } from './shared';
 import { getRoot, Root } from './dom';
 
 const CONTEXTS = new WeakMap<Component<any> | Root, Map<symbol, any>>();
@@ -43,7 +43,8 @@ export function getContext<T>(
   }
   const cache = LOOKUP_CACHE.get(ctx)!;
   if (cache.has(key)) {
-    return cache.get(key) as T;
+    const result = cache.get(key) as T;
+    return isFn(result) ? result() : result;
   }
   let current: Component<any> | Root | null = ctx;
   while (current) {
@@ -51,7 +52,7 @@ export function getContext<T>(
 
     if (context?.has(key)) {
       const value = context.get(key);
-      const result = typeof value === 'function' ? value() : value;
+      const result = isFn(value) ? value() : value;
       cache.set(key, value);
       return result;
     }
