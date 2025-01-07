@@ -8,6 +8,9 @@ import {
 } from './rehydration';
 const $doc = getDocument();
 export const api = {
+  toString() {
+    return 'hydration-html:dom-api';
+  },
   addEventListener(node: Node, eventName: string, fn: EventListener) {
     node.addEventListener(eventName, fn);
     if (RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES) {

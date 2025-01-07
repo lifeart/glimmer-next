@@ -123,7 +123,12 @@ export function withRehydration(
     resetNodeCounter();
     const root = createRoot();
     setRoot(root);
-    provideContext(root, RENDERING_CONTEXT, rehydrationDomApi);
+    const TEMP_API = {};
+    Object.keys(rehydrationDomApi).forEach((key) => {
+      // @ts-expect-error props
+      TEMP_API[key] = rehydrationDomApi[key];
+    });
+    provideContext(root, RENDERING_CONTEXT, TEMP_API);
 
     // @ts-expect-error
     nodesToRemove.forEach((node) => node.remove());
@@ -149,7 +154,11 @@ export function withRehydration(
     }
     rehydrationScheduled = false;
     nodesMap.clear();
-    provideContext(root, RENDERING_CONTEXT, api);
+    // provideContext(root, RENDERING_CONTEXT, api);
+    Object.keys(api).forEach((key) => {
+      // @ts-expect-error props
+      TEMP_API[key] = api[key];
+    });
     // rollbackDOMAPI();
   } catch (e) {
     rehydrationScheduled = false;

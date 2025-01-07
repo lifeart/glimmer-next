@@ -249,6 +249,7 @@ export function getRoot() {
 }
 
 function $prop(
+  api: typeof HTMLAPI,
   element: HTMLElement,
   key: string,
   value: unknown,
@@ -277,6 +278,7 @@ function $prop(
 }
 
 function $attr(
+  api: typeof HTMLAPI,
   element: HTMLElement,
   key: string,
   value: unknown,
@@ -323,10 +325,6 @@ function resolveRenderable(
 const isRenderObject = (el: unknown): el is ComponentReturnType =>
   typeof el === 'object' && el !== null && $nodes in el;
 
-export function initDOM(ctx: Component<any> | Root) {
-  api = getContext<typeof HTMLAPI>(ctx, RENDERING_CONTEXT)!;
-}
-
 export function addChild(
   element: HTMLElement | ShadowRoot,
   child: RenderableType | Cell | MergedCell | Function,
@@ -363,6 +361,7 @@ const EVENT_TYPE = {
 };
 
 function $ev(
+  api: typeof HTMLAPI,
   element: HTMLElement,
   eventName: string,
   fn: EventListener | ModifierFn,
@@ -455,6 +454,7 @@ export function $_hasBlockParams(
 }
 
 function addAttrs(
+  api: typeof HTMLAPI,
   arr: TagAttr[],
   element: HTMLElement,
   seenKeys: Set<string>,
@@ -469,7 +469,7 @@ function addAttrs(
     if (IS_DEV_MODE) {
       $DEBUG_REACTIVE_CONTEXTS.push(`[${key}]`);
     }
-    $attr(element, key, arr[i][1], destructors);
+    $attr(api, element, key, arr[i][1], destructors);
     if (IS_DEV_MODE) {
       $DEBUG_REACTIVE_CONTEXTS.pop();
     }
@@ -477,6 +477,7 @@ function addAttrs(
 }
 
 function addProperties(
+  api: typeof HTMLAPI,
   properties: TagProp[],
   element: HTMLElement,
   seenKeys: Set<string>,
@@ -504,11 +505,15 @@ function addProperties(
     if (IS_DEV_MODE) {
       $DEBUG_REACTIVE_CONTEXTS.push(`[${key}]`);
     }
-    $prop(element, key, value, destructors);
+    $prop(api, element, key, value, destructors);
     if (IS_DEV_MODE) {
       $DEBUG_REACTIVE_CONTEXTS.pop();
     }
   }
+}
+
+export function initDOM(ctx: Component<any> | Root) {
+  api = getContext<typeof HTMLAPI>(ctx, RENDERING_CONTEXT)!;
 }
 
 function _DOM(
@@ -518,7 +523,7 @@ function _DOM(
   ctx: any,
 ): Node {
   NODE_COUNTER++;
-  api = getContext<typeof HTMLAPI>(ctx, RENDERING_CONTEXT)!;
+  initDOM(ctx);
   if (import.meta.env.DEV) {
     if (!getContext<typeof HTMLAPI>(getRoot()!, RENDERING_CONTEXT)) {
       console.error('Unable to resolve root rendering context');
@@ -554,21 +559,21 @@ function _DOM(
 
   if (hasSplatAttrs === true) {
     for (let i = 0; i < tagProps[3]![2].length; i++) {
-      $ev(element, tagProps[3]![2][i][0], tagProps[3]![2][i][1], destructors);
+      $ev(api, element, tagProps[3]![2][i][0], tagProps[3]![2][i][1], destructors);
     }
   }
 
   for (let i = 0; i < tagProps[2].length; i++) {
-    $ev(element, tagProps[2][i][0], tagProps[2][i][1], destructors);
+    $ev(api, element, tagProps[2][i][0], tagProps[2][i][1], destructors);
   }
 
   if (hasSplatAttrs === true) {
-    addAttrs(tagProps[3]![1], element, seenKeys, destructors);
+    addAttrs(api, tagProps[3]![1], element, seenKeys, destructors);
   }
-  addAttrs(tagProps[1], element, seenKeys, destructors);
+  addAttrs(api, tagProps[1], element, seenKeys, destructors);
 
   if (hasSplatAttrs === true) {
-    addProperties(
+    addProperties(api,
       tagProps[3]![0],
       element,
       seenKeys,
@@ -577,7 +582,7 @@ function _DOM(
       setShadowNode,
     );
   }
-  addProperties(
+  addProperties(api,
     tagProps[0],
     element,
     seenKeys,
@@ -591,7 +596,7 @@ function _DOM(
       $DEBUG_REACTIVE_CONTEXTS.push(`[class]`);
     }
     if (classNameModifiers.length === 1) {
-      $prop(element, $_className, classNameModifiers[0], destructors);
+      $prop(api, element, $_className, classNameModifiers[0], destructors);
     } else {
       const formulas = classNameModifiers.map((modifier) => {
         if (isFn(modifier)) {
@@ -604,6 +609,7 @@ function _DOM(
         }
       });
       $prop(
+        api,
         element,
         $_className,
         formula(() => {

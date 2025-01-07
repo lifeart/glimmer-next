@@ -57,7 +57,7 @@ module('Integration | Interal | svg', function () {
     assert.equal(
       find('#html-input').namespaceURI,
       NS_HTML,
-      '<input> tag has svg namespace',
+      '<input> tag has html namespace',
     );
   });
 });

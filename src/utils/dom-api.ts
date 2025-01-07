@@ -14,6 +14,9 @@ export function getDocument() {
   return $doc;
 }
 export const api = {
+  toString() {
+    return 'html:dom-api';
+  },
   addEventListener(node: Node, eventName: string, fn: EventListener) {
     if (import.meta.env.SSR) {
       return noop;

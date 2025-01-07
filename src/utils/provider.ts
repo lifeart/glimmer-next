@@ -5,6 +5,9 @@ import { NS_SVG, NS_MATHML, NS_XMLNS, NS_XLINK } from '@/utils/namespaces';
 
 // SVG DOM API
 export const svgDomApi = {
+  toString() {
+    return 'svg:dom-api';
+  },
   text(text: string) {
     return getDocument().createTextNode(text);
   },
@@ -41,6 +44,9 @@ export const svgDomApi = {
 };
 
 export const mathDomApi = {
+  toString() {
+    return 'mathml:dom-api';
+  },
   text(text: string) {
     return getDocument().createTextNode(text);
   },
