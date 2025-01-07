@@ -42,25 +42,30 @@ export function getContext<T>(
   if (!WITH_CONTEXT_API) {
     ctx = getRoot()!;
   }
-  let current: Component<any> | Root | null = ctx;
-  while (current) {
-    const context = CONTEXTS.get(current);
-
-    if (context?.has(key)) {
-      const value = context.get(key);
-      const result = isFn(value) ? value() : value;
-      return result;
-    }
-
-    const parent = findParentComponent(current);
-    if (import.meta.env.DEV) {
-      if (!parent) {
-        console.log('`Unable to resolve parent for ', current);
-        debugger;
-      }
-    }
-    current = parent;
+  
+  let current: Component<any> | Root | undefined = ctx;
+  let context: Map<symbol, any> | undefined;
+  
+  // Direct lookup first
+  context = CONTEXTS.get(current);
+  if (context?.has(key)) {
+    const value = context.get(key);
+    return isFn(value) ? value() : value;
   }
+
+  // Parent chain lookup
+  while (current = PARENT_GRAPH.get(current)) {
+    if ((context = CONTEXTS.get(current))?.has(key)) {
+      const value = context.get(key);
+      return isFn(value) ? value() : value;
+    }
+  }
+
+  if (import.meta.env.DEV && !current) {
+    console.log('`Unable to resolve parent for ', ctx);
+    debugger;
+  }
+
   return null;
 }
 
@@ -85,10 +90,4 @@ export function provideContext<T>(
   }
 
   CONTEXTS.get(ctx)!.set(key, value);
-}
-
-function findParentComponent(
-  component: Component<any> | Root,
-): Component<any> | Root | null {
-  return PARENT_GRAPH.get(component)! ?? null;
 }
