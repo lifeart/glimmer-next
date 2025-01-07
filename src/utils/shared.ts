@@ -158,11 +158,13 @@ export function addToTree(
       console.error('Unable to set child for unknown parent');
     }
   }
-
-  if (!RENDER_TREE.has(ctx)) {
-    RENDER_TREE.set(ctx, new Set());
+  let tree = RENDER_TREE.get(ctx);
+  if (!tree) {
+    tree = new Set();
+    RENDER_TREE.set(ctx, tree);
   }
-  RENDER_TREE.get(ctx)!.add(node);
+  tree.add(node);
+  
   if (WITH_CONTEXT_API) {
     PARENT_GRAPH.set(node, ctx);
   }
