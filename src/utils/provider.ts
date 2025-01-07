@@ -1,6 +1,6 @@
 import { hbs } from '@lifeart/gxt';
-import { provideContext } from './context';
-import { getDocument, RENDERING_CONTEXT, api } from './dom-api';
+import { provideContext, RENDERING_CONTEXT } from './context';
+import { getDocument, api } from './dom-api';
 import { NS_SVG, NS_MATHML, NS_XMLNS, NS_XLINK } from '@/utils/namespaces';
 
 // SVG DOM API

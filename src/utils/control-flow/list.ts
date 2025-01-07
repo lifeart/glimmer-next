@@ -7,7 +7,7 @@ import {
   renderElement,
   type Component,
 } from '@/utils/component';
-import { api } from '@/utils/dom-api';
+import { api as HTML_API } from '@/utils/dom-api';
 import { Cell, MergedCell, formula, deepFnValue } from '@/utils/reactive';
 import { opcodeFor } from '@/utils/vm';
 import {
@@ -22,6 +22,7 @@ import {
   addToTree,
 } from '@/utils/shared';
 import { isRehydrationScheduled } from '@/utils/ssr/rehydration';
+import { initDOM } from '@/utils/context';
 
 export function getFirstNode(
   rawItem:
@@ -93,11 +94,13 @@ export class BasicListComponent<T extends { id: number }> {
       yield keyForItem(items[i], i);
     }
   }
+  declare api: typeof HTML_API;
   constructor(
     { tag, ctx, key, ItemComponent }: ListComponentArgs<T>,
     outlet: RenderTarget,
     topMarker: Comment,
   ) {
+    this.api = initDOM(ctx);
     this.ItemComponent = ItemComponent;
     // @ts-expect-error typings error
     addToTree(ctx, this);
@@ -126,14 +129,14 @@ export class BasicListComponent<T extends { id: number }> {
     }
     // "list bottom marker"
     if (IS_DEV_MODE) {
-      this.bottomMarker = api.comment('list bottom marker');
+      this.bottomMarker = this.api.comment('list bottom marker');
     } else {
-      this.bottomMarker = api.comment();
+      this.bottomMarker = this.api.comment();
     }
     this.topMarker = topMarker;
 
-    api.append(mainNode, this.topMarker);
-    api.append(mainNode, this.bottomMarker);
+    this.api.append(mainNode, this.topMarker);
+    this.api.append(mainNode, this.bottomMarker);
 
     const originalTag = tag;
 
@@ -211,13 +214,14 @@ export class BasicListComponent<T extends { id: number }> {
       let fragment!: DocumentFragment;
       // list fragment marker
       const marker = IS_DEV_MODE
-        ? api.comment('list fragment target marker')
-        : api.comment('');
+        ? this.api.comment('list fragment target marker')
+        : this.api.comment('');
       if (isRehydrationScheduled()) {
         fragment = marker.parentElement as unknown as DocumentFragment;
+        // TODO: figure out, likely error here, because we don't append fragment
       } else {
-        fragment = api.fragment();
-        api.append(fragment, marker);
+        fragment = this.api.fragment();
+        this.api.append(fragment, marker);
       }
       return marker;
     }
@@ -289,7 +293,7 @@ export class BasicListComponent<T extends { id: number }> {
         keyMap.set(key, row);
         indexMap.set(key, index);
         if (isAppendOnly) {
-          renderElement(targetNode.parentNode!, row, targetNode);
+          renderElement(this.api, targetNode.parentNode!, row, targetNode);
         } else {
           rowsToMove.push([row, index]);
           // TODO: optimize
@@ -318,7 +322,7 @@ export class BasicListComponent<T extends { id: number }> {
         const insertBeforeNode = nextItem
           ? getFirstNode(keyMap.get(keyForItem(nextItem, index + 1))!)
           : bottomMarker;
-        renderElement(insertBeforeNode.parentNode!, row, insertBeforeNode);
+        renderElement(this.api, insertBeforeNode.parentNode!, row, insertBeforeNode);
       });
     if (targetNode !== bottomMarker) {
       const parent = targetNode.parentNode!;
@@ -328,7 +332,7 @@ export class BasicListComponent<T extends { id: number }> {
         parent && parent.removeChild(targetNode);
       }
       if (parent && trueParent !== parent) {
-        api.insert(trueParent, parent, bottomMarker);
+        this.api.insert(trueParent, parent, bottomMarker);
       }
     }
     if (isFirstRender) {

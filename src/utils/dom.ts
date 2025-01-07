@@ -29,7 +29,6 @@ import {
 import {
   api as HTMLAPI,
   getDocument,
-  RENDERING_CONTEXT,
 } from '@/utils/dom-api';
 import {
   isFn,
@@ -52,7 +51,7 @@ import { isRehydrationScheduled } from './ssr/rehydration';
 import { createHotReload } from './hmr';
 import { IfCondition } from './control-flow/if';
 import { CONSTANTS } from '../../plugins/symbols';
-import { getContext } from './context';
+import { getContext, initDOM, RENDERING_CONTEXT } from './context';
 import { SVGProvider, HTMLProvider, MathMLProvider } from './provider';
 
 type RenderableType = Node | ComponentReturnType | string | number;
@@ -98,7 +97,6 @@ let unstableWrapperId: number = 0;
 */
 export class Root {}
 let ROOT: Root | null = null;
-let api!: typeof HTMLAPI;
 
 export const $_MANAGERS = {
   component: {
@@ -326,6 +324,7 @@ const isRenderObject = (el: unknown): el is ComponentReturnType =>
   typeof el === 'object' && el !== null && $nodes in el;
 
 export function addChild(
+  api: typeof HTMLAPI,
   element: HTMLElement | ShadowRoot,
   child: RenderableType | Cell | MergedCell | Function,
   destructors: Destructors = [],
@@ -336,14 +335,15 @@ export function addChild(
   }
   if (isRenderObject(child)) {
     for (let i = 0; i < child[$nodes].length; i++) {
-      addChild(element, child[$nodes][i], destructors, index + i);
+      addChild(api, element, child[$nodes][i], destructors, index + i);
     }
   } else if (isPrimitive(child)) {
     api.append(element, api.text(child), index);
   } else if (isTagLike(child)) {
-    api.append(element, cellToText(child, destructors), index);
+    api.append(element, cellToText(api, child, destructors), index);
   } else if (isFn(child)) {
     addChild(
+      api,
       element,
       resolveRenderable(child, `element.child[${index}]`),
       destructors,
@@ -512,10 +512,6 @@ function addProperties(
   }
 }
 
-export function initDOM(ctx: Component<any> | Root) {
-  api = getContext<typeof HTMLAPI>(ctx, RENDERING_CONTEXT)!;
-}
-
 function _DOM(
   tag: string,
   tagProps: Props,
@@ -523,7 +519,7 @@ function _DOM(
   ctx: any,
 ): Node {
   NODE_COUNTER++;
-  initDOM(ctx);
+  const api = initDOM(ctx);
   if (import.meta.env.DEV) {
     if (!getContext<typeof HTMLAPI>(getRoot()!, RENDERING_CONTEXT)) {
       console.error('Unable to resolve root rendering context');
@@ -531,8 +527,7 @@ function _DOM(
   }
   if (import.meta.env.DEV) {
     if (!api) {
-      debugger;
-      api = getContext<typeof HTMLAPI>(ctx, RENDERING_CONTEXT)!;
+      console.error('Unable to resolve rendering context');
     }
   }
   const element = api.element(tag);
@@ -636,21 +631,21 @@ function _DOM(
         tpl.setAttribute('shadowrootmode', 'open');
         element.appendChild(tpl);
         children.forEach((child, index) => {
-          addChild(tpl, child, destructors, index);
+          addChild(api, tpl, child, destructors, index);
         });
       } else {
         children.forEach((child, index) => {
-          addChild(appendRef!, child, destructors, index);
+          addChild(api, appendRef!, child, destructors, index);
         });
       }
     } else {
       children.forEach((child, index) => {
-        addChild(appendRef!, child, destructors, index);
+        addChild(api, appendRef!, child, destructors, index);
       });
     }
   } else {
     for (let i = 0; i < children.length; i++) {
-      addChild(element, children[i], destructors, i);
+      addChild(api, element, children[i], destructors, i);
     }
   }
 
@@ -666,6 +661,7 @@ export function $_inElement(
   roots: (context: Component<any>) => (Node | ComponentReturnType)[],
   ctx: any,
 ) {
+  const api = initDOM(ctx);
   return component(
     function UnstableChildWrapper(this: Component<any>) {
       $_GET_ARGS(this, arguments);
@@ -683,7 +679,7 @@ export function $_inElement(
       }
       const destructors: Destructors = [];
       roots(ctx).forEach((child, index) => {
-        addChild(appendRef, child, destructors, index);
+        addChild(api, appendRef, child, destructors, index);
       });
       destructors.push(() => {
         appendRef.innerHTML = '';
@@ -841,10 +837,10 @@ function component(
         // @ts-expect-error message may not exit
         e.message = `${label}\n${e.message}`;
         if (!ErrorOverlayClass) {
-          errorOverlay = api.element('pre');
+          errorOverlay = HTMLAPI.element('pre');
           // @ts-expect-error stack may not exit
-          api.textContent(errorOverlay, `${label}\n${e.stack ?? e}`);
-          api.attr(
+          HTMLAPI.textContent(errorOverlay, `${label}\n${e.stack ?? e}`);
+          HTMLAPI.attr(
             errorOverlay,
             'style',
             'color:red;border:1px solid red;padding:10px;background-color:#333;',
@@ -862,7 +858,7 @@ function component(
         return {
           ctx: null,
           // @ts-expect-error message may not exit
-          nodes: [api.text(String(e.message))],
+          nodes: [HTMLAPI.text(String(e.message))],
         };
       }
     } finally {
@@ -965,7 +961,9 @@ function _component(
 function mergeComponents(
   components: Array<ComponentReturnType | Node | string | number>,
   $destructors: Destructors,
+  ctx: any,
 ) {
+  const api = initDOM(ctx);
   const nodes: Array<Node> = [];
   const contexts: Array<Component> = [];
   for (let i = 0; i < components.length; i++) {
@@ -980,7 +978,7 @@ function mergeComponents(
     }
 
     if (isFn(component)) {
-      component = text(
+      component = text(api,
         resolveRenderable(component, 'merge-components'),
         $destructors,
       );
@@ -1018,7 +1016,7 @@ function createSlot(
     $DEBUG_REACTIVE_CONTEXTS.push(`:${name}`);
   }
   const elements = value(...[...params(), ctx]);
-  const nodes = mergeComponents(elements, $destructors);
+  const nodes = mergeComponents(elements, $destructors, ctx);
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.pop();
   }
@@ -1026,16 +1024,13 @@ function createSlot(
 }
 
 function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
-  // console.log(ctx, ctx);
+  const api = initDOM(ctx);
   const $destructors: Destructors = [];
-  if (ctx) {
-    // TODO: ctx should always exist, fix `element` helper to be control node
-    associateDestroyable(ctx, [
-      () => {
-        $destructors.forEach((fn) => fn());
-      },
-    ]);
-  }
+  associateDestroyable(ctx, [
+    () => {
+      $destructors.forEach((fn) => fn());
+    },
+  ]);
 
   if (!(name in $slot)) {
     const slotPlaceholder: Comment = IS_DEV_MODE
@@ -1063,7 +1058,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
         $destructors.push(() => {
           destroyElement(slotRoots);
         });
-        renderElement(slotPlaceholder.parentNode!, slotRoots, slotPlaceholder);
+        renderElement(api, slotPlaceholder.parentNode!, slotRoots, slotPlaceholder);
         isRendered = true;
       },
       get() {
@@ -1083,7 +1078,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
   });
   return slotRoot;
 }
-function cellToText(cell: Cell | MergedCell, destructors: Destructors) {
+function cellToText(api: typeof HTMLAPI, cell: Cell | MergedCell, destructors: Destructors) {
   const textNode = api.text('');
   destructors.push(
     opcodeFor(cell, (value) => {
@@ -1093,6 +1088,7 @@ function cellToText(cell: Cell | MergedCell, destructors: Destructors) {
   return textNode;
 }
 function text(
+  api: typeof HTMLAPI,
   text: string | number | null | Cell | MergedCell | Fn | RenderableType,
   destructors: Destructors,
 ): Text {
@@ -1103,11 +1099,11 @@ function text(
     return api.text(result);
   } else {
     // @ts-expect-error
-    return cellToText(typeof text === 'function' ? result : text, destructors);
+    return cellToText(api, typeof text === 'function' ? result : text, destructors);
   }
 }
 
-function getRenderTargets(debugName: string) {
+function getRenderTargets(api: typeof HTMLAPI, debugName: string) {
   const ifPlaceholder = IS_DEV_MODE ? api.comment(debugName) : api.comment('');
   let outlet = isRehydrationScheduled()
     ? ifPlaceholder.parentElement || api.fragment()
@@ -1142,7 +1138,8 @@ function ifCond(
   falseBranch: BranchCb,
   ctx: Component<any>,
 ) {
-  const { outlet, placeholder } = getRenderTargets('if-entry-placeholder');
+  const api = initDOM(ctx);
+  const { outlet, placeholder } = getRenderTargets(api, 'if-entry-placeholder');
   const instance = new IfCondition(
     ctx,
     cell,
@@ -1161,7 +1158,8 @@ export function $_eachSync<T extends { id: number }>(
   key: string | null = null,
   ctx: Component<any>,
 ) {
-  const { outlet, placeholder } = getRenderTargets('sync-each-placeholder');
+  const api = initDOM(ctx);
+  const { outlet, placeholder } = getRenderTargets(api, 'sync-each-placeholder');
   const instance = new SyncListComponent(
     {
       tag: items as Cell<T[]>,
@@ -1181,7 +1179,8 @@ export function $_each<T extends { id: number }>(
   key: string | null = null,
   ctx: Component<any>,
 ) {
-  const { outlet, placeholder } = getRenderTargets('async-each-placeholder');
+  const api = initDOM(ctx);
+  const { outlet, placeholder } = getRenderTargets(api, 'async-each-placeholder');
   const instance = new AsyncListComponent(
     {
       tag: items as Cell<T[]>,
@@ -1295,6 +1294,7 @@ export function $_dc(
   args: Record<string, unknown>,
   ctx: Component<any>,
 ) {
+  const api = initDOM(ctx);
   const _cmp = formula(comp, 'dynamic-component');
   let result: ComponentReturnType | null = null;
   let ref: unknown = null;
@@ -1315,7 +1315,7 @@ export function $_dc(
       destroyElementSync(result);
       result = component(value, args, ctx);
       result![$nodes].push(target!);
-      renderElement(target!.parentNode!, result, target!);
+      renderElement(api, target!.parentNode!, result, target!);
     } else {
       result = component(value, args, ctx);
     }
@@ -1414,17 +1414,18 @@ export const $_helper = (helper: any) => {
 };
 export const $_text = text;
 export const $_tag = _DOM;
+export const $_api = (ctx: any) => initDOM(ctx);
 
 export function $_fin(
   roots: Array<ComponentReturnType | Node>,
   ctx: Component<any> | null,
 ) {
   const $destructors: Destructors = [];
-
+  const api = initDOM(ctx!);
   for (let i = 0; i < roots.length; i++) {
     const node = roots[i];
     if (isFn(node)) {
-      roots[i] = text(
+      roots[i] = text(api,
         resolveRenderable(node, `component child fn`),
         $destructors,
       );

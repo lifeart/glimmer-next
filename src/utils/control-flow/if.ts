@@ -18,6 +18,7 @@ import {
   addToTree,
 } from '@/utils/shared';
 import { opcodeFor } from '@/utils/vm';
+import { initDOM } from '@/utils/context';
 
 export class IfCondition {
   isDestructorRunning = false;
@@ -169,7 +170,7 @@ export class IfCondition {
     if (IS_DEV_MODE) {
       $DEBUG_REACTIVE_CONTEXTS.pop();
     }
-    renderElement(
+    renderElement(initDOM(this),
       this.placeholder.parentNode || this.target,
       this.prevComponent,
       this.placeholder,

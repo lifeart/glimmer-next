@@ -125,7 +125,7 @@ export function processTemplate(
             } else if (path.node.callee.name === 'getRenderTargets') {
               if (mode === 'production') {
                 // remove last argument if two arguments
-                if (path.node.arguments.length === 1) {
+                if (path.node.arguments.length === 2) {
                   path.node.arguments.pop();
                 }
               }

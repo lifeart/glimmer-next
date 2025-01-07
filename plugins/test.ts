@@ -160,7 +160,7 @@ function processTransformedFiles(
       fileName.endsWith('.gts') || fileName.endsWith('.gjs');
 
     let result = '';
-    let finContext = program.meta.hasThisAccess ? 'this' : 'null';
+    let finContext = program.meta.hasThisAccess ? 'this' : 'this';
     const hasFw = results.some((el) => el.includes('$fw'));
     const hasSlots = results.some((el) => el.includes('$slots'));
     const slotsResolution = `const $slots = ${SYMBOLS.$_GET_SLOTS}(this, arguments);`;

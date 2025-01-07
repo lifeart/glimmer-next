@@ -11,7 +11,7 @@ import type {
   Invoke,
   ComponentReturn,
 } from '@glint/template/-private/integration';
-import { api, RENDERING_CONTEXT } from '@/utils/dom-api';
+import { api as DEFAULT_API } from '@/utils/dom-api';
 import {
   isFn,
   $template,
@@ -25,8 +25,8 @@ import {
   FRAGMENT_TYPE,
   PARENT_GRAPH,
 } from './shared';
-import { addChild, createRoot, getRoot, initDOM, Root, setRoot } from './dom';
-import { provideContext } from './context';
+import { addChild, createRoot, getRoot, Root, setRoot } from './dom';
+import { provideContext, initDOM, RENDERING_CONTEXT } from './context';
 
 export type ComponentRenderTarget =
   | HTMLElement
@@ -40,7 +40,7 @@ export type GenericReturnType =
   | null
   | null[];
 
-function renderNode(parent: Node, target: Node, placeholder: Node | Comment) {
+function renderNode(api: typeof DEFAULT_API, parent: Node, target: Node, placeholder: Node | Comment) {
   if (import.meta.env.DEV) {
     if (isEmpty(target)) {
       console.warn(`Trying to render ${typeof target}`);
@@ -55,6 +55,7 @@ function renderNode(parent: Node, target: Node, placeholder: Node | Comment) {
 }
 
 export function renderElement(
+  api: typeof DEFAULT_API,
   target: Node,
   el: GenericReturnType | Node | string | number | null | undefined,
   placeholder: Comment | Node,
@@ -64,19 +65,19 @@ export function renderElement(
       return;
     }
     if (isPrimitive(el)) {
-      renderNode(target, api.text(el), placeholder);
+      renderNode(api, target, api.text(el), placeholder);
     } else if ($nodes in el) {
       el[$nodes].forEach((node) => {
-        renderElement(target, node, placeholder);
+        renderElement(api, target, node, placeholder);
       });
     } else if (isFn(el)) {
-      renderElement(target, el(), placeholder);
+      renderElement(api, target, el(), placeholder);
     } else {
-      renderNode(target, el, placeholder);
+      renderNode(api, target, el, placeholder);
     }
   } else {
     el.forEach((item) => {
-      renderElement(target, item, placeholder);
+      renderElement(api, target, item, placeholder);
     });
   }
 }
@@ -110,9 +111,11 @@ export function renderComponent(
         setRoot(createRoot());
       }
     }
-    // console.log('context provided', getRoot(),  api);
-    provideContext(getRoot()!, RENDERING_CONTEXT, api);
-    initDOM(getRoot()!);
+    if (!initDOM(getRoot()!)) {
+      // setting default dom api
+      provideContext(getRoot()!, RENDERING_CONTEXT, DEFAULT_API);
+      initDOM(getRoot()!);
+    }
   }
 
   if ($template in component && isFn(component[$template])) {
@@ -127,10 +130,11 @@ export function renderComponent(
   const destructors: Destructors = [];
   const children = component[$nodes];
 
+  const dom = initDOM(component) || initDOM(getRoot()!);
   if (TRY_CATCH_ERROR_HANDLING) {
     try {
       children.forEach((child, i) => {
-        addChild(
+        addChild(dom,
           targetElement as unknown as HTMLElement,
           child as any,
           destructors,
@@ -145,7 +149,7 @@ export function renderComponent(
     }
   } else {
     children.forEach((child, i) => {
-      addChild(
+      addChild(dom,
         targetElement as unknown as HTMLElement,
         child as any,
         destructors,

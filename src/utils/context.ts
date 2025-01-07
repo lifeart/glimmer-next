@@ -2,8 +2,10 @@ import { registerDestructor } from './glimmer/destroyable';
 import { Component } from './component';
 import { isFn, PARENT_GRAPH } from './shared';
 import { getRoot, Root } from './dom';
+import type { api as DOM_API } from './dom-api';
 
 const CONTEXTS = new WeakMap<Component<any> | Root, Map<symbol, any>>();
+export const RENDERING_CONTEXT = Symbol('RENDERING_CONTEXT');
 
 export function context(
   contextKey: symbol,
@@ -29,23 +31,14 @@ export function context(
   };
 }
 
-const LOOKUP_CACHE: WeakMap<Component<any> | Root, Map<symbol, unknown>> = new WeakMap();
+export function initDOM(ctx: Component<any> | Root) {
+  return getContext<typeof DOM_API>(ctx, RENDERING_CONTEXT)!;
+}
 
 export function getContext<T>(
   ctx: Component<any> | Root,
   key: symbol,
 ): T | null {
-  if (!LOOKUP_CACHE.has(ctx)) {
-    LOOKUP_CACHE.set(ctx, new Map());
-    registerDestructor(ctx, () => {
-      LOOKUP_CACHE.delete(ctx);
-    });
-  }
-  const cache = LOOKUP_CACHE.get(ctx)!;
-  if (cache.has(key)) {
-    const result = cache.get(key) as T;
-    return isFn(result) ? result() : result;
-  }
   let current: Component<any> | Root | null = ctx;
   while (current) {
     const context = CONTEXTS.get(current);
@@ -53,7 +46,6 @@ export function getContext<T>(
     if (context?.has(key)) {
       const value = context.get(key);
       const result = isFn(value) ? value() : value;
-      cache.set(key, value);
       return result;
     }
 

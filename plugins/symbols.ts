@@ -11,6 +11,7 @@ export const SYMBOLS = {
   EMPTY_DOM_PROPS: '$_edp',
   ARGS: '$_args',
   TEXT: '$_text',
+  API: '$_api',
   COMPONENT: '$_c',
   DYNAMIC_COMPONENT: '$_dc',
   $SLOTS_SYMBOL: '$SLOTS_SYMBOL',

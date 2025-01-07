@@ -6,6 +6,7 @@ import {
   type Component,
   type ComponentReturnType,
 } from '@/utils/component';
+import { initDOM } from './context';
 
 export function createHotReload(
   component: (
@@ -72,7 +73,8 @@ export function createHotReload(
           }
         }
       });
-      renderElement(parentElement, newCmp, firstElement);
+      const api = initDOM(newCmp);
+      renderElement(api, parentElement, newCmp, firstElement);
       destroyElementSync(instance);
     });
     COMPONENTS_HMR.delete(oldklass);

@@ -1,9 +1,9 @@
 import { renderComponent, type ComponentReturnType } from '@/utils/component';
 import { createRoot, getNodeCounter, getRoot, resetNodeCounter, setRoot } from '@/utils/dom';
 import { api as rehydrationDomApi } from '@/utils/ssr/rehydration-dom-api';
-import { api, RENDERING_CONTEXT } from '@/utils/dom-api';
+import { api } from '@/utils/dom-api';
 import { $args, $context, $template } from '../shared';
-import { provideContext } from '../context';
+import { provideContext, RENDERING_CONTEXT } from '../context';
 const withRehydrationStack: HTMLElement[] = [];
 const commentsToRehydrate: Comment[] = [];
 let rehydrationScheduled = false;
