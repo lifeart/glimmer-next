@@ -325,7 +325,7 @@ const isRenderObject = (el: unknown): el is ComponentReturnType =>
 export function addChild(
   api: typeof HTMLAPI,
   element: HTMLElement | ShadowRoot,
-  child: RenderableType | Cell | MergedCell | Function,
+  child: RenderableType | Cell | MergedCell | Function | number | string,
   destructors: Destructors = [],
   index = 0,
 ) {
@@ -348,6 +348,10 @@ export function addChild(
       destructors,
       index,
     );
+  } else if (Array.isArray(child)) {
+    for (let i = 0; i < child.length; i++) {
+      addChild(api, element, child[i], destructors, index + i);
+    }
   } else {
     // renderComponent case
     api.append(element, child, index);
@@ -957,57 +961,10 @@ function _component(
   return instance;
 }
 
-function mergeComponents(
-  components: Array<ComponentReturnType | Node | string | number>,
-  $destructors: Destructors,
-  ctx: any,
-) {
-  const api = initDOM(ctx);
-  const nodes: Array<Node> = [];
-  const contexts: Array<Component> = [];
-  for (let i = 0; i < components.length; i++) {
-    let component = components[i];
-    if (IS_DEV_MODE) {
-      if (typeof component === 'boolean' || typeof component === 'undefined') {
-        throw new Error(`
-          Woops, looks like we trying to render boolean or undefined to template, check used helpers.
-          It's not allowed to render boolean or undefined to template.
-        `);
-      }
-    }
-
-    if (isFn(component)) {
-      component = text(api,
-        resolveRenderable(component, 'merge-components'),
-        $destructors,
-      );
-    }
-    if (isEmpty(component)) {
-      continue;
-    }
-    if (isPrimitive(component)) {
-      nodes.push(api.text(component));
-    } else if ($nodes in component) {
-      if (component.ctx !== null) {
-        contexts.push(component.ctx);
-      }
-      nodes.push(...component[$nodes]);
-    } else {
-      nodes.push(component);
-    }
-  }
-  return {
-    [$nodes]: nodes,
-    // @todo - fix proper ctx merging here;
-    ctx: contexts.length > 0 ? contexts[0] : null,
-  };
-}
-
 function createSlot(
   value: Slots[string],
   params: () => unknown[],
   name: string,
-  $destructors: Destructors,
   ctx: any,
 ) {
   // @todo - figure out destructors for slot (shoud work, bu need to be tested)
@@ -1015,11 +972,12 @@ function createSlot(
     $DEBUG_REACTIVE_CONTEXTS.push(`:${name}`);
   }
   const elements = value(...[...params(), ctx]);
-  const nodes = mergeComponents(elements, $destructors, ctx);
+  console.log('elements', elements);
+  console.log('merge-components');
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.pop();
   }
-  return nodes;
+  return elements;
 }
 
 function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
@@ -1048,10 +1006,10 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
           slotValue,
           params,
           name,
-          $destructors,
           ctx,
         );
         $destructors.push(() => {
+          // @ts-expect-error types mismatch
           destroyElement(slotRoots);
         });
         renderElement(api, slotPlaceholder.parentNode!, slotRoots, slotPlaceholder);
@@ -1068,8 +1026,9 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
     });
     return slotPlaceholder;
   }
-  const slotRoot = createSlot($slot[name], params, name, $destructors, ctx);
+  const slotRoot = createSlot($slot[name], params, name, ctx);
   $destructors.push(() => {
+    // @ts-expect-error types mismatch
     destroyElement(slotRoot);
   });
   return slotRoot;

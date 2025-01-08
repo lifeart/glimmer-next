@@ -52,10 +52,12 @@ function renderNode(api: typeof DEFAULT_API, parent: Node, target: Node, placeho
   api.insert(parent, target, placeholder);
 }
 
+type RenderableElement = GenericReturnType | Node | string | number | null | undefined;
+
 export function renderElement(
   api: typeof DEFAULT_API,
   target: Node,
-  el: GenericReturnType | Node | string | number | null | undefined,
+  el: RenderableElement | RenderableElement[],
   placeholder: Comment | Node,
 ) {
   if (!isArray(el)) {
@@ -290,7 +292,7 @@ export async function destroyElement(
       component.map((component) => destroyElement(component, skipDom)),
     );
   } else {
-    if (component === null) {
+    if (component === null || isFn(component)) {
       return;
     }
     if ($nodes in component) {
