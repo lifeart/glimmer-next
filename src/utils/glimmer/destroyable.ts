@@ -13,17 +13,17 @@ if (!import.meta.env.SSR) {
 }
 const DESTROYED_NODES = new WeakMap();
 export function destroy(ctx: object) {
-  if (destroyedObjects.has(ctx)) {
-    if (import.meta.env.DEV) {
-      console.info(ctx, 'node-is-already-destroyed-here');
-      console.error(DESTROYED_NODES.get(ctx));
-      console.info('and trying to be re-destroyed here');
-      console.error(new Error('here'));
-      console.warn(`---------------`);
-    }
-    return $ea;
-  }
   if (import.meta.env.DEV) {
+    if (destroyedObjects.has(ctx)) {
+      if (import.meta.env.DEV) {
+        console.info(ctx, 'node-is-already-destroyed-here');
+        console.error(DESTROYED_NODES.get(ctx));
+        console.info('and trying to be re-destroyed here');
+        console.error(new Error('here'));
+        console.warn(`---------------`);
+      }
+      return $ea;
+    }
     DESTROYED_NODES.set(ctx, new Error('here').stack);
   }
   destroyedObjects.add(ctx);
