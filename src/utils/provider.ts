@@ -41,6 +41,9 @@ export const svgDomApi = {
   append: (parent: SVGElement, child: SVGElement) => {
     parent.appendChild(child);
   },
+  insert: (parent: SVGElement, child: SVGElement) => {
+    parent.insertBefore(child, null);
+  },
 };
 
 export const mathDomApi = {
@@ -68,6 +71,9 @@ export const mathDomApi = {
   },
   append: (parent: SVGElement, child: SVGElement) => {
     parent.appendChild(child);
+  },
+  insert: (parent: SVGElement, child: SVGElement) => {
+    parent.insertBefore(child, null);
   },
 };
 

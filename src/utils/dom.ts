@@ -299,7 +299,7 @@ function $attr(
   }
 }
 
-function resolveRenderable(
+export function resolveRenderable(
   child: Function,
   debugName = 'resolveRenderable',
 ): RenderableType | MergedCell | Cell {
@@ -318,45 +318,6 @@ function resolveRenderable(
       // looks like a component
       return componentProps;
     }
-  }
-}
-
-const isRenderObject = (el: unknown): el is ComponentReturnType =>
-  typeof el === 'object' && el !== null && $nodes in el;
-
-export function addChild(
-  api: typeof HTMLAPI,
-  element: HTMLElement | ShadowRoot,
-  child: RenderableType | Cell | MergedCell | Function | number | string,
-  destructors: Destructors = [],
-  index = 0,
-) {
-  if (isEmpty(child)) {
-    return;
-  }
-  if (isRenderObject(child)) {
-    for (let i = 0; i < child[$nodes].length; i++) {
-      addChild(api, element, child[$nodes][i], destructors, index + i);
-    }
-  } else if (isPrimitive(child)) {
-    api.append(element, api.text(child), index);
-  } else if (isTagLike(child)) {
-    api.append(element, cellToText(api, child, destructors), index);
-  } else if (isFn(child)) {
-    addChild(
-      api,
-      element,
-      resolveRenderable(child, `element.child[${index}]`),
-      destructors,
-      index,
-    );
-  } else if (Array.isArray(child)) {
-    for (let i = 0; i < child.length; i++) {
-      addChild(api, element, child[i], destructors, index + i);
-    }
-  } else {
-    // renderComponent case
-    api.append(element, child, index);
   }
 }
 
@@ -635,23 +596,34 @@ function _DOM(
         const tpl = getDocument().createElement('template');
         tpl.setAttribute('shadowrootmode', 'open');
         element.appendChild(tpl);
-        children.forEach((child, index) => {
-          addChild(api, tpl, child, destructors, index);
-        });
+        // @ts-expect-error children type mismatch
+        renderElement(api, ctx, tpl, children);
+        // children.forEach((child, index) => {
+        //   addChild(api, tpl, child, destructors, index);
+        // });
       } else {
-        children.forEach((child, index) => {
-          addChild(api, appendRef!, child, destructors, index);
-        });
+        // @ts-expect-error children type mismatch
+        renderElement(api, ctx, appendRef!, children);
+
+        // children.forEach((child, index) => {
+        //   addChild(api, appendRef!, child, destructors, index);
+        // });
       }
     } else {
-      children.forEach((child, index) => {
-        addChild(api, appendRef!, child, destructors, index);
-      });
+      // @ts-expect-error children type mismatch
+      renderElement(api, ctx, appendRef!, children);
+
+      // children.forEach((child, index) => {
+      //   addChild(api, appendRef!, child, destructors, index);
+      // });
     }
   } else {
-    for (let i = 0; i < children.length; i++) {
-      addChild(api, element, children[i], destructors, i);
-    }
+    // @ts-expect-error children type mismatch
+    renderElement(api, ctx, element, children);
+
+    // for (let i = 0; i < children.length; i++) {
+    //   addChild(api, element, children[i], destructors, i);
+    // }
   }
 
   registerDestructor(ctx, ...destructors);
@@ -683,9 +655,10 @@ export function $_inElement(
         appendRef = elementRef;
       }
       const destructors: Destructors = [];
-      roots(ctx).forEach((child, index) => {
-        addChild(api, appendRef, child, destructors, index);
-      });
+      renderElement(api, ctx, appendRef, roots(ctx));
+      // roots(ctx).forEach((child, index) => {
+      //   addChild(api, appendRef, child, destructors, index);
+      // });
       destructors.push(() => {
         appendRef.innerHTML = '';
       });
@@ -1012,7 +985,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
           // @ts-expect-error types mismatch
           destroyElement(slotRoots);
         });
-        renderElement(api, slotPlaceholder.parentNode!, slotRoots, slotPlaceholder);
+        renderElement(api, ctx, slotPlaceholder.parentNode!, slotRoots, slotPlaceholder);
         isRendered = true;
       },
       get() {
@@ -1033,7 +1006,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
   });
   return slotRoot;
 }
-function cellToText(api: typeof HTMLAPI, cell: Cell | MergedCell, destructors: Destructors) {
+export function cellToText(api: typeof HTMLAPI, cell: Cell | MergedCell, destructors: Destructors) {
   const textNode = api.text('');
   destructors.push(
     opcodeFor(cell, (value) => {
@@ -1270,7 +1243,7 @@ export function $_dc(
       destroyElementSync(result);
       result = component(value, args, ctx);
       result![$nodes].push(target!);
-      renderElement(api, target!.parentNode!, result, target!);
+      renderElement(api, ctx, target!.parentNode!, result, target!);
     } else {
       result = component(value, args, ctx);
     }

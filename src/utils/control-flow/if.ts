@@ -177,7 +177,7 @@ export class IfCondition {
       $DEBUG_REACTIVE_CONTEXTS.pop();
     }
     // @ts-expect-error different type for this
-    renderElement(initDOM(this),
+    renderElement(initDOM(this), this,
       this.placeholder.parentNode || this.target,
       this.prevComponent,
       this.placeholder,
