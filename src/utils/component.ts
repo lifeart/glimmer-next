@@ -353,16 +353,14 @@ export function runDestructors(
   }
   const nodesToRemove = RENDER_TREE.get(target);
   if (nodesToRemove) {
-    /*
+      /*
       we need slice here because of search for it:
       @todo - case 42 (associateDestroyable)
       tldr list may be mutated during removal and forEach is stopped
     */
-    Array.from(nodesToRemove).forEach((node) => {
-      runDestructors(node, promises);
-      // RENDER_TREE.delete(node as any);
-    });
-    // RENDER_TREE.delete(target);
+    while (nodesToRemove.length) {
+      runDestructors(nodesToRemove.shift()!, promises);
+    }
   }
   return promises;
 }

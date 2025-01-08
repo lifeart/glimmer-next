@@ -51,7 +51,7 @@ export function isTagLike(child: unknown): child is AnyCell {
   return (child as AnyCell)[isTag];
 }
 
-export const RENDER_TREE = new WeakMap<Component<any> | Root, Set<Component>>();
+export const RENDER_TREE = new WeakMap<Component<any> | Root, Array<Component>>();
 export const PARENT_GRAPH = new WeakMap<
   Component<any> | Root,
   Component<any>
@@ -133,8 +133,8 @@ export function addToTree(
       if (tree === undefined) {
         return;
       }
-      tree.delete(node);
-      if (tree.size === 0) {
+      tree.splice(tree.indexOf(node), 1);
+      if (tree.length === 0) {
         RENDER_TREE.delete(ctx);
       }
     },
@@ -160,10 +160,10 @@ export function addToTree(
   }
   let tree = RENDER_TREE.get(ctx);
   if (!tree) {
-    tree = new Set();
+    tree = [];
     RENDER_TREE.set(ctx, tree);
   }
-  tree.add(node);
+  tree.push(node);
   
   if (WITH_CONTEXT_API) {
     PARENT_GRAPH.set(node, ctx);
