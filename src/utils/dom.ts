@@ -22,7 +22,6 @@ import {
 import {
   DestructorFn,
   Destructors,
-  destroy,
   registerDestructor,
 } from './glimmer/destroyable';
 import {

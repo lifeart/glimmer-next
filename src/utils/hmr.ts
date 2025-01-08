@@ -73,6 +73,7 @@ export function createHotReload(
           }
         }
       });
+      // @ts-expect-error different type for API
       const api = initDOM(newCmp);
       renderElement(api, parentElement, newCmp, firstElement);
       destroyElementSync(instance);
