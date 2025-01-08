@@ -797,7 +797,7 @@ describe.each([
             `{{#let foo "name" as |bar k|}}p{{bar}}{{k}}{{/let}}`,
           ),
         ).toEqual(
-          `$:...(() => {let self = this;let Let_bar_6c3gez6 = $:() => $:foo;let Let_k_6c3gez6 = "name";return [$_text("p"), ${
+          `$:...(() => {let self = this;let Let_bar_6c3gez6 = $:() => $:foo;let Let_k_6c3gez6 = "name";return [$_text($_api(this),"p"), ${
             flags.IS_GLIMMER_COMPAT_MODE
               ? '() => Let_bar_6c3gez6()'
               : 'Let_bar_6c3gez6()'
@@ -926,7 +926,7 @@ describe.each([
         expect($s(converted)).toEqual(
           `$_each(${$glimmerCompat(
             'foo',
-          )}, (bar,$index,ctx0) => [$_ucw((ctx1) => [$_text("1"), $_c(Smile,${$args(
+          )}, (bar,$index,ctx0) => [$_ucw((ctx1) => [$_text($_api(this),"1"), $_c(Smile,${$args(
             '{}',
           )},ctx1)], ctx0)], null, this)`,
         );
