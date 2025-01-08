@@ -9,6 +9,8 @@ import { Root } from './dom';
 import { registerDestructor } from './glimmer/destroyable';
 
 export const isTag = Symbol('isTag');
+export const RENDERING_CONTEXT_PROPERTY = Symbol('rendering-context');
+
 export const $template = 'template' as const;
 export const $context = '_context' as const;
 export const $nodes = 'nodes' as const;
@@ -60,6 +62,13 @@ export const BOUNDS = new WeakMap<
   Component<any>,
   Array<HTMLElement | Comment>
 >();
+
+if (!import.meta.env.SSR) {
+  if (IS_DEV_MODE) {
+    window['getRenderTree'] = () => RENDER_TREE;
+  }
+}
+
 export function getBounds(ctx: Component<any>) {
   return BOUNDS.get(ctx) ?? [];
 }

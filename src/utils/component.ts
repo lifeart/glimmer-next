@@ -22,6 +22,7 @@ import {
   isEmpty,
   FRAGMENT_TYPE,
   PARENT_GRAPH,
+  RENDERING_CONTEXT_PROPERTY,
 } from './shared';
 import { addChild, createRoot, getRoot, Root, setRoot } from './dom';
 import { provideContext, initDOM, RENDERING_CONTEXT } from './context';
@@ -170,6 +171,7 @@ export class Component<T extends Props = any>
   implements Omit<ComponentReturnType, 'ctx'>
 {
   args!: Get<T, 'Args'>;
+  [RENDERING_CONTEXT_PROPERTY]: undefined | typeof DEFAULT_API = undefined;
   declare [Context]: TemplateContext<
     this,
     Get<T, 'Args'>,

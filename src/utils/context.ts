@@ -1,6 +1,6 @@
 import { registerDestructor } from './glimmer/destroyable';
 import { Component } from './component';
-import { isFn, PARENT_GRAPH } from './shared';
+import { isFn, PARENT_GRAPH, RENDERING_CONTEXT_PROPERTY } from './shared';
 import { getRoot, Root } from './dom';
 import type { api as DOM_API } from './dom-api';
 
@@ -31,8 +31,13 @@ export function context(
   };
 }
 
+
 export function initDOM(ctx: Component<any> | Root) {
-  return getContext<typeof DOM_API>(ctx, RENDERING_CONTEXT)!;
+  const renderingContext = ctx[RENDERING_CONTEXT_PROPERTY];
+  if (renderingContext) {
+    return renderingContext;
+  }
+  return (ctx[RENDERING_CONTEXT_PROPERTY] = getContext<typeof DOM_API>(ctx, RENDERING_CONTEXT)!);
 }
 
 export function getContext<T>(

@@ -45,6 +45,7 @@ import {
   isEmpty,
   FRAGMENT_TYPE,
   $context,
+  RENDERING_CONTEXT_PROPERTY,
 } from './shared';
 import { isRehydrationScheduled } from './ssr/rehydration';
 import { createHotReload } from './hmr';
@@ -94,7 +95,9 @@ let unstableWrapperId: number = 0;
   Referencing to top-level application context,
   Acting as main DI container and metadata storage.
 */
-export class Root {}
+export class Root {
+  [RENDERING_CONTEXT_PROPERTY]: undefined | typeof HTMLAPI = undefined;
+}
 let ROOT: Root | null = null;
 
 export const $_MANAGERS = {
@@ -972,8 +975,6 @@ function createSlot(
     $DEBUG_REACTIVE_CONTEXTS.push(`:${name}`);
   }
   const elements = value(...[...params(), ctx]);
-  console.log('elements', elements);
-  console.log('merge-components');
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.pop();
   }
@@ -1385,15 +1386,6 @@ export function $_fin(
         $destructors,
       );
     }
-  }
-
-  if (ctx !== null) {
-    // no need to add destructors because component seems template-only and should not have `registerDestructor` flow.
-
-    $destructors.push(() => {
-      destroy(ctx as unknown as object);
-    });
-    registerDestructor(ctx, ...$destructors);
   }
 
   return {
