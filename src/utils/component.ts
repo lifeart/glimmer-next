@@ -328,13 +328,13 @@ function runDestructorsSync(targetNode: Component<any>) {
 
   while (stack.length > 0) {
     const currentNode = stack.pop()!;
+    const nodesToRemove = RENDER_TREE.get(currentNode);
 
     destroy(currentNode);
 
     if (WITH_CONTEXT_API) {
       PARENT_GRAPH.delete(currentNode);
     }
-    const nodesToRemove = RENDER_TREE.get(currentNode);
     if (nodesToRemove !== undefined) {
       /*
         we need slice here because of search for it:
@@ -349,11 +349,11 @@ export function runDestructors(
   target: Component<any> | Root,
   promises: Array<Promise<void>> = [],
 ): Array<Promise<void>> {
+  const nodesToRemove = RENDER_TREE.get(target);
   promises.push(...destroy(target));
   if (WITH_CONTEXT_API) {
     PARENT_GRAPH.delete(target);
   }
-  const nodesToRemove = RENDER_TREE.get(target);
   if (nodesToRemove) {
     /*
       we need slice here because of search for it:

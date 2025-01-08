@@ -134,20 +134,6 @@ export function addToTree(
       throw new Error('invalid node');
     }
   }
-  // @todo - case 42
-  registerDestructor(node, 
-    () => {
-      SEEN_TREE_NODES.delete(node);
-      const tree = RENDER_TREE.get(ctx);
-      if (tree === undefined) {
-        return;
-      }
-      tree.delete(node);
-      if (tree.size === 0) {
-        RENDER_TREE.delete(ctx);
-      }
-    },
-  );
 
   if (IS_DEV_MODE) {
     if (debugName) {
@@ -167,14 +153,33 @@ export function addToTree(
       console.error('Unable to set child for unknown parent');
     }
   }
-
-  if (!RENDER_TREE.has(ctx)) {
-    RENDER_TREE.set(ctx, new Set());
+  let tree = RENDER_TREE.get(ctx)!;
+  if (!tree) {
+    tree = new Set();
+    RENDER_TREE.set(ctx, tree);
+    registerDestructor(ctx, 
+      () => {
+        RENDER_TREE.delete(ctx);
+      },
+    );
   }
-  RENDER_TREE.get(ctx)!.add(node);
+
+  tree.add(node);
+
   if (WITH_CONTEXT_API) {
     PARENT_GRAPH.set(node, ctx);
   }
+
+  // @todo - case 42
+  registerDestructor(node, 
+    () => {
+      if (WITH_CONTEXT_API) {
+        PARENT_GRAPH.delete(node);
+      }
+      SEEN_TREE_NODES.delete(node);
+      tree.delete(node);
+    },
+  );
 }
 
 /*
