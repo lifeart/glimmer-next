@@ -24,7 +24,7 @@ import {
   PARENT_GRAPH,
   RENDERING_CONTEXT_PROPERTY,
 } from './shared';
-import { addChild, createRoot, getRoot, Root, setRoot } from './dom';
+import { createRoot, getRoot, Root, setRoot } from './dom';
 import { provideContext, initDOM, RENDERING_CONTEXT } from './context';
 
 export type ComponentRenderTarget =
@@ -39,34 +39,20 @@ export type GenericReturnType =
   | null
   | null[];
 
-function renderNode(api: typeof DEFAULT_API, parent: Node, target: Node, placeholder: Node | Comment) {
-  if (import.meta.env.DEV) {
-    if (isEmpty(target)) {
-      console.warn(`Trying to render ${typeof target}`);
-      return;
-    }
-    if (parent === null) {
-      console.warn(`Trying to render null parent`);
-      return;
-    }
-  }
-  api.insert(parent, target, placeholder);
-}
-
 type RenderableElement = GenericReturnType | Node | string | number | null | undefined;
 
 export function renderElement(
   api: typeof DEFAULT_API,
   target: Node,
   el: RenderableElement | RenderableElement[],
-  placeholder: Comment | Node,
+  placeholder: Comment | Node | null,
 ) {
   if (!isArray(el)) {
     if (isEmpty(el) || el === '') {
       return;
     }
     if (isPrimitive(el)) {
-      renderNode(api, target, api.text(el), placeholder);
+      api.insert(target, api.text(el), placeholder);
     } else if ($nodes in el) {
       el[$nodes].forEach((node) => {
         renderElement(api, target, node, placeholder);
@@ -74,7 +60,7 @@ export function renderElement(
     } else if (isFn(el)) {
       renderElement(api, target, el(), placeholder);
     } else {
-      renderNode(api, target, el, placeholder);
+      api.insert(target, el, placeholder);
     }
   } else {
     el.forEach((item) => {
@@ -133,14 +119,7 @@ export function renderComponent(
   const dom = initDOM(owner || component) || initDOM(getRoot()!);
   if (TRY_CATCH_ERROR_HANDLING) {
     try {
-      children.forEach((child, i) => {
-        addChild(dom,
-          targetElement as unknown as HTMLElement,
-          child as any,
-          destructors,
-          i,
-        );
-      });
+      renderElement(dom, targetElement as unknown as HTMLElement, children, targetElement.lastChild);
       registerDestructor(owner || component, ...destructors);
     } catch (e) {
       destructors.forEach((fn) => fn());
@@ -148,14 +127,7 @@ export function renderComponent(
       throw e;
     }
   } else {
-    children.forEach((child, i) => {
-      addChild(dom,
-        targetElement as unknown as HTMLElement,
-        child as any,
-        destructors,
-        i,
-      );
-    });
+    renderElement(dom, targetElement as unknown as HTMLElement, children, targetElement.lastChild);
     registerDestructor(owner || component, ...destructors);
   }
 

@@ -234,6 +234,7 @@ export class BasicListComponent<T extends { id: number }> {
       keyForItem,
       ItemComponent,
       isFirstRender,
+      api,
     } = this;
     const rowsToMove: Array<[GenericReturnType, number]> = [];
     const amountOfExistingKeys = amountOfKeys - removedIndexes.length;
@@ -293,7 +294,8 @@ export class BasicListComponent<T extends { id: number }> {
         keyMap.set(key, row);
         indexMap.set(key, index);
         if (isAppendOnly) {
-          renderElement(this.api, targetNode.parentNode!, row, targetNode);
+          // TODO: in ssr parentNode may not exist
+          renderElement(api, targetNode.parentNode!, row, targetNode);
         } else {
           rowsToMove.push([row, index]);
           // TODO: optimize
@@ -322,7 +324,7 @@ export class BasicListComponent<T extends { id: number }> {
         const insertBeforeNode = nextItem
           ? getFirstNode(keyMap.get(keyForItem(nextItem, index + 1))!)
           : bottomMarker;
-        renderElement(this.api, insertBeforeNode.parentNode!, row, insertBeforeNode);
+        renderElement(api, insertBeforeNode.parentNode!, row, insertBeforeNode);
       });
     if (targetNode !== bottomMarker) {
       const parent = targetNode.parentNode!;

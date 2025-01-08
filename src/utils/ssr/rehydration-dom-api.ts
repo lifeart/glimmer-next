@@ -6,6 +6,7 @@ import {
   itemFromRehydrationStack,
   lastItemInStack,
 } from './rehydration';
+import { isEmpty } from '../shared';
 const $doc = getDocument();
 export const api = {
   toString() {
@@ -194,6 +195,16 @@ export const api = {
     child: HTMLElement | Node,
     anchor?: HTMLElement | Node | null,
   ) {
+    if (import.meta.env.DEV) {
+      if (isEmpty(child)) {
+        console.warn(`Trying to render ${typeof child}`);
+        return;
+      }
+      if (parent === null) {
+        console.warn(`Trying to render null parent`);
+        return;
+      }
+    }
     if (parent === child) {
       // console.warn('parent === child');
       return;
