@@ -15,11 +15,15 @@ import {
   isPrimitive,
   isTagLike,
   addToTree,
+  $context,
 } from '@/utils/shared';
 import { opcodeFor } from '@/utils/vm';
 import { initDOM } from '@/utils/context';
 
 export class IfCondition {
+  declare args: {
+    [$context]: Component<any>
+  }
   isDestructorRunning = false;
   prevComponent: GenericReturnType | null = null;
   condition!: MergedCell | Cell<boolean>;
@@ -45,6 +49,9 @@ export class IfCondition {
     this.setupCondition(maybeCondition);
     this.trueBranch = trueBranch;
     this.falseBranch = falseBranch;
+    this.args = {
+      [$context]: parentContext,
+    }
     // @ts-expect-error typings error
     addToTree(parentContext, this);
     this.destructors.push(opcodeFor(this.condition, this.syncState.bind(this)));

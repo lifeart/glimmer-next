@@ -18,6 +18,7 @@ import {
   isTagLike,
   LISTS_FOR_HMR,
   addToTree,
+  $context,
 } from '@/utils/shared';
 import { isRehydrationScheduled } from '@/utils/ssr/rehydration';
 import { initDOM } from '@/utils/context';
@@ -73,7 +74,6 @@ export class BasicListComponent<T extends { id: number }> {
   keyMap: Map<string, GenericReturnType> = new Map();
   indexMap: Map<string, number> = new Map();
   nodes: Node[] = [];
-  parentCtx!: Component<any>;
   ItemComponent: (
     item: T,
     index: number | MergedCell,
@@ -94,6 +94,9 @@ export class BasicListComponent<T extends { id: number }> {
     }
   }
   declare api: typeof HTML_API;
+  declare args: {
+    [$context]: Component<any>
+  }
   constructor(
     { tag, ctx, key, ItemComponent }: ListComponentArgs<T>,
     outlet: RenderTarget,
@@ -101,9 +104,11 @@ export class BasicListComponent<T extends { id: number }> {
   ) {
     this.api = initDOM(ctx);
     this.ItemComponent = ItemComponent;
+    this.args = {
+      [$context]: ctx,
+    }
     // @ts-expect-error typings error
     addToTree(ctx, this);
-    this.parentCtx = ctx;
     const mainNode = outlet;
     this[$nodes] = [];
     if (key) {
