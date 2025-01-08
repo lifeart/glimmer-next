@@ -722,7 +722,7 @@ if (IS_DEV_MODE) {
   function buildGraph(
     obj: Record<string, unknown>,
     root: any,
-    children: Array<any>,
+    children: Set<any>,
   ) {
     if (root === null) {
       console.info('root is null', RENDER_TREE);
@@ -730,12 +730,12 @@ if (IS_DEV_MODE) {
     }
     const name =
       root.debugName || root?.constructor?.name || root?.tagName || 'unknown';
-    if (children.length === 0) {
+    if (children.size === 0) {
       obj[name] = null;
       return obj;
     }
     obj[name] = Array.from(children).map((child) => {
-      return buildGraph({}, child, RENDER_TREE.get(child) ?? []);
+      return buildGraph({}, child, RENDER_TREE.get(child) ?? new Set());
     });
     return obj;
   }
@@ -744,7 +744,7 @@ if (IS_DEV_MODE) {
     const ref = buildGraph(
       {} as Record<string, unknown>,
       ROOT,
-      RENDER_TREE.get(ROOT!) ?? [],
+      RENDER_TREE.get(ROOT!) ?? new Set(),
     );
     console.log(JSON.stringify(ref, null, 2));
     console.log(RENDER_TREE);
