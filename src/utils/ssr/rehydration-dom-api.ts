@@ -18,8 +18,6 @@ export const api = {
       return () => {
         node.removeEventListener(eventName, fn);
       };
-    } else {
-      return () => {};
     }
   },
   prop(element: HTMLElement, name: string, value: any) {

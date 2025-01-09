@@ -388,7 +388,7 @@ function $ev(
     // event case (on modifier)
     if (RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES) {
       destructors.push(
-        api.addEventListener(element, eventName, fn as EventListener),
+        api.addEventListener(element, eventName, fn as EventListener)!,
       );
     } else {
       api.addEventListener(element, eventName, fn as EventListener);
