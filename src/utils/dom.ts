@@ -903,20 +903,13 @@ function _component(
       registerDestructor(ctx, () => {
         COMPONENTS_HMR.get(comp)?.delete(bucket);
       });
-    }
-    if (result.ctx !== null) {
-      // here is workaround for simple components @todo - figure out how to show context-less components in tree
-      // for now we don't adding it
-      if (result.ctx !== instance) {
+      if (!result.ctx || result.ctx !== instance) {
         throw new Error('Invalid context');
       }
-      if (IS_DEV_MODE) {
-        setBounds(result);
-      }
+      setBounds(result);
     }
     return result;
-  }
-  if (instance.ctx !== null) {
+  } else if (instance.ctx !== null) {
     // for now we adding only components with context
     // debugger;
     addToTree(ctx, instance.ctx);
@@ -924,6 +917,10 @@ function _component(
 
     if (IS_DEV_MODE) {
       setBounds(instance);
+    }
+  } else {
+    if (IS_DEV_MODE) {
+      throw new Error(`Unknown Instance`);
     }
   }
   if (IS_DEV_MODE) {
