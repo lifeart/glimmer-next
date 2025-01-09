@@ -50,12 +50,14 @@ export function renderElement(
   el: RenderableElement | RenderableElement[] | MergedCell,
   placeholder: Comment | Node | null = null,
 ) {
+  if (isEmpty(el) || el === '') {
+    return;
+  }
   if (!isArray(el)) {
-    if (isEmpty(el) || el === '') {
-      return;
-    }
     if (isPrimitive(el)) {
       api.insert(target, api.text(el), placeholder);
+    } else if ((el as HTMLElement).nodeType) {
+      api.insert(target, el as Node, placeholder);
     } else if ($nodes in el) {
       el[$nodes].forEach((node) => {
         renderElement(api, ctx, target, node, placeholder);
@@ -68,12 +70,12 @@ export function renderElement(
       api.insert(target, cellToText(api, el, destructors), placeholder);
       registerDestructor(ctx, ...destructors);
     } else {
-      api.insert(target, el, placeholder);
+      throw new Error(`Unknown element type ${el}`);
     }
   } else {
-    el.forEach((item) => {
-      renderElement(api, ctx, target, item, placeholder);
-    });
+    for (let i = 0; i < el.length; i++) {
+      renderElement(api, ctx, target, el[i], placeholder);
+    }
   }
 }
 
