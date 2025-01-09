@@ -33,7 +33,7 @@ export function context(
 
 export function initDOM(ctx: Component<any> | Root) {
   if (fastRenderingContext !== null) {
-    return fastRenderingContext;
+    return fastRenderingContext as typeof DOM_API;
   }
   const renderingContext = ctx[RENDERING_CONTEXT_PROPERTY];
   if (renderingContext) {
