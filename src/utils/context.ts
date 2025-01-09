@@ -6,7 +6,6 @@ import type { api as DOM_API } from './dom-api';
 
 const CONTEXTS = new WeakMap<Component<any> | Root, Map<symbol, any>>();
 export const RENDERING_CONTEXT = Symbol('RENDERING_CONTEXT');
-
 export function context(
   contextKey: symbol,
 ): (
@@ -44,10 +43,13 @@ export function getContext<T>(
   ctx: Component<any> | Root,
   key: symbol,
 ): T | null {
+  if (key === RENDERING_CONTEXT && fastRenderingContext !== null) {
+    return fastRenderingContext as T;
+  }
   if (!WITH_CONTEXT_API) {
     ctx = getRoot()!;
   }
-  
+  // console.log('getContext', key);
   let current: Component<any> | Root | undefined = ctx;
   let context: Map<symbol, any> | undefined;
   const lookupTree = [];
@@ -78,11 +80,24 @@ export function getContext<T>(
   return null;
 }
 
+let fastRenderingContext: unknown = null;
+
 export function provideContext<T>(
   ctx: Component<any> | Root,
   key: symbol,
   value: T,
 ): void {
+  if (key === RENDERING_CONTEXT) {
+    if (ctx instanceof Root) {
+      fastRenderingContext = value;
+      registerDestructor(ctx, () => {
+        fastRenderingContext = null;
+      });
+    } else {
+      // if we trying to set more than one contexts, we resetting fast path
+      fastRenderingContext = null;
+    }
+  }
   if (!WITH_CONTEXT_API) {
     ctx = getRoot()!;
   }
