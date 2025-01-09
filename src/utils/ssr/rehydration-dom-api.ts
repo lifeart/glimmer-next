@@ -195,6 +195,19 @@ export const api = {
     child: HTMLElement | Node,
     anchor?: HTMLElement | Node | null,
   ) {
+    if (child.isConnected) {
+      return;
+    }
+    // replace child with first comment node if found
+    if (parent && child.nodeType === Node.TEXT_NODE && parent.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) {
+      const commentNodes = Array.from(parent.childNodes).filter(node => node.nodeType === Node.COMMENT_NODE && String((node as Comment).data).includes('[text-placeholder]'));
+      if (commentNodes.length > 0) {
+        console.log(commentNodes);
+        parent.replaceChild(child, commentNodes[0]);
+        return;
+      }
+    }
+    console.log('insert', parent, child, anchor);
     if (import.meta.env.DEV) {
       if (isEmpty(child)) {
         console.warn(`Trying to render ${typeof child}`);

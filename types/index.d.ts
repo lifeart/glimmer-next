@@ -5,6 +5,7 @@ declare global {
     getDestructors: () => WeakSet<Node, Array<() => void>>;
     drawTreeToConsole: () => void;
     getRenderTree: () => Set<Component, Array<Component>>;
+    getParentGraph: () => WeakMap<Component, Component>;
     getVM: () => any;
     hotReload: (
       oldComponent: Component | ComponentReturnType,

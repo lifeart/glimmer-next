@@ -241,6 +241,10 @@ export function destroyElementSync(
 }
 
 function internalDestroyNode(el: Node | ComponentReturnType) {
+  if (!el) {
+    console.warn(`Trying to destroy undefined`, el);
+    return;
+  }
   if ('nodeType' in el) {
     destroyNode(el);
   } else {

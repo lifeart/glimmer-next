@@ -66,6 +66,7 @@ export const BOUNDS = new WeakMap<
 if (!import.meta.env.SSR) {
   if (IS_DEV_MODE) {
     window['getRenderTree'] = () => RENDER_TREE;
+    window['getParentGraph'] = () => PARENT_GRAPH;
   }
 }
 

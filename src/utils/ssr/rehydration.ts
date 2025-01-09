@@ -130,8 +130,16 @@ export function withRehydration(
     });
     provideContext(root, RENDERING_CONTEXT, TEMP_API);
 
-    // @ts-expect-error
-    nodesToRemove.forEach((node) => node.remove());
+    nodesToRemove.forEach((node) => {
+      // replace node with comment
+      const comment = document.createComment('[text-placeholder]');
+      if (node.parentElement) {
+        node.parentElement.replaceChild(comment, node);
+      } else {
+        // @ts-expect-error typings mismatch
+        node.remove();
+      }
+    });
     // withRehydrationStack.reverse();
     // console.log('withRehydrationStack', withRehydrationStack);
     // @ts-expect-error typings mismatch

@@ -5,7 +5,7 @@ import {
 } from '@/utils/component';
 import { setDocument, getDocument } from '../dom-api';
 import { getRoot, resetNodeCounter, resetRoot } from '@/utils/dom';
-import { $template } from '../shared';
+import { $args, $context, $template } from '../shared';
 
 type EnvironmentParams = {
   url: string;
@@ -25,6 +25,9 @@ export async function renderInBrowser(
   renderComponent(
     {
       // @ts-expect-error typings error
+      [$args]: {
+            [$context]: getRoot(),
+      },
       [$template]: function () {
         // @ts-expect-error typings error
         return new componentRenderFn(...arguments);

@@ -137,8 +137,8 @@ export class BasicListComponent<T extends { id: number }> {
     }
     this.topMarker = topMarker;
 
-    this.api.append(mainNode, this.topMarker);
-    this.api.append(mainNode, this.bottomMarker);
+    this.api.insert(mainNode, this.topMarker);
+    this.api.insert(mainNode, this.bottomMarker);
 
     const originalTag = tag;
 
@@ -221,7 +221,7 @@ export class BasicListComponent<T extends { id: number }> {
         // TODO: figure out, likely error here, because we don't append fragment
       } else {
         fragment = this.api.fragment();
-        this.api.append(fragment, marker);
+        this.api.insert(fragment, marker);
       }
       return marker;
     }

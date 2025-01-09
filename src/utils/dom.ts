@@ -1038,7 +1038,7 @@ function getRenderTargets(api: typeof HTMLAPI, debugName: string) {
     : api.fragment();
 
   if (!ifPlaceholder.isConnected) {
-    api.append(outlet, ifPlaceholder);
+    api.insert(outlet, ifPlaceholder);
   }
 
   return {

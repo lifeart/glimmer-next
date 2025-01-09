@@ -1,6 +1,6 @@
 import { registerDestructor } from './glimmer/destroyable';
 import { Component } from './component';
-import { isFn, PARENT_GRAPH, RENDERING_CONTEXT_PROPERTY } from './shared';
+import { $context, isFn, PARENT_GRAPH, RENDERING_CONTEXT_PROPERTY } from './shared';
 import { getRoot, Root } from './dom';
 import type { api as DOM_API } from './dom-api';
 
@@ -50,24 +50,28 @@ export function getContext<T>(
   
   let current: Component<any> | Root | undefined = ctx;
   let context: Map<symbol, any> | undefined;
-  
-  // Direct lookup first
-  context = CONTEXTS.get(current);
-  if (context?.has(key)) {
-    const value = context.get(key);
-    return isFn(value) ? value() : value;
-  }
+  const lookupTree = [];
 
-  // Parent chain lookup
-  while (current = PARENT_GRAPH.get(current)) {
-    if ((context = CONTEXTS.get(current))?.has(key)) {
+  while (current) {
+    context = CONTEXTS.get(current);
+    if (import.meta.env.DEV) {
+      lookupTree.push([current, context]);
+    }
+
+    if (context?.has(key)) {
       const value = context.get(key);
       return isFn(value) ? value() : value;
     }
+    current = PARENT_GRAPH.get(current);
   }
-
-  if (import.meta.env.DEV && !current) {
-    console.log('`Unable to resolve parent for ', ctx);
+  // TODO: add fancy error message about missing provider in dev mode,
+  // we may track context usage and provide a better error message
+  if (import.meta.env.DEV && !current && !(ctx instanceof Root)) {
+    if (ctx?.args?.[$context]) {
+      return getContext(ctx?.args?.[$context], key);
+    }
+    console.log('`Unable to resolve parent for ', ctx, key);
+    console.log('Lookup tree:', lookupTree);
     debugger;
   }
 

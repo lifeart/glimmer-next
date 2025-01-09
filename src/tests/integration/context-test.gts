@@ -59,9 +59,11 @@ module('Integration | Context API', function () {
     }
     await render(
       <template>
-        <IntlProvider @intl={{hash name='Fake'}}>
-          <Boo />
-        </IntlProvider>
+        <ThemeProvider @theme={{hash buttonClass='bg-blue-500'}}>
+          <IntlProvider @intl={{hash name='Fake'}}>
+            <Boo />
+          </IntlProvider>
+        </ThemeProvider>
       </template>,
     );
     assert
