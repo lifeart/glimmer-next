@@ -53,7 +53,7 @@ export class IfCondition {
       [$context]: parentContext,
     }
     // @ts-expect-error typings error
-    addToTree(parentContext, this);
+    addToTree(parentContext, this, 'from if constructor');
     this.destructors.push(opcodeFor(this.condition, this.syncState.bind(this)));
     registerDestructor(parentContext, this.destroy.bind(this));
     if (IS_DEV_MODE) {

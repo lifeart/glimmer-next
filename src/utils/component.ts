@@ -335,22 +335,22 @@ export function runDestructors(
   target: Component<any> | Root,
   promises: Array<Promise<void>> = [],
 ): Array<Promise<void>> {
-  const nodesToRemove = RENDER_TREE.get(target);
+  const parentComponents = RENDER_TREE.get(target);
   promises.push(...destroy(target));
-  if (WITH_CONTEXT_API) {
-    PARENT_GRAPH.delete(target);
-  }
-  if (nodesToRemove) {
+  if (parentComponents) {
     /*
       we need slice here because of search for it:
       @todo - case 42 (associateDestroyable)
       tldr list may be mutated during removal and forEach is stopped
     */
-    Array.from(nodesToRemove).forEach((node) => {
+    Array.from(parentComponents).forEach((node) => {
       runDestructors(node, promises);
       // RENDER_TREE.delete(node as any);
     });
     // RENDER_TREE.delete(target);
+  }
+  if (WITH_CONTEXT_API) {
+    PARENT_GRAPH.delete(target);
   }
   return promises;
 }

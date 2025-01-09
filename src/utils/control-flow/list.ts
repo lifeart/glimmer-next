@@ -108,7 +108,7 @@ export class BasicListComponent<T extends { id: number }> {
       [$context]: ctx,
     }
     // @ts-expect-error typings error
-    addToTree(ctx, this);
+    addToTree(ctx, this, 'from list constructor');
     const mainNode = outlet;
     this[$nodes] = [];
     if (key) {

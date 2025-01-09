@@ -117,6 +117,10 @@ export function addToTree(
   debugName?: string,
 ) {
   if (SEEN_TREE_NODES.has(node)) {
+    if (IS_DEV_MODE) {
+      // @ts-expect-error foo-bar
+      console.log('node is already added to tree in:', node._debugName, '| and now in |', debugName);
+    }
     // GET_ARGS may re-add node to tree (depending on component type)
     return;
     // throw new Error('Node is already added to tree');
@@ -138,7 +142,7 @@ export function addToTree(
 
   if (IS_DEV_MODE) {
     if (debugName) {
-      Object.defineProperty(node, 'debugName', {
+      Object.defineProperty(node, '_debugName', {
         value: debugName,
         enumerable: false,
       });

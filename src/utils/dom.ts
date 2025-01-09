@@ -887,7 +887,7 @@ function _component(
   }
   // todo - fix typings here
   if ($template in instance) {
-    addToTree(ctx, instance);
+    addToTree(ctx, instance, 'from $template');
     const result = (
       instance[$template] as unknown as () => ComponentReturnType
     )();
@@ -912,7 +912,7 @@ function _component(
   } else if (instance.ctx !== null) {
     // for now we adding only components with context
     // debugger;
-    addToTree(ctx, instance.ctx);
+    addToTree(ctx, instance.ctx, 'from !$template');
     // addToTree(ctx, instance);
 
     if (IS_DEV_MODE) {
@@ -1073,8 +1073,6 @@ function ifCond(
     trueBranch,
     falseBranch,
   );
-  // @ts-expect-error instance type mismatch
-  addToTree(ctx, instance);
   return toNodeReturnType(outlet, instance);
 }
 export function $_eachSync<T extends { id: number }>(
@@ -1095,7 +1093,6 @@ export function $_eachSync<T extends { id: number }>(
     outlet,
     placeholder,
   );
-  addToTree(ctx, instance as unknown as Component<any>);
   return toNodeReturnType(outlet, instance);
 }
 export function $_each<T extends { id: number }>(
@@ -1116,7 +1113,6 @@ export function $_each<T extends { id: number }>(
     outlet,
     placeholder,
   );
-  addToTree(ctx, instance as unknown as Component<any>);
   return toNodeReturnType(outlet, instance);
 }
 const ArgProxyHandler: ProxyHandler<{}> = {
@@ -1146,10 +1142,10 @@ export function $_GET_ARGS(ctx: any, args: any) {
   const parentContext = ctx[$args][$context];
   if (parentContext) {
     // console.log('context', parentContext, ctx);
-    addToTree(parentContext, ctx);
+    addToTree(parentContext, ctx, 'from $_GET_ARGS with parent');
   } else {
     // @ts-expect-error typings error
-    addToTree(getRoot()!, ctx);
+    addToTree(getRoot()!, ctx, 'from $_GET_ARGS without parent');
   }
 }
 export function $_GET_SLOTS(ctx: any, args: any) {
@@ -1227,7 +1223,7 @@ export function $_dc(
     if (typeof value !== 'function') {
       result = value;
       // @ts-expect-error typings error
-      addToTree(ctx, result);
+      addToTree(ctx, result, 'from Dynamic component opcode');
       return;
     }
     if (value !== ref) {

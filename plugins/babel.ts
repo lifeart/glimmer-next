@@ -245,10 +245,13 @@ export function stripGXTDebug(babel: { types: typeof Babel.types }) {
       },
       CallExpression(path: any) {
         if (path.node.callee && path.node.callee.type === 'Identifier') {
-          if (
-            path.node.callee.name === 'cell' ||
-            path.node.callee.name === 'formula' ||
-            path.node.callee.name === 'resolveRenderable'
+          const name = path.node.callee.name;
+          if (name === 'addToTree' && path.node.arguments.length === 3) {
+            path.node.arguments.pop();
+          } else if (
+            name === 'cell' ||
+            name === 'formula' ||
+            name === 'resolveRenderable'
           ) {
             if (path.node.arguments.length === 2) {
               path.node.arguments.pop();
