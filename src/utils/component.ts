@@ -304,7 +304,7 @@ export async function destroyElement(
       if (skipDom) {
         return;
       }
-      await destroyNode(component);
+      destroyNode(component);
     }
   }
 }
