@@ -19,6 +19,7 @@ import { CONSTANTS, EVENT_TYPE, SYMBOLS } from './symbols';
 import type { Flags } from './flags';
 import {
   booleanAttributes,
+  BUILTIN_HELPERS,
   COMPILE_TIME_HELPERS,
   propertyKeys,
 } from './constants';
@@ -41,7 +42,7 @@ function patchNodePath(
   }
   // replacing builtin helpers
   if (node.path.original === 'unless') {
-    node.path.original = SYMBOLS.$__if;
+    node.path.original = BUILTIN_HELPERS['if'];
     if (node.params.length === 3) {
       const condTrue = node.params[1];
       const condFalse = node.params[2];
@@ -60,36 +61,12 @@ function patchNodePath(
       node.params[1] = condFalse;
       node.params[2] = condTrue;
     }
-  } else if (node.path.original === 'if') {
-    node.path.original = SYMBOLS.$__if;
-  } else if (node.path.original === 'eq') {
-    node.path.original = SYMBOLS.$__eq;
   } else if (node.path.original === 'debugger') {
-    node.path.original = '$__debugger.call';
-    node.params.unshift({
-      type: 'PathExpression',
-      original: 'this',
-      parts: ['this'],
-      loc: node.loc,
-      head: null as any,
-      tail: [],
-      this: true,
-      data: false,
-    });
-  } else if (node.path.original === 'log') {
-    node.path.original = SYMBOLS.$__log;
-  } else if (node.path.original === 'array') {
-    node.path.original = SYMBOLS.$__array;
-  } else if (node.path.original === 'hash') {
-    node.path.original = SYMBOLS.$__hash;
-  } else if (node.path.original === 'fn') {
-    node.path.original = SYMBOLS.$__fn;
-  } else if (node.path.original === 'or') {
-    node.path.original = SYMBOLS.$__or;
-  } else if (node.path.original === 'not') {
-    node.path.original = SYMBOLS.$__not;
-  } else if (node.path.original === 'and') {
-    node.path.original = SYMBOLS.$__and;
+    node.path.original = BUILTIN_HELPERS['debugger'];
+    ;
+    node.params.unshift(builders.path('this'));
+  } else if (node.path.original in BUILTIN_HELPERS) {
+    node.path.original = BUILTIN_HELPERS[node.path.original as keyof typeof BUILTIN_HELPERS];
   }
 
   if (node.path.original.includes('.')) {

@@ -137,9 +137,6 @@ export function addToTree(
       // it's error prone approach because if we had complex component as child will see memory leak
       throw new Error('invalid node');
     }
-  }
-
-  if (IS_DEV_MODE) {
     if (debugName) {
       Object.defineProperty(node, '_debugName', {
         value: debugName,
@@ -152,13 +149,9 @@ export function addToTree(
     if (!ctx) {
       throw new Error('invalid ctx');
     }
-  } else {
-    if (!ctx) {
-      console.error('Unable to set child for unknown parent');
-    }
   }
   let tree = RENDER_TREE.get(ctx)!;
-  if (!tree) {
+  if (tree === undefined) {
     tree = new Set();
     RENDER_TREE.set(ctx, tree);
     registerDestructor(ctx, 
@@ -181,6 +174,7 @@ export function addToTree(
         PARENT_GRAPH.delete(node);
       }
       SEEN_TREE_NODES.delete(node);
+      // make sense to remove node from tree only if it's not destroyed
       tree.delete(node);
     },
   );

@@ -1,3 +1,4 @@
+import { SYMBOLS } from "./symbols";
 export const booleanAttributes = [
   'checked',
   'readonly',
@@ -58,3 +59,16 @@ export const propertyKeys = [
   'selected',
 ];
 export const COMPILE_TIME_HELPERS = ['has-block-params', 'has-block'];
+
+export const BUILTIN_HELPERS = {
+  'or': SYMBOLS.$__or,
+  'and': SYMBOLS.$__and,
+  'eq': SYMBOLS.$__eq,
+  'not': SYMBOLS.$__not,
+  'if': SYMBOLS.$__if,
+  'debugger': `${SYMBOLS.$__debugger}.call`,
+  'log': SYMBOLS.$__log,
+  'array': SYMBOLS.$__array,
+  'hash': SYMBOLS.$__hash,
+  'fn': SYMBOLS.$__fn,
+}

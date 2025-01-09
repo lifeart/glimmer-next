@@ -18,6 +18,7 @@ import {
 } from './utils';
 import { EVENT_TYPE, SYMBOLS } from './symbols';
 import { defaultFlags } from './flags';
+import { BUILTIN_HELPERS } from './constants';
 
 const flags = defaultFlags();
 
@@ -33,7 +34,7 @@ function $mm(name: string, params: string = '', hash: string = '{}') {
 }
 // Maybe helper
 function $mh(name: string, params: string = '', hash: string = '{}') {
-  const isBuiltin = ['or', 'and'].includes(name);
+  const isBuiltin = (name in BUILTIN_HELPERS);
   const isFromScope = name.includes('-');
   if (isBuiltin) {
     name = '$__' + name;
