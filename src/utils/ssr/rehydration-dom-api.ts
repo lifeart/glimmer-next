@@ -205,7 +205,6 @@ export const api = {
         return;
       }
     }
-    console.log('insert', parent, child, anchor);
     if (import.meta.env.DEV) {
       if (isEmpty(child)) {
         console.warn(`Trying to render ${typeof child}`);

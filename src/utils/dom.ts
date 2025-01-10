@@ -3,7 +3,6 @@ import {
   type Slots,
   type Component,
   renderElement,
-  destroyElement,
   runDestructors,
   destroyElementSync,
 } from '@/utils/component';
@@ -965,10 +964,6 @@ function createSlot(
 
 function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
   const api = initDOM(ctx);
-  const $destructors: Destructors = [];
-  registerDestructor(ctx, () => {
-    $destructors.forEach((fn) => fn());
-  });
   if (!(name in $slot)) {
     const slotPlaceholder: Comment = IS_DEV_MODE
       ? api.comment(`slot-{{${name}}}-placeholder`)
@@ -991,11 +986,6 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
           name,
           ctx,
         );
-
-        $destructors.push(() => {
-          // @ts-expect-error types mismatch
-          destroyElement(slotRoots);
-        });
         renderElement(api, ctx, slotPlaceholder.parentNode!, slotRoots, slotPlaceholder);
         isRendered = true;
       },
@@ -1010,13 +1000,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
     });
     return slotPlaceholder;
   }
-  const slotRoot = createSlot($slot[name], params, name, ctx);
-
-  $destructors.push(() => {
-    // @ts-expect-error types mismatch
-    destroyElement(slotRoot);
-  });
-  return slotRoot;
+  return createSlot($slot[name], params, name, ctx);
 }
 export function cellToText(api: typeof HTMLAPI, cell: Cell | MergedCell, destructors: Destructors) {
   const textNode = api.text('');
@@ -1359,10 +1343,12 @@ export function $_fin(
   roots: Array<ComponentReturnType | Node>,
   ctx: Component<any> | null,
 ) {
-  if (!ctx) {
-    throw new Error('Components without context is not supported');
+  if (IS_DEV_MODE) {
+    if (!ctx) {
+      throw new Error('Components without context is not supported');
+    }
   }
-  ctx[RENDERED_NODES_PROPERTY] = ctx[RENDERED_NODES_PROPERTY] ?? [];
+  ctx![RENDERED_NODES_PROPERTY] = ctx![RENDERED_NODES_PROPERTY] ?? [];
   return {
     [$nodes]: roots,
     ctx,

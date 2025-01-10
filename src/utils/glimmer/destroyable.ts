@@ -11,7 +11,7 @@ if (!import.meta.env.SSR) {
   }
 }
 const DESTROYED_NODES = new WeakMap();
-export function destroy(ctx: object) {
+export function destroySync(ctx: object) {
   if (import.meta.env.DEV) {
     if (destroyedObjects.has(ctx)) {
       if (import.meta.env.DEV) {
@@ -21,25 +21,47 @@ export function destroy(ctx: object) {
         console.error(new Error('here'));
         console.warn(`---------------`);
       }
-      return [];
+      return;
     }
     DESTROYED_NODES.set(ctx, new Error('here').stack);
   }
   destroyedObjects.add(ctx);
   const destructors = $dfi.get(ctx);
   if (destructors === undefined) {
-    return [];
+    return;
   }
   $dfi.delete(ctx);
-  const results: Promise<void>[] = [];
+  for (let i = 0; i < destructors.length; i++) {
+    destructors[i]();
+  }
+}
+export function destroy(ctx: object, promises: Array<Promise<void>> = []) {
+  if (import.meta.env.DEV) {
+    if (destroyedObjects.has(ctx)) {
+      if (import.meta.env.DEV) {
+        console.info(ctx, 'node-is-already-destroyed-here');
+        console.error(DESTROYED_NODES.get(ctx));
+        console.info('and trying to be re-destroyed here');
+        console.error(new Error('here'));
+        console.warn(`---------------`);
+      }
+      return;
+    }
+    DESTROYED_NODES.set(ctx, new Error('here').stack);
+  }
+  destroyedObjects.add(ctx);
+  const destructors = $dfi.get(ctx);
+  if (destructors === undefined) {
+    return;
+  }
+  $dfi.delete(ctx);
   let result;
   for (let i = 0; i < destructors.length; i++) {
     result = destructors[i]();
     if (result) {
-      results.push(result as Promise<void>);
+      promises.push(result as Promise<void>);
     }
   }
-  return results;
 }
 export function registerDestructor(ctx: object, ...fn: Destructors) {
   let existingDestructors = $dfi.get(ctx);

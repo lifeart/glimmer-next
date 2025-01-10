@@ -2,6 +2,7 @@ import {
   destroy,
   registerDestructor,
   Destructors,
+  destroySync,
 } from '@/utils/glimmer/destroyable';
 import type {
   TemplateContext,
@@ -20,7 +21,6 @@ import {
   isPrimitive,
   isArray,
   isEmpty,
-  FRAGMENT_TYPE,
   PARENT_GRAPH,
   RENDERING_CONTEXT_PROPERTY,
   isTagLike,
@@ -50,6 +50,7 @@ export function renderElement(
   target: Node,
   el: RenderableElement | RenderableElement[] | MergedCell,
   placeholder: Comment | Node | null = null,
+  skipRegistration = false,
 ) {
   if (isEmpty(el) || el === '') {
     return;
@@ -60,7 +61,9 @@ export function renderElement(
       ctx[RENDERED_NODES_PROPERTY].push(node);
       api.insert(target, node, placeholder);
     } else if ((el as HTMLElement).nodeType) {
-      ctx[RENDERED_NODES_PROPERTY].push(el as Node);
+      if (skipRegistration !== true) {
+        ctx[RENDERED_NODES_PROPERTY].push(el as Node);
+      } 
       api.insert(target, el as Node, placeholder);
     } else if ($nodes in el) {
       el[$nodes].forEach((node) => {
@@ -68,6 +71,7 @@ export function renderElement(
         renderElement(api, el.ctx, target, node, placeholder);
       });
       el[$nodes].length = 0;
+      // el.ctx![RENDERED_NODES_PROPERTY].reverse();
     } else if (isFn(el)) {
       // @ts-expect-error
       renderElement(api, ctx, target, resolveRenderable(el), placeholder);
@@ -82,7 +86,7 @@ export function renderElement(
     }
   } else {
     for (let i = 0; i < el.length; i++) {
-      renderElement(api, ctx, target, el[i], placeholder);
+      renderElement(api, ctx, target, el[i], placeholder, true);
     }
   }
 }
@@ -131,22 +135,18 @@ export function renderComponent(
     );
   }
 
-  const destructors: Destructors = [];
   const children = component[$nodes];
 
   const dom = initDOM(owner || component) || initDOM(getRoot()!);
   if (TRY_CATCH_ERROR_HANDLING) {
     try {
       renderElement(dom, owner || component, targetElement as unknown as HTMLElement, children, targetElement.lastChild);
-      registerDestructor(owner || component, ...destructors);
     } catch (e) {
-      destructors.forEach((fn) => fn());
       runDestructorsSync(owner || component);
       throw e;
     }
   } else {
     renderElement(dom, owner || component, targetElement as unknown as HTMLElement, children, targetElement.lastChild);
-    registerDestructor(owner || component, ...destructors);
   }
 
   return component;
@@ -195,12 +195,6 @@ function destroyNode(node: Node) {
     return;
   }
   if (IS_DEV_MODE) {
-    if (node === undefined) {
-      console.warn(`Trying to destroy undefined`);
-      return;
-    } else if (node.nodeType === FRAGMENT_TYPE) {
-      return;
-    }
     const parent = node.parentNode;
     if (parent !== null) {
       parent.removeChild(node);
@@ -220,37 +214,18 @@ export function destroyElementSync(
   component:
     | ComponentReturnType
     | Node
-    | Array<ComponentReturnType | Node>
-    | null
-    | null[],
+    | Array<ComponentReturnType | Node>,
   skipDom = false,
 ) {
   if (isArray(component)) {
     component.forEach((component) => destroyElementSync(component, skipDom));
   } else {
-    if (isEmpty(component)) {
-      return;
-    }
-
     if ($nodes in component) {
-      runDestructorsSync(component.ctx!);
-      destroyNodes(component.ctx![RENDERED_NODES_PROPERTY]);
+      runDestructorsSync(component.ctx!, skipDom);
     } else {
-      if ('nodeType' in component) {
-        destroyNode(component);
-      } else {
-        throw new Error('unknown branch');
-      }
+      destroyNode(component);
     }
   }
-}
-
-function internalDestroyNode(el: Node) {
-  if (!el) {
-    console.warn(`Trying to destroy undefined`, el);
-    return;
-  }
-  destroyNode(el);
 }
 
 function destroyNodes(
@@ -258,10 +233,10 @@ function destroyNodes(
 ) {
   if (isArray(roots)) {
     for (let i = 0; i < roots.length; i++) {
-      internalDestroyNode(roots[i]);
+      destroyNode(roots[i]);
     }
   } else {
-    internalDestroyNode(roots);
+    destroyNode(roots);
   }
 }
 
@@ -269,9 +244,7 @@ export async function destroyElement(
   component:
     | ComponentReturnType
     | Node
-    | Array<ComponentReturnType | Node>
-    | null
-    | null[],
+    | Array<ComponentReturnType | Node>,
   skipDom = false,
 ) {
   if (isArray(component)) {
@@ -279,9 +252,6 @@ export async function destroyElement(
       component.map((component) => destroyElement(component, skipDom)),
     );
   } else {
-    if (component === null || isFn(component)) {
-      return;
-    }
     if ($nodes in component) {
       const destructors: Array<Promise<void>> = [];
       runDestructors(component.ctx!, destructors, skipDom);
@@ -296,14 +266,17 @@ export async function destroyElement(
   }
 }
 
-function runDestructorsSync(targetNode: Component<any>) {
+function runDestructorsSync(targetNode: Component<any>, skipDom = false) {
   const stack = [targetNode];
 
   while (stack.length > 0) {
     const currentNode = stack.pop()!;
     const nodesToRemove = RENDER_TREE.get(currentNode);
 
-    destroy(currentNode);
+    destroySync(currentNode);
+    if (skipDom !== true) {
+      destroyNodes(currentNode![RENDERED_NODES_PROPERTY]);
+    }
 
     if (WITH_CONTEXT_API) {
       PARENT_GRAPH.delete(currentNode);
@@ -324,7 +297,7 @@ export function runDestructors(
   skipDom = false,
 ): Array<Promise<void>> {
   const childComponents = RENDER_TREE.get(target);
-  promises.push(...destroy(target));
+  destroy(target, promises);
   if (childComponents) {
     /*
       we need slice here because of search for it:

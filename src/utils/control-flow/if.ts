@@ -167,8 +167,10 @@ export class IfCondition {
     } else {
       this.prevComponent = null;
     }
-    this.destroyPromise = destroyElement(branch);
-    await this.destroyPromise;
+    const promises: Array<Promise<void>> = [];
+    // @ts-expect-error different type for branch
+    destroyElement(branch, promises);
+    await Promise.all(promises);
   }
   renderState(nextBranch: (ifContext: Component<any>) => GenericReturnType) {
     if (IS_DEV_MODE) {

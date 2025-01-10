@@ -37,7 +37,7 @@ export function getFirstNode(
   } else if ('nodeType' in rawItem) {
     return rawItem;
   } else {
-    return getFirstNode(rawItem.ctx![RENDERED_NODES_PROPERTY][0] || rawItem[$nodes][0]);
+    return rawItem.ctx![RENDERED_NODES_PROPERTY][0];
   }
 }
 
@@ -327,8 +327,8 @@ export class BasicListComponent<T extends { id: number }> {
         const insertBeforeNode = nextItem
           ? getFirstNode(keyMap.get(keyForItem(nextItem, index + 1))!)
           : bottomMarker;
-        // @ts-expect-error this;
-        renderElement(api, this, insertBeforeNode.parentNode!, row, insertBeforeNode);
+        // node relocation, assume we have only once root node :)
+        api.insert(insertBeforeNode.parentNode!, getFirstNode(row), insertBeforeNode)
       });
     if (targetNode !== bottomMarker) {
       const parent = targetNode.parentNode!;
