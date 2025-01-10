@@ -4,7 +4,6 @@ export type Destructors = Array<DestructorFn>;
 // destructorsForInstance
 const $dfi: WeakMap<object, Destructors> = new WeakMap();
 const destroyedObjects = new WeakSet<object>();
-const $ea = Object.seal(Object.freeze([])); // empty array;
 
 if (!import.meta.env.SSR) {
   if (IS_DEV_MODE) {
@@ -22,14 +21,14 @@ export function destroy(ctx: object) {
         console.error(new Error('here'));
         console.warn(`---------------`);
       }
-      return $ea;
+      return [];
     }
     DESTROYED_NODES.set(ctx, new Error('here').stack);
   }
   destroyedObjects.add(ctx);
   const destructors = $dfi.get(ctx);
   if (destructors === undefined) {
-    return $ea;
+    return [];
   }
   $dfi.delete(ctx);
   const results: Promise<void>[] = [];

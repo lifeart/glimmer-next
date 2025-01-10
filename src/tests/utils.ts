@@ -74,7 +74,7 @@ export async function render(component: ComponentReturnType) {
     false,
   );
   registerDestructor(owner, () => {
-    destroyElementSync(renderResult.nodes);
+    destroyElementSync(renderResult);
   });
   await rerender();
   // TODO: figure out what is root, at the moment it return node instance, not node.ctx

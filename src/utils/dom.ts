@@ -45,6 +45,7 @@ import {
   FRAGMENT_TYPE,
   $context,
   RENDERING_CONTEXT_PROPERTY,
+  RENDERED_NODES_PROPERTY,
 } from './shared';
 import { isRehydrationScheduled } from './ssr/rehydration';
 import { createHotReload } from './hmr';
@@ -95,6 +96,7 @@ let unstableWrapperId: number = 0;
   Acting as main DI container and metadata storage.
 */
 export class Root {
+  [RENDERED_NODES_PROPERTY] = [];
   [RENDERING_CONTEXT_PROPERTY]: undefined | typeof HTMLAPI = undefined;
 }
 let ROOT: Root | null = null;
@@ -654,15 +656,10 @@ export function $_inElement(
       } else {
         appendRef = elementRef;
       }
-      const destructors: Destructors = [];
       renderElement(api, ctx, appendRef, roots(ctx));
-      // roots(ctx).forEach((child, index) => {
-      //   addChild(api, appendRef, child, destructors, index);
-      // });
-      destructors.push(() => {
+      registerDestructor(ctx, () => {
         appendRef.innerHTML = '';
       });
-      registerDestructor(ctx, ...destructors);
       return $_fin([], this);
     } as unknown as Component<any>,
     {},
@@ -829,12 +826,16 @@ function component(
         console.error(label, e);
 
         return {
-          ctx: null,
+          ctx: {
+            [RENDERED_NODES_PROPERTY]: [],
+          },
           nodes: [errorOverlay],
         };
       } else {
         return {
-          ctx: null,
+          ctx: {
+            [RENDERED_NODES_PROPERTY]: [],
+          },
           // @ts-expect-error message may not exit
           nodes: [HTMLAPI.text(String(e.message))],
         };
@@ -978,6 +979,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
           name,
           ctx,
         );
+
         $destructors.push(() => {
           // @ts-expect-error types mismatch
           destroyElement(slotRoots);
@@ -997,6 +999,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
     return slotPlaceholder;
   }
   const slotRoot = createSlot($slot[name], params, name, ctx);
+
   $destructors.push(() => {
     // @ts-expect-error types mismatch
     destroyElement(slotRoot);
@@ -1139,6 +1142,7 @@ const ArgProxyHandler: ProxyHandler<{}> = {
 };
 export function $_GET_ARGS(ctx: any, args: any) {
   ctx[$args] = ctx[$args] || args[0] || {};
+  ctx[RENDERED_NODES_PROPERTY] = ctx[RENDERED_NODES_PROPERTY] ?? [];
   const parentContext = ctx[$args][$context];
   if (parentContext) {
     // console.log('context', parentContext, ctx);
@@ -1233,10 +1237,12 @@ export function $_dc(
     }
     if (result) {
       const target = result[$nodes].pop();
+      const newTarget = IS_DEV_MODE ? api.comment('placeholder') : api.comment();
+      api.insert(target!.parentNode!, newTarget, target);
       destroyElementSync(result);
       result = component(value, args, ctx);
-      result![$nodes].push(target!);
-      renderElement(api, ctx, target!.parentNode!, result, target!);
+      result![$nodes].push(newTarget!);
+      renderElement(api, ctx, newTarget!.parentNode!, result, newTarget!);
     } else {
       result = component(value, args, ctx);
     }
@@ -1341,18 +1347,10 @@ export function $_fin(
   roots: Array<ComponentReturnType | Node>,
   ctx: Component<any> | null,
 ) {
-  const $destructors: Destructors = [];
-  const api = initDOM(ctx!);
-  for (let i = 0; i < roots.length; i++) {
-    const node = roots[i];
-    if (isFn(node)) {
-      roots[i] = text(api,
-        resolveRenderable(node, `component child fn`),
-        $destructors,
-      );
-    }
+  if (!ctx) {
+    throw new Error('Components without context is not supported');
   }
-
+  ctx[RENDERED_NODES_PROPERTY] = ctx[RENDERED_NODES_PROPERTY] ?? [];
   return {
     [$nodes]: roots,
     ctx,

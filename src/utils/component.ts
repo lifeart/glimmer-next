@@ -24,6 +24,7 @@ import {
   PARENT_GRAPH,
   RENDERING_CONTEXT_PROPERTY,
   isTagLike,
+  RENDERED_NODES_PROPERTY,
 } from './shared';
 import { createRoot, getRoot, resolveRenderable, Root, setRoot } from './dom';
 import { provideContext, initDOM, RENDERING_CONTEXT } from './context';
@@ -45,7 +46,7 @@ type RenderableElement = GenericReturnType | Node | string | number | null | und
 
 export function renderElement(
   api: typeof DEFAULT_API,
-  ctx: object,
+  ctx: Component<any>,
   target: Node,
   el: RenderableElement | RenderableElement[] | MergedCell,
   placeholder: Comment | Node | null = null,
@@ -55,19 +56,25 @@ export function renderElement(
   }
   if (!isArray(el)) {
     if (isPrimitive(el)) {
-      api.insert(target, api.text(el), placeholder);
+      let node = api.text(el);
+      ctx[RENDERED_NODES_PROPERTY].push(node);
+      api.insert(target, node, placeholder);
     } else if ((el as HTMLElement).nodeType) {
+      ctx[RENDERED_NODES_PROPERTY].push(el as Node);
       api.insert(target, el as Node, placeholder);
     } else if ($nodes in el) {
       el[$nodes].forEach((node) => {
-        renderElement(api, ctx, target, node, placeholder);
+        // @ts-expect-error el.ctx
+        renderElement(api, el.ctx, target, node, placeholder);
       });
     } else if (isFn(el)) {
       // @ts-expect-error
       renderElement(api, ctx, target, resolveRenderable(el), placeholder);
     } else if (isTagLike(el)) {
       const destructors: Destructors = [];
-      api.insert(target, cellToText(api, el, destructors), placeholder);
+      const node = cellToText(api, el, destructors);
+      ctx[RENDERED_NODES_PROPERTY].push(node);
+      api.insert(target, node, placeholder);
       registerDestructor(ctx, ...destructors);
     } else {
       throw new Error(`Unknown element type ${el}`);
@@ -154,6 +161,7 @@ export class Component<T extends Props = any>
 {
   args!: Get<T, 'Args'>;
   [RENDERING_CONTEXT_PROPERTY]: undefined | typeof DEFAULT_API = undefined;
+  declare [RENDERED_NODES_PROPERTY]: Array<Node>;
   declare [Context]: TemplateContext<
     this,
     Get<T, 'Args'>,
@@ -178,6 +186,14 @@ export type TOC<S extends Props = {}> = (
 
 function destroyNode(node: Node) {
   if (IS_DEV_MODE) {
+    if (!('nodeType' in node)) {
+      throw new Error('Unable to destroy node');
+    }
+  }
+  if (!node.isConnected) {
+    return;
+  }
+  if (IS_DEV_MODE) {
     if (node === undefined) {
       console.warn(`Trying to destroy undefined`);
       return;
@@ -195,9 +211,6 @@ function destroyNode(node: Node) {
       throw new Error(`Node is not in DOM`);
     }
   } else {
-    if (node.nodeType === FRAGMENT_TYPE) {
-      return;
-    }
     node.parentNode!.removeChild(node);
   }
 }
@@ -219,43 +232,28 @@ export function destroyElementSync(
     }
 
     if ($nodes in component) {
-      if (component.ctx !== null) {
-        runDestructorsSync(component.ctx);
-      }
-      if (skipDom) {
-        return;
-      }
-      try {
-        destroyNodes(component[$nodes]);
-      } catch (e) {
-        console.warn(
-          `Woops, looks like node we trying to destroy no more in DOM 1`,
-          e,
-        );
-      }
+      runDestructorsSync(component.ctx!);
+      destroyNodes(component.ctx![RENDERED_NODES_PROPERTY]);
     } else {
-      if (skipDom) {
-        return;
+      if ('nodeType' in component) {
+        destroyNode(component);
+      } else {
+        throw new Error('unknown branch');
       }
-      destroyNode(component);
     }
   }
 }
 
-function internalDestroyNode(el: Node | ComponentReturnType) {
+function internalDestroyNode(el: Node) {
   if (!el) {
     console.warn(`Trying to destroy undefined`, el);
     return;
   }
-  if ('nodeType' in el) {
-    destroyNode(el);
-  } else {
-    destroyNodes(el[$nodes]);
-  }
+  destroyNode(el);
 }
 
 function destroyNodes(
-  roots: Node | ComponentReturnType | Array<Node | ComponentReturnType>,
+  roots: Node | Array<Node>,
 ) {
   if (isArray(roots)) {
     for (let i = 0; i < roots.length; i++) {
@@ -284,27 +282,15 @@ export async function destroyElement(
       return;
     }
     if ($nodes in component) {
-      if (component.ctx) {
-        const destructors: Array<Promise<void>> = [];
-        runDestructors(component.ctx, destructors);
-        await Promise.all(destructors);
-      }
-      if (skipDom) {
-        return;
-      }
-      try {
-        destroyNodes(component[$nodes]);
-      } catch (e) {
-        console.warn(
-          `Woops, looks like node we trying to destroy no more in DOM 2`,
-          e,
-        );
-      }
+      const destructors: Array<Promise<void>> = [];
+      runDestructors(component.ctx!, destructors, skipDom);
+      await Promise.all(destructors);
     } else {
-      if (skipDom) {
-        return;
+      if ('nodeType' in component) {
+        destroyNode(component);
+      } else {
+        throw new Error('unknown branch');
       }
-      destroyNode(component);
     }
   }
 }
@@ -334,23 +320,31 @@ function runDestructorsSync(targetNode: Component<any>) {
 export function runDestructors(
   target: Component<any> | Root,
   promises: Array<Promise<void>> = [],
+  skipDom = false,
 ): Array<Promise<void>> {
-  const parentComponents = RENDER_TREE.get(target);
+  const childComponents = RENDER_TREE.get(target);
   promises.push(...destroy(target));
-  if (parentComponents) {
+  if (childComponents) {
     /*
       we need slice here because of search for it:
       @todo - case 42 (associateDestroyable)
       tldr list may be mutated during removal and forEach is stopped
     */
-    Array.from(parentComponents).forEach((node) => {
-      runDestructors(node, promises);
-      // RENDER_TREE.delete(node as any);
+    Array.from(childComponents).forEach((node) => {
+      runDestructors(node, promises, skipDom);
     });
-    // RENDER_TREE.delete(target);
   }
   if (WITH_CONTEXT_API) {
     PARENT_GRAPH.delete(target);
+  }
+  if (skipDom !== true) {
+    if (promises.length) {
+      promises.push(Promise.all(promises).then(() => {
+        destroyNodes(target[RENDERED_NODES_PROPERTY]);
+      }));
+    } else {
+      destroyNodes(target[RENDERED_NODES_PROPERTY]);
+    }
   }
   return promises;
 }

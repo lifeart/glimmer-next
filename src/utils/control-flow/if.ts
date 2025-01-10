@@ -16,6 +16,7 @@ import {
   isTagLike,
   addToTree,
   $context,
+  RENDERED_NODES_PROPERTY,
 } from '@/utils/shared';
 import { opcodeFor } from '@/utils/vm';
 import { initDOM } from '@/utils/context';
@@ -34,6 +35,7 @@ export class IfCondition {
   placeholder: Comment;
   throwedError: Error | null = null;
   destroyPromise: Promise<any> | null = null;
+  [RENDERED_NODES_PROPERTY] = [];
   trueBranch: (ifContext: Component<any>) => GenericReturnType;
   falseBranch: (ifContext: Component<any>) => GenericReturnType;
   constructor(

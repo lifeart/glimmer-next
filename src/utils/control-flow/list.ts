@@ -19,6 +19,7 @@ import {
   LISTS_FOR_HMR,
   addToTree,
   $context,
+  RENDERED_NODES_PROPERTY,
 } from '@/utils/shared';
 import { isRehydrationScheduled } from '@/utils/ssr/rehydration';
 import { initDOM } from '@/utils/context';
@@ -74,6 +75,7 @@ export class BasicListComponent<T extends { id: number }> {
   keyMap: Map<string, GenericReturnType> = new Map();
   indexMap: Map<string, number> = new Map();
   nodes: Node[] = [];
+  [RENDERED_NODES_PROPERTY] = [];
   ItemComponent: (
     item: T,
     index: number | MergedCell,
@@ -295,6 +297,7 @@ export class BasicListComponent<T extends { id: number }> {
         indexMap.set(key, index);
         if (isAppendOnly) {
           // TODO: in ssr parentNode may not exist
+          // @ts-expect-error this;
           renderElement(api, this, targetNode.parentNode!, row, targetNode);
         } else {
           rowsToMove.push([row, index]);
@@ -324,6 +327,7 @@ export class BasicListComponent<T extends { id: number }> {
         const insertBeforeNode = nextItem
           ? getFirstNode(keyMap.get(keyForItem(nextItem, index + 1))!)
           : bottomMarker;
+        // @ts-expect-error this;
         renderElement(api, this, insertBeforeNode.parentNode!, row, insertBeforeNode);
       });
     if (targetNode !== bottomMarker) {

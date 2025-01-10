@@ -46,9 +46,6 @@ export function getContext<T>(
   ctx: Component<any> | Root,
   key: symbol,
 ): T | null {
-  if (key === RENDERING_CONTEXT && fastRenderingContext !== null) {
-    return fastRenderingContext as T;
-  }
   if (!WITH_CONTEXT_API) {
     ctx = getRoot()!;
   }

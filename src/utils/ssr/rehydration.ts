@@ -2,7 +2,7 @@ import { renderComponent, type ComponentReturnType } from '@/utils/component';
 import { createRoot, getNodeCounter, getRoot, resetNodeCounter, setRoot } from '@/utils/dom';
 import { api as rehydrationDomApi } from '@/utils/ssr/rehydration-dom-api';
 import { api } from '@/utils/dom-api';
-import { $args, $context, $template } from '../shared';
+import { $args, $context, $template, RENDERED_NODES_PROPERTY } from '../shared';
 import { provideContext, RENDERING_CONTEXT } from '../context';
 const withRehydrationStack: HTMLElement[] = [];
 const commentsToRehydrate: Comment[] = [];
@@ -147,6 +147,7 @@ export function withRehydration(
       [$args]: {
         [$context]: root,
       },
+      [RENDERED_NODES_PROPERTY]: [],
       [$template]: function () {
         // @ts-expect-error typings mismatch
         return new componentCreationCallback(...arguments);

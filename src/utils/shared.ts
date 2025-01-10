@@ -10,6 +10,7 @@ import { registerDestructor } from './glimmer/destroyable';
 
 export const isTag = Symbol('isTag');
 export const RENDERING_CONTEXT_PROPERTY = Symbol('rendering-context');
+export const RENDERED_NODES_PROPERTY = Symbol('nodes');
 
 export const $template = 'template' as const;
 export const $context = '_context' as const;
