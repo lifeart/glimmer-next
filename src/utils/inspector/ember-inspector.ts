@@ -638,6 +638,9 @@ let requireModule = undefined;
         ChildViewsSupport: proxyFor('ChildViewsSupport'),
         CoreView: proxyFor('CoreView'),
       };
+    } else if (name === '@glimmer/runtime') {
+      // debugger;
+      // return genericProxy;
     } else if (name === '@glimmer/reference') {
       debugger;
       return genericProxy;

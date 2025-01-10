@@ -74,10 +74,8 @@ export function createHotReload(
         }
       });
       // @ts-expect-error different type for API
-      const api = initDOM(newCmp);
-      // TODO: likely second arg should be parent..
-      // @ts-expect-error foo-bar
-      renderElement(api, newCmp, parentElement, newCmp, firstElement);
+      const api = initDOM(newCmp.ctx);
+      renderElement(api, newCmp.ctx!, parentElement, newCmp, firstElement);
       destroyElementSync(instance);
     });
     COMPONENTS_HMR.delete(oldklass);

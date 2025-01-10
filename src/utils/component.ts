@@ -67,6 +67,7 @@ export function renderElement(
         // @ts-expect-error el.ctx
         renderElement(api, el.ctx, target, node, placeholder);
       });
+      el[$nodes].length = 0;
     } else if (isFn(el)) {
       // @ts-expect-error
       renderElement(api, ctx, target, resolveRenderable(el), placeholder);

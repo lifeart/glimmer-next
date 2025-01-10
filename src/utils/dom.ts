@@ -794,7 +794,19 @@ function component(
     try {
       if (IS_DEV_MODE) {
         $DEBUG_REACTIVE_CONTEXTS.push(label);
-        label = `<${label} ${JSON.stringify(args)} />`;
+        const getCircularReplacer = () => {
+          const seen = new WeakSet();
+          return (_: string, value: unknown) => {
+            if (typeof value === "object" && value !== null) {
+              if (seen.has(value)) {
+                return;
+              }
+              seen.add(value);
+            }
+            return value;
+          };
+        };
+        label = `<${label} ${JSON.stringify(args, getCircularReplacer)} />`;
       }
       // @ts-expect-error uniqSymbol as index
       const fw = args[$PROPS_SYMBOL] as unknown as FwType;
@@ -1236,7 +1248,7 @@ export function $_dc(
       return;
     }
     if (result) {
-      const target = result[$nodes].pop();
+      const target = result.ctx![RENDERED_NODES_PROPERTY].pop();
       const newTarget = IS_DEV_MODE ? api.comment('placeholder') : api.comment();
       api.insert(target!.parentNode!, newTarget, target);
       destroyElementSync(result);

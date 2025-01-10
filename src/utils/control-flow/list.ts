@@ -37,7 +37,7 @@ export function getFirstNode(
   } else if ('nodeType' in rawItem) {
     return rawItem;
   } else {
-    return getFirstNode(rawItem[$nodes][0]);
+    return getFirstNode(rawItem.ctx![RENDERED_NODES_PROPERTY][0] || rawItem[$nodes][0]);
   }
 }
 
