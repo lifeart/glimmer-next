@@ -17,6 +17,8 @@ import {
   addToTree,
   $context,
   RENDERED_NODES_PROPERTY,
+  cId,
+  COMPONENT_ID_PROPERTY,
 } from '@/utils/shared';
 import { opcodeFor } from '@/utils/vm';
 import { initDOM } from '@/utils/context';
@@ -36,6 +38,7 @@ export class IfCondition {
   throwedError: Error | null = null;
   destroyPromise: Promise<any> | null = null;
   [RENDERED_NODES_PROPERTY] = [];
+  [COMPONENT_ID_PROPERTY] = cId();
   trueBranch: (ifContext: Component<any>) => GenericReturnType;
   falseBranch: (ifContext: Component<any>) => GenericReturnType;
   constructor(

@@ -5,12 +5,17 @@ import {
 } from '@/utils/component';
 import { type AnyCell } from './reactive';
 import { type BasicListComponent } from './control-flow/list';
-import { Root } from './dom';
 import { registerDestructor } from './glimmer/destroyable';
 
 export const isTag = Symbol('isTag');
 export const RENDERING_CONTEXT_PROPERTY = Symbol('rendering-context');
 export const RENDERED_NODES_PROPERTY = Symbol('nodes');
+export const COMPONENT_ID_PROPERTY = Symbol('id');
+
+let componentIdCounter = 1;
+export function cId() {
+  return componentIdCounter++;
+}
 
 export const $template = 'template' as const;
 export const $context = '_context' as const;
@@ -54,11 +59,7 @@ export function isTagLike(child: unknown): child is AnyCell {
   return (child as AnyCell)[isTag];
 }
 
-export const RENDER_TREE = new WeakMap<Component<any> | Root, Set<Component>>();
-export const PARENT_GRAPH = new WeakMap<
-  Component<any> | Root,
-  Component<any>
->();
+
 export const BOUNDS = new WeakMap<
   Component<any>,
   Array<HTMLElement | Comment>
@@ -66,8 +67,14 @@ export const BOUNDS = new WeakMap<
 
 if (!import.meta.env.SSR) {
   if (IS_DEV_MODE) {
-    window['getRenderTree'] = () => RENDER_TREE;
-    window['getParentGraph'] = () => PARENT_GRAPH;
+    window['getRenderTree'] = () => {
+      return {
+        TREE,
+        CHILD,
+        PARENT,
+      }
+    };
+    window['getParentGraph'] = () => PARENT;
   }
 }
 
@@ -111,6 +118,9 @@ export function setBounds(component: ComponentReturnType) {
   });
 }
 const SEEN_TREE_NODES = new WeakSet();
+export const TREE: Record<number, Component<any>> = Object.create(null);
+export const CHILD: Record<number, number[]> = Object.create(null);
+export const PARENT: Record<number, number> = Object.create(null);
 
 export function addToTree(
   ctx: Component<any>,
@@ -125,6 +135,13 @@ export function addToTree(
     return;
     // throw new Error('Node is already added to tree');
   }
+  const ID = node[COMPONENT_ID_PROPERTY];
+  const PARENT_ID = ctx[COMPONENT_ID_PROPERTY];
+  const REF = CHILD[PARENT_ID];
+  TREE[ID] = node;
+  CHILD[ID] = [];
+  PARENT[ID] = PARENT_ID;
+  REF.push(ID);
   SEEN_TREE_NODES.add(node);
   // if (node.toString() === '[object Object]') {
   //   debugger;
@@ -151,32 +168,18 @@ export function addToTree(
       throw new Error('invalid ctx');
     }
   }
-  let tree = RENDER_TREE.get(ctx)!;
-  if (tree === undefined) {
-    tree = new Set();
-    RENDER_TREE.set(ctx, tree);
-    registerDestructor(ctx, 
-      () => {
-        RENDER_TREE.delete(ctx);
-      },
-    );
-  }
-
-  tree.add(node);
-
-  if (WITH_CONTEXT_API) {
-    PARENT_GRAPH.set(node, ctx);
-  }
 
   // @todo - case 42
   registerDestructor(node, 
     () => {
-      if (WITH_CONTEXT_API) {
-        PARENT_GRAPH.delete(node);
-      }
       SEEN_TREE_NODES.delete(node);
-      // make sense to remove node from tree only if it's not destroyed
-      tree.delete(node);
+      const pIndex = REF.indexOf(ID);
+      if (pIndex !== -1) {
+        REF.splice(pIndex, 1);
+      }
+      delete CHILD[ID];
+      delete TREE[ID];
+      delete PARENT[ID];
     },
   );
 }

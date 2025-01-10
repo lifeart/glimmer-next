@@ -1,6 +1,6 @@
 import * as backburner from 'backburner.js';
 import { getRoot } from '../dom';
-import { $_debug_args, RENDER_TREE, getBounds } from '../shared';
+import { $_debug_args, CHILD, COMPONENT_ID_PROPERTY, getBounds, TREE } from '../shared';
 import { Component } from '..';
 import { Cell, MergedCell, getCells, getMergedCells } from '../reactive';
 import { $args } from '../shared';
@@ -440,7 +440,7 @@ const EmberProxy: any = new Proxy(
         };
       } else if (key === '_captureRenderTree') {
         function componentToRenderTree(component: Component<any>): any {
-          const childs = Array.from(RENDER_TREE.get(component) ?? []);
+          const childs = CHILD[component[COMPONENT_ID_PROPERTY]].map((el) => TREE[el]);
           const componentName = component
             ? component.constructor.name
             : '(unknown)';

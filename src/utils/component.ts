@@ -17,14 +17,16 @@ import {
   $nodes,
   $args,
   $fwProp,
-  RENDER_TREE,
   isPrimitive,
   isArray,
   isEmpty,
-  PARENT_GRAPH,
   RENDERING_CONTEXT_PROPERTY,
   isTagLike,
   RENDERED_NODES_PROPERTY,
+  cId,
+  COMPONENT_ID_PROPERTY,
+  TREE,
+  CHILD,
 } from './shared';
 import { createRoot, getRoot, resolveRenderable, Root, setRoot } from './dom';
 import { provideContext, initDOM, RENDERING_CONTEXT } from './context';
@@ -162,6 +164,7 @@ export class Component<T extends Props = any>
 {
   args!: Get<T, 'Args'>;
   [RENDERING_CONTEXT_PROPERTY]: undefined | typeof DEFAULT_API = undefined;
+  [COMPONENT_ID_PROPERTY] = cId();
   declare [RENDERED_NODES_PROPERTY]: Array<Node>;
   declare [Context]: TemplateContext<
     this,
@@ -271,23 +274,15 @@ function runDestructorsSync(targetNode: Component<any>, skipDom = false) {
 
   while (stack.length > 0) {
     const currentNode = stack.pop()!;
-    const nodesToRemove = RENDER_TREE.get(currentNode);
+    const nodesToRemove = CHILD[currentNode[COMPONENT_ID_PROPERTY]];
 
     destroySync(currentNode);
     if (skipDom !== true) {
       destroyNodes(currentNode![RENDERED_NODES_PROPERTY]);
     }
 
-    if (WITH_CONTEXT_API) {
-      PARENT_GRAPH.delete(currentNode);
-    }
-    if (nodesToRemove !== undefined) {
-      /*
-        we need slice here because of search for it:
-        @todo - case 42 (associateDestroyable)
-        tldr list may be mutated during removal and forEach is stopped
-      */
-      stack.push(...nodesToRemove);
+    while (nodesToRemove.length) {
+      stack.push(TREE[nodesToRemove.pop()!]);
     }
   }
 }
@@ -296,7 +291,7 @@ export function runDestructors(
   promises: Array<Promise<void>> = [],
   skipDom = false,
 ): Array<Promise<void>> {
-  const childComponents = RENDER_TREE.get(target);
+  const childComponents = CHILD[target[COMPONENT_ID_PROPERTY]];
   destroy(target, promises);
   if (childComponents) {
     /*
@@ -305,11 +300,8 @@ export function runDestructors(
       tldr list may be mutated during removal and forEach is stopped
     */
     Array.from(childComponents).forEach((node) => {
-      runDestructors(node, promises, skipDom);
+      runDestructors(TREE[node], promises, skipDom);
     });
-  }
-  if (WITH_CONTEXT_API) {
-    PARENT_GRAPH.delete(target);
   }
   if (skipDom !== true) {
     if (promises.length) {

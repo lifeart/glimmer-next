@@ -20,6 +20,8 @@ import {
   addToTree,
   $context,
   RENDERED_NODES_PROPERTY,
+  COMPONENT_ID_PROPERTY,
+  cId,
 } from '@/utils/shared';
 import { isRehydrationScheduled } from '@/utils/ssr/rehydration';
 import { initDOM } from '@/utils/context';
@@ -76,6 +78,7 @@ export class BasicListComponent<T extends { id: number }> {
   indexMap: Map<string, number> = new Map();
   nodes: Node[] = [];
   [RENDERED_NODES_PROPERTY] = [];
+  [COMPONENT_ID_PROPERTY] = cId();
   ItemComponent: (
     item: T,
     index: number | MergedCell,

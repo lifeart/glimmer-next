@@ -34,7 +34,6 @@ import {
   $template,
   $nodes,
   addToTree,
-  RENDER_TREE,
   setBounds,
   $args,
   $DEBUG_REACTIVE_CONTEXTS,
@@ -45,6 +44,11 @@ import {
   $context,
   RENDERING_CONTEXT_PROPERTY,
   RENDERED_NODES_PROPERTY,
+  COMPONENT_ID_PROPERTY,
+  cId,
+  CHILD,
+  TREE,
+  PARENT,
 } from './shared';
 import { isRehydrationScheduled } from './ssr/rehydration';
 import { createHotReload } from './hmr';
@@ -96,7 +100,20 @@ let unstableWrapperId: number = 0;
 */
 export class Root {
   [RENDERED_NODES_PROPERTY] = [];
+  [COMPONENT_ID_PROPERTY] = cId();
   [RENDERING_CONTEXT_PROPERTY]: undefined | typeof HTMLAPI = undefined;
+  constructor() {
+    CHILD[this[COMPONENT_ID_PROPERTY]] = [];
+    // @ts-expect-error
+    TREE[this[COMPONENT_ID_PROPERTY]] = this;
+    // @ts-expect-error
+    PARENT[this[COMPONENT_ID_PROPERTY]] = null;
+    registerDestructor(this, () => {
+      delete CHILD[this[COMPONENT_ID_PROPERTY]];
+      delete TREE[this[COMPONENT_ID_PROPERTY]];
+      delete PARENT[this[COMPONENT_ID_PROPERTY]];
+    });
+  }
 }
 let ROOT: Root | null = null;
 
@@ -691,20 +708,20 @@ if (IS_DEV_MODE) {
   function buildGraph(
     obj: Record<string, unknown>,
     root: any,
-    children: Set<any>,
+    children: number[],
   ) {
     if (root === null) {
-      console.info('root is null', RENDER_TREE);
+      console.info('root is null', TREE);
       return obj;
     }
     const name =
       root.debugName || root?.constructor?.name || root?.tagName || 'unknown';
-    if (children.size === 0) {
+    if (children.length === 0) {
       obj[name] = null;
       return obj;
     }
     obj[name] = Array.from(children).map((child) => {
-      return buildGraph({}, child, RENDER_TREE.get(child) ?? new Set());
+      return buildGraph({}, child, CHILD[child]!);
     });
     return obj;
   }
@@ -713,10 +730,9 @@ if (IS_DEV_MODE) {
     const ref = buildGraph(
       {} as Record<string, unknown>,
       ROOT,
-      RENDER_TREE.get(ROOT!) ?? new Set(),
+      CHILD[ROOT![COMPONENT_ID_PROPERTY]]!,
     );
     console.log(JSON.stringify(ref, null, 2));
-    console.log(RENDER_TREE);
   }
   if (!import.meta.env.SSR) {
     window.drawTreeToConsole = drawTreeToConsole;
@@ -1139,6 +1155,7 @@ const ArgProxyHandler: ProxyHandler<{}> = {
 export function $_GET_ARGS(ctx: any, args: any) {
   ctx[$args] = ctx[$args] || args[0] || {};
   ctx[RENDERED_NODES_PROPERTY] = ctx[RENDERED_NODES_PROPERTY] ?? [];
+  ctx![COMPONENT_ID_PROPERTY] = ctx![COMPONENT_ID_PROPERTY] ?? cId();
   const parentContext = ctx[$args][$context];
   if (parentContext) {
     // console.log('context', parentContext, ctx);
@@ -1349,6 +1366,8 @@ export function $_fin(
     }
   }
   ctx![RENDERED_NODES_PROPERTY] = ctx![RENDERED_NODES_PROPERTY] ?? [];
+  ctx![COMPONENT_ID_PROPERTY] = ctx![COMPONENT_ID_PROPERTY] ?? cId();
+
   return {
     [$nodes]: roots,
     ctx,

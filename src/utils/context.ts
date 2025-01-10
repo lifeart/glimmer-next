@@ -1,6 +1,6 @@
 import { registerDestructor } from './glimmer/destroyable';
 import { Component } from './component';
-import { $context, isFn, PARENT_GRAPH, RENDERING_CONTEXT_PROPERTY } from './shared';
+import { $context, COMPONENT_ID_PROPERTY, isFn, PARENT, RENDERING_CONTEXT_PROPERTY, TREE } from './shared';
 import { getRoot, Root } from './dom';
 import type { api as DOM_API } from './dom-api';
 
@@ -64,7 +64,7 @@ export function getContext<T>(
       const value = context.get(key);
       return isFn(value) ? value() : value;
     }
-    current = PARENT_GRAPH.get(current);
+    current = TREE[PARENT[current[COMPONENT_ID_PROPERTY]]];
   }
   // TODO: add fancy error message about missing provider in dev mode,
   // we may track context usage and provide a better error message
