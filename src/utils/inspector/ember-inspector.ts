@@ -1,12 +1,13 @@
 import * as backburner from 'backburner.js';
 import { getRoot } from '../dom';
-import { $_debug_args, $context, $nodes, CHILD, COMPONENT_ID_PROPERTY, getBounds, isArray, TREE } from '../shared';
+import { $_debug_args, $context, $nodes, CHILD, COMPONENT_ID_PROPERTY, getBounds, isArray, RENDERED_NODES_PROPERTY, TREE } from '../shared';
 import { Component } from '..';
 import { Cell, MergedCell, getCells, getMergedCells } from '../reactive';
 import { $args } from '../shared';
 import { inspect } from '@/utils/inspector';
 import { IfCondition } from '../control-flow/if';
 import { AsyncListComponent, SyncListComponent } from '../control-flow/list';
+import { NS_HTML } from '../namespaces';
 
 const genericProxy = new Proxy(
   {},
@@ -492,10 +493,36 @@ const EmberProxy: any = new Proxy(
             };
           }
 
-          const children = childs?.map((child) => componentToRenderTree(child)) ?? [];
-
+          const children = (childs?.map((child) => componentToRenderTree(child)) ?? []).filter(el => el !== null);
+          // @ts-expect-error
+          component[RENDERED_NODES_PROPERTY].forEach((node, index) => {
+            // @ts-expect-error
+            if ('attributes' in node && node.namespaceURI === NS_HTML) {
+              // children.push({
+              //   id: `${component[COMPONENT_ID_PROPERTY]}-${index}`,
+              //   type: 'html-element',
+              //   instance: node,
+              //   // @ts-expect-error
+              //   name: node.tagName.toLowerCase(),
+              //   children: [],
+              //   template: null,
+              //   args: {
+              //     named: {},
+              //     positional: [],
+              //   },
+              //   bounds: {
+              //     firstNode: node,
+              //     lastNode: node,
+              //     parentElement: node.parentElement,
+              //   }
+              // })
+            }
+          });
           if (componentName.startsWith('UnstableChildWrapper') && children.length === 1) {
             return children[0];
+          }
+          if (componentName.startsWith('SVGProvider')) {
+            return null;
           }
           let allArgs = function () {
             if ($_debug_args in component) {

@@ -79,6 +79,9 @@ if (!import.meta.env.SSR) {
 }
 
 export function getBounds(ctx: Component<any>) {
+  if (ctx[RENDERED_NODES_PROPERTY].length) {
+    return ctx[RENDERED_NODES_PROPERTY].slice(0);
+  }
   return BOUNDS.get(ctx) ?? [];
 }
 export function setBounds(component: ComponentReturnType) {
