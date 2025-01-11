@@ -23,6 +23,7 @@ import {
   RENDERED_NODES_PROPERTY,
   COMPONENT_ID_PROPERTY,
   cId,
+  isEmpty,
 } from '@/utils/shared';
 import { isRehydrationScheduled } from '@/utils/ssr/rehydration';
 import { initDOM } from '@/utils/context';
@@ -166,20 +167,16 @@ export class BasicListComponent<T extends { id: number }> {
       let cnt = 0;
       const map: WeakMap<T, string> = new WeakMap();
       this.keyForItem = (item: T, i: number) => {
-        if (IS_DEV_MODE) {
-          if (typeof item === 'undefined' || item === null) {
-            console.warn(`Iteration over null, undefined is not supported yet`);
-            return `${String(item)}:${i}`;
-          }
-          if (isPrimitive(item)) {
-            console.warn(`Iteration over primitives is not supported yet`);
-            return `${String(item)}:${i}`;
-          }
+        if (isPrimitive(item) || isEmpty(item)) {
+          return `${String(item)}:${i}`;
         }
-        if (!map.has(item)) {
-          map.set(item, String(++cnt));
+        const existing = map.get(item);
+        if (existing !== undefined) {
+          return existing;
         }
-        return map.get(item)!;
+        const key = String(++cnt);
+        map.set(item, key);
+        return key;
       };
     } else {
       this.keyForItem = (item: T) => {
@@ -306,12 +303,11 @@ export class BasicListComponent<T extends { id: number }> {
           unregisterFromParent(row);
         } else {
           rowsToMove.push([row, index]);
-          // TODO: optimize
-          for (const mapKey in indexMap) {
-            if (indexMap[mapKey] === index && key !== mapKey) {
-              indexMap[mapKey] = index + 1;
+          Object.keys(indexMap).forEach((mapKey) => {
+            if (indexMap[mapKey] >= index) {
+              indexMap[mapKey]++;
             }
-          }
+          });
         }
       } else {
         seenKeys++;
