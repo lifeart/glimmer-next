@@ -259,6 +259,7 @@ export class BasicListComponent<T extends { id: number }> {
     let seenKeys = 0;
     const appendedIndexes = new Set<number>();
     let isAppendOnly = isFirstRender;
+    let indexKeys: string[] | null = null;
     items.forEach((item, index) => {
       // @todo - fix here
       if (seenKeys === amountOfExistingKeys) {
@@ -303,11 +304,14 @@ export class BasicListComponent<T extends { id: number }> {
           unregisterFromParent(row);
         } else {
           rowsToMove.push([row, index]);
-          Object.keys(indexMap).forEach((mapKey) => {
-            if (indexMap[mapKey] >= index) {
-              indexMap[mapKey]++;
+          if (indexKeys === null) {
+            indexKeys = Object.keys(indexMap);
+          }
+          for (let i = 0; i < indexKeys.length; i++) {
+            if (indexMap[indexKeys[i]] >= index) {
+              indexMap[indexKeys[i]]++;
             }
-          });
+          }
         }
       } else {
         seenKeys++;

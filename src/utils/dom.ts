@@ -1362,16 +1362,13 @@ export const $_api = (ctx: any) => initDOM(ctx);
 
 export function $_fin(
   roots: Array<ComponentReturnType | Node>,
-  ctx: Component<any> | null,
+  ctx: Component<any>,
 ) {
   if (IS_DEV_MODE) {
     if (!ctx) {
       throw new Error('Components without context is not supported');
     }
   }
-  ctx![RENDERED_NODES_PROPERTY] = ctx![RENDERED_NODES_PROPERTY] ?? [];
-  ctx![COMPONENT_ID_PROPERTY] = ctx![COMPONENT_ID_PROPERTY] ?? cId();
-
   return {
     [$nodes]: roots,
     ctx,
