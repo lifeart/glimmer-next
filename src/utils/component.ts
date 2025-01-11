@@ -252,7 +252,7 @@ export function unregisterFromParent(component: ComponentReturnType | Node | Arr
     component.forEach(unregisterFromParent);
   } else if ($nodes in component) {
     const id = component.ctx![COMPONENT_ID_PROPERTY];
-    const arr = CHILD[PARENT[id]];
+    const arr = CHILD.get(PARENT.get(id)!);
     if (arr !== undefined) {
       if (IS_DEV_MODE) {
         if (arr.indexOf(id) === -1) {
@@ -292,7 +292,7 @@ function runDestructorsSync(targetNode: Component<any>, skipDom = false) {
 
   while (stack.length > 0) {
     const currentNode = stack.pop()!;
-    const nodesToRemove = CHILD[currentNode[COMPONENT_ID_PROPERTY]];
+    const nodesToRemove = CHILD.get(currentNode[COMPONENT_ID_PROPERTY]);
 
     destroySync(currentNode);
     if (skipDom !== true) {
@@ -300,7 +300,7 @@ function runDestructorsSync(targetNode: Component<any>, skipDom = false) {
     }
     if (nodesToRemove) {
       for (const node of nodesToRemove) {
-        stack.push(TREE[node]);
+        stack.push(TREE.get(node)!);
       }
     }
   }
@@ -310,7 +310,7 @@ export function runDestructors(
   promises: Array<Promise<void>> = [],
   skipDom = false,
 ): Array<Promise<void>> {
-  const childComponents = CHILD[target[COMPONENT_ID_PROPERTY]];
+  const childComponents = CHILD.get(target[COMPONENT_ID_PROPERTY]);
   // @todo - move it after child components;
   destroy(target, promises);
   if (childComponents) {
@@ -320,7 +320,7 @@ export function runDestructors(
       tldr list may be mutated during removal and forEach is stopped
     */
     childComponents.forEach((node) => {
-      runDestructors(TREE[node], promises, skipDom);
+      runDestructors(TREE.get(node)!, promises, skipDom);
     });
   }
   if (skipDom !== true) {

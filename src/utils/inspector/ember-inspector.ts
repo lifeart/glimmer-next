@@ -443,7 +443,7 @@ const EmberProxy: any = new Proxy(
         };
       } else if (key === '_captureRenderTree') {
         function componentToRenderTree(component: Component<any>): any {
-          let childs = Array.from(CHILD[component[COMPONENT_ID_PROPERTY]] ?? (new Set() as Set<number>)).map((el) => TREE[el]);
+          let childs = Array.from(CHILD.get(component[COMPONENT_ID_PROPERTY]) ?? (new Set() as Set<number>)).map((el) => TREE.get(el));
           if (childs.length === 0) {
             if (component instanceof IfCondition) {
               if (isArray(component.prevComponent)) {
@@ -493,7 +493,7 @@ const EmberProxy: any = new Proxy(
             };
           }
 
-          const children = (childs?.map((child) => componentToRenderTree(child)) ?? []).filter(el => el !== null);
+          const children = (childs?.map((child) => componentToRenderTree(child!)) ?? []).filter(el => el !== null);
           // @ts-expect-error
           component[RENDERED_NODES_PROPERTY].forEach((node, index) => {
             // @ts-expect-error

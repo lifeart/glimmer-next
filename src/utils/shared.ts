@@ -121,9 +121,9 @@ export function setBounds(component: ComponentReturnType) {
   });
 }
 const SEEN_TREE_NODES = new WeakSet();
-export const TREE: Record<number, Component<any>> = Object.create(null);
-export const CHILD: Record<number, Array<number> | undefined> = Object.create(null);
-export const PARENT: Record<number, number> = Object.create(null);
+export const TREE: Map<number, Component<any>> = new Map();
+export const CHILD: Map<number, Array<number> | undefined> = new Map();
+export const PARENT: Map<number, number> = new Map();
 
 export function addToTree(
   ctx: Component<any>,
@@ -140,10 +140,16 @@ export function addToTree(
   }
   const ID = node[COMPONENT_ID_PROPERTY];
   const PARENT_ID = ctx[COMPONENT_ID_PROPERTY];
-  (CHILD[PARENT_ID] ??= []).push(ID);
-  TREE[ID] = node;
+  let ch = CHILD.get(PARENT_ID);
+  if (ch === undefined) {
+    ch = [ID];
+    CHILD.set(PARENT_ID, ch);
+  } else {
+    ch.push(ID);
+  }
+  TREE.set(ID, node);
   if (WITH_CONTEXT_API) {
-    PARENT[ID] = PARENT_ID;
+    PARENT.set(ID, PARENT_ID);
   }
   SEEN_TREE_NODES.add(node);
   // REF.add(ID);
@@ -182,10 +188,10 @@ export function addToTree(
       }
       // console.log('deleting', ID);
       // REF.delete(ID);
-      delete CHILD[ID];
-      delete TREE[ID];
+      CHILD.delete(ID);
+      TREE.delete(ID);
       if (WITH_CONTEXT_API) {
-        delete PARENT[ID];
+        PARENT.delete(ID);
       }
     },
   );

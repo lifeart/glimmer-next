@@ -4,8 +4,8 @@ declare global {
   interface Window {
     getDestructors: () => WeakSet<Node, Array<() => void>>;
     drawTreeToConsole: () => void;
-    getRenderTree: () => Record<number, number[]>;
-    getParentGraph: () => Record<number, number>;
+    getRenderTree: () => Record<unknown, unknown>;
+    getParentGraph: () => Map<number, number>;
     getVM: () => any;
     hotReload: (
       oldComponent: Component | ComponentReturnType,

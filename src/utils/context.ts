@@ -64,7 +64,7 @@ export function getContext<T>(
       const value = context.get(key);
       return isFn(value) ? value() : value;
     }
-    current = TREE[PARENT[current[COMPONENT_ID_PROPERTY]]];
+    current = TREE.get(PARENT.get(current[COMPONENT_ID_PROPERTY])!);
   }
   // TODO: add fancy error message about missing provider in dev mode,
   // we may track context usage and provide a better error message
