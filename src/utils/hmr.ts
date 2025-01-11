@@ -35,7 +35,7 @@ export function createHotReload(
         return;
       }
       LISTS_FOR_HMR.forEach((list) => {
-        Array.from(list.keyMap).forEach(([key, lineItems]) => {
+        Object.entries(list.keyMap).forEach(([key, lineItems]) => {
           if (isArray(lineItems)) {
             for (let k = 0; k < lineItems.length; k++) {
               const value = lineItems[k];
@@ -44,7 +44,7 @@ export function createHotReload(
               }
             }
           } else if (instance === lineItems) {
-            list.keyMap.set(key, instance);
+            list.keyMap[key] = instance;
           }
           
         });

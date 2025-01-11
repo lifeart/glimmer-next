@@ -539,7 +539,7 @@ const EmberProxy: any = new Proxy(
             argsToHide.push('list');
             positional.push(allArgs()['list'].value);
             if (component instanceof AsyncListComponent) {
-              const items = Array.from(component.keyMap.values());
+              const items = Array.from(Object.values(component.keyMap));
               items.forEach((el) => {
                 if (Array.isArray(el)) {
                   el.forEach((e) => {
@@ -559,7 +559,7 @@ const EmberProxy: any = new Proxy(
             argsToHide.push('list');
             positional.push(allArgs()['list'].value);
             if (component instanceof SyncListComponent) {
-              const items = Array.from(component.keyMap.values());
+              const items = Array.from(Object.values(component.keyMap));
               items.forEach((el) => {
                 if (Array.isArray(el)) {
                   el.forEach((e) => {
