@@ -104,15 +104,19 @@ export class Root {
   [COMPONENT_ID_PROPERTY] = cId();
   [RENDERING_CONTEXT_PROPERTY]: undefined | typeof HTMLAPI = undefined;
   constructor() {
-    CHILD[this[COMPONENT_ID_PROPERTY]] = new Set();
+    CHILD[this[COMPONENT_ID_PROPERTY]] = [];
     // @ts-expect-error
     TREE[this[COMPONENT_ID_PROPERTY]] = this;
-    // @ts-expect-error
-    PARENT[this[COMPONENT_ID_PROPERTY]] = null;
+    if (WITH_CONTEXT_API) {
+      // @ts-expect-error
+      PARENT[this[COMPONENT_ID_PROPERTY]] = null;
+    }
     registerDestructor(this, () => {
       delete CHILD[this[COMPONENT_ID_PROPERTY]];
       delete TREE[this[COMPONENT_ID_PROPERTY]];
-      delete PARENT[this[COMPONENT_ID_PROPERTY]];
+      if (WITH_CONTEXT_API) {
+        delete PARENT[this[COMPONENT_ID_PROPERTY]];
+      }
     });
   }
 }
@@ -724,7 +728,7 @@ if (IS_DEV_MODE) {
       return obj;
     }
     obj[name] = Array.from(children).map((child) => {
-      return buildGraph({}, child, CHILD[child] ?? new Set());
+      return buildGraph({}, child, new Set(CHILD[child] ?? []));
     });
     return obj;
   }
@@ -733,7 +737,7 @@ if (IS_DEV_MODE) {
     const ref = buildGraph(
       {} as Record<string, unknown>,
       ROOT,
-      CHILD[ROOT![COMPONENT_ID_PROPERTY]] ?? new Set(),
+      new Set(CHILD[ROOT![COMPONENT_ID_PROPERTY]] ?? []),
     );
     console.log(JSON.stringify(ref, null, 2));
   }

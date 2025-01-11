@@ -208,28 +208,10 @@ export type TOC<S extends Props = {}> = (
 ) => ComponentReturn<Get<S, 'Blocks'>, Get<S, 'Element', null>>;
 
 function destroyNode(node: Node) {
-  if (IS_DEV_MODE) {
-    if (!('nodeType' in node)) {
-      throw new Error('Unable to destroy node');
-    }
-  }
-  if (!node.isConnected) {
-    return;
-  }
-  if (IS_DEV_MODE) {
-    const parent = node.parentNode;
-    if (parent !== null) {
-      parent.removeChild(node);
-    } else {
-      if (import.meta.env.SSR) {
-        console.warn(`Node is not in DOM`, node.nodeType, node.nodeName);
-        return;
-      }
-      throw new Error(`Node is not in DOM`);
-    }
-  } else {
-    node.parentNode!.removeChild(node);
-  }
+  // Skip if node is already detached
+  if (!node.isConnected) return;
+  // @ts-expect-error
+  node.remove();
 }
 
 export function destroyElementSync(
@@ -263,11 +245,22 @@ function destroyNodes(roots: Node | Array<Node>) {
 }
 
 export function unregisterFromParent(component: ComponentReturnType | Node | Array<ComponentReturnType | Node>) {
+  if (!WITH_CONTEXT_API) {
+    return;
+  }
   if (isArray(component)) {
     component.forEach(unregisterFromParent);
   } else if ($nodes in component) {
     const id = component.ctx![COMPONENT_ID_PROPERTY];
-    CHILD[PARENT[id]]?.delete(id);
+    const arr = CHILD[PARENT[id]];
+    if (arr !== undefined) {
+      if (IS_DEV_MODE) {
+        if (arr.indexOf(id) === -1) {
+          throw new Error('Unknown index');
+        }
+      }
+      arr.splice(arr.indexOf(id), 1);
+    }
   }
 }
 
