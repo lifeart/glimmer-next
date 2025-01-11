@@ -461,13 +461,13 @@ const EmberProxy: any = new Proxy(
               }
             }
           }
-          let componentName = component
-            ? component.constructor.name
-            : '(unknown)';
+          // @ts-expect-error
+          let componentName = component.debugName || component.constructor.name || '(unknown)';
           const hasArgs = component && $args in component;
           const hasDebugArgs = component && $_debug_args in component;
           const hasArgsOrDebugArgs = hasArgs || hasDebugArgs;
           const argsToHide: string[] = [$context];
+          const argsToAdd: Array<[string, unknown]> = [];
           // const isUnstableChildWrapper = component && component.debugName && component.debugName.startsWith('UnstableChildWrapper');
           // if (component && !isUnstableChildWrapper && !hasArgs && !hasDebugArgs) {
           //   debugger;
@@ -510,7 +510,8 @@ const EmberProxy: any = new Proxy(
             argsToHide.push('if');
             positional.push(allArgs()['if']);
           } else if (componentName.startsWith('AsyncListComponent')) {
-            componentName = 'async-each';
+            componentName = 'each';
+            argsToAdd.push(['async', true]);
             argsToHide.push('list');
             positional.push(allArgs()['list'].value);
             if (component instanceof AsyncListComponent) {
@@ -551,7 +552,7 @@ const EmberProxy: any = new Proxy(
             }
           }
           return {
-            id: Math.random().toString(36).substr(2, 9),
+            id: String(component[COMPONENT_ID_PROPERTY]),
             args: {
               named:
                 component && hasArgsOrDebugArgs
@@ -560,7 +561,10 @@ const EmberProxy: any = new Proxy(
                         const args = allArgs();
                         argsToHide.forEach((key) => {
                           delete args[key];
-                        })
+                        });
+                        argsToAdd.forEach(([key, value]) => {
+                          args[key] = value;
+                        });
                         return args;
                       },
                     }
