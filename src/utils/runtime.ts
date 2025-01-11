@@ -53,9 +53,9 @@ export async function syncDom() {
   for (const cell of tagsToRevalidate) {
     await executeTag(cell);
 
-    const subTags = relatedTags[cell.id];
+    const subTags = relatedTags.get(cell.id);
     if (subTags !== undefined) {
-      delete relatedTags[cell.id];
+      relatedTags.delete(cell.id);
       sharedTags.push(...subTags.values());
       subTags.clear();
     }

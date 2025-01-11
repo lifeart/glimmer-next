@@ -980,7 +980,6 @@ function createSlot(
     $DEBUG_REACTIVE_CONTEXTS.push(`:${name}`);
   }
   const slotContext = {
-    debugName: `slot:${name}`,
     [$args]: {
       [$context]: ctx,
     },
@@ -988,11 +987,13 @@ function createSlot(
     [COMPONENT_ID_PROPERTY]: cId(),
     [RENDERING_CONTEXT_PROPERTY]: null,
   };
+  // @ts-expect-error slot return type
+  addToTree(ctx, slotContext);
   const elements = value(...[slotContext, ...params()]);
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.pop();
-  }
-  if (IS_DEV_MODE) {
+    // @ts-expect-error
+    slotContext.debugName = `slot:${name}`;
     // @ts-expect-error
     slotContext.debugInfo = {
       parent: ctx,
@@ -1000,8 +1001,7 @@ function createSlot(
       name,
     }
   }
-  // @ts-expect-error slot return type
-  addToTree(ctx, slotContext)
+
   // @ts-expect-error slot return type
   return $_fin(elements, slotContext);
 }

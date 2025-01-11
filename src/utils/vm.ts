@@ -102,7 +102,7 @@ export function opcodeFor(tag: AnyCell, op: tagOp) {
       ops.splice(index, 1);
     }
     if (ops.length === 0) {
-      delete opsForTag[tag.id];
+      opsForTag.delete(tag.id);
       if ('destroy' in tag) {
         tag.destroy();
       }

@@ -8,14 +8,14 @@ import { isFn, isTag, isTagLike, debugContext } from '@/utils/shared';
 
 export const asyncOpcodes = new WeakSet<tagOp>();
 // List of DOM operations for each tag
-export const opsForTag: Record<
+export const opsForTag: Map<
   number,
   Array<tagOp>
-> = Object.create(null);
+> = new Map();
 // REVISION replacement, we use a set of tags to revalidate
 export const tagsToRevalidate: Set<Cell> = new Set();
 // List of derived tags for each cell
-export const relatedTags: Record<number, Set<MergedCell>> = Object.create(null);
+export const relatedTags: Map<number, Set<MergedCell>> = new Map();
 
 export const DEBUG_MERGED_CELLS = new Set<MergedCell>();
 export const DEBUG_CELLS = new Set<Cell>();
@@ -177,19 +177,19 @@ export function listDependentCells(cells: Array<AnyCell>, cell: MergedCell) {
 }
 
 export function opsFor(cell: AnyCell) {
-  let ops = opsForTag[cell.id];
+  let ops = opsForTag.get(cell.id);
   if (ops === undefined) {
     ops = [];
-    opsForTag[cell.id] = ops;
+    opsForTag.set(cell.id, ops);
   }
   return ops;
 }
 
 export function relatedTagsForCell(cell: Cell) {
-  let tags = relatedTags[cell.id];
+  let tags = relatedTags.get(cell.id);
   if (tags === undefined) {
     tags = new Set<MergedCell>();
-    relatedTags[cell.id] = tags;
+    relatedTags.set(cell.id, tags);
   }
   return tags;
 }
@@ -224,14 +224,14 @@ export class MergedCell {
   }
   destroy() {
     this.isDestroyed = true;
-    delete opsForTag[this.id];
+    opsForTag.delete(this.id);
     if (this.relatedCells !== null) {
       this.relatedCells.forEach((cell) => {
-        const related = relatedTags[cell.id];
+        const related = relatedTags.get(cell.id);
         if (related !== undefined) {
           related.delete(this);
           if (related.size === 0) {
-            delete relatedTags[cell.id];
+            relatedTags.delete(cell.id);
           }
         }
       });
