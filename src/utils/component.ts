@@ -305,8 +305,10 @@ function runDestructorsSync(targetNode: Component<any>, skipDom = false) {
     if (skipDom !== true) {
       destroyNodes(currentNode![RENDERED_NODES_PROPERTY]);
     }
-    for (const node of nodesToRemove) {
-      stack.push(TREE[node]);
+    if (nodesToRemove) {
+      for (const node of nodesToRemove) {
+        stack.push(TREE[node]);
+      }
     }
   }
 }

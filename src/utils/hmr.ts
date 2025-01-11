@@ -1,5 +1,5 @@
 import { getFirstNode } from '@/utils/control-flow/list';
-import { COMPONENTS_HMR, IFS_FOR_HMR, LISTS_FOR_HMR } from './shared';
+import { COMPONENTS_HMR, IFS_FOR_HMR, isArray, LISTS_FOR_HMR } from './shared';
 import {
   renderElement,
   destroyElementSync,
@@ -35,13 +35,18 @@ export function createHotReload(
         return;
       }
       LISTS_FOR_HMR.forEach((list) => {
-        list.keyMap.forEach((lineItems) => {
-          for (let k = 0; k < lineItems.length; k++) {
-            const value = lineItems[k];
-            if (instance === value) {
-              lineItems[k] = newCmp;
+        Array.from(list.keyMap).forEach(([key, lineItems]) => {
+          if (isArray(lineItems)) {
+            for (let k = 0; k < lineItems.length; k++) {
+              const value = lineItems[k];
+              if (instance === value) {
+                lineItems[k] = newCmp;
+              }
             }
+          } else if (instance === lineItems) {
+            list.keyMap.set(key, instance);
           }
+          
         });
       });
       IFS_FOR_HMR.forEach((fn) => {

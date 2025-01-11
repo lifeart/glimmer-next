@@ -50,7 +50,7 @@ export function getFirstNode(
 
   Based on Glimmer-VM list update logic.
 */
-type GenericReturnType = Array<ComponentReturnType | Node>;
+type GenericReturnType = Array<ComponentReturnType | Node> | ComponentReturnType | Node;
 
 type ListComponentArgs<T> = {
   tag: Cell<T[]> | MergedCell;

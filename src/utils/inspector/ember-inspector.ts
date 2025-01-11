@@ -440,7 +440,7 @@ const EmberProxy: any = new Proxy(
         };
       } else if (key === '_captureRenderTree') {
         function componentToRenderTree(component: Component<any>): any {
-          const childs = Array.from(CHILD[component[COMPONENT_ID_PROPERTY]]).map((el) => TREE[el]);
+          const childs = Array.from(CHILD[component[COMPONENT_ID_PROPERTY]] ?? (new Set() as Set<number>)).map((el) => TREE[el]);
           const componentName = component
             ? component.constructor.name
             : '(unknown)';

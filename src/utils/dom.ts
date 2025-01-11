@@ -724,7 +724,7 @@ if (IS_DEV_MODE) {
       return obj;
     }
     obj[name] = Array.from(children).map((child) => {
-      return buildGraph({}, child, CHILD[child]!);
+      return buildGraph({}, child, CHILD[child] ?? new Set());
     });
     return obj;
   }
@@ -733,7 +733,7 @@ if (IS_DEV_MODE) {
     const ref = buildGraph(
       {} as Record<string, unknown>,
       ROOT,
-      CHILD[ROOT![COMPONENT_ID_PROPERTY]]!,
+      CHILD[ROOT![COMPONENT_ID_PROPERTY]] ?? new Set(),
     );
     console.log(JSON.stringify(ref, null, 2));
   }

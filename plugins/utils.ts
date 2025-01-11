@@ -408,6 +408,11 @@ export function serializeNode(
           .split(paramBounds)
           .filter(Boolean)
           .join(`${indexParamName}.value`);
+        // transforming array to single value
+        if (childs.length === 1) {
+          const length = childText.length;
+          childText = childText.slice(1, length - 1);
+        }
         return `${FN_NAME}(${arrayName}, (${FN_FN_ARGS}) => ${childText}, ${EACH_KEY}, ${ctxName})`;
       } else {
         const extraContextName = nextCtxName();
