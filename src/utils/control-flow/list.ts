@@ -76,7 +76,7 @@ function countLessThan(arr: number[], target: number) {
   return low;
 }
 export class BasicListComponent<T extends { id: number }> {
-  keyMap: Record<string, GenericReturnType> = Object.create(null);
+  keyMap: Map<string, GenericReturnType> = new Map();
   indexMap: Record<string, number> = Object.create(null);
   nodes: Node[] = [];
   [RENDERED_NODES_PROPERTY] = [];
@@ -91,7 +91,6 @@ export class BasicListComponent<T extends { id: number }> {
   key: string = '@identity';
   tag!: Cell<T[]> | MergedCell;
   isSync = false;
-  prevAmountOfItems = 0;
   isFirstRender = true;
   get ctx() {
     return this;
@@ -175,7 +174,7 @@ export class BasicListComponent<T extends { id: number }> {
         if (existing !== undefined) {
           return existing;
         }
-        const key = ++cnt as unknown as string;
+        const key = String(++cnt);
         map.set(item, key);
         return key;
       };
@@ -201,7 +200,7 @@ export class BasicListComponent<T extends { id: number }> {
           }
         }
         // @ts-expect-error unknown key
-        return item[this.key] as string;
+        return String(item[this.key]);
       };
     }
   }
@@ -243,15 +242,15 @@ export class BasicListComponent<T extends { id: number }> {
     const rowsToMove: Array<[GenericReturnType, number]> = [];
     const amountOfExistingKeys = amountOfKeys - removedIndexes.length;
 
-    if (removedIndexes.length > 0) {
+    if (removedIndexes.length > 0 && keyMap.size > 0) {
       removedIndexes.sort((a, b) => a - b);
-      Object.keys(keyMap).forEach((key) => {
+      for (const key of keyMap.keys()) {
         let keyIndex = indexMap[key];
         const count = countLessThan(removedIndexes, keyIndex);
         if (count !== 0) {
           indexMap[key] = keyIndex - count;
         }
-      });
+      }
     }
 
     let targetNode = items.length
@@ -272,7 +271,7 @@ export class BasicListComponent<T extends { id: number }> {
       }
 
       const key = keyForItem(item, index);
-      const maybeRow = keyMap[key];
+      const maybeRow = keyMap.get(key);
       if (!maybeRow) {
         if (!isAppendOnly) {
           appendedIndexes.add(index);
@@ -296,7 +295,7 @@ export class BasicListComponent<T extends { id: number }> {
           }, `each.index[${index}]`);
         }
         const row = ItemComponent(item, idx, this as unknown as Component<any>);
-        keyMap[key] = row;
+        keyMap.set(key, row);
         indexMap[key] = index;
         if (isAppendOnly) {
           // TODO: in ssr parentNode may not exist
@@ -331,7 +330,7 @@ export class BasicListComponent<T extends { id: number }> {
       .forEach(([row, index]) => {
         const nextItem = items[index + 1];
         const insertBeforeNode = nextItem
-          ? getFirstNode(keyMap[keyForItem(nextItem, index + 1)])
+          ? getFirstNode(keyMap.get(keyForItem(nextItem, index + 1))!)
           : bottomMarker;
         // node relocation, assume we have only once root node :)
         api.insert(insertBeforeNode.parentNode!, getFirstNode(row), insertBeforeNode)
@@ -377,14 +376,13 @@ export class SyncListComponent<
       parent.lastChild === bottomMarker &&
       parent.firstChild === topMarker
     ) {
-      
-      for (const value of Object.values(keyMap)) {
+      for (const value of keyMap.values()) {
         destroyElementSync(value, true);
       }
       parent.innerHTML = '';
       parent.append(topMarker);
       parent.append(bottomMarker);
-      this.keyMap = Object.create(null);
+      keyMap.clear();
       this.indexMap = Object.create(null);
       return true;
     } else {
@@ -395,11 +393,10 @@ export class SyncListComponent<
     const { keyMap, keyForItem, indexMap } = this;
     if (items.length === 0) {
       if (this.fastCleanup()) {
-        this.prevAmountOfItems = 0;
         return;
       }
     }
-    let amountOfKeys = this.prevAmountOfItems;
+    let amountOfKeys = keyMap.size;
 
     const indexesToRemove: number[] = [];
 
@@ -408,7 +405,7 @@ export class SyncListComponent<
       const keysToRemove: string[] = [];
       const rowsToRemove: GenericReturnType[] = [];
 
-      for (const [key, row] of Object.entries(keyMap)) {
+      for (const [key, row] of keyMap.entries()) {
         if (updatingKeys.has(key)) {
           continue;
         }
@@ -431,10 +428,9 @@ export class SyncListComponent<
     }
 
     this.updateItems(items, amountOfKeys, indexesToRemove);
-    this.prevAmountOfItems = items.length;
   }
   destroyItem(row: GenericReturnType, key: string) {
-    delete this.keyMap[key];
+    this.keyMap.delete(key);
     delete this.indexMap[key];
     destroyElementSync(row);
   }
@@ -471,10 +467,10 @@ export class AsyncListComponent<
       parent.lastChild === bottomMarker &&
       parent.firstChild === topMarker
     ) {
-      const promises: Promise<void>[] = []
+      const promises = new Array(keyMap.size);
       let i = 0;
-      for (const value of Object.values(keyMap)) {
-        promises.push(destroyElement(value, true));
+      for (const value of keyMap.values()) {
+        promises[i] = destroyElement(value, true);
         i++;
       }
       await Promise.all(promises);
@@ -482,7 +478,7 @@ export class AsyncListComponent<
       parent.innerHTML = '';
       parent.append(topMarker);
       parent.append(bottomMarker);
-      this.keyMap = Object.create(null);
+      keyMap.clear();
       this.indexMap = Object.create(null);
       return true;
     } else {
@@ -492,12 +488,11 @@ export class AsyncListComponent<
   async syncList(items: T[]) {
     if (items.length === 0) {
       if (await this.fastCleanup()) {
-        this.prevAmountOfItems = 0;
         return;
       }
     }
     const { keyMap, keyForItem, indexMap } = this;
-    let amountOfKeys = this.prevAmountOfItems;
+    let amountOfKeys = keyMap.size;
     const indexesToRemove: number[] = [];
 
     if (amountOfKeys > 0) {
@@ -506,7 +501,7 @@ export class AsyncListComponent<
       const removeQueue: Array<Promise<void>> = [];
 
       const updatingKeys = new Set(this.keyGenerator(items, keyForItem));
-      for (const [key, row] of Object.entries(keyMap)) {
+      for (const [key, row] of keyMap.entries()) {
         if (updatingKeys.has(key)) {
           continue;
         }
@@ -537,10 +532,9 @@ export class AsyncListComponent<
       }
     }
     this.updateItems(items, amountOfKeys, indexesToRemove);
-    this.prevAmountOfItems = items.length;
   }
   async destroyItem(row: GenericReturnType, key: string) {
-    delete this.keyMap[key];
+    this.keyMap.delete(key);
     delete this.indexMap[key];
     await destroyElement(row);
   }
