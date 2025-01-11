@@ -119,7 +119,7 @@ export function setBounds(component: ComponentReturnType) {
 }
 const SEEN_TREE_NODES = new WeakSet();
 export const TREE: Record<number, Component<any>> = Object.create(null);
-export const CHILD: Record<number, number[]> = Object.create(null);
+export const CHILD: Record<number, Set<number>> = Object.create(null);
 export const PARENT: Record<number, number> = Object.create(null);
 
 export function addToTree(
@@ -139,10 +139,10 @@ export function addToTree(
   const PARENT_ID = ctx[COMPONENT_ID_PROPERTY];
   const REF = CHILD[PARENT_ID];
   TREE[ID] = node;
-  CHILD[ID] = [];
+  CHILD[ID] = new Set();
   PARENT[ID] = PARENT_ID;
-  REF.push(ID);
   SEEN_TREE_NODES.add(node);
+  REF.add(ID);
   // if (node.toString() === '[object Object]') {
   //   debugger;
   // }
@@ -173,10 +173,7 @@ export function addToTree(
   registerDestructor(node, 
     () => {
       SEEN_TREE_NODES.delete(node);
-      const pIndex = REF.indexOf(ID);
-      if (pIndex !== -1) {
-        REF.splice(pIndex, 1);
-      }
+      REF.delete(ID);
       delete CHILD[ID];
       delete TREE[ID];
       delete PARENT[ID];

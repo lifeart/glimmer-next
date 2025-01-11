@@ -44,7 +44,13 @@ export type GenericReturnType =
   | null
   | null[];
 
-type RenderableElement = GenericReturnType | Node | string | number | null | undefined;
+type RenderableElement =
+  | GenericReturnType
+  | Node
+  | string
+  | number
+  | null
+  | undefined;
 
 export function renderElement(
   api: typeof DEFAULT_API,
@@ -65,7 +71,7 @@ export function renderElement(
     } else if ((el as HTMLElement).nodeType) {
       if (skipRegistration !== true) {
         ctx[RENDERED_NODES_PROPERTY].push(el as Node);
-      } 
+      }
       api.insert(target, el as Node, placeholder);
     } else if ($nodes in el) {
       el[$nodes].forEach((node) => {
@@ -142,13 +148,25 @@ export function renderComponent(
   const dom = initDOM(owner || component) || initDOM(getRoot()!);
   if (TRY_CATCH_ERROR_HANDLING) {
     try {
-      renderElement(dom, owner || component, targetElement as unknown as HTMLElement, children, targetElement.lastChild);
+      renderElement(
+        dom,
+        owner || component,
+        targetElement as unknown as HTMLElement,
+        children,
+        targetElement.lastChild,
+      );
     } catch (e) {
       runDestructorsSync(owner || component);
       throw e;
     }
   } else {
-    renderElement(dom, owner || component, targetElement as unknown as HTMLElement, children, targetElement.lastChild);
+    renderElement(
+      dom,
+      owner || component,
+      targetElement as unknown as HTMLElement,
+      children,
+      targetElement.lastChild,
+    );
   }
 
   return component;
@@ -214,10 +232,7 @@ function destroyNode(node: Node) {
 }
 
 export function destroyElementSync(
-  component:
-    | ComponentReturnType
-    | Node
-    | Array<ComponentReturnType | Node>,
+  component: ComponentReturnType | Node | Array<ComponentReturnType | Node>,
   skipDom = false,
 ) {
   if (isArray(component)) {
@@ -231,9 +246,7 @@ export function destroyElementSync(
   }
 }
 
-function destroyNodes(
-  roots: Node | Array<Node>,
-) {
+function destroyNodes(roots: Node | Array<Node>) {
   if (isArray(roots)) {
     for (let i = 0; i < roots.length; i++) {
       destroyNode(roots[i]);
@@ -244,10 +257,7 @@ function destroyNodes(
 }
 
 export async function destroyElement(
-  component:
-    | ComponentReturnType
-    | Node
-    | Array<ComponentReturnType | Node>,
+  component: ComponentReturnType | Node | Array<ComponentReturnType | Node>,
   skipDom = false,
 ) {
   if (isArray(component)) {
@@ -280,9 +290,8 @@ function runDestructorsSync(targetNode: Component<any>, skipDom = false) {
     if (skipDom !== true) {
       destroyNodes(currentNode![RENDERED_NODES_PROPERTY]);
     }
-
-    while (nodesToRemove.length) {
-      stack.push(TREE[nodesToRemove.pop()!]);
+    for (const node of nodesToRemove) {
+      stack.push(TREE[node]);
     }
   }
 }
@@ -305,9 +314,11 @@ export function runDestructors(
   }
   if (skipDom !== true) {
     if (promises.length) {
-      promises.push(Promise.all(promises).then(() => {
-        destroyNodes(target[RENDERED_NODES_PROPERTY]);
-      }));
+      promises.push(
+        Promise.all(promises).then(() => {
+          destroyNodes(target[RENDERED_NODES_PROPERTY]);
+        }),
+      );
     } else {
       destroyNodes(target[RENDERED_NODES_PROPERTY]);
     }

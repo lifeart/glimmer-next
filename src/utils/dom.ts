@@ -103,7 +103,7 @@ export class Root {
   [COMPONENT_ID_PROPERTY] = cId();
   [RENDERING_CONTEXT_PROPERTY]: undefined | typeof HTMLAPI = undefined;
   constructor() {
-    CHILD[this[COMPONENT_ID_PROPERTY]] = [];
+    CHILD[this[COMPONENT_ID_PROPERTY]] = new Set();
     // @ts-expect-error
     TREE[this[COMPONENT_ID_PROPERTY]] = this;
     // @ts-expect-error
@@ -708,7 +708,7 @@ if (IS_DEV_MODE) {
   function buildGraph(
     obj: Record<string, unknown>,
     root: any,
-    children: number[],
+    children: Set<number>,
   ) {
     if (root === null) {
       console.info('root is null', TREE);
@@ -716,7 +716,7 @@ if (IS_DEV_MODE) {
     }
     const name =
       root.debugName || root?.constructor?.name || root?.tagName || 'unknown';
-    if (children.length === 0) {
+    if (children.size === 0) {
       obj[name] = null;
       return obj;
     }
