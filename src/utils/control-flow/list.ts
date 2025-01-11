@@ -3,7 +3,6 @@ import {
   destroyElement,
   destroyElementSync,
   renderElement,
-  unregisterFromParent,
   type Component,
 } from '@/utils/component';
 import { api as HTML_API } from '@/utils/dom-api';
@@ -24,6 +23,7 @@ import {
   COMPONENT_ID_PROPERTY,
   cId,
   isEmpty,
+  CHILD,
 } from '@/utils/shared';
 import { isRehydrationScheduled } from '@/utils/ssr/rehydration';
 import { initDOM } from '@/utils/context';
@@ -300,7 +300,6 @@ export class BasicListComponent<T extends { id: number }> {
           // TODO: in ssr parentNode may not exist
           // @ts-expect-error this;
           renderElement(api, this, targetNode.parentNode!, row, targetNode);
-          unregisterFromParent(row);
         } else {
           rowsToMove.push([row, index]);
           for (let [mapKey, value] of indexMap) {
@@ -318,7 +317,9 @@ export class BasicListComponent<T extends { id: number }> {
         }
       }
     });
-
+    if (items.length || !isFirstRender) {
+      CHILD.get(this[COMPONENT_ID_PROPERTY])!.length = 0;
+    }
     rowsToMove
       .sort((r1, r2) => {
         return r2[1] - r1[1];
@@ -339,7 +340,7 @@ export class BasicListComponent<T extends { id: number }> {
         parent && parent.removeChild(targetNode);
       }
       if (parent && trueParent !== parent) {
-        this.api.insert(trueParent, parent, bottomMarker);
+        api.insert(trueParent, parent, bottomMarker);
       }
     }
     if (isFirstRender) {
