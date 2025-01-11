@@ -517,8 +517,8 @@ export function serializeNode(
           ? slot.tag.slice(1)
           : 'default';
         return `${slotName}_: ${hasBlockParams},${slotName}: (${[
-          ...slot.blockParams,
           sContext,
+          ...slot.blockParams,
         ].join(',')}) => [${slotChildren}]`;
       });
       const slotsObj = `{${serializedSlots.join(',')}}`;

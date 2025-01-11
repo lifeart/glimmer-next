@@ -521,9 +521,6 @@ const EmberProxy: any = new Proxy(
           if (componentName.startsWith('UnstableChildWrapper') && children.length === 1) {
             return children[0];
           }
-          if (componentName.startsWith('SVGProvider')) {
-            return null;
-          }
           let allArgs = function () {
             if ($_debug_args in component) {
               return component[$_debug_args] ?? {};
@@ -577,6 +574,22 @@ const EmberProxy: any = new Proxy(
                 }
               });
             }
+          }
+          if (componentName.startsWith('slot:')) {
+            // @ts-expect-error
+            positional.push(...component.debugInfo.params());
+            if (positional.length) {
+              componentName = `yield`;
+              // @ts-expect-error
+              argsToAdd.push(['to', component.debugInfo.name]);
+            } else {
+              // @ts-expect-error
+              componentName = `:${component.debugInfo.name}`;
+            }
+          }
+          if (componentName.startsWith('SVGProvider')) {
+            componentName = 'svg';
+            children.length = 0;
           }
           return {
             id: String(component[COMPONENT_ID_PROPERTY]),

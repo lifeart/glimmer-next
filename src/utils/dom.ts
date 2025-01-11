@@ -978,11 +978,31 @@ function createSlot(
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.push(`:${name}`);
   }
-  const elements = value(...[...params(), ctx]);
+  const slotContext = {
+    debugName: `slot:${name}`,
+    [$args]: {
+      [$context]: ctx,
+    },
+    [RENDERED_NODES_PROPERTY]: [],
+    [COMPONENT_ID_PROPERTY]: cId(),
+    [RENDERING_CONTEXT_PROPERTY]: null,
+  };
+  const elements = value(...[slotContext, ...params()]);
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.pop();
   }
-  return elements;
+  if (IS_DEV_MODE) {
+    // @ts-expect-error
+    slotContext.debugInfo = {
+      parent: ctx,
+      params,
+      name,
+    }
+  }
+  // @ts-expect-error slot return type
+  addToTree(ctx, slotContext)
+  // @ts-expect-error slot return type
+  return $_fin(elements, slotContext);
 }
 
 function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
@@ -1003,12 +1023,14 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
           }
         }
         slotValue = value;
+
         const slotRoots = createSlot(
           slotValue,
           params,
           name,
           ctx,
         );
+        // @ts-expect-error
         renderElement(api, ctx, slotPlaceholder.parentNode!, slotRoots, slotPlaceholder);
         isRendered = true;
       },
