@@ -1,10 +1,12 @@
 import * as backburner from 'backburner.js';
 import { getRoot } from '../dom';
-import { $_debug_args, CHILD, COMPONENT_ID_PROPERTY, getBounds, TREE } from '../shared';
+import { $_debug_args, $context, $nodes, CHILD, COMPONENT_ID_PROPERTY, getBounds, isArray, TREE } from '../shared';
 import { Component } from '..';
 import { Cell, MergedCell, getCells, getMergedCells } from '../reactive';
 import { $args } from '../shared';
 import { inspect } from '@/utils/inspector';
+import { IfCondition } from '../control-flow/if';
+import { AsyncListComponent, SyncListComponent } from '../control-flow/list';
 
 const genericProxy = new Proxy(
   {},
@@ -440,13 +442,32 @@ const EmberProxy: any = new Proxy(
         };
       } else if (key === '_captureRenderTree') {
         function componentToRenderTree(component: Component<any>): any {
-          const childs = Array.from(CHILD[component[COMPONENT_ID_PROPERTY]] ?? (new Set() as Set<number>)).map((el) => TREE[el]);
-          const componentName = component
+          let childs = Array.from(CHILD[component[COMPONENT_ID_PROPERTY]] ?? (new Set() as Set<number>)).map((el) => TREE[el]);
+          if (childs.length === 0) {
+            if (component instanceof IfCondition) {
+              if (isArray(component.prevComponent)) {
+                component.prevComponent.forEach((c) => {
+                  if (!c) {
+                    return;
+                  }
+                  if ($nodes in c) {
+                    childs.push(c.ctx!);
+                  }
+                });
+              } else {
+                if (component.prevComponent && $nodes in component.prevComponent) {
+                  childs.push(component.prevComponent.ctx!);
+                }
+              }
+            }
+          }
+          let componentName = component
             ? component.constructor.name
             : '(unknown)';
           const hasArgs = component && $args in component;
           const hasDebugArgs = component && $_debug_args in component;
           const hasArgsOrDebugArgs = hasArgs || hasDebugArgs;
+          const argsToHide: string[] = [$context];
           // const isUnstableChildWrapper = component && component.debugName && component.debugName.startsWith('UnstableChildWrapper');
           // if (component && !isUnstableChildWrapper && !hasArgs && !hasDebugArgs) {
           //   debugger;
@@ -471,6 +492,64 @@ const EmberProxy: any = new Proxy(
             };
           }
 
+          const children = childs?.map((child) => componentToRenderTree(child)) ?? [];
+
+          if (componentName.startsWith('UnstableChildWrapper') && children.length === 1) {
+            return children[0];
+          }
+          let allArgs = function () {
+            if ($_debug_args in component) {
+              return component[$_debug_args] ?? {};
+            } else {
+              return component[$args] ?? {};
+            }
+          }
+          const positional: unknown[] = [];
+          if (componentName.startsWith('IfCondition')) {
+            componentName = 'if';
+            argsToHide.push('if');
+            positional.push(allArgs()['if']);
+          } else if (componentName.startsWith('AsyncListComponent')) {
+            componentName = 'async-each';
+            argsToHide.push('list');
+            positional.push(allArgs()['list'].value);
+            if (component instanceof AsyncListComponent) {
+              const items = Array.from(component.keyMap.values());
+              items.forEach((el) => {
+                if (Array.isArray(el)) {
+                  el.forEach((e) => {
+                    if (!('nodeType' in e)) {
+                      children.push(componentToRenderTree(e.ctx!));
+                    }
+                  });
+                } else {
+                  if (!('nodeType' in el)) {
+                    children.push(componentToRenderTree(el.ctx!));
+                  }
+                }
+              });
+            }
+          } else if (componentName.startsWith('ListComponent')) {
+            componentName = 'each';
+            argsToHide.push('list');
+            positional.push(allArgs()['list'].value);
+            if (component instanceof SyncListComponent) {
+              const items = Array.from(component.keyMap.values());
+              items.forEach((el) => {
+                if (Array.isArray(el)) {
+                  el.forEach((e) => {
+                    if (!('nodeType' in e)) {
+                      children.push(componentToRenderTree(e.ctx!));
+                    }
+                  });
+                } else {
+                  if (!('nodeType' in el)) {
+                    children.push(componentToRenderTree(el.ctx!));
+                  }
+                }
+              });
+            }
+          }
           return {
             id: Math.random().toString(36).substr(2, 9),
             args: {
@@ -478,22 +557,21 @@ const EmberProxy: any = new Proxy(
                 component && hasArgsOrDebugArgs
                   ? {
                       get __ARGS__() {
-                        if ($_debug_args in component) {
-                          return component[$_debug_args] ?? {};
-                        } else {
-                          return component[$args] ?? {};
-                        }
+                        const args = allArgs();
+                        argsToHide.forEach((key) => {
+                          delete args[key];
+                        })
+                        return args;
                       },
                     }
                   : {},
-              positional: [],
+              positional: positional,
             },
             instance: component,
             name: componentName,
             type: 'component',
             isInRemote: false,
-            children:
-              childs?.map((child) => componentToRenderTree(child)) ?? [],
+            children,
             bounds,
             template: 'string',
           };
