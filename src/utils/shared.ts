@@ -137,12 +137,12 @@ export function addToTree(
   }
   const ID = node[COMPONENT_ID_PROPERTY];
   const PARENT_ID = ctx[COMPONENT_ID_PROPERTY];
-  const REF = CHILD[PARENT_ID];
+  CHILD[PARENT_ID].add(ID);
   TREE[ID] = node;
   CHILD[ID] = new Set();
   PARENT[ID] = PARENT_ID;
   SEEN_TREE_NODES.add(node);
-  REF.add(ID);
+  // REF.add(ID);
   // if (node.toString() === '[object Object]') {
   //   debugger;
   // }
@@ -172,8 +172,10 @@ export function addToTree(
   // @todo - case 42
   registerDestructor(node, 
     () => {
+      // debugger;
       SEEN_TREE_NODES.delete(node);
-      REF.delete(ID);
+      // console.log('deleting', ID);
+      // REF.delete(ID);
       delete CHILD[ID];
       delete TREE[ID];
       delete PARENT[ID];

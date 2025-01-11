@@ -5,6 +5,7 @@ import {
   renderElement,
   runDestructors,
   destroyElementSync,
+  unregisterFromParent,
 } from '@/utils/component';
 import {
   AnyCell,
@@ -672,8 +673,10 @@ export function $_inElement(
       } else {
         appendRef = elementRef;
       }
-      renderElement(api, ctx, appendRef, roots(ctx));
+      const nodes = roots(ctx);
+      renderElement(api, ctx, appendRef, nodes);
       registerDestructor(ctx, () => {
+        unregisterFromParent(nodes);
         appendRef.innerHTML = '';
       });
       return $_fin([], this);
@@ -1252,6 +1255,7 @@ export function $_dc(
       const target = result.ctx![RENDERED_NODES_PROPERTY].pop();
       const newTarget = IS_DEV_MODE ? api.comment('placeholder') : api.comment();
       api.insert(target!.parentNode!, newTarget, target);
+      unregisterFromParent(result);
       destroyElementSync(result);
       result = component(value, args, ctx);
       result![$nodes].push(newTarget!);

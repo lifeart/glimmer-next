@@ -3,6 +3,7 @@ import {
   destroyElement,
   destroyElementSync,
   renderElement,
+  unregisterFromParent,
   type Component,
 } from '@/utils/component';
 import { api as HTML_API } from '@/utils/dom-api';
@@ -302,6 +303,7 @@ export class BasicListComponent<T extends { id: number }> {
           // TODO: in ssr parentNode may not exist
           // @ts-expect-error this;
           renderElement(api, this, targetNode.parentNode!, row, targetNode);
+          unregisterFromParent(row);
         } else {
           rowsToMove.push([row, index]);
           // TODO: optimize

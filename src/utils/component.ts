@@ -27,6 +27,7 @@ import {
   COMPONENT_ID_PROPERTY,
   TREE,
   CHILD,
+  PARENT,
 } from './shared';
 import { createRoot, getRoot, resolveRenderable, Root, setRoot } from './dom';
 import { provideContext, initDOM, RENDERING_CONTEXT } from './context';
@@ -239,6 +240,11 @@ export function destroyElementSync(
     component.forEach((component) => destroyElementSync(component, skipDom));
   } else {
     if ($nodes in component) {
+      if (IS_DEV_MODE) {
+        if (!component.ctx) {
+          throw new Error('context should match');
+        }
+      }
       runDestructorsSync(component.ctx!, skipDom);
     } else {
       destroyNode(component);
@@ -253,6 +259,15 @@ function destroyNodes(roots: Node | Array<Node>) {
     }
   } else {
     destroyNode(roots);
+  }
+}
+
+export function unregisterFromParent(component: ComponentReturnType | Node | Array<ComponentReturnType | Node>) {
+  if (isArray(component)) {
+    component.forEach(unregisterFromParent);
+  } else if ($nodes in component) {
+    const id = component.ctx![COMPONENT_ID_PROPERTY];
+    CHILD[PARENT[id]]?.delete(id);
   }
 }
 
@@ -301,6 +316,7 @@ export function runDestructors(
   skipDom = false,
 ): Array<Promise<void>> {
   const childComponents = CHILD[target[COMPONENT_ID_PROPERTY]];
+  // @todo - move it after child components;
   destroy(target, promises);
   if (childComponents) {
     /*
@@ -308,7 +324,7 @@ export function runDestructors(
       @todo - case 42 (associateDestroyable)
       tldr list may be mutated during removal and forEach is stopped
     */
-    Array.from(childComponents).forEach((node) => {
+    childComponents.forEach((node) => {
       runDestructors(TREE[node], promises, skipDom);
     });
   }

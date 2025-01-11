@@ -1,6 +1,5 @@
 import {
   type ComponentReturnType,
-  destroyElementSync,
   renderComponent,
 } from '@/utils/component';
 import { getDocument } from '@/utils/dom-api';
@@ -14,7 +13,6 @@ import {
 } from '@/utils/dom';
 import { renderInBrowser } from '@/utils/ssr/ssr';
 import { runDestructors } from '@/utils/component';
-import { registerDestructor } from '@/utils/glimmer/destroyable';
 import { $args } from '../utils';
 import { $context } from '@/utils/shared';
 
@@ -73,9 +71,6 @@ export async function render(component: ComponentReturnType) {
     owner,
     false,
   );
-  registerDestructor(owner, () => {
-    destroyElementSync(renderResult);
-  });
   await rerender();
   // TODO: figure out what is root, at the moment it return node instance, not node.ctx
   if (!getRoot()) {

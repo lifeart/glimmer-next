@@ -5,6 +5,7 @@ import {
   destroyElementSync,
   type Component,
   type ComponentReturnType,
+  unregisterFromParent,
 } from '@/utils/component';
 import { initDOM } from './context';
 
@@ -76,6 +77,7 @@ export function createHotReload(
       // @ts-expect-error different type for API
       const api = initDOM(newCmp.ctx);
       renderElement(api, newCmp.ctx!, parentElement, newCmp, firstElement);
+      unregisterFromParent(instance);
       destroyElementSync(instance);
     });
     COMPONENTS_HMR.delete(oldklass);

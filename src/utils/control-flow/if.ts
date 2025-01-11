@@ -3,6 +3,7 @@ import {
   type GenericReturnType,
   renderElement,
   type Component,
+  unregisterFromParent,
 } from '@/utils/component';
 import { Destructors, registerDestructor } from '@/utils/glimmer/destroyable';
 import { formula, type Cell, type MergedCell } from '@/utils/reactive';
@@ -187,6 +188,8 @@ export class IfCondition {
       this.prevComponent,
       this.placeholder,
     );
+    // @ts-expect-error branch destroying
+    unregisterFromParent(this.prevComponent);
     return;
   }
   async destroy() {
