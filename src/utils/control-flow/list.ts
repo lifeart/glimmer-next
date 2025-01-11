@@ -76,7 +76,7 @@ function countLessThan(arr: number[], target: number) {
 }
 export class BasicListComponent<T extends { id: number }> {
   keyMap: Map<string, GenericReturnType> = new Map();
-  indexMap: Map<string, number> = new Map();
+  indexMap: Record<string, number> = Object.create(null);
   nodes: Node[] = [];
   [RENDERED_NODES_PROPERTY] = [];
   [COMPONENT_ID_PROPERTY] = cId();
@@ -248,10 +248,10 @@ export class BasicListComponent<T extends { id: number }> {
     if (removedIndexes.length > 0 && keyMap.size > 0) {
       removedIndexes.sort((a, b) => a - b);
       for (const key of keyMap.keys()) {
-        let keyIndex = indexMap.get(key)!;
+        let keyIndex = indexMap[key];
         const count = countLessThan(removedIndexes, keyIndex);
         if (count !== 0) {
-          indexMap.set(key, keyIndex - count);
+          indexMap[key] = keyIndex - count;
         }
       }
     }
@@ -298,7 +298,7 @@ export class BasicListComponent<T extends { id: number }> {
         }
         const row = ItemComponent(item, idx, this as unknown as Component<any>);
         keyMap.set(key, row);
-        indexMap.set(key, index);
+        indexMap[key] = index;
         if (isAppendOnly) {
           // TODO: in ssr parentNode may not exist
           // @ts-expect-error this;
@@ -307,17 +307,17 @@ export class BasicListComponent<T extends { id: number }> {
         } else {
           rowsToMove.push([row, index]);
           // TODO: optimize
-          for (let [mapKey, value] of indexMap) {
-            if (value === index && key !== mapKey) {
-              indexMap.set(mapKey, index + 1);
+          for (const mapKey in indexMap) {
+            if (indexMap[mapKey] === index && key !== mapKey) {
+              indexMap[mapKey] = index + 1;
             }
           }
         }
       } else {
         seenKeys++;
-        const expectedIndex = indexMap.get(key)!;
+        const expectedIndex = indexMap[key];
         if (expectedIndex !== index && !appendedIndexes.has(expectedIndex)) {
-          indexMap.set(key, index);
+          indexMap[key] = index;
           rowsToMove.push([maybeRow, index]);
         }
       }
@@ -369,7 +369,7 @@ export class SyncListComponent<
     );
   }
   fastCleanup() {
-    const { keyMap, indexMap, bottomMarker, topMarker } = this;
+    const { keyMap, bottomMarker, topMarker } = this;
     const parent = bottomMarker.parentElement;
     if (
       parent &&
@@ -383,7 +383,7 @@ export class SyncListComponent<
       parent.append(topMarker);
       parent.append(bottomMarker);
       keyMap.clear();
-      indexMap.clear();
+      this.indexMap = Object.create(null);
       return true;
     } else {
       return false;
@@ -411,7 +411,7 @@ export class SyncListComponent<
         }
         keysToRemove.push(key);
         rowsToRemove.push(row);
-        indexesToRemove.push(indexMap.get(key)!);
+        indexesToRemove.push(indexMap[key]);
       }
       if (keysToRemove.length) {
         if (keysToRemove.length === amountOfKeys) {
@@ -431,7 +431,7 @@ export class SyncListComponent<
   }
   destroyItem(row: GenericReturnType, key: string) {
     this.keyMap.delete(key);
-    this.indexMap.delete(key);
+    delete this.indexMap[key];
     destroyElementSync(row);
   }
 }
@@ -460,7 +460,7 @@ export class AsyncListComponent<
     );
   }
   async fastCleanup() {
-    const { bottomMarker, topMarker, keyMap, indexMap } = this;
+    const { bottomMarker, topMarker, keyMap } = this;
     const parent = bottomMarker.parentElement;
     if (
       parent &&
@@ -479,7 +479,7 @@ export class AsyncListComponent<
       parent.append(topMarker);
       parent.append(bottomMarker);
       keyMap.clear();
-      indexMap.clear();
+      this.indexMap = Object.create(null);
       return true;
     } else {
       return false;
@@ -507,7 +507,7 @@ export class AsyncListComponent<
         }
         keysToRemove.push(key);
         rowsToRemove.push(row);
-        indexesToRemove.push(indexMap.get(key)!);
+        indexesToRemove.push(indexMap[key]);
       }
       if (keysToRemove.length) {
         if (keysToRemove.length === amountOfKeys) {
@@ -535,7 +535,7 @@ export class AsyncListComponent<
   }
   async destroyItem(row: GenericReturnType, key: string) {
     this.keyMap.delete(key);
-    this.indexMap.delete(key);
+    delete this.indexMap[key];
     await destroyElement(row);
   }
 }

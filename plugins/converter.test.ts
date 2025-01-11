@@ -847,9 +847,9 @@ describe.each([
         expect($s(converted)).toEqual(
           `$_each(${$glimmerCompat(
             'smf',
-          )}, (el,idx,ctx0) => [$_tag('div', $_edp, [${$glimmerCompat(
+          )}, (el,idx,ctx0) => $_tag('div', $_edp, [${$glimmerCompat(
             'el',
-          )}, ${$glimmerCompat('idx.value')}], ctx0)], null, this)`,
+          )}, ${$glimmerCompat('idx.value')}], ctx0), null, this)`,
         );
       });
       test('it support block-less case', () => {
@@ -867,7 +867,7 @@ describe.each([
         expect($s(converted)).toEqual(
           `$_each(${$glimmerCompat(
             'smf',
-          )}, ($noop,$index,ctx0) => [$_tag('div', $_edp, [], ctx0)], null, this)`,
+          )}, ($noop,$index,ctx0) => $_tag('div', $_edp, [], ctx0), null, this)`,
         );
       });
       test('it adds unstable child wrapper for simple multi-nodes', () => {
@@ -903,7 +903,7 @@ describe.each([
         expect($s(converted)).toEqual(
           `$_each(${$glimmerCompat(
             'foo',
-          )}, (bar,$index,ctx0) => [$_tag('div', $_edp, [], ctx0)], null, this)`,
+          )}, (bar,$index,ctx0) => $_tag('div', $_edp, [], ctx0), null, this)`,
         );
       });
       test('it do not add UnstableChildWrapper if we have component surrounded by empty text', () => {
@@ -914,9 +914,9 @@ describe.each([
         expect($s(converted)).toEqual(
           `$_each(${$glimmerCompat(
             'foo',
-          )}, (bar,$index,ctx0) => [$_c(Smile,${$args(
+          )}, (bar,$index,ctx0) => $_c(Smile,${$args(
             '{}',
-          )},ctx0)], null, this)`,
+          )},ctx0), null, this)`,
         );
       });
       test('it add UnstableChildWrapper if component surrounded my meaningful text245', () => {
