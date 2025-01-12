@@ -434,7 +434,7 @@ export function getNodeCounter() {
   return NODE_COUNTER;
 }
 export function $_hasBlock(slots: Record<string, unknown>, name = 'default') {
-  return name in slots;
+  return name in slots && slots[name] !== undefined;
 }
 export function $_hasBlockParams(
   slots: Record<string, unknown>,
@@ -1017,8 +1017,8 @@ function createSlot(
 }
 
 function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
-  const api = initDOM(ctx);
   if (!(name in $slot)) {
+    const api = initDOM(ctx);
     const slotPlaceholder: Comment = IS_DEV_MODE
       ? api.comment(`slot-{{${name}}}-placeholder`)
       : api.comment('');
@@ -1049,9 +1049,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
         if (isSettled) {
           return slotValue;
         }
-        if (IS_DEV_MODE) {
-          throw new Error(`Slot ${name} is not set`);
-        }
+        return undefined;
       },
     });
     return slotPlaceholder;
