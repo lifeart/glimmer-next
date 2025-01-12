@@ -302,4 +302,108 @@ module('Integration | Context API', function () {
       .dom('[data-test-button]')
       .hasClass('bg-red-500', 'Button receives updated theme');
   });
+
+  test('context usage in nested components', async function (assert) {
+    class NestedComponent extends Component {
+      <template>
+        <div class={{this.theme.buttonClass}} ...attributes>
+          {{yield}}
+        </div>
+      </template>
+      @context(ThemeContext) theme = {
+        buttonClass: '',
+      };
+    }
+
+    await render(
+      <template>
+        <ThemeProvider @theme={{hash buttonClass='bg-blue-500'}}>
+          <NestedComponent data-test-nested-component>
+            Nested Content
+          </NestedComponent>
+        </ThemeProvider>
+      </template>,
+    );
+
+    assert
+      .dom('[data-test-nested-component]')
+      .hasClass('bg-blue-500', 'Nested component receives theme from context');
+  });
+
+  test('context usage in yield', async function (assert) {
+    class YieldComponent extends Component {
+      <template>{{yield}}</template>
+    }
+
+    await render(
+      <template>
+        <IntlProvider @intl={{hash name='Fake'}}>
+          <YieldComponent>
+            <ThemedButton data-test-button as |intl|>{{intl.name}}</ThemedButton>
+          </YieldComponent>
+        </IntlProvider>
+      </template>,
+    );
+
+    assert
+      .dom('[data-test-button]')
+      .hasText('Fake', 'Button receives intl from root context');
+  });
+
+  test('context usage in in-element', async function (assert) {
+    let _node: HTMLDivElement;
+    function setNode(e: HTMLDivElement) {
+      _node = e;
+    }
+    function node() {
+      return _node;
+    }
+
+    await render(
+      <template>
+        <div id='foo' {{setNode}}></div>
+        <IntlProvider @intl={{hash name='Fake'}}>
+          {{#in-element node}}
+            <ThemedButton data-test-button as |intl|>{{intl.name}}</ThemedButton>
+          {{/in-element}}
+        </IntlProvider>
+      </template>,
+    );
+
+    assert
+      .dom('[data-test-button]')
+      .hasText('Fake', 'Button receives intl from root context');
+  });
+
+  test('context usage in each', async function (assert) {
+    await render(
+      <template>
+        <IntlProvider @intl={{hash name='Fake'}}>
+          {{#each (array 1) as |item|}}
+            <ThemedButton data-test-button as |intl|>{{intl.name}}</ThemedButton>{{item}}
+          {{/each}}
+        </IntlProvider>
+      </template>,
+    );
+
+    assert
+      .dom('[data-test-button]')
+      .hasText('Fake', 'Button receives intl from root context');
+  });
+
+  test('context usage in if conditions', async function (assert) {
+    await render(
+      <template>
+        <IntlProvider @intl={{hash name='Fake'}}>
+          {{#if true}}
+            <ThemedButton data-test-button as |intl|>{{intl.name}}</ThemedButton>
+          {{/if}}
+        </IntlProvider>
+      </template>,
+    );
+
+    assert
+      .dom('[data-test-button]')
+      .hasText('Fake', 'Button receives intl from root context');
+  });
 });
