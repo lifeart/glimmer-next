@@ -328,4 +328,33 @@ module('Integration | InternalComponent | slots', function () {
     );
     assert.dom('[data-test-slot="body"]').exists({ count: 1 });
   });
+
+  test('component with default slot hides by default and shows an error when toggled without a slot', async function (assert) {
+    const showBlock = cell(false);
+    const Sample = <template>
+      {{#if showBlock}}
+        {{#if (has-block)}}
+          {{yield}}
+        {{else}}
+          <div data-test-error>No slot provided</div>
+        {{/if}}
+      {{else}}
+        <div data-test-hidden>Hidden by default</div>
+      {{/if}}
+    </template>;
+    await render(
+      <template>
+        <Sample />
+      </template>,
+    );
+
+    assert.dom('[data-test-hidden]').exists('Component is hidden by default');
+    assert.dom('[data-test-error]').doesNotExist('No error shown by default');
+
+    showBlock.value = true;
+    await rerender();
+
+    assert.dom('[data-test-hidden]').doesNotExist('Component is not hidden');
+    assert.dom('[data-test-error]').exists('Error shown when no slot provided');
+  });
 });
