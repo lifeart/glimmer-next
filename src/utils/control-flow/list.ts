@@ -317,8 +317,9 @@ export class BasicListComponent<T extends { id: number }> {
         }
       }
     });
-    if (items.length || !isFirstRender) {
-      CHILD.get(this[COMPONENT_ID_PROPERTY])!.length = 0;
+    const childs = CHILD.get(this[COMPONENT_ID_PROPERTY]);
+    if (childs !== undefined) {
+      childs.length = 0;
     }
     rowsToMove
       .sort((r1, r2) => {

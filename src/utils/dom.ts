@@ -989,7 +989,17 @@ function createSlot(
   };
   // @ts-expect-error slot return type
   addToTree(ctx, slotContext);
-  const elements = value(...[slotContext, ...params()]);
+  // @TODO: params to reactive cells (or getters)
+  const paramsArray = params().map((_, i) => {
+    const v = formula(() => params()[i], `slot:param:${i}`);
+    const value = v.value;
+    if (v.isConst ||  typeof value === 'object') {
+      return value;
+    } else {
+      return v;
+    }
+  });
+  const elements = value(...[slotContext, ...paramsArray]);
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.pop();
     // @ts-expect-error

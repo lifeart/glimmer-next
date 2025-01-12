@@ -254,12 +254,15 @@ export function unregisterFromParent(component: ComponentReturnType | Node | Arr
     const id = component.ctx![COMPONENT_ID_PROPERTY];
     const arr = CHILD.get(PARENT.get(id)!);
     if (arr !== undefined) {
+      const index = arr.indexOf(id);
       if (IS_DEV_MODE) {
-        if (arr.indexOf(id) === -1) {
-          throw new Error('Unknown index');
+        if (index === -1) {
+          console.warn('TOOD: hmr negative index');
         }
       }
-      arr.splice(arr.indexOf(id), 1);
+      if (index !== -1) {
+        arr.splice(index, 1);
+      }
     }
   }
 }
