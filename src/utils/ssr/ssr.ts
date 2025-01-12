@@ -5,6 +5,7 @@ import {
 } from '@/utils/component';
 import { setDocument, getDocument } from '../dom-api';
 import { getRoot, resetNodeCounter, resetRoot } from '@/utils/dom';
+import { $args, $context, $template, RENDERED_NODES_PROPERTY } from '../shared';
 
 type EnvironmentParams = {
   url: string;
@@ -13,10 +14,29 @@ type EnvironmentParams = {
 export async function renderInBrowser(
   componentRenderFn: (rootNode: HTMLElement) => ComponentReturnType,
 ) {
+  if (import.meta.env.DEV) {
+    if (!getRoot()) {
+      throw new Error('Unable to detect render root');
+    }
+  }
   const doc = getDocument();
   const rootNode = doc.createElement('div');
   // @todo - add destructor
-  renderComponent(componentRenderFn(rootNode), rootNode);
+  renderComponent(
+    {
+      // @ts-expect-error typings error
+      [$args]: {
+            [$context]: getRoot(),
+      },
+      [RENDERED_NODES_PROPERTY]: [],
+      [$template]: function () {
+        // @ts-expect-error typings error
+        return new componentRenderFn(...arguments);
+      },
+    },
+    rootNode,
+    getRoot(),
+  );
   const html = rootNode.innerHTML;
   rootNode.remove();
   return html;
@@ -43,7 +63,9 @@ export async function render(
 
   const s = new XMLSerializer();
 
-  const html = Array.from(rootNode.childNodes).map((n => s.serializeToString(n))).join('');
+  const html = Array.from(rootNode.childNodes)
+    .map((n) => s.serializeToString(n))
+    .join('');
 
   const oldRoot = getRoot();
   if (oldRoot) {

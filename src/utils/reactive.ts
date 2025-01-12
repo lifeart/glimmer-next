@@ -8,14 +8,14 @@ import { isFn, isTag, isTagLike, debugContext } from '@/utils/shared';
 
 export const asyncOpcodes = new WeakSet<tagOp>();
 // List of DOM operations for each tag
-export const opsForTag: WeakMap<
-  Cell | MergedCell,
+export const opsForTag: Map<
+  number,
   Array<tagOp>
-> = new WeakMap();
+> = new Map();
 // REVISION replacement, we use a set of tags to revalidate
 export const tagsToRevalidate: Set<Cell> = new Set();
 // List of derived tags for each cell
-export const relatedTags: WeakMap<Cell, Set<MergedCell>> = new WeakMap();
+export const relatedTags: Map<number, Set<MergedCell>> = new Map();
 
 export const DEBUG_MERGED_CELLS = new Set<MergedCell>();
 export const DEBUG_CELLS = new Set<Cell>();
@@ -109,6 +109,7 @@ function tracker() {
 // "data" cell, it's value can be updated, and it's used to create derived cells
 export class Cell<T extends unknown = unknown> {
   _value!: T;
+  id = tagId++;
   declare toHTML: () => string;
   [Symbol.toPrimitive]() {
     return this.value;
@@ -176,19 +177,19 @@ export function listDependentCells(cells: Array<AnyCell>, cell: MergedCell) {
 }
 
 export function opsFor(cell: AnyCell) {
-  let ops = opsForTag.get(cell);
+  let ops = opsForTag.get(cell.id);
   if (ops === undefined) {
     ops = [];
-    opsForTag.set(cell, ops);
+    opsForTag.set(cell.id, ops);
   }
   return ops;
 }
 
 export function relatedTagsForCell(cell: Cell) {
-  let tags = relatedTags.get(cell);
+  let tags = relatedTags.get(cell.id);
   if (tags === undefined) {
     tags = new Set<MergedCell>();
-    relatedTags.set(cell, tags);
+    relatedTags.set(cell.id, tags);
   }
   return tags;
 }
@@ -223,14 +224,14 @@ export class MergedCell {
   }
   destroy() {
     this.isDestroyed = true;
-    opsForTag.delete(this);
+    opsForTag.delete(this.id);
     if (this.relatedCells !== null) {
       this.relatedCells.forEach((cell) => {
-        const related = relatedTags.get(cell);
+        const related = relatedTags.get(cell.id);
         if (related !== undefined) {
           related.delete(this);
           if (related.size === 0) {
-            relatedTags.delete(cell);
+            relatedTags.delete(cell.id);
           }
         }
       });
@@ -269,11 +270,7 @@ export type tagOp = (...values: unknown[]) => Promise<void> | void;
 // this is runtime function, it's called when we need to update DOM for a specific tag
 export async function executeTag(tag: Cell | MergedCell) {
   let opcode: null | tagOp = null;
-  // we always have ops for a tag
-  if (!opsForTag.has(tag)) {
-    return;
-  }
-  const ops = opsFor(tag)!;
+  const ops = opsFor(tag);
   if (TRY_CATCH_ERROR_HANDLING) {
     try {
       const value = tag.value;

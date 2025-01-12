@@ -1,13 +1,11 @@
 import {
   ComponentReturnType,
-  associateDestroyable,
   destroyElement,
   destroyElementSync,
-  removeDestructor,
   renderElement,
   type Component,
 } from '@/utils/component';
-import { api } from '@/utils/dom-api';
+import { api as HTML_API } from '@/utils/dom-api';
 import { Cell, MergedCell, formula, deepFnValue } from '@/utils/reactive';
 import { opcodeFor } from '@/utils/vm';
 import {
@@ -19,8 +17,17 @@ import {
   isPrimitive,
   isTagLike,
   LISTS_FOR_HMR,
+  addToTree,
+  $context,
+  RENDERED_NODES_PROPERTY,
+  COMPONENT_ID_PROPERTY,
+  cId,
+  isEmpty,
+  CHILD,
 } from '@/utils/shared';
 import { isRehydrationScheduled } from '@/utils/ssr/rehydration';
+import { initDOM } from '@/utils/context';
+import { registerDestructor } from '../glimmer/destroyable';
 
 export function getFirstNode(
   rawItem:
@@ -34,7 +41,7 @@ export function getFirstNode(
   } else if ('nodeType' in rawItem) {
     return rawItem;
   } else {
-    return getFirstNode(rawItem[$nodes][0]);
+    return rawItem.ctx![RENDERED_NODES_PROPERTY][0];
   }
 }
 
@@ -44,7 +51,7 @@ export function getFirstNode(
 
   Based on Glimmer-VM list update logic.
 */
-type GenericReturnType = Array<ComponentReturnType | Node>;
+type GenericReturnType = Array<ComponentReturnType | Node> | ComponentReturnType | Node;
 
 type ListComponentArgs<T> = {
   tag: Cell<T[]> | MergedCell;
@@ -72,7 +79,8 @@ export class BasicListComponent<T extends { id: number }> {
   keyMap: Map<string, GenericReturnType> = new Map();
   indexMap: Map<string, number> = new Map();
   nodes: Node[] = [];
-  parentCtx!: Component<any>;
+  [RENDERED_NODES_PROPERTY] = [];
+  [COMPONENT_ID_PROPERTY] = cId();
   ItemComponent: (
     item: T,
     index: number | MergedCell,
@@ -92,13 +100,22 @@ export class BasicListComponent<T extends { id: number }> {
       yield keyForItem(items[i], i);
     }
   }
+  declare api: typeof HTML_API;
+  declare args: {
+    [$context]: Component<any>
+  }
   constructor(
     { tag, ctx, key, ItemComponent }: ListComponentArgs<T>,
     outlet: RenderTarget,
     topMarker: Comment,
   ) {
+    this.api = initDOM(ctx);
     this.ItemComponent = ItemComponent;
-    this.parentCtx = ctx;
+    this.args = {
+      [$context]: ctx,
+    }
+    // @ts-expect-error typings error
+    addToTree(ctx, this, 'from list constructor');
     const mainNode = outlet;
     this[$nodes] = [];
     if (key) {
@@ -115,22 +132,20 @@ export class BasicListComponent<T extends { id: number }> {
         },
       });
       LISTS_FOR_HMR.add(this);
-      associateDestroyable(ctx, [
-        () => {
-          LISTS_FOR_HMR.delete(this);
-        },
-      ]);
+      registerDestructor(ctx, () => {
+        LISTS_FOR_HMR.delete(this);
+      });
     }
     // "list bottom marker"
     if (IS_DEV_MODE) {
-      this.bottomMarker = api.comment('list bottom marker');
+      this.bottomMarker = this.api.comment('list bottom marker');
     } else {
-      this.bottomMarker = api.comment();
+      this.bottomMarker = this.api.comment();
     }
     this.topMarker = topMarker;
 
-    api.append(mainNode, this.topMarker);
-    api.append(mainNode, this.bottomMarker);
+    this.api.insert(mainNode, this.topMarker);
+    this.api.insert(mainNode, this.bottomMarker);
 
     const originalTag = tag;
 
@@ -140,11 +155,9 @@ export class BasicListComponent<T extends { id: number }> {
         tag = new Cell(tag, 'list tag');
       } else if (isFn(originalTag)) {
         tag = formula(() => deepFnValue(originalTag), 'list tag');
-        associateDestroyable(ctx, [
-          () => {
-            (tag as MergedCell).destroy();
-          },
-        ]);
+        registerDestructor(ctx, () => {
+          (tag as MergedCell).destroy();
+        });
       }
     }
     this.tag = tag;
@@ -154,20 +167,16 @@ export class BasicListComponent<T extends { id: number }> {
       let cnt = 0;
       const map: WeakMap<T, string> = new WeakMap();
       this.keyForItem = (item: T, i: number) => {
-        if (IS_DEV_MODE) {
-          if (typeof item === 'undefined' || item === null) {
-            console.warn(`Iteration over null, undefined is not supported yet`);
-            return `${String(item)}:${i}`;
-          }
-          if (isPrimitive(item)) {
-            console.warn(`Iteration over primitives is not supported yet`);
-            return `${String(item)}:${i}`;
-          }
+        if (isPrimitive(item) || isEmpty(item)) {
+          return `${String(item)}:${i}`;
         }
-        if (!map.has(item)) {
-          map.set(item, String(++cnt));
+        const existing = map.get(item);
+        if (existing !== undefined) {
+          return existing;
         }
-        return map.get(item)!;
+        const key = ++cnt as unknown as string;
+        map.set(item, key);
+        return key;
       };
     } else {
       this.keyForItem = (item: T) => {
@@ -191,7 +200,7 @@ export class BasicListComponent<T extends { id: number }> {
           }
         }
         // @ts-expect-error unknown key
-        return String(item[this.key]);
+        return item[this.key] as unknown as string;
       };
     }
   }
@@ -208,13 +217,14 @@ export class BasicListComponent<T extends { id: number }> {
       let fragment!: DocumentFragment;
       // list fragment marker
       const marker = IS_DEV_MODE
-        ? api.comment('list fragment target marker')
-        : api.comment('');
+        ? this.api.comment('list fragment target marker')
+        : this.api.comment('');
       if (isRehydrationScheduled()) {
         fragment = marker.parentElement as unknown as DocumentFragment;
+        // TODO: figure out, likely error here, because we don't append fragment
       } else {
-        fragment = api.fragment();
-        api.append(fragment, marker);
+        fragment = this.api.fragment();
+        this.api.insert(fragment, marker);
       }
       return marker;
     }
@@ -227,6 +237,7 @@ export class BasicListComponent<T extends { id: number }> {
       keyForItem,
       ItemComponent,
       isFirstRender,
+      api,
     } = this;
     const rowsToMove: Array<[GenericReturnType, number]> = [];
     const amountOfExistingKeys = amountOfKeys - removedIndexes.length;
@@ -286,12 +297,13 @@ export class BasicListComponent<T extends { id: number }> {
         keyMap.set(key, row);
         indexMap.set(key, index);
         if (isAppendOnly) {
-          renderElement(targetNode.parentNode!, row, targetNode);
+          // TODO: in ssr parentNode may not exist
+          // @ts-expect-error this;
+          renderElement(api, this, targetNode.parentNode!, row, targetNode);
         } else {
           rowsToMove.push([row, index]);
-          // TODO: optimize
           for (let [mapKey, value] of indexMap) {
-            if (value === index && key !== mapKey) {
+            if (value >= index) {
               indexMap.set(mapKey, index + 1);
             }
           }
@@ -305,7 +317,10 @@ export class BasicListComponent<T extends { id: number }> {
         }
       }
     });
-
+    const childs = CHILD.get(this[COMPONENT_ID_PROPERTY]);
+    if (childs !== undefined) {
+      childs.length = 0;
+    }
     rowsToMove
       .sort((r1, r2) => {
         return r2[1] - r1[1];
@@ -315,7 +330,8 @@ export class BasicListComponent<T extends { id: number }> {
         const insertBeforeNode = nextItem
           ? getFirstNode(keyMap.get(keyForItem(nextItem, index + 1))!)
           : bottomMarker;
-        renderElement(insertBeforeNode.parentNode!, row, insertBeforeNode);
+        // node relocation, assume we have only once root node :)
+        api.insert(insertBeforeNode.parentNode!, getFirstNode(row), insertBeforeNode)
       });
     if (targetNode !== bottomMarker) {
       const parent = targetNode.parentNode!;
@@ -324,7 +340,7 @@ export class BasicListComponent<T extends { id: number }> {
       if (!IN_SSR_ENV) {
         parent && parent.removeChild(targetNode);
       }
-      if (trueParent !== parent) {
+      if (parent && trueParent !== parent) {
         api.insert(trueParent, parent, bottomMarker);
       }
     }
@@ -343,15 +359,15 @@ export class SyncListComponent<
     topMarker: Comment,
   ) {
     super(params, outlet, topMarker);
-    associateDestroyable(params.ctx, [
+    registerDestructor(params.ctx,
       () => this.syncList([]),
       opcodeFor(this.tag, (value) => {
         this.syncList(value as T[]);
       }),
-    ]);
+    );
   }
   fastCleanup() {
-    const { keyMap, indexMap, bottomMarker, topMarker } = this;
+    const { keyMap, bottomMarker, topMarker, indexMap } = this;
     const parent = bottomMarker.parentElement;
     if (
       parent &&
@@ -420,20 +436,26 @@ export class SyncListComponent<
 export class AsyncListComponent<
   T extends { id: number },
 > extends BasicListComponent<T> {
+  destroyPromise: Promise<void[]> | null = null;
   constructor(
     params: ListComponentArgs<any>,
     outlet: RenderTarget,
     topMarker: Comment,
   ) {
     super(params, outlet, topMarker);
-    associateDestroyable(params.ctx, [
-      async () => { 
+    registerDestructor(params.ctx,
+      () => {
+        if (this.destroyPromise) {
+          return this.destroyPromise;
+        }
+      },
+      async () => {
         await this.syncList([]);
-       },
+      },
       opcodeFor(this.tag, async (value) => {
         await this.syncList(value as T[]);
       }),
-    ]);
+    );
   }
   async fastCleanup() {
     const { bottomMarker, topMarker, keyMap, indexMap } = this;
@@ -501,12 +523,9 @@ export class AsyncListComponent<
       const removePromise = Promise.all(removeQueue);
 
       if (removeQueue.length) {
-        const destroyFn = async () => {
-          await removePromise;
-        };
-        associateDestroyable(this.parentCtx, [destroyFn]);
+        this.destroyPromise = removePromise;
         removePromise.then(() => {
-          removeDestructor(this.parentCtx, destroyFn);
+          this.destroyPromise = null;
         });
       }
     }

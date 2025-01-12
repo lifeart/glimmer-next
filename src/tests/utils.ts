@@ -1,10 +1,20 @@
-import { type ComponentReturnType, destroyElementSync, renderComponent } from '@/utils/component';
+import {
+  type ComponentReturnType,
+  renderComponent,
+} from '@/utils/component';
 import { getDocument } from '@/utils/dom-api';
 import { withRehydration } from '@/utils/ssr/rehydration';
-import { getRoot, resetNodeCounter, setRoot, resetRoot } from '@/utils/dom';
+import {
+  getRoot,
+  resetNodeCounter,
+  setRoot,
+  resetRoot,
+  createRoot,
+} from '@/utils/dom';
 import { renderInBrowser } from '@/utils/ssr/ssr';
 import { runDestructors } from '@/utils/component';
-import { registerDestructor } from '@/utils/glimmer/destroyable';
+import { $args } from '../utils';
+import { $context } from '@/utils/shared';
 
 export async function cleanupRender() {
   const root = getRoot();
@@ -16,36 +26,19 @@ export async function cleanupRender() {
 }
 
 export function rehydrate(component: ComponentReturnType) {
-  let cmp: any = null;
-  withRehydration(() => {
-    // @ts-expect-error typings mismatch
-    cmp = new component();
-    return cmp;
-  }, renderTarget());
-  if (!getRoot()) {
-    setRoot(cmp.ctx || cmp);
-  }
+  // @ts-expect-error typings mismatch
+  withRehydration(component, renderTarget());
 }
 export async function ssr(component: any) {
   if (getRoot()) {
     throw new Error('Root already exists');
   }
   resetNodeCounter();
-  let cmp: any = null;
-  const content = await renderInBrowser(() => {
-    cmp = new component({});
-    return cmp;
-  });
+  let root = createRoot();
+  setRoot(root);
+  const content = await renderInBrowser(component);
   renderTarget().innerHTML = content;
-  if (cmp.ctx) {
-    await Promise.all(runDestructors(cmp.ctx));
-  } else {
-    await Promise.all(runDestructors(cmp));
-  }
-  const root = getRoot();
-  if (root && cmp !== root) {
-    await Promise.all(runDestructors(root));
-  }
+  await Promise.all(runDestructors(root));
   resetNodeCounter();
   resetRoot();
 }
@@ -54,10 +47,6 @@ export function renderTarget() {
   return getDocument().getElementById('ember-testing')!;
 }
 
-class RenderFunctionOwner {
-  debugName = 'TestContainerRenderFunctionOwner';
- }
-
 export async function render(component: ComponentReturnType) {
   const targetElement = getDocument().getElementById('ember-testing')!;
   if (getRoot()) {
@@ -65,16 +54,23 @@ export async function render(component: ComponentReturnType) {
   }
   if (targetElement.childNodes.length) {
     console.warn('testing container not empty, force cleanup');
+    console.info(targetElement.innerHTML);
     targetElement.innerHTML = '';
   }
-  const owner = new RenderFunctionOwner();
-  let renderResult = renderComponent({
-    // @ts-expect-error typings mismatch
-    template: component,
-  }, targetElement, owner);
-  registerDestructor(owner, () => {
-    destroyElementSync(renderResult.nodes);
-  });
+  const owner = createRoot();
+  setRoot(owner);
+  let renderResult = renderComponent(
+    {
+      // @ts-expect-error typings mismatch
+      [$args]: {
+        [$context]: owner,
+      },
+      template: component,
+    },
+    targetElement,
+    owner,
+    false,
+  );
   await rerender();
   // TODO: figure out what is root, at the moment it return node instance, not node.ctx
   if (!getRoot()) {
@@ -89,10 +85,15 @@ export async function rerender(timeout = 16) {
   });
 }
 
-export async function click(selector: string) {
+export function find(selector: string): Element {
   const element = getDocument()
     .getElementById('ember-testing')!
     .querySelector(selector);
+  return element as Element;
+}
+
+export async function click(selector: string) {
+  const element = find(selector);
   if (!element) {
     throw new Error(
       `Unable to find DOM element matching selector: ${selector}`,

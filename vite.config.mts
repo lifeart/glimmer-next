@@ -95,8 +95,20 @@ export default defineConfig(({ mode }) => ({
           entry: [
             path.join(currentPath, "src", "utils", "index.ts"),
             path.join(currentPath, "plugins", "compiler.ts"),
-            path.join(currentPath, "src", "utils", "inspector", "ember-inspector.ts"),
-            path.join(currentPath, "src", "utils", "glimmer", "glimmer-compat.ts"),
+            path.join(
+              currentPath,
+              "src",
+              "utils",
+              "inspector",
+              "ember-inspector.ts",
+            ),
+            path.join(
+              currentPath,
+              "src",
+              "utils",
+              "glimmer",
+              "glimmer-compat.ts",
+            ),
             path.join(currentPath, "src", "tests", "utils.ts"),
           ],
           name: "gxt",
@@ -161,13 +173,15 @@ export default defineConfig(({ mode }) => ({
       "@lifeart/gxt/ember-inspector": path.join(
         currentPath,
         "src",
-        "utils","inspector",
+        "utils",
+        "inspector",
         "ember-inspector.ts",
       ),
       "@lifeart/gxt/glimmer-compatibility": path.join(
         currentPath,
         "src",
-        "utils","glimmer",
+        "utils",
+        "glimmer",
         "glimmer-compat.ts",
       ),
       "@lifeart/gxt/test-utils": path.join(

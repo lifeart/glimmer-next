@@ -25,7 +25,7 @@ module('Integration | Internal | modifier', function () {
   });
   if (REACTIVE_MODIFIERS) {
     test('modifiers may be reactive', async function (assert) {
-      assert.expect(5);
+      assert.expect(6);
       const value = cell(3);
       let removeCount = 0;
       const modifier = (element: HTMLDivElement, v: number) => {

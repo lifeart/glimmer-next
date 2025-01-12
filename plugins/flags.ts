@@ -6,7 +6,7 @@ export type Flags = {
   REACTIVE_MODIFIERS: boolean;
   WITH_HELPER_MANAGER: boolean;
   WITH_MODIFIER_MANAGER: boolean;
-  WITH_EMBER_INTEGRATION: boolean,
+  WITH_EMBER_INTEGRATION: boolean;
   WITH_CONTEXT_API: boolean;
   ASYNC_COMPILE_TRANSFORMS: boolean;
 };

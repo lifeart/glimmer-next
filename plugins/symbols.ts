@@ -1,4 +1,7 @@
 export const SYMBOLS = {
+  HTML_NAMESPACE: '$_HTMLProvider',
+  SVG_NAMESPACE: '$_SVGProvider',
+  MATH_NAMESPACE: '$_MathMLProvider',
   FINALIZE_COMPONENT: '$_fin',
   TAG: '$_tag',
   IF: '$_if',
@@ -8,6 +11,7 @@ export const SYMBOLS = {
   EMPTY_DOM_PROPS: '$_edp',
   ARGS: '$_args',
   TEXT: '$_text',
+  API: '$_api',
   COMPONENT: '$_c',
   DYNAMIC_COMPONENT: '$_dc',
   $SLOTS_SYMBOL: '$SLOTS_SYMBOL',
@@ -42,7 +46,7 @@ export const SYMBOLS = {
 
 export const CONSTANTS = {
   SCOPE_KEY: '$_scope',
-}
+};
 
 export const EVENT_TYPE = {
   ON_CREATED: '0',

@@ -1,12 +1,11 @@
 import {
-  associateDestroyable,
   type ComponentReturnType,
   type Slots,
   type Component,
   renderElement,
-  destroyElement,
   runDestructors,
   destroyElementSync,
+  unregisterFromParent,
 } from '@/utils/component';
 import {
   AnyCell,
@@ -23,10 +22,12 @@ import {
 import {
   DestructorFn,
   Destructors,
-  destroy,
   registerDestructor,
 } from './glimmer/destroyable';
-import { api, getDocument } from '@/utils/dom-api';
+import {
+  api as HTMLAPI,
+  getDocument,
+} from '@/utils/dom-api';
 import {
   isFn,
   isPrimitive,
@@ -34,7 +35,6 @@ import {
   $template,
   $nodes,
   addToTree,
-  RENDER_TREE,
   setBounds,
   $args,
   $DEBUG_REACTIVE_CONTEXTS,
@@ -42,11 +42,21 @@ import {
   COMPONENTS_HMR,
   isEmpty,
   FRAGMENT_TYPE,
+  $context,
+  RENDERING_CONTEXT_PROPERTY,
+  RENDERED_NODES_PROPERTY,
+  COMPONENT_ID_PROPERTY,
+  cId,
+  CHILD,
+  TREE,
+  PARENT,
 } from './shared';
 import { isRehydrationScheduled } from './ssr/rehydration';
 import { createHotReload } from './hmr';
 import { IfCondition } from './control-flow/if';
 import { CONSTANTS } from '../../plugins/symbols';
+import { getContext, initDOM, RENDERING_CONTEXT } from './context';
+import { SVGProvider, HTMLProvider, MathMLProvider } from './provider';
 
 type RenderableType = Node | ComponentReturnType | string | number;
 type ShadowRootMode = 'open' | 'closed' | null;
@@ -77,11 +87,41 @@ export const $_emptySlot = Object.seal(Object.freeze({}));
 
 export const $SLOTS_SYMBOL = Symbol('slots');
 export const $PROPS_SYMBOL = Symbol('props');
+export const $_SVGProvider = SVGProvider;
+export const $_HTMLProvider = HTMLProvider;
+export const $_MathMLProvider = MathMLProvider;
 
 const $_className = 'className';
 
 let unstableWrapperId: number = 0;
-let ROOT: Component<any> | null = null;
+/* 
+  Root is basically owner in ember naming.
+  Referencing to top-level application context,
+  Acting as main DI container and metadata storage.
+*/
+export class Root {
+  [RENDERED_NODES_PROPERTY] = [];
+  [COMPONENT_ID_PROPERTY] = cId();
+  [RENDERING_CONTEXT_PROPERTY]: undefined | typeof HTMLAPI = undefined;
+  constructor() {
+    const id = this[COMPONENT_ID_PROPERTY];
+    CHILD.set(id, []);
+    // @ts-expect-error
+    TREE.set(id, this);
+    if (WITH_CONTEXT_API) {
+      // @ts-expect-error
+      PARENT.set(id, null);
+    }
+    registerDestructor(this, () => {
+      CHILD.delete(id);
+      TREE.delete(id);
+      if (WITH_CONTEXT_API) {
+        PARENT.delete(id);
+      }
+    });
+  }
+}
+let ROOT: Root | null = null;
 
 export const $_MANAGERS = {
   component: {
@@ -212,11 +252,14 @@ export function $_helperHelper(params: any, hash: any) {
     throw new Error('Unable to use helper with non-ember helpers');
   }
 }
-
+export function createRoot() {
+  const root = new Root();
+  return root;
+}
 export function resetRoot() {
   ROOT = null;
 }
-export function setRoot(root: Component<any>) {
+export function setRoot(root: Root) {
   if (IS_DEV_MODE) {
     if (ROOT) {
       throw new Error('Root already exists');
@@ -229,6 +272,7 @@ export function getRoot() {
 }
 
 function $prop(
+  api: typeof HTMLAPI,
   element: HTMLElement,
   key: string,
   value: unknown,
@@ -257,6 +301,7 @@ function $prop(
 }
 
 function $attr(
+  api: typeof HTMLAPI,
   element: HTMLElement,
   key: string,
   value: unknown,
@@ -278,7 +323,7 @@ function $attr(
   }
 }
 
-function resolveRenderable(
+export function resolveRenderable(
   child: Function,
   debugName = 'resolveRenderable',
 ): RenderableType | MergedCell | Cell {
@@ -300,45 +345,13 @@ function resolveRenderable(
   }
 }
 
-const isRenderObject = (el: unknown): el is ComponentReturnType => typeof el === 'object' && el !== null && $nodes in el;
-
-
-export function addChild(
-  element: HTMLElement | ShadowRoot,
-  child: RenderableType | Cell | MergedCell | Function,
-  destructors: Destructors = [],
-  index = 0,
-) {
-  if (isEmpty(child)) {
-    return;
-  }
-  if (isRenderObject(child)) {
-    for (let i = 0; i < child[$nodes].length; i++) {
-      addChild(element, child[$nodes][i], destructors, index + i);
-    }
-  } else if (isPrimitive(child)) {
-    api.append(element, api.text(child), index);
-  } else if (isTagLike(child)) {
-    api.append(element, cellToText(child, destructors), index);
-  } else if (isFn(child)) {
-    addChild(
-      element,
-      resolveRenderable(child, `element.child[${index}]`),
-      destructors,
-      index,
-    );
-  } else {
-    // renderComponent case
-    api.append(element, child, index);
-  }
-}
-
 const EVENT_TYPE = {
   ON_CREATED: '0',
   TEXT_CONTENT: '1',
 };
 
 function $ev(
+  api: typeof HTMLAPI,
   element: HTMLElement,
   eventName: string,
   fn: EventListener | ModifierFn,
@@ -399,7 +412,7 @@ function $ev(
     // event case (on modifier)
     if (RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES) {
       destructors.push(
-        api.addEventListener(element, eventName, fn as EventListener),
+        api.addEventListener(element, eventName, fn as EventListener)!,
       );
     } else {
       api.addEventListener(element, eventName, fn as EventListener);
@@ -431,6 +444,7 @@ export function $_hasBlockParams(
 }
 
 function addAttrs(
+  api: typeof HTMLAPI,
   arr: TagAttr[],
   element: HTMLElement,
   seenKeys: Set<string>,
@@ -445,7 +459,7 @@ function addAttrs(
     if (IS_DEV_MODE) {
       $DEBUG_REACTIVE_CONTEXTS.push(`[${key}]`);
     }
-    $attr(element, key, arr[i][1], destructors);
+    $attr(api, element, key, arr[i][1], destructors);
     if (IS_DEV_MODE) {
       $DEBUG_REACTIVE_CONTEXTS.pop();
     }
@@ -453,6 +467,7 @@ function addAttrs(
 }
 
 function addProperties(
+  api: typeof HTMLAPI,
   properties: TagProp[],
   element: HTMLElement,
   seenKeys: Set<string>,
@@ -480,7 +495,7 @@ function addProperties(
     if (IS_DEV_MODE) {
       $DEBUG_REACTIVE_CONTEXTS.push(`[${key}]`);
     }
-    $prop(element, key, value, destructors);
+    $prop(api, element, key, value, destructors);
     if (IS_DEV_MODE) {
       $DEBUG_REACTIVE_CONTEXTS.pop();
     }
@@ -494,6 +509,17 @@ function _DOM(
   ctx: any,
 ): Node {
   NODE_COUNTER++;
+  const api = initDOM(ctx);
+  if (import.meta.env.DEV) {
+    if (!getContext<typeof HTMLAPI>(getRoot()!, RENDERING_CONTEXT)) {
+      console.error('Unable to resolve root rendering context');
+    }
+  }
+  if (import.meta.env.DEV) {
+    if (!api) {
+      console.error('Unable to resolve rendering context');
+    }
+  }
   const element = api.element(tag);
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.push(`${tag}`);
@@ -518,21 +544,21 @@ function _DOM(
 
   if (hasSplatAttrs === true) {
     for (let i = 0; i < tagProps[3]![2].length; i++) {
-      $ev(element, tagProps[3]![2][i][0], tagProps[3]![2][i][1], destructors);
+      $ev(api, element, tagProps[3]![2][i][0], tagProps[3]![2][i][1], destructors);
     }
   }
 
   for (let i = 0; i < tagProps[2].length; i++) {
-    $ev(element, tagProps[2][i][0], tagProps[2][i][1], destructors);
+    $ev(api, element, tagProps[2][i][0], tagProps[2][i][1], destructors);
   }
 
   if (hasSplatAttrs === true) {
-    addAttrs(tagProps[3]![1], element, seenKeys, destructors);
+    addAttrs(api, tagProps[3]![1], element, seenKeys, destructors);
   }
-  addAttrs(tagProps[1], element, seenKeys, destructors);
+  addAttrs(api, tagProps[1], element, seenKeys, destructors);
 
   if (hasSplatAttrs === true) {
-    addProperties(
+    addProperties(api,
       tagProps[3]![0],
       element,
       seenKeys,
@@ -541,7 +567,7 @@ function _DOM(
       setShadowNode,
     );
   }
-  addProperties(
+  addProperties(api,
     tagProps[0],
     element,
     seenKeys,
@@ -555,7 +581,7 @@ function _DOM(
       $DEBUG_REACTIVE_CONTEXTS.push(`[class]`);
     }
     if (classNameModifiers.length === 1) {
-      $prop(element, $_className, classNameModifiers[0], destructors);
+      $prop(api, element, $_className, classNameModifiers[0], destructors);
     } else {
       const formulas = classNameModifiers.map((modifier) => {
         if (isFn(modifier)) {
@@ -568,6 +594,7 @@ function _DOM(
         }
       });
       $prop(
+        api,
         element,
         $_className,
         formula(() => {
@@ -593,26 +620,37 @@ function _DOM(
         const tpl = getDocument().createElement('template');
         tpl.setAttribute('shadowrootmode', 'open');
         element.appendChild(tpl);
-        children.forEach((child, index) => {
-          addChild(tpl, child, destructors, index);
-        });
+        // @ts-expect-error children type mismatch
+        renderElement(api, ctx, tpl, children);
+        // children.forEach((child, index) => {
+        //   addChild(api, tpl, child, destructors, index);
+        // });
       } else {
-        children.forEach((child, index) => {
-          addChild(appendRef!, child, destructors, index);
-        });
+        // @ts-expect-error children type mismatch
+        renderElement(api, ctx, appendRef!, children);
+
+        // children.forEach((child, index) => {
+        //   addChild(api, appendRef!, child, destructors, index);
+        // });
       }
     } else {
-      children.forEach((child, index) => {
-        addChild(appendRef!, child, destructors, index);
-      });
+      // @ts-expect-error children type mismatch
+      renderElement(api, ctx, appendRef!, children);
+
+      // children.forEach((child, index) => {
+      //   addChild(api, appendRef!, child, destructors, index);
+      // });
     }
   } else {
-    for (let i = 0; i < children.length; i++) {
-      addChild(element, children[i], destructors, i);
-    }
+    // @ts-expect-error children type mismatch
+    renderElement(api, ctx, element, children);
+
+    // for (let i = 0; i < children.length; i++) {
+    //   addChild(api, element, children[i], destructors, i);
+    // }
   }
 
-  associateDestroyable(ctx, destructors);
+  registerDestructor(ctx, ...destructors);
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.pop();
   }
@@ -624,8 +662,10 @@ export function $_inElement(
   roots: (context: Component<any>) => (Node | ComponentReturnType)[],
   ctx: any,
 ) {
+  const api = initDOM(ctx);
   return component(
     function UnstableChildWrapper(this: Component<any>) {
+      $_GET_ARGS(this, arguments);
       if (IS_DEV_MODE) {
         // @ts-expect-error construct signature
         this.debugName = `InElement-${unstableWrapperId++}`;
@@ -638,14 +678,12 @@ export function $_inElement(
       } else {
         appendRef = elementRef;
       }
-      const destructors: Destructors = [];
-      roots(ctx).forEach((child, index) => {
-        addChild(appendRef, child, destructors, index);
-      });
-      destructors.push(() => {
+      const nodes = roots(ctx);
+      renderElement(api, ctx, appendRef, nodes);
+      registerDestructor(ctx, () => {
+        unregisterFromParent(nodes);
         appendRef.innerHTML = '';
       });
-      associateDestroyable(ctx, destructors);
       return $_fin([], this);
     } as unknown as Component<any>,
     {},
@@ -660,6 +698,9 @@ export function $_ucw(
 ) {
   return component(
     function UnstableChildWrapper(this: Component<any>) {
+      // console.log(this, ...arguments);
+      $_GET_ARGS(this, arguments);
+      // debugger;
       if (IS_DEV_MODE) {
         // @ts-expect-error construct signature
         this.debugName = `UnstableChildWrapper-${unstableWrapperId++}`;
@@ -675,10 +716,10 @@ if (IS_DEV_MODE) {
   function buildGraph(
     obj: Record<string, unknown>,
     root: any,
-    children: Set<any>,
+    children: Set<number>,
   ) {
     if (root === null) {
-      console.info('root is null', RENDER_TREE);
+      console.info('root is null', TREE);
       return obj;
     }
     const name =
@@ -688,7 +729,7 @@ if (IS_DEV_MODE) {
       return obj;
     }
     obj[name] = Array.from(children).map((child) => {
-      return buildGraph({}, child, RENDER_TREE.get(child) ?? new Set());
+      return buildGraph({}, child, new Set(CHILD.get(child) ?? []));
     });
     return obj;
   }
@@ -697,10 +738,9 @@ if (IS_DEV_MODE) {
     const ref = buildGraph(
       {} as Record<string, unknown>,
       ROOT,
-      RENDER_TREE.get(ROOT!) ?? new Set(),
+      new Set(CHILD.get(ROOT![COMPONENT_ID_PROPERTY]) ?? []),
     );
     console.log(JSON.stringify(ref, null, 2));
-    console.log(RENDER_TREE);
   }
   if (!import.meta.env.SSR) {
     window.drawTreeToConsole = drawTreeToConsole;
@@ -777,7 +817,19 @@ function component(
     try {
       if (IS_DEV_MODE) {
         $DEBUG_REACTIVE_CONTEXTS.push(label);
-        label = `<${label} ${JSON.stringify(args)} />`;
+        const getCircularReplacer = () => {
+          const seen = new WeakSet();
+          return (_: string, value: unknown) => {
+            if (typeof value === "object" && value !== null) {
+              if (seen.has(value)) {
+                return;
+              }
+              seen.add(value);
+            }
+            return value;
+          };
+        };
+        label = `<${label} ${JSON.stringify(args, getCircularReplacer)} />`;
       }
       // @ts-expect-error uniqSymbol as index
       const fw = args[$PROPS_SYMBOL] as unknown as FwType;
@@ -795,10 +847,10 @@ function component(
         // @ts-expect-error message may not exit
         e.message = `${label}\n${e.message}`;
         if (!ErrorOverlayClass) {
-          errorOverlay = api.element('pre');
+          errorOverlay = HTMLAPI.element('pre');
           // @ts-expect-error stack may not exit
-          api.textContent(errorOverlay, `${label}\n${e.stack ?? e}`);
-          api.attr(
+          HTMLAPI.textContent(errorOverlay, `${label}\n${e.stack ?? e}`);
+          HTMLAPI.attr(
             errorOverlay,
             'style',
             'color:red;border:1px solid red;padding:10px;background-color:#333;',
@@ -809,14 +861,18 @@ function component(
         console.error(label, e);
 
         return {
-          ctx: null,
+          ctx: {
+            [RENDERED_NODES_PROPERTY]: [],
+          },
           nodes: [errorOverlay],
         };
       } else {
         return {
-          ctx: null,
+          ctx: {
+            [RENDERED_NODES_PROPERTY]: [],
+          },
           // @ts-expect-error message may not exit
-          nodes: [api.text(String(e.message))],
+          nodes: [HTMLAPI.text(String(e.message))],
         };
       }
     } finally {
@@ -837,6 +893,7 @@ function _component(
   fw: FwType,
   ctx: Component<any>,
 ) {
+  args[$context] = ctx;
   let comp = _comp;
   if (WITH_EMBER_INTEGRATION) {
     if ($_MANAGERS.component.canHandle(_comp)) {
@@ -866,7 +923,7 @@ function _component(
   }
   // todo - fix typings here
   if ($template in instance) {
-    addToTree(ctx, instance);
+    addToTree(ctx, instance, 'from $template');
     const result = (
       instance[$template] as unknown as () => ComponentReturnType
     )();
@@ -882,24 +939,24 @@ function _component(
       registerDestructor(ctx, () => {
         COMPONENTS_HMR.get(comp)?.delete(bucket);
       });
-    }
-    if (result.ctx !== null) {
-      // here is workaround for simple components @todo - figure out how to show context-less components in tree
-      // for now we don't adding it
-      if (result.ctx !== instance) {
+      if (!result.ctx || result.ctx !== instance) {
         throw new Error('Invalid context');
       }
-      if (IS_DEV_MODE) {
-        setBounds(result);
-      }
+      setBounds(result);
     }
     return result;
-  }
-  if (instance.ctx !== null) {
+  } else if (instance.ctx !== null) {
     // for now we adding only components with context
-    addToTree(ctx, instance.ctx);
+    // debugger;
+    addToTree(ctx, instance.ctx, 'from !$template');
+    // addToTree(ctx, instance);
+
     if (IS_DEV_MODE) {
       setBounds(instance);
+    }
+  } else {
+    if (IS_DEV_MODE) {
+      throw new Error(`Unknown Instance`);
     }
   }
   if (IS_DEV_MODE) {
@@ -912,81 +969,55 @@ function _component(
   return instance;
 }
 
-function mergeComponents(
-  components: Array<ComponentReturnType | Node | string | number>,
-  $destructors: Destructors,
-) {
-  const nodes: Array<Node> = [];
-  const contexts: Array<Component> = [];
-  for (let i = 0; i < components.length; i++) {
-    let component = components[i];
-    if (IS_DEV_MODE) {
-      if (typeof component === 'boolean' || typeof component === 'undefined') {
-        throw new Error(`
-          Woops, looks like we trying to render boolean or undefined to template, check used helpers.
-          It's not allowed to render boolean or undefined to template.
-        `);
-      }
-    }
-
-    if (isFn(component)) {
-      component = text(
-        resolveRenderable(component, 'merge-components'),
-        $destructors,
-      );
-    }
-    if (isEmpty(component)) {
-      continue;
-    }
-    if (isPrimitive(component)) {
-      nodes.push(api.text(component));
-    } else if ($nodes in component) {
-      if (component.ctx !== null) {
-        contexts.push(component.ctx);
-      }
-      nodes.push(...component[$nodes]);
-    } else {
-      nodes.push(component);
-    }
-  }
-  return {
-    [$nodes]: nodes,
-    // @todo - fix proper ctx merging here;
-    ctx: contexts.length > 0 ? contexts[0] : null,
-  };
-}
-
 function createSlot(
   value: Slots[string],
   params: () => unknown[],
   name: string,
-  $destructors: Destructors,
   ctx: any,
 ) {
   // @todo - figure out destructors for slot (shoud work, bu need to be tested)
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.push(`:${name}`);
   }
-  const elements = value(...[...params(), ctx]);
-  const nodes = mergeComponents(elements, $destructors);
+  const slotContext = {
+    [$args]: {
+      [$context]: ctx,
+    },
+    [RENDERED_NODES_PROPERTY]: [],
+    [COMPONENT_ID_PROPERTY]: cId(),
+    [RENDERING_CONTEXT_PROPERTY]: null,
+  };
+  // @ts-expect-error slot return type
+  addToTree(ctx, slotContext);
+  // @TODO: params to reactive cells (or getters)
+  const paramsArray = params().map((_, i) => {
+    const v = formula(() => params()[i], `slot:param:${i}`);
+    const value = v.value;
+    if (v.isConst ||  typeof value === 'object') {
+      return value;
+    } else {
+      return v;
+    }
+  });
+  const elements = value(...[slotContext, ...paramsArray]);
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.pop();
+    // @ts-expect-error
+    slotContext.debugName = `slot:${name}`;
+    // @ts-expect-error
+    slotContext.debugInfo = {
+      parent: ctx,
+      params,
+      name,
+    }
   }
-  return nodes;
+
+  // @ts-expect-error slot return type
+  return $_fin(elements, slotContext);
 }
 
 function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
-  // console.log(ctx, ctx);
-  const $destructors: Destructors = [];
-  if (ctx) {
-    // TODO: ctx should always exist, fix `element` helper to be control node
-    associateDestroyable(ctx, [
-      () => {
-        $destructors.forEach((fn) => fn());
-      },
-    ]);
-  }
-
+  const api = initDOM(ctx);
   if (!(name in $slot)) {
     const slotPlaceholder: Comment = IS_DEV_MODE
       ? api.comment(`slot-{{${name}}}-placeholder`)
@@ -1003,17 +1034,15 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
           }
         }
         slotValue = value;
+
         const slotRoots = createSlot(
           slotValue,
           params,
           name,
-          $destructors,
           ctx,
         );
-        $destructors.push(() => {
-          destroyElement(slotRoots);
-        });
-        renderElement(slotPlaceholder.parentNode!, slotRoots, slotPlaceholder);
+        // @ts-expect-error
+        renderElement(api, ctx, slotPlaceholder.parentNode!, slotRoots, slotPlaceholder);
         isRendered = true;
       },
       get() {
@@ -1027,13 +1056,9 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
     });
     return slotPlaceholder;
   }
-  const slotRoot = createSlot($slot[name], params, name, $destructors, ctx);
-  $destructors.push(() => {
-    destroyElement(slotRoot);
-  });
-  return slotRoot;
+  return createSlot($slot[name], params, name, ctx);
 }
-function cellToText(cell: Cell | MergedCell, destructors: Destructors) {
+export function cellToText(api: typeof HTMLAPI, cell: Cell | MergedCell, destructors: Destructors) {
   const textNode = api.text('');
   destructors.push(
     opcodeFor(cell, (value) => {
@@ -1043,6 +1068,7 @@ function cellToText(cell: Cell | MergedCell, destructors: Destructors) {
   return textNode;
 }
 function text(
+  api: typeof HTMLAPI,
   text: string | number | null | Cell | MergedCell | Fn | RenderableType,
   destructors: Destructors,
 ): Text {
@@ -1053,18 +1079,18 @@ function text(
     return api.text(result);
   } else {
     // @ts-expect-error
-    return cellToText(typeof text === 'function' ? result : text, destructors);
+    return cellToText(api, typeof text === 'function' ? result : text, destructors);
   }
 }
 
-function getRenderTargets(debugName: string) {
+function getRenderTargets(api: typeof HTMLAPI, debugName: string) {
   const ifPlaceholder = IS_DEV_MODE ? api.comment(debugName) : api.comment('');
   let outlet = isRehydrationScheduled()
-    ? ifPlaceholder.parentElement!
+    ? ifPlaceholder.parentElement || api.fragment()
     : api.fragment();
 
   if (!ifPlaceholder.isConnected) {
-    api.append(outlet, ifPlaceholder);
+    api.insert(outlet, ifPlaceholder);
   }
 
   return {
@@ -1092,7 +1118,8 @@ function ifCond(
   falseBranch: BranchCb,
   ctx: Component<any>,
 ) {
-  const { outlet, placeholder } = getRenderTargets('if-entry-placeholder');
+  const api = initDOM(ctx);
+  const { outlet, placeholder } = getRenderTargets(api, 'if-entry-placeholder');
   const instance = new IfCondition(
     ctx,
     cell,
@@ -1101,8 +1128,6 @@ function ifCond(
     trueBranch,
     falseBranch,
   );
-  // @ts-expect-error instance type mismatch
-  addToTree(ctx, instance);
   return toNodeReturnType(outlet, instance);
 }
 export function $_eachSync<T extends { id: number }>(
@@ -1111,7 +1136,8 @@ export function $_eachSync<T extends { id: number }>(
   key: string | null = null,
   ctx: Component<any>,
 ) {
-  const { outlet, placeholder } = getRenderTargets('sync-each-placeholder');
+  const api = initDOM(ctx);
+  const { outlet, placeholder } = getRenderTargets(api, 'sync-each-placeholder');
   const instance = new SyncListComponent(
     {
       tag: items as Cell<T[]>,
@@ -1122,7 +1148,6 @@ export function $_eachSync<T extends { id: number }>(
     outlet,
     placeholder,
   );
-  addToTree(ctx, instance as unknown as Component<any>);
   return toNodeReturnType(outlet, instance);
 }
 export function $_each<T extends { id: number }>(
@@ -1131,7 +1156,8 @@ export function $_each<T extends { id: number }>(
   key: string | null = null,
   ctx: Component<any>,
 ) {
-  const { outlet, placeholder } = getRenderTargets('async-each-placeholder');
+  const api = initDOM(ctx);
+  const { outlet, placeholder } = getRenderTargets(api, 'async-each-placeholder');
   const instance = new AsyncListComponent(
     {
       tag: items as Cell<T[]>,
@@ -1142,10 +1168,9 @@ export function $_each<T extends { id: number }>(
     outlet,
     placeholder,
   );
-  addToTree(ctx, instance as unknown as Component<any>);
   return toNodeReturnType(outlet, instance);
 }
-const ArgProxyHandler = {
+const ArgProxyHandler: ProxyHandler<{}> = {
   get(target: Record<string, () => unknown>, prop: string) {
     if (prop in target) {
       if (!isFn(target[prop])) {
@@ -1155,14 +1180,30 @@ const ArgProxyHandler = {
     }
     return undefined;
   },
-  set() {
+  set(target, prop, value) {
+    if (prop === $context) {
+      // @ts-expect-error unknown property
+      target[prop] = value;
+      return true;
+    }
     if (IS_DEV_MODE) {
       throw new Error('args are readonly');
     }
+    return false;
   },
 };
 export function $_GET_ARGS(ctx: any, args: any) {
   ctx[$args] = ctx[$args] || args[0] || {};
+  ctx[RENDERED_NODES_PROPERTY] = ctx[RENDERED_NODES_PROPERTY] ?? [];
+  ctx![COMPONENT_ID_PROPERTY] = ctx![COMPONENT_ID_PROPERTY] ?? cId();
+  const parentContext = ctx[$args][$context];
+  if (parentContext) {
+    // console.log('context', parentContext, ctx);
+    addToTree(parentContext, ctx, 'from $_GET_ARGS with parent');
+  } else {
+    // @ts-expect-error typings error
+    addToTree(getRoot()!, ctx, 'from $_GET_ARGS without parent');
+  }
 }
 export function $_GET_SLOTS(ctx: any, args: any) {
   return (args[0] || {})[$SLOTS_SYMBOL] || ctx[$args]?.[$SLOTS_SYMBOL] || {};
@@ -1209,7 +1250,6 @@ export function $_args(
         value: props ?? {},
         enumerable: false,
       });
-      // @ts-expect-error ArgProxyHandler
       return new Proxy(args, ArgProxyHandler);
     }
   } else {
@@ -1232,12 +1272,15 @@ export function $_dc(
   args: Record<string, unknown>,
   ctx: Component<any>,
 ) {
+  const api = initDOM(ctx);
   const _cmp = formula(comp, 'dynamic-component');
   let result: ComponentReturnType | null = null;
   let ref: unknown = null;
   const destructor = opcodeFor(_cmp, (value: any) => {
     if (typeof value !== 'function') {
       result = value;
+      // @ts-expect-error typings error
+      addToTree(ctx, result, 'from Dynamic component opcode');
       return;
     }
     if (value !== ref) {
@@ -1246,11 +1289,14 @@ export function $_dc(
       return;
     }
     if (result) {
-      const target = result[$nodes].pop();
+      const target = result.ctx![RENDERED_NODES_PROPERTY].pop();
+      const newTarget = IS_DEV_MODE ? api.comment('placeholder') : api.comment();
+      api.insert(target!.parentNode!, newTarget, target);
+      unregisterFromParent(result);
       destroyElementSync(result);
       result = component(value, args, ctx);
-      result![$nodes].push(target!);
-      renderElement(target!.parentNode!, result, target!);
+      result![$nodes].push(newTarget!);
+      renderElement(api, ctx, newTarget!.parentNode!, result, newTarget!);
     } else {
       result = component(value, args, ctx);
     }
@@ -1259,7 +1305,7 @@ export function $_dc(
     result!.nodes.push(
       IS_DEV_MODE ? api.comment('placeholder') : api.comment(),
     );
-    associateDestroyable(ctx, [destructor]);
+    registerDestructor(ctx, destructor);
   } else {
     _cmp.destroy();
     destructor();
@@ -1349,32 +1395,17 @@ export const $_helper = (helper: any) => {
 };
 export const $_text = text;
 export const $_tag = _DOM;
+export const $_api = (ctx: any) => initDOM(ctx);
 
 export function $_fin(
   roots: Array<ComponentReturnType | Node>,
-  ctx: Component<any> | null,
+  ctx: Component<any>,
 ) {
-  const $destructors: Destructors = [];
-
-  for (let i = 0; i < roots.length; i++) {
-    const node = roots[i];
-    if (isFn(node)) {
-      roots[i] = text(
-        resolveRenderable(node, `component child fn`),
-        $destructors,
-      );
+  if (IS_DEV_MODE) {
+    if (!ctx) {
+      throw new Error('Components without context is not supported');
     }
   }
-
-  if (ctx !== null) {
-    // no need to add destructors because component seems template-only and should not have `registerDestructor` flow.
-
-    $destructors.push(() => {
-      destroy(ctx as unknown as object);
-    });
-    associateDestroyable(ctx, $destructors);
-  }
-
   return {
     [$nodes]: roots,
     ctx,

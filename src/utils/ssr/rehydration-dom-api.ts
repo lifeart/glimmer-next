@@ -6,16 +6,18 @@ import {
   itemFromRehydrationStack,
   lastItemInStack,
 } from './rehydration';
+import { isEmpty } from '../shared';
 const $doc = getDocument();
 export const api = {
+  toString() {
+    return 'hydration-html:dom-api';
+  },
   addEventListener(node: Node, eventName: string, fn: EventListener) {
     node.addEventListener(eventName, fn);
     if (RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES) {
       return () => {
         node.removeEventListener(eventName, fn);
       };
-    } else {
-      return () => {};
     }
   },
   prop(element: HTMLElement, name: string, value: any) {
@@ -156,6 +158,11 @@ export const api = {
     targetIndex: number = 0,
   ) {
     if (isRehydrationScheduled()) {
+      if (import.meta.env.DEV) {
+        if (!parent) {
+          debugger;
+        }
+      }
       // in this case likely child is a text node, and we don't need to append it, we need to prepend it
       const childNodes = Array.from(parent.childNodes);
       const maybeIndex = childNodes.indexOf(child as any);
@@ -186,6 +193,28 @@ export const api = {
     child: HTMLElement | Node,
     anchor?: HTMLElement | Node | null,
   ) {
+    if (child.isConnected) {
+      return;
+    }
+    // replace child with first comment node if found
+    if (parent && child.nodeType === Node.TEXT_NODE && parent.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) {
+      const commentNodes = Array.from(parent.childNodes).filter(node => node.nodeType === Node.COMMENT_NODE && String((node as Comment).data).includes('[text-placeholder]'));
+      if (commentNodes.length > 0) {
+        console.log(commentNodes);
+        parent.replaceChild(child, commentNodes[0]);
+        return;
+      }
+    }
+    if (import.meta.env.DEV) {
+      if (isEmpty(child)) {
+        console.warn(`Trying to render ${typeof child}`);
+        return;
+      }
+      if (parent === null) {
+        console.warn(`Trying to render null parent`);
+        return;
+      }
+    }
     if (parent === child) {
       // console.warn('parent === child');
       return;

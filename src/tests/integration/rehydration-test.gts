@@ -144,8 +144,8 @@ module('Integration | Rehydration', function () {
         </div>
       </template>,
     );
-    const h1 = qs('h1');
-    const q = qs('q');
+    const h1Node = qs('h1');
+    const qNode = qs('q');
     await rehydrate(
       <template>
         <div class='text-white p-3'>
@@ -160,8 +160,8 @@ module('Integration | Rehydration', function () {
     );
     assert.dom('br').exists();
     assert.dom('h2').exists();
-    assert.equal(qs('h1'), h1);
-    assert.equal(qs('q'), q);
+    assert.equal(qs('h1'), h1Node);
+    assert.equal(qs('q'), qNode);
   });
   test('multiple text nodes inside element', async function (assert) {
     const blank = ' ';

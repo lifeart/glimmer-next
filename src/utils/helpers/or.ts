@@ -1,8 +1,7 @@
-import { isTag } from "./-private";
+import { isTag } from './-private';
 
 export function $__or(...args: unknown[]) {
-    return args.find((arg) => {
-        return isTag(arg) ? !!arg.value : !!arg;
-    });
+  return args.find((arg) => {
+    return isTag(arg) ? !!arg.value : !!arg;
+  });
 }
-  

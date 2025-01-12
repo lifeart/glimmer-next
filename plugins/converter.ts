@@ -1,4 +1,5 @@
 import type { ASTv1 } from '@glimmer/syntax';
+import { builders } from '@glimmer/syntax';
 import {
   type HBSControlExpression,
   type HBSNode,
@@ -16,7 +17,12 @@ import {
 } from './utils';
 import { CONSTANTS, EVENT_TYPE, SYMBOLS } from './symbols';
 import type { Flags } from './flags';
-import { booleanAttributes, COMPILE_TIME_HELPERS, propertyKeys } from './constants';
+import {
+  booleanAttributes,
+  BUILTIN_HELPERS,
+  COMPILE_TIME_HELPERS,
+  propertyKeys,
+} from './constants';
 
 const SPECIAL_HELPERS = [
   SYMBOLS.HELPER_HELPER,
@@ -24,7 +30,10 @@ const SPECIAL_HELPERS = [
   SYMBOLS.COMPONENT_HELPER,
 ];
 
-function patchNodePath(node: ASTv1.MustacheStatement | ASTv1.SubExpression, bindings: Set<string>) {
+function patchNodePath(
+  node: ASTv1.MustacheStatement | ASTv1.SubExpression,
+  bindings: Set<string>,
+) {
   if (node.path.type !== 'PathExpression') {
     return;
   }
@@ -33,7 +42,7 @@ function patchNodePath(node: ASTv1.MustacheStatement | ASTv1.SubExpression, bind
   }
   // replacing builtin helpers
   if (node.path.original === 'unless') {
-    node.path.original = SYMBOLS.$__if;
+    node.path.original = BUILTIN_HELPERS['if'];
     if (node.params.length === 3) {
       const condTrue = node.params[1];
       const condFalse = node.params[2];
@@ -52,36 +61,12 @@ function patchNodePath(node: ASTv1.MustacheStatement | ASTv1.SubExpression, bind
       node.params[1] = condFalse;
       node.params[2] = condTrue;
     }
-  } else if (node.path.original === 'if') {
-    node.path.original = SYMBOLS.$__if;
-  } else if (node.path.original === 'eq') {
-    node.path.original = SYMBOLS.$__eq;
   } else if (node.path.original === 'debugger') {
-    node.path.original = '$__debugger.call';
-    node.params.unshift({
-      type: 'PathExpression',
-      original: 'this',
-      parts: ['this'],
-      loc: node.loc,
-      head: null as any,
-      tail: [],
-      this: true,
-      data: false,
-    });
-  } else if (node.path.original === 'log') {
-    node.path.original = SYMBOLS.$__log;
-  } else if (node.path.original === 'array') {
-    node.path.original = SYMBOLS.$__array;
-  } else if (node.path.original === 'hash') {
-    node.path.original = SYMBOLS.$__hash;
-  } else if (node.path.original === 'fn') {
-    node.path.original = SYMBOLS.$__fn;
-  } else if (node.path.original === 'or') {
-    node.path.original = SYMBOLS.$__or;
-  } else if (node.path.original === 'not') {
-    node.path.original = SYMBOLS.$__not;
-  } else if (node.path.original === 'and') {
-    node.path.original = SYMBOLS.$__and;
+    node.path.original = BUILTIN_HELPERS['debugger'];
+    ;
+    node.params.unshift(builders.path('this'));
+  } else if (node.path.original in BUILTIN_HELPERS) {
+    node.path.original = BUILTIN_HELPERS[node.path.original as keyof typeof BUILTIN_HELPERS];
   }
 
   if (node.path.original.includes('.')) {
@@ -132,8 +117,12 @@ export function convert(
   }
 
   function hasResolvedBinding(fnPath: string) {
-    let hasBinding = fnPath.startsWith('$_') || fnPath.startsWith('this.') || fnPath.startsWith('this[') || bindings.has(fnPath.split('.')[0]?.split('?')[0]);
-    if (COMPILE_TIME_HELPERS.includes(fnPath)) { 
+    let hasBinding =
+      fnPath.startsWith('$_') ||
+      fnPath.startsWith('this.') ||
+      fnPath.startsWith('this[') ||
+      bindings.has(fnPath.split('.')[0]?.split('?')[0]);
+    if (COMPILE_TIME_HELPERS.includes(fnPath)) {
       hasBinding = false;
     }
     return hasBinding;
@@ -145,20 +134,26 @@ export function convert(
     hash: [string, PrimitiveJSType][],
   ) {
     const fnPath = resolvePath(nodePath);
-   
+
     if (SPECIAL_HELPERS.includes(fnPath)) {
       return `$:${fnPath}([${params
         .map((p) => serializeParam(p))
         .join(',')}],${toObject(hash)})`;
     }
     let hasBinding = hasResolvedBinding(fnPath);
-    if ((!hasBinding || flags.WITH_HELPER_MANAGER) && !nodePath.startsWith('$_')) {
+    if (
+      (!hasBinding || flags.WITH_HELPER_MANAGER) &&
+      !nodePath.startsWith('$_')
+    ) {
       if (!hasBinding) {
-        hash.push([CONSTANTS.SCOPE_KEY, `$:()=>this[${SYMBOLS.$args}]?.${CONSTANTS.SCOPE_KEY}`]);
+        hash.push([
+          CONSTANTS.SCOPE_KEY,
+          `$:()=>this[${SYMBOLS.$args}]?.${CONSTANTS.SCOPE_KEY}`,
+        ]);
       }
-      return `$:${SYMBOLS.$_maybeHelper}(${hasBinding ? fnPath : JSON.stringify(fnPath)},[${params
-        .map((p) => serializeParam(p))
-        .join(',')}],${toObject(hash)})`;
+      return `$:${SYMBOLS.$_maybeHelper}(${
+        hasBinding ? fnPath : JSON.stringify(fnPath)
+      },[${params.map((p) => serializeParam(p)).join(',')}],${toObject(hash)})`;
     } else {
       return `$:${fnPath}(${params.map((p) => serializeParam(p)).join(',')})`;
     }
@@ -210,7 +205,9 @@ export function convert(
 
       if (node.path.original === 'element') {
         // @todo  - write test to catch props issue here
-        return `$:function(args){const $fw = ${
+        return `$:function(args){${
+          SYMBOLS.$_GET_ARGS
+        }(this, arguments);const $fw = ${
           SYMBOLS.$_GET_FW
         }(this, arguments);const $slots = ${
           SYMBOLS.$_GET_SLOTS
@@ -218,7 +215,7 @@ export function convert(
           SYMBOLS.TAG
         }(${ToJSType(node.params[0])}, $fw,[()=>${
           SYMBOLS.SLOT
-        }('default',()=>[],$slots)], this)], ctx: this};}`;
+        }('default',()=>[],$slots,this)], this)], ctx: this};}`;
       } else if (node.path.original === SYMBOLS.$__hash) {
         return `$:${SYMBOLS.$__hash}(${toObject(hashArgs)})`;
       }
@@ -314,7 +311,6 @@ export function convert(
       });
       const childElements = resolvedChildren(node.program.body);
 
-
       const elseChildElements = node.inverse?.body
         ? resolvedChildren(node.inverse.body)
         : undefined;
@@ -347,60 +343,63 @@ export function convert(
 
       const children = childElements?.map((el) => ToJSType(el)) ?? null;
       const inverse = elseChildElements?.map((el) => ToJSType(el)) ?? null;
-      node.program.blockParams.forEach((p) => {
-        bindings.delete(p);
-      });
-      if (name === 'in-element') {
-        return {
-          type: 'in-element',
-          isControl: true,
-          condition: ToJSType(node.params[0]) as string,
-          blockParams: [],
-          children: children,
-          inverse: [],
-          isSync: true,
-          key: '',
-        } as HBSControlExpression;
-      } else if (name === 'unless') {
-        return {
-          type: 'if',
-          isControl: true,
-          condition: serializePath(ToJSType(node.params[0]) as string),
-          blockParams: node.program.blockParams,
-          children: inverse,
-          inverse: children,
-          isSync: syncValue,
-          key: keyValue,
-        } as HBSControlExpression;
-      } else if (name === 'let') {
-        const varScopeName = Math.random().toString(36).substring(7);
-        const namesToReplace: Record<string, string> = {};
-        const primitives: Set<string> = new Set();
-        const vars = node.params.map((p, index) => {
-          let isString = p.type === 'StringLiteral';
-          let isBoolean = p.type === 'BooleanLiteral';
-          let isNumber = p.type === 'NumberLiteral';
-          let isNull = p.type === 'NullLiteral';
-          let isUndefined = p.type === 'UndefinedLiteral';
-          let originalName = node.program.blockParams[index];
-          let newName = `Let_${originalName}_${varScopeName}`;
-          namesToReplace[originalName] = `${newName}`;
-          let castToPrimitive =
-            isString || isBoolean || isNull || isUndefined || isNumber;
-          if (castToPrimitive) {
-            primitives.add(originalName);
-            return `let ${newName} = ${ToJSType(p, false)};`;
-          } else {
-            return `let ${newName} = $:() => ${ToJSType(p)};`;
-          }
+      const cleanupBindings = () => {
+        node.program.blockParams.forEach((p) => {
+          bindings.delete(p);
         });
-        // note, at the moment nested let's works fine if no name overlap,
-        // looks like fix for other case should be on babel level;
-        // @todo - likely should be a babel work
-        function fixChildScopes(str: string) {
-          // console.log('fixChildScopes', str, JSON.stringify(namesToReplace));
-          Object.keys(namesToReplace).forEach((key) => {
-            /*
+      };
+      try {
+        if (name === 'in-element') {
+          return {
+            type: 'in-element',
+            isControl: true,
+            condition: ToJSType(node.params[0]) as string,
+            blockParams: [],
+            children: children,
+            inverse: [],
+            isSync: true,
+            key: '',
+          } as HBSControlExpression;
+        } else if (name === 'unless') {
+          return {
+            type: 'if',
+            isControl: true,
+            condition: serializePath(ToJSType(node.params[0]) as string),
+            blockParams: node.program.blockParams,
+            children: inverse,
+            inverse: children,
+            isSync: syncValue,
+            key: keyValue,
+          } as HBSControlExpression;
+        } else if (name === 'let') {
+          const varScopeName = Math.random().toString(36).substring(7);
+          const namesToReplace: Record<string, string> = {};
+          const primitives: Set<string> = new Set();
+          const vars = node.params.map((p, index) => {
+            let isString = p.type === 'StringLiteral';
+            let isBoolean = p.type === 'BooleanLiteral';
+            let isNumber = p.type === 'NumberLiteral';
+            let isNull = p.type === 'NullLiteral';
+            let isUndefined = p.type === 'UndefinedLiteral';
+            let originalName = node.program.blockParams[index];
+            let newName = `Let_${originalName}_${varScopeName}`;
+            namesToReplace[originalName] = `${newName}`;
+            let castToPrimitive =
+              isString || isBoolean || isNull || isUndefined || isNumber;
+            if (castToPrimitive) {
+              primitives.add(originalName);
+              return `let ${newName} = ${ToJSType(p, false)};`;
+            } else {
+              return `let ${newName} = $:() => ${ToJSType(p)};`;
+            }
+          });
+          // note, at the moment nested let's works fine if no name overlap,
+          // looks like fix for other case should be on babel level;
+          // @todo - likely should be a babel work
+          function fixChildScopes(str: string) {
+            // console.log('fixChildScopes', str, JSON.stringify(namesToReplace));
+            Object.keys(namesToReplace).forEach((key) => {
+              /*
               allow: {{name}} {{foo name}} name.bar
               don't allow: 
                 name:
@@ -409,40 +408,43 @@ export function convert(
                 'name'
                 "name"
             */
-            const re = new RegExp(
-              `(?<!\\.)\\b${key}\\b(?!(=|'|\"|:)[^ ]*)`,
-              'g',
-            );
-            if (primitives.has(key)) {
-              str = str.replace(re, namesToReplace[key]);
-            } else {
-              str = str.replace(re, `${namesToReplace[key]}()`);
-            }
-          });
-          return str;
+              const re = new RegExp(
+                `(?<!\\.)\\b${key}\\b(?!(=|'|\"|:)[^ ]*)`,
+                'g',
+              );
+              if (primitives.has(key)) {
+                str = str.replace(re, namesToReplace[key]);
+              } else {
+                str = str.replace(re, `${namesToReplace[key]}()`);
+              }
+            });
+            return str;
+          }
+          const result = `$:...(() => {let self = this;${vars
+            .join('')
+            .split('this.')
+            .join('self.')}return [${fixChildScopes(
+            serializeChildren(
+              children as unknown as [string | HBSNode | HBSControlExpression],
+              'this', // @todo - fix possible context floating here
+            ),
+          )}]})()`;
+          return result;
         }
-        const result = `$:...(() => {let self = this;${vars
-          .join('')
-          .split('this.')
-          .join('self.')}return [${fixChildScopes(
-          serializeChildren(
-            children as unknown as [string | HBSNode | HBSControlExpression],
-            'this', // @todo - fix possible context floating here
-          ),
-        )}]})()`;
-        return result;
-      }
 
-      return {
-        type: name,
-        isControl: true,
-        condition: serializePath(ToJSType(node.params[0]) as string),
-        blockParams: node.program.blockParams,
-        isSync: syncValue,
-        children: children,
-        inverse: inverse,
-        key: keyValue,
-      } as HBSControlExpression;
+        return {
+          type: name,
+          isControl: true,
+          condition: serializePath(ToJSType(node.params[0]) as string),
+          blockParams: node.program.blockParams,
+          isSync: syncValue,
+          children: children,
+          inverse: inverse,
+          key: keyValue,
+        } as HBSControlExpression;
+      } finally {
+        cleanupBindings();
+      }
     }
   }
 
@@ -466,30 +468,50 @@ export function convert(
     return false;
   }
 
- 
-
-
   const propsToCast = {
     class: '', // className
     readonly: 'readOnly',
   };
 
-
   function isAttribute(name: string) {
     return !propertyKeys.includes(name);
   }
+  const convertedNodes = new WeakSet();
 
   function ElementToNode(element: ASTv1.ElementNode): HBSNode {
+    if (element.tag === 'math' && !convertedNodes.has(element)) {
+      convertedNodes.add(element);
+      const parent = builders.element(`$:${SYMBOLS.MATH_NAMESPACE}`, {
+        children: [element],
+      });
+      return ElementToNode(parent);
+    } else if (element.tag === 'svg' && !convertedNodes.has(element)) {
+      convertedNodes.add(element);
+      const parent = builders.element(`$:${SYMBOLS.SVG_NAMESPACE}`, {
+        children: [element],
+      });
+      return ElementToNode(parent);
+    } else if (
+      element.tag === 'foreignObject' &&
+      !convertedNodes.has(element)
+    ) {
+      convertedNodes.add(element);
+      const parent = builders.element(`$:${SYMBOLS.HTML_NAMESPACE}`, {
+        children: element.children,
+      });
+      element.children = [parent];
+      return ElementToNode(parent);
+    }
     element.blockParams.forEach((p) => {
       bindings.add(p);
     });
     const children = resolvedChildren(element.children)
       .map((el) => ToJSType(el))
       .filter((el) => el !== null);
-      element.blockParams.forEach((p) => {
-        bindings.delete(p);
-      });
-    
+    element.blockParams.forEach((p) => {
+      bindings.delete(p);
+    });
+
     const rawStyleEvents = element.attributes.filter((attr) => {
       return attr.name.startsWith('style.');
     });
@@ -498,11 +520,16 @@ export function convert(
     });
     const styleEvents = rawStyleEvents.map((attr) => {
       const propertyName = attr.name.split('.').pop();
-      const value = attr.value.type === 'TextNode' ? escapeString(attr.value.chars) : ToJSType(attr.value);
+      const value =
+        attr.value.type === 'TextNode'
+          ? escapeString(attr.value.chars)
+          : ToJSType(attr.value);
       const isPath = typeof value === 'string' ? value.includes('.') : false;
       return [
         EVENT_TYPE.ON_CREATED,
-        `$:function($v,$n){$n.style.setProperty('${propertyName}',$v);}.bind(null,${SYMBOLS.$_TO_VALUE}(${isPath?`$:()=>${value}`: value}))`,
+        `$:function($v,$n){$n.style.setProperty('${propertyName}',$v);}.bind(null,${
+          SYMBOLS.$_TO_VALUE
+        }(${isPath ? `$:()=>${value}` : value}))`,
       ];
     });
     const extraEvents: Array<[string, string]> = [];
@@ -522,10 +549,18 @@ export function convert(
         .filter((el) => !isAttribute(el.name))
         .map((attr) => {
           const rawValue = ToJSType(attr.value);
-          if (booleanAttributes.includes(attr.name) && attr.value.type === 'TextNode' && attr.value.chars === '') {
-            const castedProp = propsToCast[attr.name as keyof typeof propsToCast];
+          if (
+            booleanAttributes.includes(attr.name) &&
+            attr.value.type === 'TextNode' &&
+            attr.value.chars === ''
+          ) {
+            const castedProp =
+              propsToCast[attr.name as keyof typeof propsToCast];
 
-            return [typeof castedProp === 'string' ? castedProp : attr.name, true];
+            return [
+              typeof castedProp === 'string' ? castedProp : attr.name,
+              true,
+            ];
           }
           // const value = rawValue.startsWith("$:") ? rawValue : escapeString(rawValue);
           const castedProp = propsToCast[attr.name as keyof typeof propsToCast];
@@ -534,49 +569,53 @@ export function convert(
             rawValue,
           ];
         }),
-      events: [...extraEvents,...styleEvents,...element.modifiers
-        .map((mod) => {
-          if (mod.path.type !== 'PathExpression') {
-            return null;
-          }
-          const hashArgs: [string, PrimitiveJSType][] = mod.hash.pairs.map(
-            (pair) => {
-              return [
-                pair.key,
-                ToJSType(pair.value, false) as unknown as PrimitiveJSType,
-              ];
-            },
-          );
-
-          if (mod.path.original === 'on') {
-            const firstParam = mod.params[0];
-            if (firstParam.type === 'StringLiteral') {
-              const tail = mod.params
-                .slice(2)
-                .map((p) => ToJSType(p))
-                .join(',');
-              return [
-                firstParam.original,
-                `$:($e, $n) => ${ToJSType(mod.params[1])}($e, $n${
-                  tail.length ? `,${tail}` : ''
-                })`,
-              ];
-            } else {
+      events: [
+        ...extraEvents,
+        ...styleEvents,
+        ...element.modifiers
+          .map((mod) => {
+            if (mod.path.type !== 'PathExpression') {
               return null;
             }
-          } else {
-            return [
-              // @me here
-              EVENT_TYPE.ON_CREATED,
-              `$:($n) => ${toModifier(
-                mod.path.original,
-                mod.params,
-                hashArgs,
-              )}`,
-            ];
-          }
-        })
-        .filter((el) => el !== null)],
+            const hashArgs: [string, PrimitiveJSType][] = mod.hash.pairs.map(
+              (pair) => {
+                return [
+                  pair.key,
+                  ToJSType(pair.value, false) as unknown as PrimitiveJSType,
+                ];
+              },
+            );
+
+            if (mod.path.original === 'on') {
+              const firstParam = mod.params[0];
+              if (firstParam.type === 'StringLiteral') {
+                const tail = mod.params
+                  .slice(2)
+                  .map((p) => ToJSType(p))
+                  .join(',');
+                return [
+                  firstParam.original,
+                  `$:($e, $n) => ${ToJSType(mod.params[1])}($e, $n${
+                    tail.length ? `,${tail}` : ''
+                  })`,
+                ];
+              } else {
+                return null;
+              }
+            } else {
+              return [
+                // @me here
+                EVENT_TYPE.ON_CREATED,
+                `$:($n) => ${toModifier(
+                  mod.path.original,
+                  mod.params,
+                  hashArgs,
+                )}`,
+              ];
+            }
+          })
+          .filter((el) => el !== null),
+      ],
       children: children,
     };
     if (children.length === 1 && typeof children[0] === 'string') {

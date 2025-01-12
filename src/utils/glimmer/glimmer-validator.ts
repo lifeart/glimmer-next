@@ -8,7 +8,6 @@ import {
   lazyRawCellFor as internalLazyCellFor,
 } from '../reactive';
 
-
 export const tagFor = internalLazyCellFor;
 
 export function dirtyTagFor(obj: object, key: string | number | symbol): void {
@@ -40,7 +39,7 @@ export function trackedData<T extends object, K extends keyof T>(
 ): { getter: Getter<T, K>; setter: Setter<T, K> } {
   function getter(self: T) {
     const tag = internalLazyCellFor(self, key, initializer);
- 
+
     return tag.value;
   }
 

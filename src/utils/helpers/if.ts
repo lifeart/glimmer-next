@@ -1,4 +1,4 @@
-import { isTag } from "./-private";
+import { isTag } from './-private';
 
 export function $__if(
   condition: unknown,

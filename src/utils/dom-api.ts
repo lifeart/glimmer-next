@@ -12,17 +12,21 @@ export function getDocument() {
   return $doc;
 }
 export const api = {
+  toString() {
+    return 'html:dom-api';
+  },
   addEventListener(node: Node, eventName: string, fn: EventListener) {
     if (import.meta.env.SSR) {
-      return noop;
+      if (RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES) {
+        return noop;
+      }
+      return;
     }
     node.addEventListener(eventName, fn);
     if (RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES) {
       return () => {
         node.removeEventListener(eventName, fn);
       };
-    } else {
-      return noop;
     }
   },
   attr(element: HTMLElement, name: string, value: string | null) {

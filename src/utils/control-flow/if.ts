@@ -1,16 +1,12 @@
 import {
-  associateDestroyable,
   destroyElement,
   type GenericReturnType,
   renderElement,
   type Component,
+  unregisterFromParent,
 } from '@/utils/component';
-import { Destructors } from '@/utils/glimmer/destroyable';
-import {
-  formula,
-  type Cell,
-  type MergedCell,
-} from '@/utils/reactive';
+import { Destructors, registerDestructor } from '@/utils/glimmer/destroyable';
+import { formula, type Cell, type MergedCell } from '@/utils/reactive';
 import {
   $_debug_args,
   $DEBUG_REACTIVE_CONTEXTS,
@@ -19,10 +15,19 @@ import {
   isFn,
   isPrimitive,
   isTagLike,
+  addToTree,
+  $context,
+  RENDERED_NODES_PROPERTY,
+  cId,
+  COMPONENT_ID_PROPERTY,
 } from '@/utils/shared';
 import { opcodeFor } from '@/utils/vm';
+import { initDOM } from '@/utils/context';
 
 export class IfCondition {
+  declare args: {
+    [$context]: Component<any>
+  }
   isDestructorRunning = false;
   prevComponent: GenericReturnType | null = null;
   condition!: MergedCell | Cell<boolean>;
@@ -33,6 +38,8 @@ export class IfCondition {
   placeholder: Comment;
   throwedError: Error | null = null;
   destroyPromise: Promise<any> | null = null;
+  [RENDERED_NODES_PROPERTY] = [];
+  [COMPONENT_ID_PROPERTY] = cId();
   trueBranch: (ifContext: Component<any>) => GenericReturnType;
   falseBranch: (ifContext: Component<any>) => GenericReturnType;
   constructor(
@@ -48,8 +55,13 @@ export class IfCondition {
     this.setupCondition(maybeCondition);
     this.trueBranch = trueBranch;
     this.falseBranch = falseBranch;
+    this.args = {
+      [$context]: parentContext,
+    }
+    // @ts-expect-error typings error
+    addToTree(parentContext, this, 'from if constructor');
     this.destructors.push(opcodeFor(this.condition, this.syncState.bind(this)));
-    associateDestroyable(parentContext, [this.destroy.bind(this)]);
+    registerDestructor(parentContext, this.destroy.bind(this));
     if (IS_DEV_MODE) {
       const instance = () => {
         return {
@@ -159,8 +171,8 @@ export class IfCondition {
     } else {
       this.prevComponent = null;
     }
-    this.destroyPromise = destroyElement(branch);
-    await this.destroyPromise;
+    // @ts-expect-error branch acceptable type for destroy element
+    await destroyElement(branch, false);
   }
   renderState(nextBranch: (ifContext: Component<any>) => GenericReturnType) {
     if (IS_DEV_MODE) {
@@ -170,11 +182,14 @@ export class IfCondition {
     if (IS_DEV_MODE) {
       $DEBUG_REACTIVE_CONTEXTS.pop();
     }
-    renderElement(
+    // @ts-expect-error different type for this
+    renderElement(initDOM(this), this,
       this.placeholder.parentNode || this.target,
       this.prevComponent,
       this.placeholder,
     );
+    // @ts-expect-error branch destroying
+    unregisterFromParent(this.prevComponent);
     return;
   }
   async destroy() {
@@ -188,19 +203,16 @@ export class IfCondition {
   }
   setupCondition(maybeCondition: Cell<boolean>) {
     if (isFn(maybeCondition)) {
-      this.condition = formula(
-        () => {
-          const v = maybeCondition();
-          if (isPrimitive(v) || isEmpty(v)) {
-            return !!v;
-          } else if (isTagLike(v)){
-            return !!v.value;
-          } else {
-            return !!v;
-          }
-        },
-        'if-condition-wrapper-fn',
-      );
+      this.condition = formula(() => {
+        const v = maybeCondition();
+        if (isPrimitive(v) || isEmpty(v)) {
+          return !!v;
+        } else if (isTagLike(v)) {
+          return !!v.value;
+        } else {
+          return !!v;
+        }
+      }, 'if-condition-wrapper-fn');
     } else if (isPrimitive(maybeCondition)) {
       this.condition = formula(
         () => maybeCondition,

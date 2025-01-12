@@ -1,7 +1,8 @@
 import {
   destroy,
-  DestructorFn,
+  registerDestructor,
   Destructors,
+  destroySync,
 } from '@/utils/glimmer/destroyable';
 import type {
   TemplateContext,
@@ -9,21 +10,28 @@ import type {
   Invoke,
   ComponentReturn,
 } from '@glint/template/-private/integration';
-import { api } from '@/utils/dom-api';
+import { api as DEFAULT_API } from '@/utils/dom-api';
 import {
   isFn,
   $template,
   $nodes,
   $args,
   $fwProp,
-  RENDER_TREE,
   isPrimitive,
   isArray,
   isEmpty,
-  FRAGMENT_TYPE,
-  PARENT_GRAPH,
+  RENDERING_CONTEXT_PROPERTY,
+  isTagLike,
+  RENDERED_NODES_PROPERTY,
+  cId,
+  COMPONENT_ID_PROPERTY,
+  TREE,
+  CHILD,
+  PARENT,
 } from './shared';
-import { addChild, getRoot, setRoot } from './dom';
+import { createRoot, getRoot, resolveRenderable, Root, setRoot } from './dom';
+import { provideContext, initDOM, RENDERING_CONTEXT } from './context';
+import { cellToText, MergedCell } from '.';
 
 export type ComponentRenderTarget =
   | HTMLElement
@@ -37,44 +45,58 @@ export type GenericReturnType =
   | null
   | null[];
 
-function renderNode(parent: Node, target: Node, placeholder: Node | Comment) {
-  if (import.meta.env.DEV) {
-    if (isEmpty(target)) {
-      console.warn(`Trying to render ${typeof target}`);
-      return;
-    }
-    if (parent === null) {
-      console.warn(`Trying to render null parent`);
-      return;
-    }
-  }
-  api.insert(parent, target, placeholder);
-}
+type RenderableElement =
+  | GenericReturnType
+  | Node
+  | string
+  | number
+  | null
+  | undefined;
 
 export function renderElement(
+  api: typeof DEFAULT_API,
+  ctx: Component<any>,
   target: Node,
-  el: GenericReturnType | Node | string | number | null | undefined,
-  placeholder: Comment | Node,
+  el: RenderableElement | RenderableElement[] | MergedCell,
+  placeholder: Comment | Node | null = null,
+  skipRegistration = false,
 ) {
+  if (isEmpty(el) || el === '') {
+    return;
+  }
   if (!isArray(el)) {
-    if (isEmpty(el) || el === '') {
-      return;
-    }
     if (isPrimitive(el)) {
-      renderNode(target, api.text(el), placeholder);
+      let node = api.text(el);
+      ctx[RENDERED_NODES_PROPERTY].push(node);
+      api.insert(target, node, placeholder);
+    } else if ((el as HTMLElement).nodeType) {
+      if (skipRegistration !== true) {
+        ctx[RENDERED_NODES_PROPERTY].push(el as Node);
+      }
+      api.insert(target, el as Node, placeholder);
     } else if ($nodes in el) {
       el[$nodes].forEach((node) => {
-        renderElement(target, node, placeholder);
+        // @ts-expect-error el.ctx
+        renderElement(api, el.ctx, target, node, placeholder);
       });
+      el[$nodes].length = 0;
+      // el.ctx![RENDERED_NODES_PROPERTY].reverse();
     } else if (isFn(el)) {
-      renderElement(target, el(), placeholder);
+      // @ts-expect-error
+      renderElement(api, ctx, target, resolveRenderable(el), placeholder);
+    } else if (isTagLike(el)) {
+      const destructors: Destructors = [];
+      const node = cellToText(api, el, destructors);
+      ctx[RENDERED_NODES_PROPERTY].push(node);
+      api.insert(target, node, placeholder);
+      registerDestructor(ctx, ...destructors);
     } else {
-      renderNode(target, el, placeholder);
+      throw new Error(`Unknown element type ${el}`);
     }
   } else {
-    el.forEach((item) => {
-      renderElement(target, item, placeholder);
-    });
+    for (let i = 0; i < el.length; i++) {
+      renderElement(api, ctx, target, el[i], placeholder, true);
+    }
   }
 }
 
@@ -104,8 +126,12 @@ export function renderComponent(
       }
     } else {
       if (appRoot === null) {
-        setRoot(owner || component.ctx || (component as any));
+        setRoot(createRoot());
       }
+    }
+    if (!initDOM(getRoot()!)) {
+      // setting default dom api
+      provideContext(getRoot()!, RENDERING_CONTEXT, DEFAULT_API);
     }
   }
 
@@ -118,35 +144,30 @@ export function renderComponent(
     );
   }
 
-  const destructors: Destructors = [];
   const children = component[$nodes];
 
+  const dom = initDOM(owner || component) || initDOM(getRoot()!);
   if (TRY_CATCH_ERROR_HANDLING) {
     try {
-      children.forEach((child, i) => {
-        addChild(
-          targetElement as unknown as HTMLElement,
-          child as any,
-          destructors,
-          i,
-        );
-      });
-      associateDestroyable(owner || component, destructors);
+      renderElement(
+        dom,
+        owner || component,
+        targetElement as unknown as HTMLElement,
+        children,
+        targetElement.lastChild,
+      );
     } catch (e) {
-      destructors.forEach((fn) => fn());
       runDestructorsSync(owner || component);
       throw e;
     }
   } else {
-    children.forEach((child, i) => {
-      addChild(
-        targetElement as unknown as HTMLElement,
-        child as any,
-        destructors,
-        i,
-      );
-    });
-    associateDestroyable(owner || component, destructors);
+    renderElement(
+      dom,
+      owner || component,
+      targetElement as unknown as HTMLElement,
+      children,
+      targetElement.lastChild,
+    );
   }
 
   return component;
@@ -161,6 +182,9 @@ export class Component<T extends Props = any>
   implements Omit<ComponentReturnType, 'ctx'>
 {
   args!: Get<T, 'Args'>;
+  [RENDERING_CONTEXT_PROPERTY]: undefined | typeof DEFAULT_API = undefined;
+  [COMPONENT_ID_PROPERTY] = cId();
+  declare [RENDERED_NODES_PROPERTY]: Array<Node>;
   declare [Context]: TemplateContext<
     this,
     Get<T, 'Args'>,
@@ -184,98 +208,67 @@ export type TOC<S extends Props = {}> = (
 ) => ComponentReturn<Get<S, 'Blocks'>, Get<S, 'Element', null>>;
 
 function destroyNode(node: Node) {
-  if (IS_DEV_MODE) {
-    if (node === undefined) {
-      console.warn(`Trying to destroy undefined`);
-      return;
-    } else if (node.nodeType === FRAGMENT_TYPE) {
-      return;
-    }
-    const parent = node.parentNode;
-    if (parent !== null) {
-      parent.removeChild(node);
-    } else {
-      if (import.meta.env.SSR) {
-        console.warn(`Node is not in DOM`, node.nodeType, node.nodeName);
-        return;
-      }
-      throw new Error(`Node is not in DOM`);
-    }
-  } else {
-    if (node.nodeType === FRAGMENT_TYPE) {
-      return;
-    }
-    node.parentNode!.removeChild(node);
-  }
+  // Skip if node is already detached
+  if (!node.isConnected) return;
+  // @ts-expect-error
+  node.remove();
 }
 
 export function destroyElementSync(
-  component:
-    | ComponentReturnType
-    | Node
-    | Array<ComponentReturnType | Node>
-    | null
-    | null[],
+  component: ComponentReturnType | Node | Array<ComponentReturnType | Node>,
   skipDom = false,
 ) {
   if (isArray(component)) {
     component.forEach((component) => destroyElementSync(component, skipDom));
   } else {
-    if (isEmpty(component)) {
-      return;
-    }
-
     if ($nodes in component) {
-      if (component.ctx !== null) {
-        runDestructorsSync(component.ctx);
+      if (IS_DEV_MODE) {
+        if (!component.ctx) {
+          throw new Error('context should match');
+        }
       }
-      if (skipDom) {
-        return;
-      }
-      try {
-        destroyNodes(component[$nodes]);
-      } catch (e) {
-        console.warn(
-          `Woops, looks like node we trying to destroy no more in DOM 1`,
-          e,
-        );
-      }
+      runDestructorsSync(component.ctx!, skipDom);
     } else {
-      if (skipDom) {
-        return;
-      }
       destroyNode(component);
     }
   }
 }
 
-function internalDestroyNode(el: Node | ComponentReturnType) {
-  if ('nodeType' in el) {
-    destroyNode(el);
+function destroyNodes(roots: Node | Array<Node>) {
+  if (isArray(roots)) {
+    for (let i = 0; i < roots.length; i++) {
+      destroyNode(roots[i]);
+    }
   } else {
-    destroyNodes(el[$nodes]);
+    destroyNode(roots);
   }
 }
 
-function destroyNodes(
-  roots: Node | ComponentReturnType | Array<Node | ComponentReturnType>,
-) {
-  if (isArray(roots)) {
-    for (let i = 0; i < roots.length; i++) {
-      internalDestroyNode(roots[i]);
+export function unregisterFromParent(component: ComponentReturnType | Node | Array<ComponentReturnType | Node>) {
+  if (!WITH_CONTEXT_API) {
+    return;
+  }
+  if (isArray(component)) {
+    component.forEach(unregisterFromParent);
+  } else if ($nodes in component) {
+    const id = component.ctx![COMPONENT_ID_PROPERTY];
+    const arr = CHILD.get(PARENT.get(id)!);
+    if (arr !== undefined) {
+      const index = arr.indexOf(id);
+      if (IS_DEV_MODE) {
+        if (index === -1) {
+          console.warn('TOOD: hmr negative index');
+        }
+      }
+      if (index !== -1) {
+        arr.splice(index, 1);
+      }
     }
-  } else {
-    internalDestroyNode(roots);
   }
 }
 
 export async function destroyElement(
-  component:
-    | ComponentReturnType
-    | Node
-    | Array<ComponentReturnType | Node>
-    | null
-    | null[],
+  component: ComponentReturnType | Node | Array<ComponentReturnType | Node>,
   skipDom = false,
 ) {
   if (isArray(component)) {
@@ -283,152 +276,66 @@ export async function destroyElement(
       component.map((component) => destroyElement(component, skipDom)),
     );
   } else {
-    if (component === null) {
-      return;
-    }
     if ($nodes in component) {
-      if (component.ctx) {
-        const destructors: Array<Promise<void>> = [];
-        runDestructors(component.ctx, destructors);
-        await Promise.all(destructors);
-      }
-      if (skipDom) {
-        return;
-      }
-      try {
-        destroyNodes(component[$nodes]);
-      } catch (e) {
-        console.warn(
-          `Woops, looks like node we trying to destroy no more in DOM 2`,
-          e,
-        );
-      }
+      const destructors: Array<Promise<void>> = [];
+      runDestructors(component.ctx!, destructors, skipDom);
+      await Promise.all(destructors);
     } else {
-      if (skipDom) {
-        return;
+      if ('nodeType' in component) {
+        destroyNode(component);
+      } else {
+        throw new Error('unknown branch');
       }
-      await destroyNode(component);
     }
   }
 }
 
-var $newDestructors = new WeakMap<any, Destructors>();
-
-if (!import.meta.env.SSR) {
-  if (IS_DEV_MODE) {
-    window['getDestructors'] = () => $newDestructors;
-  }
-}
-
-export function associateDestroyable(ctx: any, destructors: Destructors) {
-  if (destructors.length === 0) {
-    return;
-  }
-
-  if (IS_DEV_MODE) {
-    if (ctx.ctx && ctx.ctx !== ctx) {
-      throw new Error(`Invalid context`);
-    }
-  }
-  const existingDestructors = $newDestructors.get(ctx);
-
-  if (existingDestructors !== undefined) {
-    existingDestructors.push(...destructors);
-  } else {
-    $newDestructors.set(ctx, destructors);
-  }
-}
-
-export function removeDestructor(ctx: any, destructor: DestructorFn) {
-  if (IS_DEV_MODE) {
-    if (ctx.ctx && ctx.ctx !== ctx) {
-      throw new Error(`Invalid context`);
-    }
-  }
-
-  const destructors = $newDestructors.get(ctx);
-
-  if (destructors === undefined) {
-    // No destructors to remove
-    return;
-  }
-
-  const index = destructors.indexOf(destructor);
-
-  if (index !== -1) {
-    // Remove the destructor in-place
-    destructors.splice(index, 1);
-
-    if (destructors.length === 0) {
-      // Remove the entry from the map if no destructors are left
-      $newDestructors.delete(ctx);
-    }
-    // No need to set the array back into the map since it's modified in-place
-  }
-}
-
-function runDestructorsSync(targetNode: Component<any>) {
-
+function runDestructorsSync(targetNode: Component<any>, skipDom = false) {
   const stack = [targetNode];
 
   while (stack.length > 0) {
     const currentNode = stack.pop()!;
+    const nodesToRemove = CHILD.get(currentNode[COMPONENT_ID_PROPERTY]);
 
-    destroy(currentNode);
-
-    const destructors = $newDestructors.get(currentNode);
-  
-    if (destructors !== undefined) {
-      for (const fn of destructors) {
-        fn();
+    destroySync(currentNode);
+    if (skipDom !== true) {
+      destroyNodes(currentNode![RENDERED_NODES_PROPERTY]);
+    }
+    if (nodesToRemove) {
+      for (const node of nodesToRemove) {
+        stack.push(TREE.get(node)!);
       }
-      $newDestructors.delete(currentNode);
-    }
-    if (WITH_CONTEXT_API) {
-      PARENT_GRAPH.delete(currentNode);
-    }
-    const nodesToRemove = RENDER_TREE.get(currentNode);
-    if (nodesToRemove !== undefined) {
-      /*
-        we need slice here because of search for it:
-        @todo - case 42 (associateDestroyable)
-        tldr list may be mutated during removal and forEach is stopped
-      */
-      stack.push(...nodesToRemove);
     }
   }
 }
 export function runDestructors(
-  target: Component<any>,
+  target: Component<any> | Root,
   promises: Array<Promise<void>> = [],
+  skipDom = false,
 ): Array<Promise<void>> {
-  destroy(target);
-  if ($newDestructors.has(target)) {
-    $newDestructors.get(target)!.forEach((fn) => {
-      const promise = fn();
-      if (promise) {
-        promises.push(promise);
-      }
-    });
-    $newDestructors.delete(target);
-  } else {
-    // console.info(`No destructors found for component`);
-  }
-  if (WITH_CONTEXT_API) {
-    PARENT_GRAPH.delete(target);
-  }
-  const nodesToRemove = RENDER_TREE.get(target);
-  if (nodesToRemove) {
+  const childComponents = CHILD.get(target[COMPONENT_ID_PROPERTY]);
+  // @todo - move it after child components;
+  destroy(target, promises);
+  if (childComponents) {
     /*
       we need slice here because of search for it:
       @todo - case 42 (associateDestroyable)
       tldr list may be mutated during removal and forEach is stopped
     */
-    Array.from(nodesToRemove).forEach((node) => {
-      runDestructors(node, promises);
-      // RENDER_TREE.delete(node as any);
+    childComponents.forEach((node) => {
+      runDestructors(TREE.get(node)!, promises, skipDom);
     });
-    // RENDER_TREE.delete(target);
+  }
+  if (skipDom !== true) {
+    if (promises.length) {
+      promises.push(
+        Promise.all(promises).then(() => {
+          destroyNodes(target[RENDERED_NODES_PROPERTY]);
+        }),
+      );
+    } else {
+      destroyNodes(target[RENDERED_NODES_PROPERTY]);
+    }
   }
   return promises;
 }

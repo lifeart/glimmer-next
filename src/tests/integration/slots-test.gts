@@ -1,8 +1,98 @@
 import { module, test } from 'qunit';
 import { render, rerender } from '@lifeart/gxt/test-utils';
-import { cell } from '@lifeart/gxt';
+import { cell, Component } from '@lifeart/gxt';
 
 module('Integration | InternalComponent | slots', function () {
+  test('slot params may be reactive with getter', async function (assert) {
+    const state = cell('foo');
+    class Slot extends Component {
+      get name() {
+        return state.value;
+      }
+      <template>{{yield this.name}}</template>
+    }
+    class Main extends Component {
+      <template>
+        <Slot as |name|>
+          <div data-test-name>{{name}}</div>
+        </Slot>
+      </template>
+    }
+    await render(<template><Main /></template>);
+    assert.dom('[data-test-name]').hasText('foo');
+    state.update('bar');
+    await rerender();
+    assert.dom('[data-test-name]').hasText('bar');
+  });
+  test('slot params may be reactive', async function (assert) {
+    const state = cell('foo');
+    class Slot extends Component {
+      get name() {
+        return state;
+      }
+      <template>{{yield this.name}}</template>
+    }
+    class Main extends Component {
+      <template>
+        <Slot as |name|>
+          <div data-test-name>{{name}}</div>
+        </Slot>
+      </template>
+    }
+    await render(<template><Main /></template>);
+    assert.dom('[data-test-name]').hasText('foo');
+    state.update('bar');
+    await rerender();
+    assert.dom('[data-test-name]').hasText('bar');
+  });
+  test('slot may provide positional params', async function (assert) {
+    assert.expect(6);
+    class Slot extends Component {
+      name = 'foo';
+      <template>{{yield 1 2 3 4 this.name}}</template>
+    }
+    class Main extends Component {
+      assert = (value: unknown, source: unknown) => {
+        assert.equal(value, source);
+        return '';
+      };
+      <template>
+        <Slot as |p1 p2 p3 p4 p5 p6|>
+          {{this.assert p1 1}}
+          {{this.assert p2 2}}
+          {{this.assert p3 3}}
+          {{this.assert p4 4}}
+          {{this.assert p5 'foo'}}
+          {{this.assert p6 undefined}}
+        </Slot>
+      </template>
+    }
+    await render(<template><Main /></template>);
+  });
+  test('should have access to consumer context', async function (assert) {
+    assert.expect(3);
+    class Slot extends Component {
+      <template>{{yield this}}</template>
+    }
+    class Main extends Component {
+      name = 'foo';
+      assertContext = (ctx: Component) => {
+        assert.ok(ctx instanceof Main);
+      };
+      assertSlotContext = (ctx: Component) => {
+        assert.ok(ctx instanceof Slot);
+      };
+      <template>
+        <Slot as |s|>
+          <div data-test-name>{{this.name}}</div>
+          {{this.assertSlotContext s}}
+          {{this.assertContext this}}
+        </Slot>
+      </template>
+    }
+    await render(<template><Main /></template>);
+    assert.dom('[data-test-name]').hasText('foo');
+  });
   test('is support inversion of block control (from inside)', async function (assert) {
     // @todo - seems we need to change owner of slot to support it..
     const showBlock = cell(false);

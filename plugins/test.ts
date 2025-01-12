@@ -11,6 +11,7 @@ import {
   type HBSControlExpression,
   type HBSNode,
   serializeNode,
+  setBindings,
 } from './utils';
 import { processTemplate, type ResolvedHBS } from './babel';
 import { convert } from './converter';
@@ -69,18 +70,22 @@ function processTransformedFiles(
   programs: Programs,
   programResults: string[],
 ) {
-
   const txt = babelResult?.code ?? '';
 
   const globalFlags = flags;
 
   hbsToProcess.forEach((content) => {
     const flags = content.flags;
-    const { ToJSType, ElementToNode } = convert(seenNodes, globalFlags, content.bindings);
+    const bindings = content.bindings;
+    const { ToJSType, ElementToNode } = convert(
+      seenNodes,
+      globalFlags,
+      bindings,
+    );
     const ast = preprocess(content.template);
     const program: (typeof programs)[number] = {
       meta: flags,
-      bindings: content.bindings,
+      bindings,
       template: [],
     };
     traverse(ast, {
@@ -122,18 +127,17 @@ function processTransformedFiles(
             return;
           }
           node.blockParams.forEach((p) => {
-            content.bindings.add(p);
+            bindings.add(p);
           });
           seenNodes.add(node);
           program.template.push(ElementToNode(node));
-          
         },
         exit(node) {
           node.blockParams.forEach((p) => {
-            content.bindings.delete(p);
+            bindings.delete(p);
           });
-        }
-      }
+        },
+      },
     });
     programs.push(program);
   });
@@ -141,6 +145,7 @@ function processTransformedFiles(
   programs.forEach((program) => {
     const input: Array<HBSNode | HBSControlExpression> = program.template;
 
+    setBindings(program.bindings);
     const results = input.reduce((acc, node) => {
       const serializedNode = serializeNode(node);
       if (typeof serializedNode === 'string') {
@@ -155,7 +160,7 @@ function processTransformedFiles(
       fileName.endsWith('.gts') || fileName.endsWith('.gjs');
 
     let result = '';
-    let finContext = program.meta.hasThisAccess ? 'this' : 'null';
+    let finContext = program.meta.hasThisAccess ? 'this' : 'this';
     const hasFw = results.some((el) => el.includes('$fw'));
     const hasSlots = results.some((el) => el.includes('$slots'));
     const slotsResolution = `const $slots = ${SYMBOLS.$_GET_SLOTS}(this, arguments);`;
@@ -183,6 +188,7 @@ function processTransformedFiles(
       ${declareReturn}
     }`
         : `(() => {
+      ${SYMBOLS.$_GET_ARGS}(this, arguments);
       ${maybeSlots}
       ${maybeFw}
       ${declareRoots}

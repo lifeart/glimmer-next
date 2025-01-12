@@ -51,6 +51,121 @@ class ThemedButton extends Component {
 }
 
 module('Integration | Context API', function () {
+  test('context is still available inside nested component', async function (assert) {
+    class Boo extends Component {
+      <template>
+        <ThemedButton data-test-button as |intl|>{{intl.name}}</ThemedButton>
+      </template>
+    }
+    await render(
+      <template>
+        <ThemeProvider @theme={{hash buttonClass='bg-blue-500'}}>
+          <IntlProvider @intl={{hash name='Fake'}}>
+            <Boo />
+          </IntlProvider>
+        </ThemeProvider>
+      </template>,
+    );
+    assert
+      .dom('[data-test-button]')
+      .hasText('Fake', 'Button receives intl from root context');
+  });
+  test('context is still available in yield', async function (assert) {
+    class Boo extends Component {
+      <template>{{yield}}</template>
+    }
+    await render(
+      <template>
+        <IntlProvider @intl={{hash name='Fake'}}>
+          <Boo><ThemedButton
+              data-test-button
+              as |intl|
+            >{{intl.name}}</ThemedButton></Boo>
+        </IntlProvider>
+      </template>,
+    );
+    assert
+      .dom('[data-test-button]')
+      .hasText('Fake', 'Button receives intl from root context');
+  });
+  test('context is still available in in-element', async function (assert) {
+    let _node: HTMLDivElement;
+    function setNode(e: HTMLDivElement) {
+      _node = e;
+    }
+    function node() {
+      return _node;
+    }
+    await render(
+      <template>
+        <div id='foo' {{setNode}}></div>
+        <IntlProvider @intl={{hash name='Fake'}}>
+          {{#in-element node}}
+            <ThemedButton
+              data-test-button
+              as |intl|
+            >{{intl.name}}</ThemedButton>
+          {{/in-element}}
+        </IntlProvider>
+      </template>,
+    );
+    assert
+      .dom('[data-test-button]')
+      .hasText('Fake', 'Button receives intl from root context');
+  });
+  test('context is still available in each', async function (assert) {
+    await render(
+      <template>
+        <IntlProvider @intl={{hash name='Fake'}}>
+          {{#each (array 1) as |item|}}
+            <ThemedButton
+              data-test-button
+              as |intl|
+            >{{intl.name}}</ThemedButton>{{item}}
+          {{/each}}
+        </IntlProvider>
+      </template>,
+    );
+    assert
+      .dom('[data-test-button]')
+      .hasText('Fake', 'Button receives intl from root context');
+  });
+  test('context is still available inside if [false branch]', async function (assert) {
+    await render(
+      <template>
+        <IntlProvider @intl={{hash name='Fake'}}>
+          {{#if true}}
+            <ThemedButton
+              data-test-button
+              as |intl|
+            >{{intl.name}}</ThemedButton>
+          {{/if}}
+        </IntlProvider>
+      </template>,
+    );
+
+    assert
+      .dom('[data-test-button]')
+      .hasText('Fake', 'Button receives intl from root context');
+  });
+  test('context is still available inside if [true branch]', async function (assert) {
+    await render(
+      <template>
+        <IntlProvider @intl={{hash name='Fake'}}>
+          {{#if true}}
+            <ThemedButton
+              data-test-button
+              as |intl|
+            >{{intl.name}}</ThemedButton>
+          {{/if}}
+        </IntlProvider>
+      </template>,
+    );
+
+    assert
+      .dom('[data-test-button]')
+      .hasText('Fake', 'Button receives intl from root context');
+  });
   test('context decorator falling back to root context', async function (assert) {
     await render(
       <template>
