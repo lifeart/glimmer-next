@@ -529,9 +529,6 @@ function _DOM(
   const destructors: Destructors = [];
   const seenKeys = new Set<string>();
   const classNameModifiers: Attr[] = [];
-
-  const hasSplatAttrs = typeof tagProps[3] === 'object';
-
   let hasShadowMode: ShadowRootMode = null;
 
   const setShadowNode = (value: ShadowRootMode) => {
@@ -539,6 +536,9 @@ function _DOM(
   };
 
   if ($_edp !== tagProps) {
+
+    const hasSplatAttrs = typeof tagProps[3] === 'object';
+
     if (hasSplatAttrs === true) {
       for (let i = 0; i < tagProps[3]![2].length; i++) {
         $ev(
@@ -656,7 +656,10 @@ function _DOM(
     // }
   }
 
-  registerDestructor(ctx, ...destructors);
+  if (destructors.length) {
+    registerDestructor(ctx, ...destructors);
+  }
+
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.pop();
   }
