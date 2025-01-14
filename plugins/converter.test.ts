@@ -143,6 +143,47 @@ describe.each([
   beforeEach(() => {
     resetContextCounter();
   });
+  describe('string serialization', () => {
+    test('as one of child in dom (end)', () => {
+      const converted = $t<ASTv1.ElementNode>(`<div><i></i>Hello World</div>`);
+      expect(converted).toEqual(
+        $node({
+          tag: 'div',
+          children: [$node({ tag: 'i' }), 'Hello World'],
+        }),
+      );
+      const result = $s(converted);
+      expect(result).toEqual(
+        `$_tag('div', $_edp, [$_tag('i', $_edp, [], this), "Hello World"], this)`,
+      );
+    });
+    test('as one of child in dom (start)', () => {
+      const converted = $t<ASTv1.ElementNode>(`<div>Hello World<i></i></div>`);
+      expect(converted).toEqual(
+        $node({
+          tag: 'div',
+          children: ['Hello World', $node({ tag: 'i' })],
+        }),
+      );
+      const result = $s(converted);
+      expect(result).toEqual(
+        `$_tag('div', $_edp, ["Hello World", $_tag('i', $_edp, [], this)], this)`,
+      );
+    });
+    test('as single node', () => {
+      const converted = $t<ASTv1.ElementNode>(`<div>Hello World</div>`);
+      expect(converted).toEqual(
+        $node({
+          tag: 'div',
+          events: [
+            [EVENT_TYPE.TEXT_CONTENT, 'Hello World'],
+          ]
+        }),
+      );
+      const result = $s(converted);
+      expect(result).toEqual(`$_tag('div', [[],[],[['1', "Hello World"]]], [], this)`);
+    });
+  });
   describe('support concat expressions', () => {
     test('in attribute', () => {
       const converted = $t<ASTv1.ElementNode>(
@@ -798,7 +839,7 @@ describe.each([
             `{{#let foo "name" as |bar k|}}p{{bar}}{{k}}{{/let}}`,
           ),
         ).toEqual(
-          `$:...(() => {let self = this;let Let_bar_6c3gez6 = $:() => $:foo;let Let_k_6c3gez6 = "name";return [$_text($_api(this),"p"), ${
+          `$:...(() => {let self = this;let Let_bar_6c3gez6 = $:() => $:foo;let Let_k_6c3gez6 = "name";return ["p", ${
             flags.IS_GLIMMER_COMPAT_MODE
               ? '() => Let_bar_6c3gez6()'
               : 'Let_bar_6c3gez6()'
@@ -927,7 +968,7 @@ describe.each([
         expect($s(converted)).toEqual(
           `$_each(${$glimmerCompat(
             'foo',
-          )}, (bar,$index,ctx0) => [$_ucw((ctx1) => [$_text($_api(this),"1"), $_c(Smile,${$args(
+          )}, (bar,$index,ctx0) => [$_ucw((ctx1) => ["1", $_c(Smile,${$args(
             '{}',
           )},ctx1)], ctx0)], null, this)`,
         );

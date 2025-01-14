@@ -24,10 +24,7 @@ import {
   Destructors,
   registerDestructor,
 } from './glimmer/destroyable';
-import {
-  api as HTMLAPI,
-  getDocument,
-} from '@/utils/dom-api';
+import { api as HTMLAPI, getDocument } from '@/utils/dom-api';
 import {
   isFn,
   isPrimitive,
@@ -77,7 +74,6 @@ type TagEvent = [string, EventListener | ModifierFn];
 type FwType = [TagProp[], TagAttr[], TagEvent[]];
 type Props = [TagProp[], TagAttr[], TagEvent[], FwType?];
 
-type Fn = () => unknown;
 type InElementFnArg = () => HTMLElement;
 type BranchCb = () => ComponentReturnType | Node;
 
@@ -542,24 +538,42 @@ function _DOM(
     hasShadowMode = value;
   };
 
-  if (hasSplatAttrs === true) {
-    for (let i = 0; i < tagProps[3]![2].length; i++) {
-      $ev(api, element, tagProps[3]![2][i][0], tagProps[3]![2][i][1], destructors);
+  if ($_edp !== tagProps) {
+    if (hasSplatAttrs === true) {
+      for (let i = 0; i < tagProps[3]![2].length; i++) {
+        $ev(
+          api,
+          element,
+          tagProps[3]![2][i][0],
+          tagProps[3]![2][i][1],
+          destructors,
+        );
+      }
     }
-  }
 
-  for (let i = 0; i < tagProps[2].length; i++) {
-    $ev(api, element, tagProps[2][i][0], tagProps[2][i][1], destructors);
-  }
+    for (let i = 0; i < tagProps[2].length; i++) {
+      $ev(api, element, tagProps[2][i][0], tagProps[2][i][1], destructors);
+    }
 
-  if (hasSplatAttrs === true) {
-    addAttrs(api, tagProps[3]![1], element, seenKeys, destructors);
-  }
-  addAttrs(api, tagProps[1], element, seenKeys, destructors);
+    if (hasSplatAttrs === true) {
+      addAttrs(api, tagProps[3]![1], element, seenKeys, destructors);
+    }
+    addAttrs(api, tagProps[1], element, seenKeys, destructors);
 
-  if (hasSplatAttrs === true) {
-    addProperties(api,
-      tagProps[3]![0],
+    if (hasSplatAttrs === true) {
+      addProperties(
+        api,
+        tagProps[3]![0],
+        element,
+        seenKeys,
+        destructors,
+        classNameModifiers,
+        setShadowNode,
+      );
+    }
+    addProperties(
+      api,
+      tagProps[0],
       element,
       seenKeys,
       destructors,
@@ -567,14 +581,6 @@ function _DOM(
       setShadowNode,
     );
   }
-  addProperties(api,
-    tagProps[0],
-    element,
-    seenKeys,
-    destructors,
-    classNameModifiers,
-    setShadowNode,
-  );
 
   if (classNameModifiers.length > 0) {
     if (IS_DEV_MODE) {
@@ -820,7 +826,7 @@ function component(
         const getCircularReplacer = () => {
           const seen = new WeakSet();
           return (_: string, value: unknown) => {
-            if (typeof value === "object" && value !== null) {
+            if (typeof value === 'object' && value !== null) {
               if (seen.has(value)) {
                 return;
               }
@@ -993,7 +999,7 @@ function createSlot(
   const paramsArray = params().map((_, i) => {
     const v = formula(() => params()[i], `slot:param:${i}`);
     const value = v.value;
-    if (v.isConst ||  typeof value === 'object') {
+    if (v.isConst || typeof value === 'object') {
       return value;
     } else {
       return v;
@@ -1009,7 +1015,7 @@ function createSlot(
       parent: ctx,
       params,
       name,
-    }
+    };
   }
 
   // @ts-expect-error slot return type
@@ -1035,14 +1041,15 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
         }
         slotValue = value;
 
-        const slotRoots = createSlot(
-          slotValue,
-          params,
-          name,
+        const slotRoots = createSlot(slotValue, params, name, ctx);
+        renderElement(
+          api,
           ctx,
+          slotPlaceholder.parentNode!,
+          // @ts-expect-error
+          slotRoots,
+          slotPlaceholder,
         );
-        // @ts-expect-error
-        renderElement(api, ctx, slotPlaceholder.parentNode!, slotRoots, slotPlaceholder);
         isRendered = true;
       },
       get() {
@@ -1056,7 +1063,11 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
   }
   return createSlot($slot[name], params, name, ctx);
 }
-export function cellToText(api: typeof HTMLAPI, cell: Cell | MergedCell, destructors: Destructors) {
+export function cellToText(
+  api: typeof HTMLAPI,
+  cell: Cell | MergedCell,
+  destructors: Destructors,
+) {
   const textNode = api.text('');
   destructors.push(
     opcodeFor(cell, (value) => {
@@ -1064,21 +1075,6 @@ export function cellToText(api: typeof HTMLAPI, cell: Cell | MergedCell, destruc
     }),
   );
   return textNode;
-}
-function text(
-  api: typeof HTMLAPI,
-  text: string | number | null | Cell | MergedCell | Fn | RenderableType,
-  destructors: Destructors,
-): Text {
-  const result = $_TO_VALUE(text);
-  if (isEmpty(result)) {
-    return api.text('');
-  } else if (isPrimitive(result)) {
-    return api.text(result);
-  } else {
-    // @ts-expect-error
-    return cellToText(api, typeof text === 'function' ? result : text, destructors);
-  }
 }
 
 function getRenderTargets(api: typeof HTMLAPI, debugName: string) {
@@ -1135,7 +1131,10 @@ export function $_eachSync<T extends { id: number }>(
   ctx: Component<any>,
 ) {
   const api = initDOM(ctx);
-  const { outlet, placeholder } = getRenderTargets(api, 'sync-each-placeholder');
+  const { outlet, placeholder } = getRenderTargets(
+    api,
+    'sync-each-placeholder',
+  );
   const instance = new SyncListComponent(
     {
       tag: items as Cell<T[]>,
@@ -1155,7 +1154,10 @@ export function $_each<T extends { id: number }>(
   ctx: Component<any>,
 ) {
   const api = initDOM(ctx);
-  const { outlet, placeholder } = getRenderTargets(api, 'async-each-placeholder');
+  const { outlet, placeholder } = getRenderTargets(
+    api,
+    'async-each-placeholder',
+  );
   const instance = new AsyncListComponent(
     {
       tag: items as Cell<T[]>,
@@ -1288,7 +1290,9 @@ export function $_dc(
     }
     if (result) {
       const target = result.ctx![RENDERED_NODES_PROPERTY].pop();
-      const newTarget = IS_DEV_MODE ? api.comment('placeholder') : api.comment();
+      const newTarget = IS_DEV_MODE
+        ? api.comment('placeholder')
+        : api.comment();
       api.insert(target!.parentNode!, newTarget, target);
       unregisterFromParent(result);
       destroyElementSync(result);
@@ -1391,7 +1395,6 @@ export const $_helper = (helper: any) => {
   console.log('helper', helper);
   return helper;
 };
-export const $_text = text;
 export const $_tag = _DOM;
 export const $_api = (ctx: any) => initDOM(ctx);
 
