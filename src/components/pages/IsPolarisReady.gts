@@ -1,11 +1,11 @@
 // SOURCE: https://github.com/NullVoxPopuli/is-polaris-ready-yet/
 import data from './is-polaris-ready/services/issue-data.json';
 import { Component } from '@lifeart/gxt';
+import { getDocument } from '@/utils/context';
 
 // import { Filters } from './is-polaris-ready/filters';
 import { Header } from './is-polaris-ready/Header.gts';
 import { Section } from './is-polaris-ready/Section.gts';
-import { getDocument } from '@/utils/dom-api';
 
 const GetStarted = <template>
   To get started with a Polaris App:
@@ -20,8 +20,10 @@ const GetStarted = <template>
     @embroider/addon-blueprint</a>.
 </template>;
 
-function pageTitle(text: string) {
-  getDocument().title = text;
+function pageTitle(ctx: Component<any>, text: string) {
+  const document = getDocument(ctx);
+  // TODO: solve SSR
+  document.title = text;
 }
 
 export class IsPolarisReady extends Component {
@@ -30,7 +32,7 @@ export class IsPolarisReady extends Component {
       <style>
         @import url('./is-polaris-ready.css');
       </style>
-      {{pageTitle 'is Polaris ready yet?'}}
+      {{pageTitle this 'is Polaris ready yet?'}}
 
       <div class='inner'>
         <Header />

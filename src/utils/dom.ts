@@ -26,7 +26,7 @@ import {
   Destructors,
   registerDestructor,
 } from './glimmer/destroyable';
-import { api as HTMLAPI, getDocument } from '@/utils/dom-api';
+import type { DOMApi } from '@/utils/dom-api';
 import {
   isFn,
   isPrimitive,
@@ -40,7 +40,6 @@ import {
   IN_SSR_ENV,
   COMPONENTS_HMR,
   isEmpty,
-  FRAGMENT_TYPE,
   $context,
   RENDERING_CONTEXT_PROPERTY,
   RENDERED_NODES_PROPERTY,
@@ -54,7 +53,7 @@ import { isRehydrationScheduled } from './ssr/rehydration';
 import { createHotReload } from './hmr';
 import { IfCondition } from './control-flow/if';
 import { CONSTANTS } from '../../plugins/symbols';
-import { getContext, initDOM, RENDERING_CONTEXT } from './context';
+import { initDOM, provideContext, ROOT_CONTEXT } from './context';
 import { SVGProvider, HTMLProvider, MathMLProvider } from './provider';
 
 type RenderableType = Node | ComponentReturnType | string | number;
@@ -100,8 +99,11 @@ let unstableWrapperId: number = 0;
 export class Root {
   [RENDERED_NODES_PROPERTY] = [];
   [COMPONENT_ID_PROPERTY] = cId();
-  [RENDERING_CONTEXT_PROPERTY]: undefined | typeof HTMLAPI = undefined;
-  constructor() {
+  [RENDERING_CONTEXT_PROPERTY]: undefined | DOMApi = undefined;
+  declare document: Document;
+  constructor(document: Document = globalThis.document) {
+    this.document = document;
+    provideContext(this, ROOT_CONTEXT, this);
     const id = this[COMPONENT_ID_PROPERTY];
     CHILD.set(id, []);
     // @ts-expect-error
@@ -119,7 +121,6 @@ export class Root {
     });
   }
 }
-let ROOT: Root | null = null;
 
 export const $_MANAGERS = {
   component: {
@@ -254,24 +255,10 @@ export function createRoot() {
   const root = new Root();
   return root;
 }
-export function resetRoot() {
-  ROOT = null;
-}
-export function setRoot(root: Root) {
-  if (IS_DEV_MODE) {
-    if (ROOT) {
-      throw new Error('Root already exists');
-    }
-  }
-  ROOT = root;
-}
-export function getRoot() {
-  return ROOT;
-}
 
 function $prop(
-  api: typeof HTMLAPI,
-  element: HTMLElement,
+  api: DOMApi,
+  element: Node,
   key: string,
   value: unknown,
   destructors: DestructorFn[],
@@ -299,7 +286,7 @@ function $prop(
 }
 
 function $attr(
-  api: typeof HTMLAPI,
+  api: DOMApi,
   element: HTMLElement,
   key: string,
   value: unknown,
@@ -349,7 +336,7 @@ const EVENT_TYPE = {
 };
 
 function $ev(
-  api: typeof HTMLAPI,
+  api: DOMApi,
   element: HTMLElement,
   eventName: string,
   fn: EventListener | ModifierFn,
@@ -442,7 +429,7 @@ export function $_hasBlockParams(
 }
 
 function addAttrs(
-  api: typeof HTMLAPI,
+  api: DOMApi,
   arr: TagAttr[],
   element: HTMLElement,
   seenKeys: Set<string>,
@@ -465,9 +452,9 @@ function addAttrs(
 }
 
 function addProperties(
-  api: typeof HTMLAPI,
+  api: DOMApi,
   properties: TagProp[],
-  element: HTMLElement,
+  element: Node,
   seenKeys: Set<string>,
   destructors: Destructors,
   classNameModifiers: Attr[],
@@ -509,7 +496,7 @@ function _DOM(
   NODE_COUNTER++;
   const api = initDOM(ctx);
   if (import.meta.env.DEV) {
-    if (!getContext<typeof HTMLAPI>(getRoot()!, RENDERING_CONTEXT)) {
+    if (!api) {
       console.error('Unable to resolve root rendering context');
     }
   }
@@ -518,7 +505,7 @@ function _DOM(
       console.error('Unable to resolve rendering context');
     }
   }
-  const element = api.element(tag);
+  const element = api.element(tag) as HTMLElement;
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.push(`${tag}`);
   }
@@ -538,7 +525,6 @@ function _DOM(
   };
 
   if ($_edp !== tagProps) {
-
     const hasSplatAttrs = typeof tagProps[3] === 'object';
 
     if (hasSplatAttrs === true) {
@@ -625,8 +611,8 @@ function _DOM(
         : element;
     if (import.meta.env.SSR) {
       if (hasShadowMode) {
-        const tpl = getDocument().createElement('template');
-        tpl.setAttribute('shadowrootmode', 'open');
+        const tpl = api.element('template');
+        api.attr(tpl, 'shadowrootmode', 'open');
         element.appendChild(tpl);
         // @ts-expect-error children type mismatch
         renderElement(api, ctx, tpl, children);
@@ -709,7 +695,6 @@ export function $_ucw(
 ) {
   return component(
     function UnstableChildWrapper(this: Component<any>) {
-      // console.log(this, ...arguments);
       $_GET_ARGS(this, arguments);
       // debugger;
       if (IS_DEV_MODE) {
@@ -746,10 +731,17 @@ if (IS_DEV_MODE) {
   }
 
   function drawTreeToConsole() {
+    const rootIds: number[] = [];
+    PARENT.forEach((ref, id) => {
+      if (ref === null) {
+        rootIds.push(id);
+      }
+    });
+    const roots = rootIds.map((id) => TREE.get(id)!);
     const ref = buildGraph(
       {} as Record<string, unknown>,
-      ROOT,
-      new Set(CHILD.get(ROOT![COMPONENT_ID_PROPERTY]) ?? []),
+      roots[0],
+      new Set(CHILD.get(roots[0]![COMPONENT_ID_PROPERTY]) ?? []),
     );
     console.log(JSON.stringify(ref, null, 2));
   }
@@ -762,7 +754,6 @@ if (!import.meta.env.SSR) {
   if (IS_DEV_MODE) {
     // @ts-expect-error global
     window.utils = {
-      getRoot,
       runDestructors,
     };
     window.hotReload = createHotReload(component);
@@ -814,9 +805,9 @@ export const $_maybeHelper = (
 };
 
 function component(
-  comp: ComponentReturnType | Component,
+  comp: ComponentReturnType | Component | typeof Component,
   args: Record<string, unknown>,
-  ctx: Component<any>,
+  ctx: Component<any> | Root,
 ) {
   let label = IS_DEV_MODE
     ? `${
@@ -858,11 +849,10 @@ function component(
         // @ts-expect-error message may not exit
         e.message = `${label}\n${e.message}`;
         if (!ErrorOverlayClass) {
-          errorOverlay = HTMLAPI.element('pre');
+          errorOverlay = document.createElement('pre');
           // @ts-expect-error stack may not exit
-          HTMLAPI.textContent(errorOverlay, `${label}\n${e.stack ?? e}`);
-          HTMLAPI.attr(
-            errorOverlay,
+          errorOverlay.textContent = `${label}\n${e.stack ?? e}`;
+          errorOverlay.setAttribute(
             'style',
             'color:red;border:1px solid red;padding:10px;background-color:#333;',
           );
@@ -899,10 +889,10 @@ function component(
 }
 // hello, basic component manager
 function _component(
-  _comp: ComponentReturnType | Component,
+  _comp: ComponentReturnType | Component | typeof Component,
   args: Record<string, unknown>,
   fw: FwType,
-  ctx: Component<any>,
+  ctx: Component<any> | Root,
 ) {
   args[$context] = ctx;
   let startTagId = 0;
@@ -941,7 +931,10 @@ function _component(
     addToTree(ctx, instance, 'from $template');
     const result = (
       instance[$template] as unknown as () => ComponentReturnType
-    )();
+    )(
+      // @ts-expect-error
+      args,
+    );
     if (IS_DEV_MODE) {
       // @ts-expect-error new
       instance.debugName = comp.name;
@@ -1075,7 +1068,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
   return createSlot($slot[name], params, name, ctx);
 }
 export function cellToText(
-  api: typeof HTMLAPI,
+  api: DOMApi,
   cell: Cell | MergedCell,
   destructors: Destructors,
 ) {
@@ -1088,7 +1081,7 @@ export function cellToText(
   return textNode;
 }
 
-function getRenderTargets(api: typeof HTMLAPI, debugName: string) {
+function getRenderTargets(api: DOMApi, debugName: string) {
   const ifPlaceholder = IS_DEV_MODE ? api.comment(debugName) : api.comment('');
   let outlet = isRehydrationScheduled()
     ? ifPlaceholder.parentElement || api.fragment()
@@ -1106,15 +1099,13 @@ function getRenderTargets(api: typeof HTMLAPI, debugName: string) {
 
 function toNodeReturnType(
   outlet: HTMLElement | DocumentFragment,
-  ctx: any = null,
+  ctx: AsyncListComponent<any> | SyncListComponent<any> | IfCondition,
 ) {
-  if (outlet.nodeType !== FRAGMENT_TYPE) {
-    return outlet;
-  }
-  return {
-    ctx,
-    [$nodes]: Array.from(outlet.childNodes),
-  };
+  // we assume we render items to some kind of container,
+  // and this container may be app root
+  // to exclude root from being part of the rendered nodes
+  // we need to filter it out (taking only children)
+  return $_fin(Array.from(outlet.childNodes), ctx);
 }
 
 function ifCond(
@@ -1203,18 +1194,17 @@ const ArgProxyHandler: ProxyHandler<{}> = {
     return false;
   },
 };
-export function $_GET_ARGS(ctx: any, args: any) {
+export function $_GET_ARGS(ctx: Component<any>, args: IArguments) {
   ctx[$args] = ctx[$args] || args[0] || {};
   ctx[RENDERED_NODES_PROPERTY] = ctx[RENDERED_NODES_PROPERTY] ?? [];
-  ctx![COMPONENT_ID_PROPERTY] = ctx![COMPONENT_ID_PROPERTY] ?? cId();
-  const parentContext = ctx[$args][$context];
-  if (parentContext) {
-    // console.log('context', parentContext, ctx);
-    addToTree(parentContext, ctx, 'from $_GET_ARGS with parent');
-  } else {
-    // @ts-expect-error typings error
-    addToTree(getRoot()!, ctx, 'from $_GET_ARGS without parent');
+  ctx[COMPONENT_ID_PROPERTY] = ctx[COMPONENT_ID_PROPERTY] ?? cId();
+  const parentContext = ctx[$args][$context] || args[0][$context];
+  if (IS_DEV_MODE) {
+    if (!parentContext) {
+      throw new Error(`Unable to resolve parent context`);
+    }
   }
+  addToTree(parentContext, ctx);
 }
 export function $_GET_SLOTS(ctx: any, args: any) {
   return (args[0] || {})[$SLOTS_SYMBOL] || ctx[$args]?.[$SLOTS_SYMBOL] || {};
@@ -1411,13 +1401,18 @@ export const $_api = (ctx: any) => initDOM(ctx);
 
 export function $_fin(
   roots: Array<ComponentReturnType | Node>,
-  ctx: Component<any>,
+  ctx:
+    | Component<any>
+    | AsyncListComponent<any>
+    | SyncListComponent<any>
+    | IfCondition,
 ) {
   if (IS_DEV_MODE) {
     if (!ctx) {
       throw new Error('Components without context is not supported');
     }
   }
+
   return {
     [$nodes]: roots,
     ctx,

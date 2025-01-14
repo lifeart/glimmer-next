@@ -1,9 +1,4 @@
-import {
-  renderComponent,
-  runDestructors,
-  Component,
-  tracked,
-} from '@lifeart/gxt';
+import { runDestructors, Component, tracked } from '@lifeart/gxt';
 import { PageOne } from './pages/PageOne.gts';
 import { PageTwo } from './pages/PageTwo.gts';
 import { PageThree } from './pages/PageThree.gts';
@@ -12,10 +7,13 @@ import { NestedRouter } from './pages/NestedRouter.gts';
 import { router } from './../services/router';
 
 export class Application extends Component {
-  router = router;
+  declare router: typeof router;
+  constructor(args: { router?: typeof router }) {
+    super(args);
+    this.router = args.router || router;
+  }
   @tracked
   now = Date.now();
-  rootNode!: HTMLElement;
   components = {
     pageOne: PageOne,
     pageTwo: PageTwo,
@@ -24,14 +22,6 @@ export class Application extends Component {
   };
   async destroy() {
     await Promise.all(runDestructors(this));
-    this.rootNode.innerHTML = '';
-    this.rootNode = null!;
-  }
-  constructor(rootNode: HTMLElement) {
-    super({});
-    this.rootNode = rootNode;
-    // @ts-ignore
-    renderComponent(this, this.rootNode);
   }
   <template>
     {{#if IS_GLIMMER_COMPAT_MODE}}

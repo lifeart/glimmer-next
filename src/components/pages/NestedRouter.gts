@@ -21,7 +21,7 @@ export class NestedRouter extends Component<{ Args: RouterArgs }> {
   get components() {
     return this.args.components ?? {};
   }
-  get Component(): typeof Component {
+  get Component(): typeof Component<any> {
     return this.model?.component || this.components[this.route] || DefaultRoute;
   }
   get route() {

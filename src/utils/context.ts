@@ -1,11 +1,19 @@
 import { registerDestructor } from './glimmer/destroyable';
 import { Component } from './component';
-import { $context, COMPONENT_ID_PROPERTY, isFn, PARENT, RENDERING_CONTEXT_PROPERTY, TREE } from './shared';
-import { getRoot, Root } from './dom';
-import type { api as DOM_API } from './dom-api';
+import {
+  $context,
+  COMPONENT_ID_PROPERTY,
+  isFn,
+  PARENT,
+  RENDERING_CONTEXT_PROPERTY,
+  TREE,
+} from './shared';
+import { Root } from './dom';
+import type { DOMApi } from './dom-api';
 
 const CONTEXTS = new WeakMap<Component<any> | Root, Map<symbol, any>>();
 export const RENDERING_CONTEXT = Symbol('RENDERING_CONTEXT');
+export const ROOT_CONTEXT = Symbol('ROOT');
 export function context(
   contextKey: symbol,
 ): (
@@ -21,39 +29,41 @@ export function context(
     return {
       get() {
         return (
-          getContext(this, contextKey) ||
-          getContext(getRoot()!, contextKey) ||
-          descriptor!.initializer?.call(this)
+          getContext(this, contextKey) || descriptor!.initializer?.call(this)
         );
       },
     };
   };
 }
 
-
 export function initDOM(ctx: Component<any> | Root) {
   if (fastRenderingContext !== null) {
-    return fastRenderingContext as typeof DOM_API;
+    return fastRenderingContext as DOMApi;
   }
   const renderingContext = ctx[RENDERING_CONTEXT_PROPERTY];
   if (renderingContext) {
     return renderingContext;
   }
-  return (ctx[RENDERING_CONTEXT_PROPERTY] = getContext<typeof DOM_API>(ctx, RENDERING_CONTEXT)!);
+  return (ctx[RENDERING_CONTEXT_PROPERTY] = getContext<DOMApi>(
+    ctx,
+    RENDERING_CONTEXT,
+  )!);
+}
+
+export function getDocument(ctx: Component<any> | Root) {
+  const root = getContext<Root>(ctx, ROOT_CONTEXT);
+  const document = root!.document;
+  return document;
 }
 
 export function getContext<T>(
   ctx: Component<any> | Root,
   key: symbol,
 ): T | null {
-  if (!WITH_CONTEXT_API) {
-    ctx = getRoot()!;
-  }
   // console.log('getContext', key);
   let current: Component<any> | Root | undefined = ctx;
   let context: Map<symbol, any> | undefined;
   const lookupTree = [];
-
   while (current) {
     context = CONTEXTS.get(current);
     if (import.meta.env.DEV) {
@@ -64,7 +74,12 @@ export function getContext<T>(
       const value = context.get(key);
       return isFn(value) ? value() : value;
     }
-    current = TREE.get(PARENT.get(current[COMPONENT_ID_PROPERTY])!);
+    const parent = PARENT.get(current[COMPONENT_ID_PROPERTY])!;
+    if (parent !== null) {
+      current = TREE.get(parent);
+    } else {
+      current = undefined;
+    }
   }
   // TODO: add fancy error message about missing provider in dev mode,
   // we may track context usage and provide a better error message
@@ -81,6 +96,9 @@ export function getContext<T>(
 }
 
 let fastRenderingContext: unknown = null;
+export function cleanupFastContext() {
+  fastRenderingContext = null;
+}
 
 export function provideContext<T>(
   ctx: Component<any> | Root,
@@ -98,13 +116,10 @@ export function provideContext<T>(
       fastRenderingContext = null;
     }
   }
-  if (!WITH_CONTEXT_API) {
-    ctx = getRoot()!;
-  }
   if (!CONTEXTS.has(ctx)) {
     if (import.meta.env.DEV) {
       if (!ctx) {
-        throw new Error("Unable to provide context to empty root");
+        throw new Error('Unable to provide context to empty root');
       }
     }
     CONTEXTS.set(ctx, new Map());

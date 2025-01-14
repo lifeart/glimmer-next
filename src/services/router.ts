@@ -15,98 +15,104 @@ class GlimmerRouter extends Router {
   @tracked activeRoute;
 }
 
-// @ts-expect-error
-export const router = new GlimmerRouter({
-  main: '',
-  tests: '/tests',
-  benchmark: '/benchmark',
-  pageOne: '/pageOne',
-  pageTwo: '/pageTwo',
-  isPolarisReady: '/is-polaris-ready',
-  todomvc: '/todomvc',
-  'todomvc.all': '/todomvc/all',
-  'todomvc.active': '/todomvc/active',
-  'todomvc.completed': '/todomvc/completed',
-}) as RouterType;
+export function createRouter() {
+  // @ts-expect-error
+  const router = new GlimmerRouter({
+    main: '',
+    tests: '/tests',
+    benchmark: '/benchmark',
+    pageOne: '/pageOne',
+    pageTwo: '/pageTwo',
+    isPolarisReady: '/is-polaris-ready',
+    todomvc: '/todomvc',
+    'todomvc.all': '/todomvc/all',
+    'todomvc.active': '/todomvc/active',
+    'todomvc.completed': '/todomvc/completed',
+  }) as RouterType;
 
-router.addResolver('isPolarisReady', async () => {
-  // preload css   <link rel="preload" href="style.css" as="style" />
-  if (!import.meta.env.SSR) {
-    const link = document.createElement('link');
-    link.rel = 'preload';
-    link.href = '/is-polaris-ready.css';
-    link.as = 'style';
-    document.head.appendChild(link);
-  }
-  const { IsPolarisReady } = await import(
-    // @ts-ignore import
-    '@/components/pages/IsPolarisReady.gts'
-  );
-  return {
-    component: IsPolarisReady,
-  };
-});
+  router.addResolver('isPolarisReady', async () => {
+    // preload css   <link rel="preload" href="style.css" as="style" />
+    if (!import.meta.env.SSR) {
+      const link = document.createElement('link');
+      link.rel = 'preload';
+      link.href = '/is-polaris-ready.css';
+      link.as = 'style';
+      document.head.appendChild(link);
+    }
+    const { IsPolarisReady } = await import(
+      // @ts-ignore import
+      '@/components/pages/IsPolarisReady.gts'
+    );
+    return {
+      component: IsPolarisReady,
+    };
+  });
 
-router.addResolver('todomvc', async () => {
-  // preload css   <link rel="preload" href="style.css" as="style" />
-  console.log('todomvc');
-  if (!import.meta.env.SSR) {
-    const link = document.createElement('link');
-    link.rel = 'preload';
-    link.href = '/todomvc.css';
-    link.as = 'style';
-    document.head.appendChild(link);
-  }
-  const { ToDoMVC } = await import(
-    // @ts-ignore import
-    '@/components/pages/ToDoMVC.gts'
-  );
-  const model = {
-    component: ToDoMVC,
-  };
-  router._resolvedData['todomvc'] = {
-    model,
-    params: {},
-  };
-  return model;
-});
+  router.addResolver('todomvc', async () => {
+    // preload css   <link rel="preload" href="style.css" as="style" />
+    console.log('todomvc');
+    if (!import.meta.env.SSR) {
+      const link = document.createElement('link');
+      link.rel = 'preload';
+      link.href = '/todomvc.css';
+      link.as = 'style';
+      document.head.appendChild(link);
+    }
+    const { ToDoMVC } = await import(
+      // @ts-ignore import
+      '@/components/pages/ToDoMVC.gts'
+    );
+    const model = {
+      component: ToDoMVC,
+    };
+    router._resolvedData['todomvc'] = {
+      model,
+      params: {},
+    };
+    return model;
+  });
 
-router.addResolver('todomvc.all', async () => {
-  console.log('todomvc.all');
+  router.addResolver('todomvc.all', async () => {
+    console.log('todomvc.all');
 
-  const page = await import(
-    // @ts-ignore import
-    '@/components/pages/todomvc/page.gts'
-  );
-  return {
-    component: page.default,
-    get model() {
-      return repo.all;
-    },
-  };
-});
-router.addResolver('todomvc.active', async () => {
-  const page = await import(
-    // @ts-ignore import
-    '@/components/pages/todomvc/page.gts'
-  );
-  return {
-    component: page.default,
-    get model() {
-      return repo.active;
-    },
-  };
-});
+    const page = await import(
+      // @ts-ignore import
+      '@/components/pages/todomvc/page.gts'
+    );
+    return {
+      component: page.default,
+      get model() {
+        return repo.all;
+      },
+    };
+  });
+  router.addResolver('todomvc.active', async () => {
+    const page = await import(
+      // @ts-ignore import
+      '@/components/pages/todomvc/page.gts'
+    );
+    return {
+      component: page.default,
+      get model() {
+        return repo.active;
+      },
+    };
+  });
 
-router.addResolver('todomvc.completed', async () => {
-  const page = await import(
-    // @ts-ignore import
-    '@/components/pages/todomvc/page.gts'
-  );
-  return {
-    component: page.default,
-    get model() {
-      return repo.completed;
-    },
-  };
-});
+  router.addResolver('todomvc.completed', async () => {
+    const page = await import(
+      // @ts-ignore import
+      '@/components/pages/todomvc/page.gts'
+    );
+    return {
+      component: page.default,
+      get model() {
+        return repo.completed;
+      },
+    };
+  });
+
+  return router;
+}
+
+export const router = createRouter();

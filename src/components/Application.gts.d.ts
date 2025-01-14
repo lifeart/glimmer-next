@@ -1,3 +1,5 @@
-export class Application {
-  constructor(root: HTMLElement) {}
+import type { Root } from "../utils";
+import { Component } from '@lifeart/gxt';
+export class Application extends Component {
+
 }

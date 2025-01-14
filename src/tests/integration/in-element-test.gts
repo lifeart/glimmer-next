@@ -1,6 +1,5 @@
 import { module, test } from 'qunit';
-import { rerender, render } from '@lifeart/gxt/test-utils';
-import { getDocument } from '@/utils/dom-api';
+import { rerender, render, getDocument } from '@lifeart/gxt/test-utils';
 import { cell } from '@/utils/reactive';
 
 module('Integration | InternalComponent | in-elment', function () {
