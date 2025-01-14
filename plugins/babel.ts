@@ -29,7 +29,7 @@ export function processTemplate(
     return {
       name: 'ast-transform', // not required
       visitor: {
-        VariableDeclarator(path: any, context: Context) {
+        VariableDeclarator(path: Babel.NodePath<Babel.types.VariableDeclarator>, context: Context) {
           if (mode !== 'development') {
             return;
           }
@@ -47,7 +47,7 @@ export function processTemplate(
             }
           }
         },
-        ExportNamedDeclaration(path: any, context: Context) {
+        ExportNamedDeclaration(path: Babel.NodePath<Babel.types.ExportNamedDeclaration>, context: Context) {
           if (mode !== 'development') {
             return;
           }
@@ -66,15 +66,44 @@ export function processTemplate(
               }
             } else if (path.node.declaration.type === 'ClassDeclaration') {
               const declaration = path.node.declaration;
-              if (declaration.id.type === 'Identifier') {
+              if (declaration.id?.type === 'Identifier') {
+                const existingTokens = context.tokensForHotReload as string[];
+                existingTokens.push(declaration.id.name);
+              }
+            } else if (path.node.declaration.type === 'FunctionDeclaration') {
+              const declaration = path.node.declaration;
+              if (declaration.id?.type === 'Identifier') {
                 const existingTokens = context.tokensForHotReload as string[];
                 existingTokens.push(declaration.id.name);
               }
             }
           }
         },
+        ExportDefaultDeclaration(path: Babel.NodePath<Babel.types.ExportDefaultDeclaration>, context: Context) {
+          if (mode !== 'development') {
+            return;
+          }
+          if (!context.tokensForHotReload) {
+            context.tokensForHotReload = [];
+          }
+          if (path.node.declaration) {
+            if (path.node.declaration.type === 'ClassDeclaration' && path.node.declaration.id) {
+              const declaration = path.node.declaration;
+              if (declaration.id?.type === 'Identifier') {
+                const existingTokens = context.tokensForHotReload as string[];
+                existingTokens.push(`${declaration.id.name}:default`);
+              }
+            } else if (path.node.declaration.type === 'FunctionDeclaration' && path.node.declaration.id) {
+              const declaration = path.node.declaration;
+              if (declaration.id?.type === 'Identifier') {
+                const existingTokens = context.tokensForHotReload as string[];
+                existingTokens.push(`${declaration.id.name}:default`);
+              }
+            }
+          }
+        },
         ClassBody: {
-          enter(_: any, context: Context) {
+          enter(_: Babel.NodePath<Babel.types.ClassBody>, context: Context) {
             // here we assume that class is extends from our Component
             // @todo - check if it's really extends from Component
             context.isInsideClassBody = true;
@@ -83,18 +112,19 @@ export function processTemplate(
               context.isInsideClassBody = false;
             }
           },
-          exit(_: any, context: Context) {
+          exit(_: Babel.NodePath<Babel.types.ClassBody>, context: Context) {
             context.isInsideClassBody = false;
           },
         },
-        ClassMethod(path: any) {
-          if (path.node.key.name === '$static') {
+        ClassMethod(path: Babel.NodePath<Babel.types.ClassMethod>) {
+          if (path.node.key.type === 'Identifier' && path.node.key.name === '$static') {
             path.replaceWith(
               t.classProperty(
                 t.identifier(SYMBOLS.$template),
                 // hbs literal
                 t.taggedTemplateExpression(
                   t.identifier('hbs'),
+                  // @ts-expect-error expression type
                   path.node.body.body[0].expression.arguments[0],
                 ),
                 null,
@@ -104,7 +134,7 @@ export function processTemplate(
             );
           }
         },
-        CallExpression(path: any) {
+        CallExpression(path: Babel.NodePath<Babel.types.CallExpression>) {
           if (path.node.callee && path.node.callee.type === 'Identifier') {
             if (path.node.callee.name === 'scope') {
               path.remove();
@@ -112,7 +142,7 @@ export function processTemplate(
               path.replaceWith(
                 t.taggedTemplateExpression(
                   t.identifier('hbs'),
-                  path.node.arguments[0],
+                  path.node.arguments[0] as Babel.types.TemplateLiteral,
                 ),
               );
             } else if (path.node.callee.name === 'formula') {
@@ -132,7 +162,7 @@ export function processTemplate(
             }
           }
         },
-        ImportDeclaration(path: any) {
+        ImportDeclaration(path: Babel.NodePath<Babel.types.ImportDeclaration>) {
           if (path.node.source.value === '@ember/template-compiler') {
             path.node.source.value = MAIN_IMPORT;
             path.node.specifiers.forEach((specifier: any) => {
@@ -141,7 +171,7 @@ export function processTemplate(
             });
           }
         },
-        Program(path: any) {
+        Program(path: Babel.NodePath<Babel.types.Program>) {
           const PUBLIC_API = Object.values(SYMBOLS);
           const IMPORTS = PUBLIC_API.map((name) => {
             return t.importSpecifier(t.identifier(name), t.identifier(name));
@@ -151,15 +181,15 @@ export function processTemplate(
           );
         },
         ReturnStatement: {
-          enter(_: any, context: Context) {
+          enter(_: Babel.NodePath<Babel.types.ReturnStatement>, context: Context) {
             context.isInsideReturnStatement = true;
           },
-          exit(_: any, context: Context) {
+          exit(_: Babel.NodePath<Babel.types.ReturnStatement>, context: Context) {
             context.isInsideReturnStatement = false;
           },
         },
-        TaggedTemplateExpression(path: any, context: Context) {
-          if (path.node.tag.name === 'hbs') {
+        TaggedTemplateExpression(path: Babel.NodePath<Babel.types.TaggedTemplateExpression>, context: Context) {
+          if (path.node.tag.type === 'Identifier' && path.node.tag.name === 'hbs') {
             const template = path.node.quasi.quasis[0].value.raw as string;
             const isInsideClassBody = context.isInsideClassBody === true;
             const hasThisInTemplate = template.includes('this');
