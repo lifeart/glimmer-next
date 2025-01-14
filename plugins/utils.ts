@@ -212,7 +212,7 @@ export function serializeChildren(
         if (isPath(child)) {
           return serializePath(child);
         }
-        return `${SYMBOLS.TEXT}(${SYMBOLS.API}(this),${escapeString(child)})`;
+        return escapeString(child);
       }
       return serializeNode(child, ctxName);
     })
@@ -551,7 +551,7 @@ export function serializeNode(
       if (isPath(node)) {
         return serializePath(node);
       } else {
-        return `${SYMBOLS.TEXT}(${SYMBOLS.API}(this),${escapeString(node)})`;
+        return escapeString(node);
       }
     }
     throw new Error('Unknown node type: ' + JSON.stringify(node, null, 2));
