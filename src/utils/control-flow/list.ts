@@ -24,6 +24,7 @@ import {
   cId,
   isEmpty,
   CHILD,
+  TREE,
 } from '@/utils/shared';
 import { isRehydrationScheduled } from '@/utils/ssr/rehydration';
 import { initDOM } from '@/utils/context';
@@ -33,6 +34,7 @@ export function getFirstNode(
   rawItem:
     | Node
     | ComponentReturnType
+    | Component
     | GenericReturnType
     | Array<Node | ComponentReturnType | GenericReturnType>,
 ): Node {
@@ -40,8 +42,22 @@ export function getFirstNode(
     return getFirstNode(rawItem[0]);
   } else if ('nodeType' in rawItem) {
     return rawItem;
+  } else if ('ctx' in rawItem) {
+    return getFirstNode(rawItem.ctx!);
   } else {
-    return rawItem.ctx![RENDERED_NODES_PROPERTY][0];
+    return (
+      rawItem![RENDERED_NODES_PROPERTY][0] ||
+      Array.from(CHILD.get(rawItem![COMPONENT_ID_PROPERTY]) ?? []).reduce(
+        (acc: null | Node, item: number) => {
+          if (!acc) {
+            return getFirstNode(TREE.get(item)!);
+          } else {
+            return acc;
+          }
+        },
+        null,
+      )
+    );
   }
 }
 
@@ -51,7 +67,10 @@ export function getFirstNode(
 
   Based on Glimmer-VM list update logic.
 */
-type GenericReturnType = Array<ComponentReturnType | Node> | ComponentReturnType | Node;
+type GenericReturnType =
+  | Array<ComponentReturnType | Node>
+  | ComponentReturnType
+  | Node;
 
 type ListComponentArgs<T> = {
   tag: Cell<T[]> | MergedCell;
@@ -102,8 +121,8 @@ export class BasicListComponent<T extends { id: number }> {
   }
   declare api: typeof HTML_API;
   declare args: {
-    [$context]: Component<any>
-  }
+    [$context]: Component<any>;
+  };
   constructor(
     { tag, ctx, key, ItemComponent }: ListComponentArgs<T>,
     outlet: RenderTarget,
@@ -113,7 +132,7 @@ export class BasicListComponent<T extends { id: number }> {
     this.ItemComponent = ItemComponent;
     this.args = {
       [$context]: ctx,
-    }
+    };
     // @ts-expect-error typings error
     addToTree(ctx, this, 'from list constructor');
     const mainNode = outlet;
@@ -331,7 +350,11 @@ export class BasicListComponent<T extends { id: number }> {
           ? getFirstNode(keyMap.get(keyForItem(nextItem, index + 1))!)
           : bottomMarker;
         // node relocation, assume we have only once root node :)
-        api.insert(insertBeforeNode.parentNode!, getFirstNode(row), insertBeforeNode)
+        api.insert(
+          insertBeforeNode.parentNode!,
+          getFirstNode(row),
+          insertBeforeNode,
+        );
       });
     if (targetNode !== bottomMarker) {
       const parent = targetNode.parentNode!;
@@ -359,7 +382,8 @@ export class SyncListComponent<
     topMarker: Comment,
   ) {
     super(params, outlet, topMarker);
-    registerDestructor(params.ctx,
+    registerDestructor(
+      params.ctx,
       () => this.syncList([]),
       opcodeFor(this.tag, (value) => {
         this.syncList(value as T[]);
@@ -443,7 +467,8 @@ export class AsyncListComponent<
     topMarker: Comment,
   ) {
     super(params, outlet, topMarker);
-    registerDestructor(params.ctx,
+    registerDestructor(
+      params.ctx,
       () => {
         if (this.destroyPromise) {
           return this.destroyPromise;
