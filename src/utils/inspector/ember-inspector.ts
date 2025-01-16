@@ -478,8 +478,8 @@ const EmberProxy: any = new Proxy(
               }
             }
           }
-          // @ts-expect-error
           let componentName =
+            // @ts-expect-error
             component.debugName || component.constructor.name || '(unknown)';
           const hasArgs = component && $args in component;
           const hasDebugArgs = component && $_debug_args in component;
