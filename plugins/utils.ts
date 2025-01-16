@@ -291,7 +291,16 @@ function toComponent(ref: string, args: string, ctx: string) {
 export function toObject(
   args: [string, string | number | boolean | null | undefined][],
 ) {
-  return `{${args.map((attr) => serializeProp(attr)).join(', ')}}`;
+  const zip = args.map((attr) => serializeProp(attr));
+  if (flags.IS_DEV_MODE) {
+    args.forEach(([key, value]) => {
+      console.log(key, value);
+      const key_ = JSON.stringify(`@:${key}`);
+      const value_ = escapeString(value as string);
+      zip.push(`${key_}: ${value_}`);
+    });
+  }
+  return `{${zip.join(', ')}}`;
 }
 function toArray(
   args: [string, string | number | boolean | null | undefined][],
