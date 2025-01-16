@@ -1,5 +1,6 @@
 export type Flags = {
   IS_GLIMMER_COMPAT_MODE: boolean;
+  IS_DEV_MODE: boolean;
   RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES: boolean;
   TRY_CATCH_ERROR_HANDLING: boolean;
   SUPPORT_SHADOW_DOM: boolean;

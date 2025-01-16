@@ -1,6 +1,16 @@
 import * as backburner from 'backburner.js';
 import { getRoot } from '../dom';
-import { $_debug_args, $context, $nodes, CHILD, COMPONENT_ID_PROPERTY, getBounds, isArray, RENDERED_NODES_PROPERTY, TREE } from '../shared';
+import {
+  $_debug_args,
+  $context,
+  $nodes,
+  CHILD,
+  COMPONENT_ID_PROPERTY,
+  getBounds,
+  isArray,
+  RENDERED_NODES_PROPERTY,
+  TREE,
+} from '../shared';
 import { Component } from '..';
 import { Cell, MergedCell, getCells, getMergedCells } from '../reactive';
 import { $args } from '../shared';
@@ -443,7 +453,10 @@ const EmberProxy: any = new Proxy(
         };
       } else if (key === '_captureRenderTree') {
         function componentToRenderTree(component: Component<any>): any {
-          let childs = Array.from(CHILD.get(component[COMPONENT_ID_PROPERTY]) ?? (new Set() as Set<number>)).map((el) => TREE.get(el));
+          let childs = Array.from(
+            CHILD.get(component[COMPONENT_ID_PROPERTY]) ??
+              (new Set() as Set<number>),
+          ).map((el) => TREE.get(el));
           if (childs.length === 0) {
             if (component instanceof IfCondition) {
               if (isArray(component.prevComponent)) {
@@ -456,14 +469,18 @@ const EmberProxy: any = new Proxy(
                   }
                 });
               } else {
-                if (component.prevComponent && $nodes in component.prevComponent) {
+                if (
+                  component.prevComponent &&
+                  $nodes in component.prevComponent
+                ) {
                   childs.push(component.prevComponent.ctx!);
                 }
               }
             }
           }
-          // @ts-expect-error
-          let componentName = component.debugName || component.constructor.name || '(unknown)';
+          let componentName =
+            // @ts-expect-error
+            component.debugName || component.constructor.name || '(unknown)';
           const hasArgs = component && $args in component;
           const hasDebugArgs = component && $_debug_args in component;
           const hasArgsOrDebugArgs = hasArgs || hasDebugArgs;
@@ -493,7 +510,9 @@ const EmberProxy: any = new Proxy(
             };
           }
 
-          const children = (childs?.map((child) => componentToRenderTree(child!)) ?? []).filter(el => el !== null);
+          const children = (
+            childs?.map((child) => componentToRenderTree(child!)) ?? []
+          ).filter((el) => el !== null);
           // @ts-expect-error
           component[RENDERED_NODES_PROPERTY].forEach((node, index) => {
             // @ts-expect-error
@@ -518,7 +537,10 @@ const EmberProxy: any = new Proxy(
               // })
             }
           });
-          if (componentName.startsWith('UnstableChildWrapper') && children.length === 1) {
+          if (
+            componentName.startsWith('UnstableChildWrapper') &&
+            children.length === 1
+          ) {
             return children[0];
           }
           let allArgs = function () {
@@ -527,7 +549,7 @@ const EmberProxy: any = new Proxy(
             } else {
               return component[$args] ?? {};
             }
-          }
+          };
           const positional: unknown[] = [];
           if (componentName.startsWith('IfCondition')) {
             componentName = 'if';
@@ -598,7 +620,46 @@ const EmberProxy: any = new Proxy(
                 component && hasArgsOrDebugArgs
                   ? {
                       get __ARGS__() {
-                        const args = allArgs();
+                        const _args = allArgs();
+                        const args: typeof _args = {};
+                        Object.keys(_args).forEach((key) => {
+                          args[key] = _args[key];
+                        });
+                        Object.keys(args).forEach((key) => {
+                          if (key.startsWith(':')) {
+                            const realName = key.replace(':@', '');
+                            if (typeof args[realName] === 'function') {
+                              if (
+                                args[realName]
+                                  .toString()
+                                  .startsWith('(...tail)')
+                              ) {
+                                args[realName] = args[key];
+                                delete args[key];
+                              }
+                            } else if (typeof args[realName] === 'string') {
+                              args[realName] = args[key].replace(
+                                'this.args.',
+                                '@',
+                              );
+                              delete args[key];
+                            } else if (typeof args[realName] === 'object') {
+                              args[realName] = args[key];
+                              delete args[key];
+                            } else if (typeof args[realName] === 'number') {
+                              args[realName] = `${args[key]}`;
+                              delete args[key];
+                            }
+
+                            if (
+                              !(realName in args) ||
+                              args[realName] === undefined
+                            ) {
+                              args[realName] = args[key];
+                              delete args[key];
+                            }
+                          }
+                        });
                         argsToHide.forEach((key) => {
                           delete args[key];
                         });
