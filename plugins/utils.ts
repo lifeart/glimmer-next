@@ -303,7 +303,6 @@ export function toObject(
         }
         value_ = value_.replaceAll('$:', '');
       }
-      console.log(key, value_);
       zip.push(`${key_}: ${value_}`);
     });
   }
