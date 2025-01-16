@@ -27,12 +27,12 @@ jobs:
       - name: Generate coverage report
         run: pnpm run nyc:report
       - name: Upload Playwright coverage report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: playwright-coverage
           path: ./coverage/playwright-final.json
           retention-days: 30
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: playwright-report
