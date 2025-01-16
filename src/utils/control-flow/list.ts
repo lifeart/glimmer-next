@@ -162,7 +162,12 @@ export class BasicListComponent<T extends { id: number }> {
       this.bottomMarker = this.api.comment();
     }
     this.topMarker = topMarker;
-
+    if (IS_DEV_MODE) {
+      // HMR logic
+      // @ts-expect-error
+      this[RENDERED_NODES_PROPERTY] = [topMarker];
+    }
+   
     this.api.insert(mainNode, this.topMarker);
     this.api.insert(mainNode, this.bottomMarker);
 

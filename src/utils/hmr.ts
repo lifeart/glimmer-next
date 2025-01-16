@@ -27,7 +27,7 @@ export function createHotReload(
     const renderedBuckets = Array.from(renderedInstances);
     // we need to append new instances before first element of rendered bucket and later remove all rendered buckets;
     // TODO: add tests for hot-reload
-    renderedBuckets.forEach(({ parent, instance, args }) => {
+    renderedBuckets.forEach(({ parent, instance, args, tags }) => {
       const newCmp = component(newKlass, args, parent);
       const firstElement = getFirstNode(instance);
       const parentElement = firstElement.parentNode;
@@ -83,6 +83,21 @@ export function createHotReload(
       const api = initDOM(newCmp.ctx);
       unregisterFromParent(instance);
       renderElement(api, newCmp.ctx!, parentElement, newCmp, firstElement);
+      const newComponents = Array.from(COMPONENTS_HMR.get(newKlass) || []);
+      const tagsFromCurrentInstance = newComponents.find((item) => item.instance === newCmp)?.tags ?? [];
+      if (tagsFromCurrentInstance.length === tags.length) {
+        tags.forEach((tag, index) => {
+          const newTag = tagsFromCurrentInstance[index];
+          if (newTag && tag._debugName && newTag._debugName) {
+            if (tag._debugName?.endsWith(newTag._debugName)) {
+              if (newTag._value !== tag._value) {
+                newTag.value = tag._value;
+              }
+              newTag._debugName = tag._debugName;
+            }
+          }
+        });
+      }
       destroyElementSync(instance);
     });
     COMPONENTS_HMR.delete(oldklass);
