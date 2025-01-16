@@ -188,6 +188,13 @@ export class IfCondition {
       this.prevComponent,
       this.placeholder,
     );
+    if (IS_DEV_MODE) {
+      // HMR logic
+      if (this.runNumber === 1) {
+      // @ts-expect-error
+        this[RENDERED_NODES_PROPERTY] = [this.placeholder];
+      }
+    }
     // @ts-expect-error branch destroying
     unregisterFromParent(this.prevComponent);
     return;

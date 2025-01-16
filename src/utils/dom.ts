@@ -13,6 +13,8 @@ import {
   MergedCell,
   formula,
   deepFnValue,
+  getTagId,
+  tagsFromRange,
 } from '@/utils/reactive';
 import { checkOpcode, opcodeFor } from '@/utils/vm';
 import {
@@ -903,21 +905,25 @@ function _component(
   ctx: Component<any>,
 ) {
   args[$context] = ctx;
+  let startTagId = 0;
+  if (IS_DEV_MODE) {
+    startTagId = getTagId();
+  }
   let comp = _comp;
   if (WITH_EMBER_INTEGRATION) {
     if ($_MANAGERS.component.canHandle(_comp)) {
       comp = $_MANAGERS.component.handle(_comp, args, fw, ctx);
     }
   }
-  if (IS_DEV_MODE) {
-    if (!COMPONENTS_HMR.has(comp)) {
-      COMPONENTS_HMR.set(comp, new Set());
-    }
-  }
   if (IS_GLIMMER_COMPAT_MODE) {
   } else {
     if (isTagLike(comp)) {
       comp = comp.value;
+    }
+  }
+  if (IS_DEV_MODE) {
+    if (!COMPONENTS_HMR.has(comp)) {
+      COMPONENTS_HMR.set(comp, new Set());
     }
   }
   let instance =
@@ -943,6 +949,7 @@ function _component(
         parent: ctx,
         instance: result,
         args,
+        tags: tagsFromRange(startTagId),
       };
       COMPONENTS_HMR.get(comp)?.add(bucket);
       registerDestructor(ctx, () => {
@@ -973,6 +980,7 @@ function _component(
       parent: ctx,
       instance: instance,
       args,
+      tags: tagsFromRange(startTagId),
     });
   }
   return instance;
@@ -1008,7 +1016,7 @@ function createSlot(
       return v;
     }
   });
-  const elements = value(...[slotContext, ...paramsArray]);
+  const elements = value ? value(...[slotContext, ...paramsArray]) : [];
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.pop();
     // @ts-expect-error

@@ -3,7 +3,7 @@ import {
   type Component,
   type ComponentReturnType,
 } from '@/utils/component';
-import { type AnyCell } from './reactive';
+import type { Cell, AnyCell } from './reactive';
 import { type BasicListComponent } from './control-flow/list';
 import { registerDestructor } from './glimmer/destroyable';
 
@@ -211,5 +211,6 @@ export const COMPONENTS_HMR = new WeakMap<
     parent: any;
     instance: ComponentReturnType;
     args: Record<string, unknown>;
+    tags: Cell[];
   }>
 >();

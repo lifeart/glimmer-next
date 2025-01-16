@@ -203,6 +203,20 @@ function bindAllCellsToTag(cells: Set<Cell>, tag: MergedCell) {
 
 // "derived" cell, it's value is calculated from other cells, and it's value can't be updated
 let tagId = 0;
+
+export function getTagId() {
+  return tagId;
+}
+
+export function tagsFromRange(start: number, end: number = getTagId()) {
+  const tags: Array<Cell> = [];
+  DEBUG_CELLS.forEach((cell) => {
+    if (cell.id >= start && cell.id <= end) {
+      tags.push(cell);
+    }
+  });
+  return tags;
+}
 export class MergedCell {
   fn: Fn | Function;
   declare toHTML: () => string;
