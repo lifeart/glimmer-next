@@ -294,9 +294,16 @@ export function toObject(
   const zip = args.map((attr) => serializeProp(attr));
   if (flags.IS_DEV_MODE) {
     args.forEach(([key, value]) => {
-      console.log(key, value);
-      const key_ = JSON.stringify(`@:${key}`);
-      const value_ = escapeString(value as string);
+      const key_ = JSON.stringify(`:${key}`);
+      let value_ = escapeString(value as string);
+      if (value_.startsWith('"$:')) {
+        value_ = value_.replaceAll('?', '').replaceAll('[$args]', '.args').replaceAll('$:() => $:', '');
+        if (value_.startsWith(`"${SYMBOLS.$__fn}`)) {
+          value_  = value_.replaceAll(`${SYMBOLS.$__fn}(`, '').replaceAll(',', '(');
+        }
+        value_ = value_.replaceAll('$:', '');
+      }
+      console.log(key, value_);
       zip.push(`${key_}: ${value_}`);
     });
   }
