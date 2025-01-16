@@ -67,7 +67,9 @@ export function renderElement(
   if (!isArray(el)) {
     if (isPrimitive(el)) {
       let node = api.text(el);
-      ctx[RENDERED_NODES_PROPERTY].push(node);
+      if (skipRegistration !== true) {
+        ctx[RENDERED_NODES_PROPERTY].push(node);
+      }
       api.insert(target, node, placeholder);
     } else if ((el as HTMLElement).nodeType) {
       if (skipRegistration !== true) {
