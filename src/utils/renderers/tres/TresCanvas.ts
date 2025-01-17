@@ -54,6 +54,8 @@ export function TresCanvas(this: Component) {
   canvasNode.style.top = '0';
   canvasNode.style.left = '0';
   canvasNode.style.pointerEvents = 'auto';
+  const existingCanvas = canvasNode;
+  const scene = new Scene();
 
   const $slots = $_GET_SLOTS(this, arguments);
 
@@ -61,9 +63,6 @@ export function TresCanvas(this: Component) {
   const root = {} as Root;
   provideContext(root, RENDERING_CONTEXT, api);
   requestAnimationFrame(() => {
-    const existingCanvas = canvasNode;
-    const scene = new Scene();
-
 
     const nodes = $slots.default(root);
     nodes.forEach((node: unknown) => {
@@ -82,7 +81,6 @@ export function TresCanvas(this: Component) {
     console.log({
       registerCamera, camera, cameras, deregisterCamera
     })
-
 
     const addDefaultCamera = () => {
       const camera = new PerspectiveCamera(
