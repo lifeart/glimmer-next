@@ -29,10 +29,16 @@ module('Integration | multiroot', function () {
     assert.dom(r2).exists('app two node exists');
     assert.ok(r3, 'app three node exists');
 
-    const appOneInstance = renderComponent(AppOne, {}, r1);
-    const appTwoInstance = renderComponent(AppOne, {}, r2);
+    const appOneInstance = renderComponent(AppOne, {
+      element: r1,
+    });
+    const appTwoInstance = renderComponent(AppOne, {
+      element: r2,
+    });
 
-    const appThreeInstance = renderComponent(AppOne, {}, r3);
+    const appThreeInstance = renderComponent(AppOne, {
+      element: r3,
+    });
 
     function qButton(r: Element) {
       return r.querySelector('[data-test-button]') as HTMLButtonElement;

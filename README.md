@@ -208,9 +208,12 @@ import App from "./App.gts";
 const Instance = renderComponent(
   App, {
     // application arguments
-    name: 'My App'
-  },
-  document.getElementById("app"),
+    args: {
+      name: 'My App'
+    },
+    // render target (append to)
+    element: document.getElementById("app"),
+  }
 );
 ```
 

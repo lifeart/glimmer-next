@@ -111,11 +111,16 @@ export function renderElement(
 
 export function renderComponent(
   component: typeof Component<any>,
-  componentArgs: Record<string, unknown>,
-  target: ComponentRenderTarget,
-  appRoot: Root | Component<any> = createRoot(),
-  skipRoot?: boolean,
+  params: {
+    owner?: Root;
+    args?: Record<string, unknown>;
+    element?: ComponentRenderTarget;
+  } = {},
 ): ComponentReturnType {
+  const appRoot = params.owner ?? createRoot();
+  const target = params.element ?? document.body;
+  const componentArgs = params.args ?? {};
+
   if (import.meta.env.DEV) {
     if (target === undefined) {
       throw new Error(`Trying to render undefined`);
@@ -124,15 +129,13 @@ export function renderComponent(
   cleanupFastContext();
   const targetElement = targetFor(target);
 
-  if (!skipRoot) {
-    if (!initDOM(appRoot)) {
-      // setting default dom api
-      provideContext(
-        appRoot,
-        RENDERING_CONTEXT,
-        new HTMLBrowserDOMApi((appRoot as Root).document),
-      );
-    }
+  if (!initDOM(appRoot)) {
+    // setting default dom api
+    provideContext(
+      appRoot,
+      RENDERING_CONTEXT,
+      new HTMLBrowserDOMApi((appRoot as Root).document),
+    );
   }
 
   const args = {
