@@ -19,7 +19,6 @@ export function cId() {
 }
 
 export const $template = 'template' as const;
-export const $context = '_context' as const;
 export const $nodes = 'nodes' as const;
 export const $args = 'args' as const;
 export const $_debug_args = '_debug_args' as const;

@@ -1,7 +1,6 @@
 import { registerDestructor } from './glimmer/destroyable';
 import { Component } from './component';
 import {
-  $context,
   COMPONENT_ID_PROPERTY,
   isFn,
   PARENT,
@@ -84,9 +83,6 @@ export function getContext<T>(
   // TODO: add fancy error message about missing provider in dev mode,
   // we may track context usage and provide a better error message
   if (import.meta.env.DEV && !current && !(ctx instanceof Root)) {
-    if (ctx?.args?.[$context]) {
-      return getContext(ctx?.args?.[$context], key);
-    }
     console.log('`Unable to resolve parent for ', ctx, key);
     console.log('Lookup tree:', lookupTree);
     debugger;

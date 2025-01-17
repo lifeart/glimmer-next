@@ -26,7 +26,6 @@ import {
   TREE,
   CHILD,
   PARENT,
-  $context,
 } from './shared';
 import { resolveRenderable, Root, $_c } from './dom';
 import {
@@ -138,13 +137,7 @@ export function renderComponent(
     );
   }
 
-  const args = {
-    ...componentArgs,
-    ...{
-      [$context]: appRoot,
-    },
-  };
-  const instance = $_c(component, args, appRoot);
+  const instance = $_c(component, componentArgs, appRoot);
 
   const dom = initDOM(appRoot);
   const children = instance[$nodes];
