@@ -185,11 +185,12 @@ export function useTresContextProvider({
 
 
   ctx.loop.register(() => {
-    debugger;
-    if (camera && render.frames > 0) {
-        debugger;
+    // debugger;
+    render.frames = 1
+    if (camera.value) {
+        // debugger;
       renderer.render(scene, camera.value)
-      emit('render', ctx.renderer)
+    //   emit('render', ctx.renderer)
     }
 
     // Reset priority
