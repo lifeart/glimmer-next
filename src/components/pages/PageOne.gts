@@ -31,9 +31,8 @@ export function PageOne() {
       <Controls />
       <br />
       <TresCanvas>
-        <TresPerspectiveCamera />
-        <TresMesh @click='”onClick”'>
-          <TresBoxGeometry :args='[1, 1, 1]' />
+        <TresMesh>
+          <TresBoxGeometry @args={{array 1 1 1}} />
           <TresMeshNormalMaterial />
         </TresMesh>
       </TresCanvas>

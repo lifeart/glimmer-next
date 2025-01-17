@@ -1,20 +1,19 @@
 import type { Camera, WebGLRenderer } from 'three'
-import type { ComputedRef, DeepReadonly, MaybeRef, MaybeRefOrGetter, Ref, ShallowRef } from 'vue'
-import type { RendererLoop } from '../../core/loop'
-import type { EmitEventFn, TresControl, TresObject, TresScene } from '../../types'
-import type { UseRendererOptions } from '../useRenderer'
-import { useFps, useMemory, useRafFn } from '@vueuse/core'
+import type { ComputedRef, DeepReadonly, MaybeRef, MaybeRefOrGetter, Ref, ShallowRef } from './vue'
+import type { RendererLoop } from './loop'
+import type { EmitEventFn, TresControl, TresObject, TresScene } from './types'
+import type { UseRendererOptions } from './useRenderer'
+import { useFps, useMemory, useRafFn } from './vue'
 import { Raycaster } from 'three'
-import { computed, inject, onUnmounted, provide, readonly, ref, shallowRef } from 'vue'
-import { extend } from '../../core/catalogue'
-import { createRenderLoop } from '../../core/loop'
-import { calculateMemoryUsage } from '../../utils/perf'
+import { computed, inject, onUnmounted, provide, readonly, ref, shallowRef } from './vue'
+import { extend } from './catalogue'
+import { createRenderLoop } from './loop'
 
-import { useCamera } from '../useCamera'
-import { useRenderer } from '../useRenderer'
-import useSizes, { type SizesType } from '../useSizes'
-import { type TresEventManager, useTresEventManager } from '../useTresEventManager'
-import { useTresReady } from '../useTresReady'
+import { useCamera } from './useCamera'
+import { useRenderer } from './useRenderer'
+import useSizes from './useSizes'
+import { type TresEventManager, useTresEventManager } from './useTresEventManager'
+import { useTresReady } from './useTresReady'
 
 export interface InternalState {
   priority: Ref<number>
@@ -115,19 +114,19 @@ export function useTresContextProvider({
     priority: ref(0),
     frames: ref(0),
     maxFrames: 60,
-    canBeInvalidated: computed(() => render.mode.value === 'on-demand' && render.frames.value === 0),
+    canBeInvalidated: computed(() => render.mode === 'on-demand' && render.frames === 0),
   }
 
   function invalidate(frames = 1) {
     // Increase the frame count, ensuring not to exceed a maximum if desired
     if (rendererOptions.renderMode === 'on-demand') {
-      render.frames.value = Math.min(render.maxFrames, render.frames.value + frames)
+      render.frames = Math.min(render.maxFrames, render.frames + frames)
     }
   }
 
   function advance() {
     if (rendererOptions.renderMode === 'manual') {
-      render.frames.value = 1
+      render.frames = 1
     }
   }
 
@@ -138,7 +137,7 @@ export function useTresContextProvider({
       options: rendererOptions,
       emit,
       // TODO: replace contextParts with full ctx at https://github.com/Tresjs/tres/issues/516
-      contextParts: { sizes, camera, render, invalidate, advance },
+      contextParts: { sizes, camera: camera.value, render, invalidate, advance },
     },
   )
 
@@ -172,29 +171,35 @@ export function useTresContextProvider({
     loop: createRenderLoop(),
   }
 
+  debugger;
   provide('useTres', ctx)
 
   // Add context to scene local state
-  ctx.scene.value.__tres = {
+  ctx.scene.__tres = {
     root: ctx,
   }
 
+  ctx.loop.setContext(ctx);
   // The loop
 
+
+
   ctx.loop.register(() => {
-    if (camera.value && render.frames.value > 0) {
-      renderer.value.render(scene, camera.value)
-      emit('render', ctx.renderer.value)
+    debugger;
+    if (camera && render.frames > 0) {
+        debugger;
+      renderer.render(scene, camera.value)
+      emit('render', ctx.renderer)
     }
 
     // Reset priority
-    render.priority.value = 0
+    render.priority = 0
 
-    if (render.mode.value === 'always') {
-      render.frames.value = 1
+    if (render.mode === 'always') {
+      render.frames = 1
     }
     else {
-      render.frames.value = Math.max(0, render.frames.value - 1)
+      render.frames = Math.max(0, render.frames - 1)
     }
   }, 'render')
 
@@ -204,7 +209,8 @@ export function useTresContextProvider({
   ctx.loop.start()
 
   onTresReady(() => {
-    emit('ready', ctx)
+    // emit('ready', ctx)
+    debugger;
     ctx.loop.setReady(true)
     useTresEventManager(scene, ctx, emit)
   })
@@ -223,9 +229,9 @@ export function useTresContextProvider({
 
   const updatePerformanceData = ({ timestamp }: { timestamp: number }) => {
     // Update WebGL Memory Usage (Placeholder for actual logic)
-    // perf.memory.value = calculateMemoryUsage(gl)
-    if (ctx.scene.value) {
-      ctx.perf.memory.allocatedMem = calculateMemoryUsage(ctx.scene.value as unknown as TresObject)
+    // perf.memory = calculateMemoryUsage(gl)
+    if (ctx.scene) {
+      ctx.perf.memory.allocatedMem = 12;
     }
 
     // Update memory usage
@@ -233,17 +239,17 @@ export function useTresContextProvider({
       lastUpdateTime = timestamp
 
       // Update FPS
-      ctx.perf.fps.accumulator.push(fps.value as never)
+      ctx.perf.fps.accumulator.push(fps as never)
 
       if (ctx.perf.fps.accumulator.length > maxFrames) {
         ctx.perf.fps.accumulator.shift()
       }
 
-      ctx.perf.fps.value = fps.value
+      ctx.perf.fps = fps
 
       // Update memory
-      if (isSupported.value && memory.value) {
-        ctx.perf.memory.accumulator.push(memory.value.usedJSHeapSize / 1024 / 1024 as never)
+      if (isSupported && memory) {
+        ctx.perf.memory.accumulator.push(memory.usedJSHeapSize / 1024 / 1024 as never)
 
         if (ctx.perf.memory.accumulator.length > maxFrames) {
           ctx.perf.memory.accumulator.shift()

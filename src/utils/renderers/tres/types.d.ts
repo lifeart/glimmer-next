@@ -19,6 +19,9 @@ export interface TresCatalogue {
 }
 export type TresCamera = THREE.OrthographicCamera | THREE.PerspectiveCamera
 
+export type TresPrimitive = TresInstance & { object: TresInstance, isPrimitive: true }
+
+
 export interface InstanceProps<T = any, P = any> {
   args?: Args<P>
   object?: T

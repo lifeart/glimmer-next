@@ -1,6 +1,6 @@
 import { BufferAttribute } from 'three'
 import type { Camera, Object3D } from 'three'
-import { deepArrayEqual, isHTMLTag, kebabToCamel } from './utils'
+import { deepArrayEqual, isHTMLTag, kebabToCamel } from './utils/index'
 
 import type { TresObject, TresObject3D, TresScene } from './types'
 import { catalogue } from './catalogue'
@@ -102,7 +102,6 @@ export class TresBrowserDOMApi implements DOMApi {
   // @ts-expect-error
   insert(parent, child) {
     if (parent && parent.isScene) { scene = parent as unknown as TresScene }
-
     const parentObject = parent || scene
 
     if (child?.isObject3D) {
