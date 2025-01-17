@@ -118,7 +118,7 @@ export function setBounds(component: ComponentReturnType) {
     BOUNDS.delete(ctx);
   });
 }
-const SEEN_TREE_NODES = new WeakSet();
+export const SEEN_TREE_NODES = new WeakSet();
 export const TREE: Map<number, Component<any>> = new Map();
 export const CHILD: Map<number, Array<number> | undefined> = new Map();
 export const PARENT: Map<number, number> = new Map();

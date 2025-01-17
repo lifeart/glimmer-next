@@ -47,6 +47,7 @@ import {
   CHILD,
   TREE,
   PARENT,
+  SEEN_TREE_NODES,
 } from './shared';
 import { isRehydrationScheduled } from './ssr/rehydration';
 import { createHotReload } from './hmr';
@@ -788,14 +789,26 @@ export const $_maybeHelper = (
   return value;
 };
 
-let parentContext: Root | Component<any> | null = null;
+let parentContext: Array<number> = [];
+let parentContextIndex = -1;
 
 export const setParentContext = (value: Root | Component<any> | null) => {
-  parentContext  = value;
-}
+  if (value === null) {
+    parentContextIndex--;
+    parentContext.pop();
+  } else {
+    parentContextIndex++;
+    parentContext.push(value[COMPONENT_ID_PROPERTY]!);
+  }
+};
 export const getParentContext = () => {
-  return parentContext;
-}
+  if (IS_DEV_MODE) {
+    if (!TREE.get(parentContext[parentContextIndex]!)) {
+      throw new Error('unable to get parent context before set');
+    }
+  }
+  return TREE.get(parentContext[parentContextIndex]!);
+};
 
 function component(
   comp: ComponentReturnType | Component | typeof Component,
@@ -1177,7 +1190,9 @@ export function $_GET_ARGS(ctx: Component<any>, args: IArguments) {
   ctx[$args] = ctx[$args] || args[0] || {};
   ctx[RENDERED_NODES_PROPERTY] = ctx[RENDERED_NODES_PROPERTY] ?? [];
   ctx[COMPONENT_ID_PROPERTY] = ctx[COMPONENT_ID_PROPERTY] ?? cId();
-  addToTree(getParentContext()!, ctx);
+  if (!SEEN_TREE_NODES.has(ctx)) {
+    addToTree(getParentContext()!, ctx);
+  }
 }
 export function $_GET_SLOTS(ctx: any, args: any) {
   return (args[0] || {})[$SLOTS_SYMBOL] || ctx[$args]?.[$SLOTS_SYMBOL] || {};
