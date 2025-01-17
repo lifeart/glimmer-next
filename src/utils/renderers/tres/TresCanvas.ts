@@ -1,5 +1,18 @@
-import { $_tag, $_fin, Component, $_GET_ARGS, $_GET_SLOTS, $_slot } from '@lifeart/gxt';
-import { getContext, provideContext, RENDERING_CONTEXT, ROOT_CONTEXT } from '@/utils/context';
+import {
+  $_tag,
+  $_fin,
+  Component,
+  $_GET_ARGS,
+  $_GET_SLOTS,
+  $_slot,
+  Root,
+} from '@lifeart/gxt';
+import {
+  getContext,
+  provideContext,
+  RENDERING_CONTEXT,
+  ROOT_CONTEXT,
+} from '@/utils/context';
 import { TresBrowserDOMApi } from './tres-api';
 
 // <canvas
@@ -22,7 +35,12 @@ import { TresBrowserDOMApi } from './tres-api';
 
 export function TresCanvas(this: Component) {
   $_GET_ARGS(this, arguments);
-  const canvasNode = $_tag('canvas', [[],[],[]], [], this) as HTMLCanvasElement;
+  const canvasNode = $_tag(
+    'canvas',
+    [[], [], []],
+    [],
+    this,
+  ) as HTMLCanvasElement;
   canvasNode.setAttribute('data-tres', 'tresjs 0.0.0');
   canvasNode.style.display = 'block';
   canvasNode.style.border = '1px solid red';
@@ -36,8 +54,16 @@ export function TresCanvas(this: Component) {
   const $slots = $_GET_SLOTS(this, arguments);
 
   const api = new TresBrowserDOMApi();
-  const self = this;
-  provideContext(this, RENDERING_CONTEXT, api);
+  const root = {} as Root;
+  provideContext(root, RENDERING_CONTEXT, api);
+  requestAnimationFrame(() => {
+    const nodes = $slots.default(root);
+    nodes.forEach((node: unknown) => {
+      api.insert(canvasNode, node);
+    });
+    console.log('$slots', nodes);
+  });
+  // $_slot("default", () => [canvasNode], $slots, self)]
   // @ts-expect-error
-  return $_fin([canvasNode, $_slot("default", () => [canvasNode], $slots, self)], this);
+  return $_fin([canvasNode], this);
 }
