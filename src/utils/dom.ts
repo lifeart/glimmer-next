@@ -621,12 +621,16 @@ function _DOM(
         renderElement(api, ctx, appendRef!, children);
       }
     } else {
-      // @ts-expect-error children type mismatch
-      renderElement(api, ctx, appendRef!, children);
+      for (let i = 0; i < children.length; i++) {
+        // @ts-expect-error children type mismatch
+        renderElement(api, ctx, appendRef!, children[i], null, true);
+      }
     }
   } else {
-    // @ts-expect-error children type mismatch
-    renderElement(api, ctx, element, children);
+    for (let i = 0; i < children.length; i++) {
+      // @ts-expect-error children type mismatch
+      renderElement(api, ctx, element, children[i], null, true);
+    }
   }
 
   if (destructors.length) {

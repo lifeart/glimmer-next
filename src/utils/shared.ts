@@ -44,14 +44,17 @@ export function isFn(value: unknown): value is Function {
 export function isEmpty(value: unknown): value is null | undefined {
   return value === null || value === undefined;
 }
+
 export function isPrimitive(value: unknown): value is string | number {
-  const vType = typeof value;
-  return (
-    vType === 'string' ||
-    vType === 'number' ||
-    vType === 'boolean' ||
-    vType === 'bigint'
-  );
+  switch (typeof value) {
+    case 'string':
+    case 'number':
+    case 'boolean':
+    case 'bigint':
+      return true;
+    default:
+      return false;
+  }
 }
 
 export function isTagLike(child: unknown): child is AnyCell {

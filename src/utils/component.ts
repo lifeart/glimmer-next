@@ -66,46 +66,64 @@ export function renderElement(
   placeholder: Comment | Node | null = null,
   skipRegistration = false,
 ) {
+  if (isFn(el)) {
+    // @ts-expect-error
+    el = resolveRenderable(el);
+  }
   if (isEmpty(el) || el === '') {
     return;
   }
-  if (!isArray(el)) {
-    if (isPrimitive(el)) {
-      let node = api.text(el);
-      if (skipRegistration !== true) {
-        ctx[RENDERED_NODES_PROPERTY].push(node);
-      }
-      api.insert(target, node, placeholder);
-    } else if ((el as HTMLElement).nodeType) {
-      if (skipRegistration !== true) {
-        ctx[RENDERED_NODES_PROPERTY].push(el as Node);
-      }
-      api.insert(target, el as Node, placeholder);
-    } else if ($nodes in el) {
-      el[$nodes].forEach((node) => {
-        // @ts-expect-error el.ctx
-        renderElement(api, el.ctx, target, node, placeholder);
-      });
-      el[$nodes].length = 0;
-      // el.ctx![RENDERED_NODES_PROPERTY].reverse();
-    } else if (isFn(el)) {
-      // @ts-expect-error
-      renderElement(api, ctx, target, resolveRenderable(el), placeholder, skipRegistration);
-    } else if (isTagLike(el)) {
-      const node = api.text('');
+
+  const renderedNodes = ctx[RENDERED_NODES_PROPERTY];
+
+  if (isPrimitive(el)) {
+    const node = api.text(el);
+    if (!skipRegistration) {
       ctx[RENDERED_NODES_PROPERTY].push(node);
-      api.insert(target, node, placeholder);
-      registerDestructor(ctx, opcodeFor(el, (value) => {
-        api.textContent(node, String(value ?? ''));
-      }));
-    } else {
-      throw new Error(`Unknown element type ${el}`);
     }
-  } else {
+    api.insert(target, node, placeholder);
+    return;
+  }
+
+  if ((el as HTMLElement).nodeType) {
+    if (!skipRegistration) {
+      renderedNodes.push(el as Node);
+    }
+    api.insert(target, el as Node, placeholder);
+    return;
+  }
+
+  if ($nodes in el) {
+    const nodes = el[$nodes];
+    const elCtx = el.ctx!;
+    for (let i = 0; i < nodes.length; i++) {
+      renderElement(api, elCtx, target, nodes[i], placeholder);
+    }
+    nodes.length = 0;
+    return;
+  }
+
+  if (isTagLike(el)) {
+    const node = api.text('');
+    renderedNodes.push(node);
+    registerDestructor(
+      ctx,
+      opcodeFor(el, (value) => {
+        api.textContent(node, String(value ?? ''));
+      }),
+    );
+    api.insert(target, node, placeholder);
+    return;
+  }
+
+  if (Array.isArray(el)) {
     for (let i = 0; i < el.length; i++) {
       renderElement(api, ctx, target, el[i], placeholder, true);
     }
+    return;
   }
+
+  throw new Error(`Unknown element type ${el}`);
 }
 
 export function renderComponent(
