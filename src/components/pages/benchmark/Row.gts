@@ -63,7 +63,6 @@ export class Row extends Component<RowArgs> {
         element.style.backgroundColor = 'blue';
         element.style.transition = 'all 1.4s ease';
         element.style.transform = 'scale(0)';
-        await new Promise((resolve) => setTimeout(resolve, 1400));
       } else {
         element.style.position = 'absolute';
         element.style.top = `${rect.top + (scrollTop || -80)}px`;
@@ -73,8 +72,8 @@ export class Row extends Component<RowArgs> {
         element.style.backgroundColor = 'blue';
         element.style.transition = 'all 1.4s ease';
         element.style.transform = 'translateX(100%)';
-        await new Promise((resolve) => setTimeout(resolve, 1400));
       }
+      await Promise.allSettled(element.getAnimations().map((a) => a.finished));
     };
     return result;
   };
