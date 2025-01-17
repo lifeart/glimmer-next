@@ -407,8 +407,8 @@ export class SyncListComponent<
         destroyElementSync(value, true);
       }
       parent.innerHTML = '';
-      parent.append(topMarker);
-      parent.append(bottomMarker);
+      this.api.insert(parent, topMarker);
+      this.api.insert(parent, bottomMarker);
       keyMap.clear();
       indexMap.clear();
       return true;
@@ -504,8 +504,8 @@ export class AsyncListComponent<
       await Promise.all(promises);
       promises.length = 0;
       parent.innerHTML = '';
-      parent.append(topMarker);
-      parent.append(bottomMarker);
+      this.api.insert(parent, topMarker);
+      this.api.insert(parent, bottomMarker);
       keyMap.clear();
       indexMap.clear();
       return true;

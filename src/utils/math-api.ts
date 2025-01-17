@@ -30,9 +30,6 @@ export class MathMLBrowserDOMApi implements DOMApi {
   prop(element: SVGElement, name: string, value: string) {
     element.setAttribute(name, value);
   }
-  append(parent: SVGElement, child: SVGElement) {
-    parent.appendChild(child);
-  }
   insert(parent: SVGElement, child: SVGElement) {
     parent.insertBefore(child, null);
   }

@@ -17,12 +17,6 @@ export abstract class DOMApi {
   abstract textContent(node: Node, text: string): void;
   abstract fragment(): DocumentFragment;
   abstract element(tagName: string): Node;
-  abstract append(
-    parent: HTMLElement | Node,
-    child: HTMLElement | Node,
-    // @ts-ignore
-    targetIndex: number = 0,
-  ): void;
   abstract insert(
     parent: HTMLElement | Node,
     child: HTMLElement | Node,
@@ -83,14 +77,6 @@ export class HTMLBrowserDOMApi implements DOMApi {
   }
   element(tagName = ''): HTMLElement {
     return this.doc.createElement(tagName);
-  }
-  append(
-    parent: HTMLElement | Node,
-    child: HTMLElement | Node,
-    // @ts-ignore
-    targetIndex: number = 0,
-  ) {
-    this.insert(parent, child, null);
   }
   insert(
     parent: HTMLElement | Node,

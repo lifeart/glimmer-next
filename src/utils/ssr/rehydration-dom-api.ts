@@ -156,42 +156,6 @@ export class HTMLRehydrationBrowserDOMApi implements DOMApi {
     }
     return this.doc.createElement(tagName);
   }
-  append(
-    parent: HTMLElement | Node,
-    child: HTMLElement | Node,
-    targetIndex: number = 0,
-  ) {
-    if (isRehydrationScheduled()) {
-      if (import.meta.env.DEV) {
-        if (!parent) {
-          debugger;
-        }
-      }
-      // in this case likely child is a text node, and we don't need to append it, we need to prepend it
-      const childNodes = Array.from(parent.childNodes);
-      const maybeIndex = childNodes.indexOf(child as any);
-      if (maybeIndex !== -1 && maybeIndex === targetIndex) {
-        return;
-      }
-      if (childNodes.length === 0) {
-        this.insert(parent, child, null);
-        return;
-      } else if (targetIndex === 0) {
-        this.insert(parent, child, parent.firstChild);
-        return;
-      } else if (targetIndex >= childNodes.length) {
-        this.insert(parent, child, null);
-        return;
-      }
-      if (!childNodes[targetIndex]) {
-        throw new Error(`Rehydration filed. Unable to find target node.`);
-      }
-      this.insert(parent, child, childNodes[targetIndex]!);
-      return;
-    } else {
-      this.insert(parent, child, null);
-    }
-  }
   insert(
     parent: HTMLElement | Node,
     child: HTMLElement | Node,
