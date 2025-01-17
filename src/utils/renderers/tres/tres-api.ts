@@ -6,6 +6,7 @@ import type { TresObject, TresObject3D, TresScene } from './types'
 import { catalogue } from './catalogue'
 import { Props } from '@/utils/types'
 import { isFn } from '@/utils/shared'
+import { DOMApi } from '@/utils/dom-api'
 
 
 let scene: TresScene | null = null
@@ -23,8 +24,8 @@ const supportedPointerEvents = [
   'onPointerLeave',
 ]
 
-export const api = {
-  element(tag: string, _isSVG: string, _anchor: any, _props: Props) {
+export class TresBrowserDOMApi implements DOMApi {
+  element(tag: string, _isSVG = false, _anchor = false, _props: Props = [[],[],[]]) {
     let props = {};
     let args = _props[1];
     args.forEach((arg) => {
@@ -97,9 +98,9 @@ export const api = {
     }
 
     return instance
-  },
+  }
   // @ts-expect-error
-  append(parent, child) {
+  insert(parent, child) {
     if (parent && parent.isScene) { scene = parent as unknown as TresScene }
 
     const parentObject = parent || scene
@@ -133,7 +134,7 @@ export const api = {
         parentObject[child.attach] = child
       }
     }
-  },
+  }
   // @ts-expect-error
   destroy(node) {
     if (!node) { return }
@@ -193,7 +194,11 @@ export const api = {
     }
 
     node.dispose?.()
-  },
+  }
+  // @ts-expect-error
+  attr(node, prop, nextValue) {
+    this.prop(node, prop, nextValue);
+  }
   // @ts-expect-error
   prop(node, prop, nextValue) {
     if (node) {
@@ -257,7 +262,7 @@ export const api = {
       else if (!target.isColor && target.setScalar) { target.setScalar(value) }
       else { target.set(value) }
     }
-  },
+  }
   // @ts-expect-error
   parentNode(node) {
     return node?.parent || null
