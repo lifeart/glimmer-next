@@ -141,7 +141,9 @@ export function withRehydration(
       }
     });
  
-    renderComponent(componentCreationCallback, args, targetNode, root, true);
+    renderComponent(componentCreationCallback, {
+      args, element: targetNode, owner: root,
+    });
     if (withRehydrationStack.length > 0) {
       const lastNodes = Array.from(withRehydrationStack);
       console.warn('withRehydrationStack is not empty', lastNodes);

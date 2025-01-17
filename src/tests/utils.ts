@@ -116,11 +116,12 @@ export async function render(component: ComponentReturnType) {
   let renderResult = renderComponent(
     createTestComponent(component, owner),
     {
-      [$context]: owner,
-    },
-    targetElement,
-    owner,
-    false,
+      args:  {
+        [$context]: owner,
+      },
+      element: targetElement,
+      owner,
+    }
   );
   await rerender();
   return renderResult;

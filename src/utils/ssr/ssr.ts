@@ -20,9 +20,11 @@ export async function renderInBrowser(
   // @todo - add destructor
   renderComponent(
     componentRenderFn,
-    args,
-    rootNode,
-    root,
+    {
+      args,
+      element: rootNode,
+      owner: root,
+    },
   );
   const html = rootNode.innerHTML;
   rootNode.remove();
@@ -44,7 +46,11 @@ export async function render(
   doc.body.appendChild(rootNode);
 
   resetNodeCounter();
-  renderComponent(component, args, rootNode as unknown as HTMLElement, root);
+  renderComponent(component, {
+    args, 
+    element: rootNode as unknown as HTMLElement, 
+    owner: root,
+  });
   resetNodeCounter();
 
   const s = new XMLSerializer();

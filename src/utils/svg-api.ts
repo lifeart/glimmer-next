@@ -42,9 +42,6 @@ export class SVGBrowserDOMApi implements DOMApi {
       element.setAttribute(name, value);
     }
   }
-  append(parent: SVGElement, child: SVGElement) {
-    parent.appendChild(child);
-  }
   insert(parent: SVGElement, child: SVGElement) {
     parent.insertBefore(child, null);
   }

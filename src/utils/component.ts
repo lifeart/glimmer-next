@@ -1,7 +1,6 @@
 import {
   destroy,
   registerDestructor,
-  Destructors,
   destroySync,
 } from '@/utils/glimmer/destroyable';
 import type {
@@ -36,7 +35,8 @@ import {
   RENDERING_CONTEXT,
   cleanupFastContext,
 } from './context';
-import { cellToText, createRoot, MergedCell } from '.';
+import { createRoot, MergedCell } from '.';
+import { opcodeFor } from './vm';
 
 export type ComponentRenderTarget =
   | Element
@@ -91,13 +91,14 @@ export function renderElement(
       // el.ctx![RENDERED_NODES_PROPERTY].reverse();
     } else if (isFn(el)) {
       // @ts-expect-error
-      renderElement(api, ctx, target, resolveRenderable(el), placeholder);
+      renderElement(api, ctx, target, resolveRenderable(el), placeholder, skipRegistration);
     } else if (isTagLike(el)) {
-      const destructors: Destructors = [];
-      const node = cellToText(api, el, destructors);
+      const node = api.text('');
       ctx[RENDERED_NODES_PROPERTY].push(node);
       api.insert(target, node, placeholder);
-      registerDestructor(ctx, ...destructors);
+      registerDestructor(ctx, opcodeFor(el, (value) => {
+        api.textContent(node, String(value ?? ''));
+      }));
     } else {
       throw new Error(`Unknown element type ${el}`);
     }
@@ -110,11 +111,16 @@ export function renderElement(
 
 export function renderComponent(
   component: typeof Component<any>,
-  componentArgs: Record<string, unknown>,
-  target: ComponentRenderTarget,
-  appRoot: Root | Component<any> = createRoot(),
-  skipRoot?: boolean,
+  params: {
+    owner?: Root;
+    args?: Record<string, unknown>;
+    element?: ComponentRenderTarget;
+  } = {},
 ): ComponentReturnType {
+  const appRoot = params.owner ?? createRoot();
+  const target = params.element ?? document.body;
+  const componentArgs = params.args ?? {};
+
   if (import.meta.env.DEV) {
     if (target === undefined) {
       throw new Error(`Trying to render undefined`);
@@ -123,15 +129,13 @@ export function renderComponent(
   cleanupFastContext();
   const targetElement = targetFor(target);
 
-  if (!skipRoot) {
-    if (!initDOM(appRoot)) {
-      // setting default dom api
-      provideContext(
-        appRoot,
-        RENDERING_CONTEXT,
-        new HTMLBrowserDOMApi((appRoot as Root).document),
-      );
-    }
+  if (!initDOM(appRoot)) {
+    // setting default dom api
+    provideContext(
+      appRoot,
+      RENDERING_CONTEXT,
+      new HTMLBrowserDOMApi((appRoot as Root).document),
+    );
   }
 
   const args = {

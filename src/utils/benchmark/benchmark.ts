@@ -19,12 +19,17 @@ export function createBenchmark(doc: Document) {
             console.error('Rehydration failed, fallback to normal render', e);
             const fragment = doc.createDocumentFragment();
             cleanupFastContext();
-            renderComponent(Application, {}, fragment, new Root(doc));
+            renderComponent(Application, {
+              element: fragment,
+              owner: new Root(doc),
+            });
             root.innerHTML = '';
             root.appendChild(fragment);
           }
         } else {
-          renderComponent(Application, {}, root);
+          renderComponent(Application, {
+            element: root,
+          });
         }
       });
 

@@ -613,35 +613,20 @@ function _DOM(
       if (hasShadowMode) {
         const tpl = api.element('template');
         api.attr(tpl, 'shadowrootmode', 'open');
-        element.appendChild(tpl);
+        api.insert(element, tpl);
         // @ts-expect-error children type mismatch
         renderElement(api, ctx, tpl, children);
-        // children.forEach((child, index) => {
-        //   addChild(api, tpl, child, destructors, index);
-        // });
       } else {
         // @ts-expect-error children type mismatch
         renderElement(api, ctx, appendRef!, children);
-
-        // children.forEach((child, index) => {
-        //   addChild(api, appendRef!, child, destructors, index);
-        // });
       }
     } else {
       // @ts-expect-error children type mismatch
       renderElement(api, ctx, appendRef!, children);
-
-      // children.forEach((child, index) => {
-      //   addChild(api, appendRef!, child, destructors, index);
-      // });
     }
   } else {
     // @ts-expect-error children type mismatch
     renderElement(api, ctx, element, children);
-
-    // for (let i = 0; i < children.length; i++) {
-    //   addChild(api, element, children[i], destructors, i);
-    // }
   }
 
   if (destructors.length) {
@@ -1066,19 +1051,6 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
     return slotPlaceholder;
   }
   return createSlot($slot[name], params, name, ctx);
-}
-export function cellToText(
-  api: DOMApi,
-  cell: Cell | MergedCell,
-  destructors: Destructors,
-) {
-  const textNode = api.text('');
-  destructors.push(
-    opcodeFor(cell, (value) => {
-      api.textContent(textNode, String(value ?? ''));
-    }),
-  );
-  return textNode;
 }
 
 function getRenderTargets(api: DOMApi, debugName: string) {
