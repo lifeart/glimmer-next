@@ -206,7 +206,10 @@ import { renderComponent } from "@lifeart/gxt";
 import App from "./App.gts";
 
 const Instance = renderComponent(
-  new App().template(),
+  App, {
+    // application arguments
+    name: 'My App'
+  },
   document.getElementById("app"),
 );
 ```

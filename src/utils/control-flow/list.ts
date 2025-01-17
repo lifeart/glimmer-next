@@ -5,7 +5,7 @@ import {
   renderElement,
   type Component,
 } from '@/utils/component';
-import { api as HTML_API } from '@/utils/dom-api';
+import type { DOMApi } from '@/utils/dom-api';
 import { Cell, MergedCell, formula, deepFnValue } from '@/utils/reactive';
 import { opcodeFor } from '@/utils/vm';
 import {
@@ -119,7 +119,7 @@ export class BasicListComponent<T extends { id: number }> {
       yield keyForItem(items[i], i);
     }
   }
-  declare api: typeof HTML_API;
+  declare api: DOMApi;
   declare args: {
     [$context]: Component<any>;
   };

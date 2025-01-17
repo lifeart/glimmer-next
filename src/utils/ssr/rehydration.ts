@@ -1,15 +1,18 @@
-import { renderComponent, type ComponentReturnType } from '@/utils/component';
-import { createRoot, getNodeCounter, getRoot, resetNodeCounter, setRoot } from '@/utils/dom';
-import { api as rehydrationDomApi } from '@/utils/ssr/rehydration-dom-api';
-import { api } from '@/utils/dom-api';
-import { $args, $context, $template, RENDERED_NODES_PROPERTY } from '../shared';
-import { provideContext, RENDERING_CONTEXT } from '../context';
+import { renderComponent, runDestructors, Component } from '@/utils/component';
+import { createRoot, getNodeCounter, resetNodeCounter, Root } from '@/utils/dom';
+import { HTMLRehydrationBrowserDOMApi } from '@/utils/ssr/rehydration-dom-api';
+import { HTMLBrowserDOMApi } from '@/utils/dom-api';
+import { cleanupFastContext, provideContext, RENDERING_CONTEXT } from '../context';
 const withRehydrationStack: HTMLElement[] = [];
 const commentsToRehydrate: Comment[] = [];
 let rehydrationScheduled = false;
 const nodesToRemove: Set<Node> = new Set();
 const nodesMap: Map<string, HTMLElement> = new Map();
 
+export function nodeById(nodeId: string) {
+  return nodesMap.get(nodeId);
+}
+ 
 export function lastItemInStack(target: 'text' | 'node' | 'comment') {
   if (target === 'text') {
     return withRehydrationStack[withRehydrationStack.length - 1];
@@ -114,21 +117,18 @@ function pushToStack(node: HTMLElement, isFirst = false) {
 }
 
 export function withRehydration(
-  componentCreationCallback: () => ComponentReturnType,
+  componentCreationCallback: typeof Component<any>,
+  args: Record<string, unknown>,
   targetNode: HTMLElement, // the node to render the component into
+  root: Root = createRoot(),
 ) {
+  const api = new HTMLRehydrationBrowserDOMApi(document);
   try {
     rehydrationScheduled = true;
     pushToStack(targetNode, true);
     resetNodeCounter();
-    const root = createRoot();
-    setRoot(root);
-    const TEMP_API = {};
-    Object.keys(rehydrationDomApi).forEach((key) => {
-      // @ts-expect-error props
-      TEMP_API[key] = rehydrationDomApi[key];
-    });
-    provideContext(root, RENDERING_CONTEXT, TEMP_API);
+    cleanupFastContext();
+    provideContext(root, RENDERING_CONTEXT, api);
 
     nodesToRemove.forEach((node) => {
       // replace node with comment
@@ -140,42 +140,36 @@ export function withRehydration(
         node.remove();
       }
     });
-    // withRehydrationStack.reverse();
-    // console.log('withRehydrationStack', withRehydrationStack);
-    // @ts-expect-error typings mismatch
-    const wrapper = {
-      [$args]: {
-        [$context]: root,
-      },
-      [RENDERED_NODES_PROPERTY]: [],
-      [$template]: function () {
-        // @ts-expect-error typings mismatch
-        return new componentCreationCallback(...arguments);
-      },
-    } as ComponentReturnType;
-    renderComponent(wrapper, targetNode, root, true);
+ 
+    renderComponent(componentCreationCallback, args, targetNode, root, true);
     if (withRehydrationStack.length > 0) {
-      console.warn('withRehydrationStack is not empty', withRehydrationStack);
-      // withRehydrationStack.forEach((node) => {
-      //   node.remove();
-      // });
+      const lastNodes = Array.from(withRehydrationStack);
+      console.warn('withRehydrationStack is not empty', lastNodes);
       withRehydrationStack.length = 0;
+      if (lastNodes.filter((node) => node.parentElement && node.isConnected).length) {
+        throw new Error('withRehydrationStack is not empty and node is connected');
+      } else {
+        lastNodes.forEach((el) =>  {
+          if (el.isConnected) {
+            el.remove();
+          }
+        });
+      }
     }
     rehydrationScheduled = false;
     nodesMap.clear();
     // provideContext(root, RENDERING_CONTEXT, api);
-    Object.keys(api).forEach((key) => {
+    Object.keys(HTMLBrowserDOMApi.prototype).forEach((key) => {
       // @ts-expect-error props
-      TEMP_API[key] = api[key];
+      api[key] = HTMLBrowserDOMApi.prototype[key];
     });
     // rollbackDOMAPI();
   } catch (e) {
     rehydrationScheduled = false;
     withRehydrationStack.length = 0;
     nodesMap.clear();
+    runDestructors(root);
     resetNodeCounter();
-    const root = getRoot()!;
-    provideContext(root, RENDERING_CONTEXT, api);
     throw e;
   }
 }

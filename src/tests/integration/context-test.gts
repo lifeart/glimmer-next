@@ -1,9 +1,8 @@
 import 'decorator-transforms/globals';
 import { module, test } from 'qunit';
-import { render, click, rerender } from '@lifeart/gxt/test-utils';
+import { render, click, rerender, getRoot } from '@lifeart/gxt/test-utils';
 import { Component, tracked } from '@lifeart/gxt';
 import { provideContext, context, getContext } from '@/utils/context';
-import { getRoot } from '@/utils/dom';
 
 const ThemeContext = Symbol('ThemeContext');
 const INTL = Symbol('INTL');
@@ -181,7 +180,8 @@ module('Integration | Context API', function () {
   });
   test('root context usage', async function (assert) {
     const t = (key: string) => {
-      return getContext(getRoot(), INTL)[key];
+      // @ts-expect-error null
+      return getContext(getRoot()!, INTL)[key];
     };
     await render(
       <template>

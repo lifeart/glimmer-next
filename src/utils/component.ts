@@ -10,10 +10,9 @@ import type {
   Invoke,
   ComponentReturn,
 } from '@glint/template/-private/integration';
-import { api as DEFAULT_API } from '@/utils/dom-api';
+import { HTMLBrowserDOMApi, type DOMApi } from '@/utils/dom-api';
 import {
   isFn,
-  $template,
   $nodes,
   $args,
   $fwProp,
@@ -28,12 +27,19 @@ import {
   TREE,
   CHILD,
   PARENT,
+  $context,
 } from './shared';
-import { createRoot, getRoot, resolveRenderable, Root, setRoot } from './dom';
-import { provideContext, initDOM, RENDERING_CONTEXT } from './context';
-import { cellToText, MergedCell } from '.';
+import { resolveRenderable, Root, $_c } from './dom';
+import {
+  provideContext,
+  initDOM,
+  RENDERING_CONTEXT,
+  cleanupFastContext,
+} from './context';
+import { cellToText, createRoot, MergedCell } from '.';
 
 export type ComponentRenderTarget =
+  | Element
   | HTMLElement
   | DocumentFragment
   | ComponentReturnType;
@@ -54,7 +60,7 @@ type RenderableElement =
   | undefined;
 
 export function renderElement(
-  api: typeof DEFAULT_API,
+  api: DOMApi,
   ctx: Component<any>,
   target: Node,
   el: RenderableElement | RenderableElement[] | MergedCell,
@@ -103,9 +109,10 @@ export function renderElement(
 }
 
 export function renderComponent(
-  component: ComponentReturnType,
+  component: typeof Component<any>,
+  componentArgs: Record<string, unknown>,
   target: ComponentRenderTarget,
-  owner?: any,
+  appRoot: Root | Component<any> = createRoot(),
   skipRoot?: boolean,
 ): ComponentReturnType {
   if (import.meta.env.DEV) {
@@ -113,66 +120,39 @@ export function renderComponent(
       throw new Error(`Trying to render undefined`);
     }
   }
+  cleanupFastContext();
   const targetElement = targetFor(target);
-  const appRoot = getRoot();
 
   if (!skipRoot) {
-    if (appRoot !== null && appRoot !== owner) {
-      if (import.meta.env.DEV) {
-        throw new Error(`Root already exists, it may lead to memory leaks, 
-          at the moment we allow only one root. Let us know if you need more.
-          To manually fix this issue you may save existing root reference and cleanup root.
-          try "getRoot()" to resolve root reference for last rendered root component,
-          and once you get it, call "resetRoot", and try to re-render component one more time.
-        `);
-      }
-    } else {
-      if (appRoot === null) {
-        setRoot(createRoot());
-      }
-    }
-    if (!initDOM(getRoot()!)) {
+    if (!initDOM(appRoot)) {
       // setting default dom api
-      provideContext(getRoot()!, RENDERING_CONTEXT, DEFAULT_API);
-    }
-  }
-
-  if ($template in component && isFn(component[$template])) {
-    return renderComponent(
-      component[$template](),
-      targetElement,
-      component,
-      true,
-    );
-  }
-
-  const children = component[$nodes];
-
-  const dom = initDOM(owner || component) || initDOM(getRoot()!);
-  if (TRY_CATCH_ERROR_HANDLING) {
-    try {
-      renderElement(
-        dom,
-        owner || component,
-        targetElement as unknown as HTMLElement,
-        children,
-        targetElement.lastChild,
+      provideContext(
+        appRoot,
+        RENDERING_CONTEXT,
+        new HTMLBrowserDOMApi((appRoot as Root).document),
       );
-    } catch (e) {
-      runDestructorsSync(owner || component);
-      throw e;
     }
-  } else {
-    renderElement(
-      dom,
-      owner || component,
-      targetElement as unknown as HTMLElement,
-      children,
-      targetElement.lastChild,
-    );
   }
 
-  return component;
+  const args = {
+    ...componentArgs,
+    ...{
+      [$context]: appRoot,
+    },
+  };
+  const instance = $_c(component, args, appRoot);
+
+  const dom = initDOM(appRoot);
+  const children = instance[$nodes];
+  renderElement(
+    dom,
+    instance.ctx!,
+    targetElement as unknown as HTMLElement,
+    children,
+    targetElement.lastChild,
+  );
+
+  return instance;
 }
 
 export type Props = Record<string, unknown>;
@@ -184,7 +164,7 @@ export class Component<T extends Props = any>
   implements Omit<ComponentReturnType, 'ctx'>
 {
   args!: Get<T, 'Args'>;
-  [RENDERING_CONTEXT_PROPERTY]: undefined | typeof DEFAULT_API = undefined;
+  [RENDERING_CONTEXT_PROPERTY]: undefined | DOMApi = undefined;
   [COMPONENT_ID_PROPERTY] = cId();
   declare [RENDERED_NODES_PROPERTY]: Array<Node>;
   declare [Context]: TemplateContext<
@@ -202,7 +182,7 @@ export class Component<T extends Props = any>
     this[$args] = props;
     this[$fwProp] = fw;
   }
-  template!: ComponentReturnType;
+  declare template: ComponentReturnType;
 }
 
 export type TOC<S extends Props = {}> = (
@@ -246,7 +226,9 @@ function destroyNodes(roots: Node | Array<Node>) {
   }
 }
 
-export function unregisterFromParent(component: ComponentReturnType | Node | Array<ComponentReturnType | Node>) {
+export function unregisterFromParent(
+  component: ComponentReturnType | Node | Array<ComponentReturnType | Node>,
+) {
   if (!WITH_CONTEXT_API) {
     return;
   }
@@ -325,7 +307,11 @@ export function runDestructors(
       tldr list may be mutated during removal and forEach is stopped
     */
     childComponents.forEach((node) => {
-      runDestructors(TREE.get(node)!, promises, skipDom);
+      const instance = TREE.get(node);
+      // TODO: fix rehydration destroy case;
+      if (instance) {
+        runDestructors(instance, promises, skipDom);
+      }
     });
   }
   if (skipDom !== true) {
@@ -346,7 +332,7 @@ export function targetFor(
   outlet: ComponentRenderTarget,
 ): HTMLElement | DocumentFragment {
   if ('nodeType' in outlet) {
-    return outlet;
+    return outlet as HTMLElement;
   } else {
     return outlet[$nodes][0] as HTMLElement;
   }

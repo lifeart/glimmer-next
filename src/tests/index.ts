@@ -4,8 +4,7 @@ import 'qunit-theme-ember/qunit.css';
 
 import * as QUnit from 'qunit';
 import { setup } from 'qunit-dom';
-import { getDocument } from '@/utils/dom-api';
-import { cleanupRender } from '@/tests/utils';
+import { cleanupRender, getDocument} from '@/tests/utils';
 import { DEBUG_MERGED_CELLS, DEBUG_CELLS } from '@/utils/reactive';
 
 setup(QUnit.assert, {

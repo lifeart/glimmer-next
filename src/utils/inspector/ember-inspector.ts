@@ -1,6 +1,5 @@
 import * as backburner from 'backburner.js';
-import { getRoot } from '../dom';
-import { $_debug_args, $context, $nodes, CHILD, COMPONENT_ID_PROPERTY, getBounds, isArray, RENDERED_NODES_PROPERTY, TREE } from '../shared';
+import { $_debug_args, $context, $nodes, CHILD, COMPONENT_ID_PROPERTY, getBounds, isArray, PARENT, RENDERED_NODES_PROPERTY, TREE } from '../shared';
 import { Component } from '..';
 import { Cell, MergedCell, getCells, getMergedCells } from '../reactive';
 import { $args } from '../shared';
@@ -622,9 +621,16 @@ const EmberProxy: any = new Proxy(
         }
 
         return function () {
-          const root = getRoot();
-          // @ts-expect-error typings error
-          return [componentToRenderTree(root!)];
+          const rootIds: number[] = [];
+          PARENT.forEach((ref, id) => {
+            if (ref === null) {
+              rootIds.push(id);
+            }
+          });
+          const roots = rootIds.map((id) => TREE.get(id)!);
+          return roots.map((root) => {
+            return componentToRenderTree(root);
+          });
         };
       } else if (key === 'guidFor') {
         return guidFor;

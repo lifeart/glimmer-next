@@ -1,17 +1,20 @@
 import { getNodeCounter, incrementNodeCounter } from '@/utils/dom';
 
-import { getDocument } from '@/utils/dom-api';
+import { DOMApi } from '@/utils/dom-api';
 import {
   isRehydrationScheduled,
   itemFromRehydrationStack,
   lastItemInStack,
 } from './rehydration';
 import { isEmpty } from '../shared';
-const $doc = getDocument();
-export const api = {
+export class HTMLRehydrationBrowserDOMApi implements DOMApi {
+  declare doc: Document;
+  constructor(doc: Document) {
+    this.doc = doc;
+  }
   toString() {
     return 'hydration-html:dom-api';
-  },
+  }
   addEventListener(node: Node, eventName: string, fn: EventListener) {
     node.addEventListener(eventName, fn);
     if (RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES) {
@@ -19,7 +22,7 @@ export const api = {
         node.removeEventListener(eventName, fn);
       };
     }
-  },
+  }
   prop(element: HTMLElement, name: string, value: any) {
     if (isRehydrationScheduled()) {
       // @ts-ignore
@@ -30,7 +33,7 @@ export const api = {
     // @ts-ignore
     element[name] = value;
     return value;
-  },
+  }
   attr(element: HTMLElement, name: string, value: string | null) {
     if (isRehydrationScheduled()) {
       const existingValue = element.getAttribute(name);
@@ -39,7 +42,7 @@ export const api = {
       }
     }
     element.setAttribute(name, value === null ? '' : value);
-  },
+  }
   comment(text = '') {
     incrementNodeCounter();
     if (isRehydrationScheduled()) {
@@ -52,7 +55,7 @@ export const api = {
             return node as unknown as Comment;
           } else {
             throw new Error(
-              `Rehydration failed. Expected tagName: ${node}, got: ${node?.tagName}.`,
+              `Rehydration failed. Expected tagName: ${node} got: ${node?.tagName}.`,
             );
           }
         } else {
@@ -63,8 +66,9 @@ export const api = {
         }
       }
     }
-    return $doc.createComment(`${text} $[${getNodeCounter()}]`);
-  },
+    return this.doc.createComment(`${text} $[${getNodeCounter()}]`);
+  }
+  // @ts-expect-error
   text(text = '') {
     // console.log('text', text);
     if (isRehydrationScheduled()) {
@@ -84,8 +88,8 @@ export const api = {
         }
       }
     }
-    return $doc.createTextNode(text);
-  },
+    return this.doc.createTextNode(text);
+  }
   textContent(node: Node, text: string) {
     if (isRehydrationScheduled()) {
       const existingText = node.textContent;
@@ -94,10 +98,10 @@ export const api = {
       }
     }
     node.textContent = text;
-  },
+  }
   fragment() {
-    return $doc.createDocumentFragment();
-  },
+    return this.doc.createDocumentFragment();
+  }
   element(tagName = ''): HTMLElement {
     // console.log('element', tagName);
     if (isRehydrationScheduled()) {
@@ -140,18 +144,18 @@ export const api = {
               return this.element(tagName);
             }
             throw new Error(
-              `Rehydration failed. Expected tagName: ${tagName}, got: ${node?.tagName}.`,
+              `Rehydration failed. Expected tagName: ${tagName} got: ${node?.tagName}.`,
             );
           }
         }
 
         throw new Error(
-          `Rehydration failed. Expected tagName: ${tagName}, got: ${node?.tagName}.`,
+          `Rehydration failed. Expected tagName: ${tagName} got: ${node?.tagName}.`,
         );
       }
     }
-    return $doc.createElement(tagName);
-  },
+    return this.doc.createElement(tagName);
+  }
   append(
     parent: HTMLElement | Node,
     child: HTMLElement | Node,
@@ -187,7 +191,7 @@ export const api = {
     } else {
       this.insert(parent, child, null);
     }
-  },
+  }
   insert(
     parent: HTMLElement | Node,
     child: HTMLElement | Node,
@@ -197,10 +201,18 @@ export const api = {
       return;
     }
     // replace child with first comment node if found
-    if (parent && child.nodeType === Node.TEXT_NODE && parent.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) {
-      const commentNodes = Array.from(parent.childNodes).filter(node => node.nodeType === Node.COMMENT_NODE && String((node as Comment).data).includes('[text-placeholder]'));
+    if (
+      parent &&
+      child.nodeType === Node.TEXT_NODE &&
+      parent.nodeType !== Node.DOCUMENT_FRAGMENT_NODE
+    ) {
+      const commentNodes = Array.from(parent.childNodes).filter(
+        (node) =>
+          node.nodeType === Node.COMMENT_NODE &&
+          String((node as Comment).data).includes('[text-placeholder]'),
+      );
       if (commentNodes.length > 0) {
-        console.log(commentNodes);
+        // console.log(commentNodes);
         parent.replaceChild(child, commentNodes[0]);
         return;
       }
@@ -248,7 +260,7 @@ export const api = {
           ) {
             try {
               existingChild.remove();
-              // $doc.replaceChild(child, existingChild);
+              // this.doc.replaceChild(child, existingChild);
             } catch (e) {
               console.error(e, {
                 child,
@@ -267,11 +279,12 @@ export const api = {
             if (child.isConnected) {
               return;
             }
+           
             if (child.nodeType !== Node.TEXT_NODE) {
               if (child.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
                 if ((child as DocumentFragment).childElementCount !== 0) {
                   throw new Error(
-                    `Rehydration failed. Expected child: ${child}, got: ${existingChild}.`,
+                    `Rehydration failed. Expected child: ${child} got: ${existingChild}.`,
                   );
                 }
 
@@ -279,10 +292,14 @@ export const api = {
               } else {
                 if (child.nodeType === Node.COMMENT_NODE) {
                 } else {
-                  debugger;
-                  throw new Error(
-                    `Rehydration failed. Expected child: ${child}, got: ${existingChild}.`,
-                  );
+                  if (child.nodeName !== existingChild.nodeName)  {
+                    throw new Error(
+                      `Rehydration failed. Expected child: ${child} got: ${existingChild}.`,
+                    );
+                  } else {
+                    parent.replaceChild(child, existingChild);
+                  }
+                 
                 }
               }
             }
@@ -351,5 +368,5 @@ export const api = {
     } else {
       parent.insertBefore(child, anchor || null);
     }
-  },
-};
+  }
+}

@@ -1,28 +1,30 @@
 import { Application } from '@/components/Application.gts';
 import { withRehydration } from '@/utils/ssr/rehydration';
-import { getDocument } from '@/utils/dom-api';
 import { measureRender } from '@/utils/benchmark/measure-render';
 import { setResolveRender } from '@/utils/runtime';
+import { Root } from '@/utils/dom';
+import { cleanupFastContext } from '../context';
+import { renderComponent } from '../component';
 
-export function createBenchmark() {
+export function createBenchmark(doc: Document) {
   return {
     async render() {
       await measureRender('render', 'renderStart', 'renderEnd', () => {
-        const root = getDocument().getElementById('app')!;
+        const root = doc.getElementById('app')!;
         if (root.childNodes.length > 1) {
           try {
-            // @ts-expect-error
-            withRehydration(function () {
-              return new Application(root);
-            }, root);
+            withRehydration(Application, {}, root);
             console.info('Rehydration successful');
           } catch (e) {
             console.error('Rehydration failed, fallback to normal render', e);
+            const fragment = doc.createDocumentFragment();
+            cleanupFastContext();
+            renderComponent(Application, {}, fragment, new Root(doc));
             root.innerHTML = '';
-            new Application(root);
+            root.appendChild(fragment);
           }
         } else {
-          new Application(root);
+          renderComponent(Application, {}, root);
         }
       });
 

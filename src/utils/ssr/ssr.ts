@@ -1,41 +1,28 @@
 import {
+  type Component,
   renderComponent,
   runDestructors,
-  type ComponentReturnType,
 } from '@/utils/component';
-import { setDocument, getDocument } from '../dom-api';
-import { getRoot, resetNodeCounter, resetRoot } from '@/utils/dom';
-import { $args, $context, $template, RENDERED_NODES_PROPERTY } from '../shared';
+import { createRoot, resetNodeCounter, Root } from '@/utils/dom';
 
 type EnvironmentParams = {
   url: string;
 };
 
 export async function renderInBrowser(
-  componentRenderFn: (rootNode: HTMLElement) => ComponentReturnType,
+  componentRenderFn: typeof Component,
+  args: Record<string, unknown>,
+  root: Root,
 ) {
-  if (import.meta.env.DEV) {
-    if (!getRoot()) {
-      throw new Error('Unable to detect render root');
-    }
-  }
-  const doc = getDocument();
+  const doc = root.document;
   const rootNode = doc.createElement('div');
+
   // @todo - add destructor
   renderComponent(
-    {
-      // @ts-expect-error typings error
-      [$args]: {
-            [$context]: getRoot(),
-      },
-      [RENDERED_NODES_PROPERTY]: [],
-      [$template]: function () {
-        // @ts-expect-error typings error
-        return new componentRenderFn(...arguments);
-      },
-    },
+    componentRenderFn,
+    args,
     rootNode,
-    getRoot(),
+    root,
   );
   const html = rootNode.innerHTML;
   rootNode.remove();
@@ -43,23 +30,22 @@ export async function renderInBrowser(
 }
 
 export async function render(
-  componentRenderFn: (rootNode: HTMLElement) => ComponentReturnType,
+  component: typeof Component<any>,
+  args: Record<string, unknown>,
   params: EnvironmentParams,
+  root: Root = createRoot(),
 ) {
   const { Window, XMLSerializer } = await import('happy-dom');
   const win = new Window({ url: params.url });
   const doc = win.document;
-  setDocument(doc as unknown as Document);
+  root.document = doc as unknown as Document;
 
   const rootNode = doc.createElement('div');
   doc.body.appendChild(rootNode);
 
   resetNodeCounter();
-  // @ts-expect-error
-  const el = componentRenderFn(rootNode);
-  await new Promise((resolve) => {
-    setTimeout(resolve);
-  });
+  renderComponent(component, args, rootNode as unknown as HTMLElement, root);
+  resetNodeCounter();
 
   const s = new XMLSerializer();
 
@@ -67,11 +53,7 @@ export async function render(
     .map((n) => s.serializeToString(n))
     .join('');
 
-  const oldRoot = getRoot();
-  if (oldRoot) {
-    await runDestructors(oldRoot);
-    resetRoot();
-  }
+  await runDestructors(root);
   win.close();
   return html;
 }

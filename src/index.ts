@@ -19,7 +19,7 @@ export default async function render() {
     await import('@lifeart/gxt/ember-inspector');
   }
   await router.mount(window.location.pathname);
-  const benchmark = createBenchmark();
+  const benchmark = createBenchmark(document);
 
   // starting app
 

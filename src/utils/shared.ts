@@ -6,6 +6,7 @@ import {
 import type { Cell, AnyCell } from './reactive';
 import { type BasicListComponent } from './control-flow/list';
 import { registerDestructor } from './glimmer/destroyable';
+import type { Root } from '.';
 
 export const isTag = Symbol('isTag');
 export const RENDERING_CONTEXT_PROPERTY = Symbol('rendering-context');
@@ -24,7 +25,6 @@ export const $args = 'args' as const;
 export const $_debug_args = '_debug_args' as const;
 export const $fwProp = '$fw' as const;
 export const noop = () => {};
-export const FRAGMENT_TYPE = 11; // Node.DOCUMENT_FRAGMENT_NODE
 
 export const IN_SSR_ENV =
   import.meta.env.SSR || location.pathname === '/tests.html';
@@ -59,7 +59,6 @@ export function isTagLike(child: unknown): child is AnyCell {
   return (child as AnyCell)[isTag];
 }
 
-
 export const BOUNDS = new WeakMap<
   Component<any>,
   Array<HTMLElement | Comment>
@@ -72,7 +71,7 @@ if (!import.meta.env.SSR) {
         TREE,
         CHILD,
         PARENT,
-      }
+      };
     };
     window['getParentGraph'] = () => PARENT;
   }
@@ -126,10 +125,15 @@ export const CHILD: Map<number, Array<number> | undefined> = new Map();
 export const PARENT: Map<number, number> = new Map();
 
 export function addToTree(
-  ctx: Component<any>,
+  ctx: Component<any> | Root,
   node: Component<any>,
   debugName?: string,
 ) {
+  if (IS_DEV_MODE) {
+    if (ctx === node) {
+      throw new Error('Unable to crate recursive tree');
+    }
+  }
   if (SEEN_TREE_NODES.has(node)) {
     if (IS_DEV_MODE) {
       // console.log('node is already added to tree in:', node._debugName, '| and now in |', debugName);
@@ -180,21 +184,19 @@ export function addToTree(
   }
 
   // @todo - case 42
-  registerDestructor(node, 
-    () => {
-      // debugger;
-      if (IS_DEV_MODE) {
-        SEEN_TREE_NODES.delete(node);
-      }
-      // console.log('deleting', ID);
-      // REF.delete(ID);
-      CHILD.delete(ID);
-      TREE.delete(ID);
-      if (WITH_CONTEXT_API) {
-        PARENT.delete(ID);
-      }
-    },
-  );
+  registerDestructor(node, () => {
+    // debugger;
+    if (IS_DEV_MODE) {
+      SEEN_TREE_NODES.delete(node);
+    }
+    // console.log('deleting', ID);
+    // REF.delete(ID);
+    CHILD.delete(ID);
+    TREE.delete(ID);
+    if (WITH_CONTEXT_API) {
+      PARENT.delete(ID);
+    }
+  });
 }
 
 /*
@@ -206,7 +208,7 @@ export const IFS_FOR_HMR: Set<
   () => { item: GenericReturnType; set: (item: GenericReturnType) => void }
 > = new Set();
 export const COMPONENTS_HMR = new WeakMap<
-  Component | ComponentReturnType,
+  Component | ComponentReturnType | typeof Component,
   Set<{
     parent: any;
     instance: ComponentReturnType;

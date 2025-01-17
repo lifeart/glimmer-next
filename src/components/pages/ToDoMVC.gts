@@ -1,11 +1,14 @@
-import { Component } from '@lifeart/gxt';
+import { Component, Root } from '@lifeart/gxt';
 import { Layout } from './todomvc/Layout.gts';
 import { Attribution } from './todomvc/Attribution.gts';
 import Page from './todomvc/page.gts';
 import { repo } from './todomvc/repo';
-import { getDocument } from '@/utils/dom-api';
-function pageTitle(text: string) {
-  getDocument().title = text;
+import { getDocument } from '@/utils/context';
+
+function pageTitle(ctx: Component<any>, text: string) {
+  const document = getDocument(ctx);
+  // TODO: solve SSR
+  document.title = text;
 }
 
 export class ToDoMVC extends Component {
@@ -14,7 +17,7 @@ export class ToDoMVC extends Component {
       <style>
         @import url('/todomvc.css');
       </style>
-      {{pageTitle 'ToDoMVC'}}
+      {{pageTitle this 'ToDoMVC'}}
       <Layout>
         {{#if @hasChildren}}
           {{yield}}

@@ -70,6 +70,7 @@ async function createServer() {
   });
 
   app.listen(5173);
+  console.info(`http://localhost:5173`);
 }
 
 createServer();
