@@ -19,7 +19,6 @@ export function cId() {
 }
 
 export const $template = 'template' as const;
-export const $context = '_context' as const;
 export const $nodes = 'nodes' as const;
 export const $args = 'args' as const;
 export const $_debug_args = '_debug_args' as const;
@@ -119,7 +118,7 @@ export function setBounds(component: ComponentReturnType) {
     BOUNDS.delete(ctx);
   });
 }
-const SEEN_TREE_NODES = new WeakSet();
+export const SEEN_TREE_NODES = new WeakSet();
 export const TREE: Map<number, Component<any>> = new Map();
 export const CHILD: Map<number, Array<number> | undefined> = new Map();
 export const PARENT: Map<number, number> = new Map();

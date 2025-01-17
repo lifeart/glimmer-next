@@ -8,7 +8,7 @@ import { resetNodeCounter, createRoot, $_c } from '@/utils/dom';
 import { renderInBrowser } from '@/utils/ssr/ssr';
 import { runDestructors } from '@/utils/component';
 import { $_fin, Root } from '../utils';
-import { $context, addToTree, PARENT, RENDERED_NODES_PROPERTY, TREE } from '@/utils/shared';
+import { addToTree, PARENT, RENDERED_NODES_PROPERTY, TREE } from '@/utils/shared';
 import { cleanupFastContext } from '@/utils/context';
 
 let ROOT: null | Root = null;
@@ -89,9 +89,6 @@ export function createTestComponent(component: ComponentReturnType, owner: Root)
       addToTree(owner, this);
       return $_fin([$_c(component, {
         ...args,
-        ...{
-          [$context]: this,
-        }
         // @ts-expect-error
       }, this)], this);
     }
@@ -116,9 +113,6 @@ export async function render(component: ComponentReturnType) {
   let renderResult = renderComponent(
     createTestComponent(component, owner),
     {
-      args:  {
-        [$context]: owner,
-      },
       element: targetElement,
       owner,
     }

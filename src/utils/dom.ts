@@ -40,7 +40,6 @@ import {
   IN_SSR_ENV,
   COMPONENTS_HMR,
   isEmpty,
-  $context,
   RENDERING_CONTEXT_PROPERTY,
   RENDERED_NODES_PROPERTY,
   COMPONENT_ID_PROPERTY,
@@ -48,6 +47,7 @@ import {
   CHILD,
   TREE,
   PARENT,
+  SEEN_TREE_NODES,
 } from './shared';
 import { isRehydrationScheduled } from './ssr/rehydration';
 import { createHotReload } from './hmr';
@@ -789,6 +789,27 @@ export const $_maybeHelper = (
   return value;
 };
 
+let parentContext: Array<number> = [];
+let parentContextIndex = -1;
+
+export const setParentContext = (value: Root | Component<any> | null) => {
+  if (value === null) {
+    parentContextIndex--;
+    parentContext.pop();
+  } else {
+    parentContextIndex++;
+    parentContext.push(value[COMPONENT_ID_PROPERTY]!);
+  }
+};
+export const getParentContext = () => {
+  if (IS_DEV_MODE) {
+    if (!TREE.get(parentContext[parentContextIndex]!)) {
+      throw new Error('unable to get parent context before set');
+    }
+  }
+  return TREE.get(parentContext[parentContextIndex]!);
+};
+
 function component(
   comp: ComponentReturnType | Component | typeof Component,
   args: Record<string, unknown>,
@@ -820,6 +841,7 @@ function component(
       }
       // @ts-expect-error uniqSymbol as index
       const fw = args[$PROPS_SYMBOL] as unknown as FwType;
+      setParentContext(ctx);
       return _component(comp, args, fw, ctx);
     } catch (e) {
       if (import.meta.env.SSR) {
@@ -862,6 +884,7 @@ function component(
         };
       }
     } finally {
+      setParentContext(null);
       if (IS_DEV_MODE) {
         $DEBUG_REACTIVE_CONTEXTS.pop();
       }
@@ -869,7 +892,12 @@ function component(
   } else {
     // @ts-expect-error uniqSymbol as index
     const fw = args[$PROPS_SYMBOL] as unknown as FwType;
-    return _component(comp, args, fw, ctx);
+    try {
+      setParentContext(ctx);
+      return _component(comp, args, fw, ctx);
+    } finally {
+      setParentContext(null);
+    }
   }
 }
 // hello, basic component manager
@@ -879,7 +907,6 @@ function _component(
   fw: FwType,
   ctx: Component<any> | Root,
 ) {
-  args[$context] = ctx;
   let startTagId = 0;
   if (IS_DEV_MODE) {
     startTagId = getTagId();
@@ -975,9 +1002,7 @@ function createSlot(
     $DEBUG_REACTIVE_CONTEXTS.push(`:${name}`);
   }
   const slotContext = {
-    [$args]: {
-      [$context]: ctx,
-    },
+    [$args]: {},
     [RENDERED_NODES_PROPERTY]: [],
     [COMPONENT_ID_PROPERTY]: cId(),
     [RENDERING_CONTEXT_PROPERTY]: null,
@@ -1154,12 +1179,7 @@ const ArgProxyHandler: ProxyHandler<{}> = {
     }
     return undefined;
   },
-  set(target, prop, value) {
-    if (prop === $context) {
-      // @ts-expect-error unknown property
-      target[prop] = value;
-      return true;
-    }
+  set() {
     if (IS_DEV_MODE) {
       throw new Error('args are readonly');
     }
@@ -1170,13 +1190,9 @@ export function $_GET_ARGS(ctx: Component<any>, args: IArguments) {
   ctx[$args] = ctx[$args] || args[0] || {};
   ctx[RENDERED_NODES_PROPERTY] = ctx[RENDERED_NODES_PROPERTY] ?? [];
   ctx[COMPONENT_ID_PROPERTY] = ctx[COMPONENT_ID_PROPERTY] ?? cId();
-  const parentContext = ctx[$args][$context] || args[0][$context];
-  if (IS_DEV_MODE) {
-    if (!parentContext) {
-      throw new Error(`Unable to resolve parent context`);
-    }
+  if (!SEEN_TREE_NODES.has(ctx)) {
+    addToTree(getParentContext()!, ctx);
   }
-  addToTree(parentContext, ctx);
 }
 export function $_GET_SLOTS(ctx: any, args: any) {
   return (args[0] || {})[$SLOTS_SYMBOL] || ctx[$args]?.[$SLOTS_SYMBOL] || {};

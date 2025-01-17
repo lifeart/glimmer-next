@@ -1,5 +1,5 @@
 import * as backburner from 'backburner.js';
-import { $_debug_args, $context, $nodes, CHILD, COMPONENT_ID_PROPERTY, getBounds, isArray, PARENT, RENDERED_NODES_PROPERTY, TREE } from '../shared';
+import { $_debug_args, $nodes, CHILD, COMPONENT_ID_PROPERTY, getBounds, isArray, PARENT, RENDERED_NODES_PROPERTY, TREE } from '../shared';
 import { Component } from '..';
 import { Cell, MergedCell, getCells, getMergedCells } from '../reactive';
 import { $args } from '../shared';
@@ -466,7 +466,7 @@ const EmberProxy: any = new Proxy(
           const hasArgs = component && $args in component;
           const hasDebugArgs = component && $_debug_args in component;
           const hasArgsOrDebugArgs = hasArgs || hasDebugArgs;
-          const argsToHide: string[] = [$context];
+          const argsToHide: string[] = [];
           const argsToAdd: Array<[string, unknown]> = [];
           // const isUnstableChildWrapper = component && component.debugName && component.debugName.startsWith('UnstableChildWrapper');
           // if (component && !isUnstableChildWrapper && !hasArgs && !hasDebugArgs) {

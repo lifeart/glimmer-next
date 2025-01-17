@@ -18,7 +18,6 @@ import {
   isTagLike,
   LISTS_FOR_HMR,
   addToTree,
-  $context,
   RENDERED_NODES_PROPERTY,
   COMPONENT_ID_PROPERTY,
   cId,
@@ -120,9 +119,6 @@ export class BasicListComponent<T extends { id: number }> {
     }
   }
   declare api: DOMApi;
-  declare args: {
-    [$context]: Component<any>;
-  };
   constructor(
     { tag, ctx, key, ItemComponent }: ListComponentArgs<T>,
     outlet: RenderTarget,
@@ -130,9 +126,6 @@ export class BasicListComponent<T extends { id: number }> {
   ) {
     this.api = initDOM(ctx);
     this.ItemComponent = ItemComponent;
-    this.args = {
-      [$context]: ctx,
-    };
     // @ts-expect-error typings error
     addToTree(ctx, this, 'from list constructor');
     const mainNode = outlet;
