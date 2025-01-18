@@ -12,7 +12,6 @@ import type {
 import { HTMLBrowserDOMApi, type DOMApi } from '@/utils/dom-api';
 import {
   isFn,
-  $nodes,
   $args,
   $fwProp,
   isPrimitive,
@@ -58,6 +57,11 @@ type RenderableElement =
   | null
   | undefined;
 
+// todo - define types of items
+// arrays - nodes from DOM
+// functions / objects - reactive items
+// primitives - hanles
+const RENDERED_COMPONENTS = new WeakSet();
 export function renderElement(
   api: DOMApi,
   ctx: Component<any>,
@@ -66,45 +70,91 @@ export function renderElement(
   placeholder: Comment | Node | null = null,
   skipRegistration = false,
 ) {
+  if (isFn(el)) {
+    // @ts-expect-error
+    el = resolveRenderable(el);
+  }
   if (isEmpty(el) || el === '') {
     return;
   }
-  if (!isArray(el)) {
-    if (isPrimitive(el)) {
-      let node = api.text(el);
-      if (skipRegistration !== true) {
-        ctx[RENDERED_NODES_PROPERTY].push(node);
-      }
-      api.insert(target, node, placeholder);
-    } else if ((el as HTMLElement).nodeType) {
-      if (skipRegistration !== true) {
-        ctx[RENDERED_NODES_PROPERTY].push(el as Node);
-      }
-      api.insert(target, el as Node, placeholder);
-    } else if ($nodes in el) {
-      el[$nodes].forEach((node) => {
-        // @ts-expect-error el.ctx
-        renderElement(api, el.ctx, target, node, placeholder);
-      });
-      el[$nodes].length = 0;
-      // el.ctx![RENDERED_NODES_PROPERTY].reverse();
-    } else if (isFn(el)) {
-      // @ts-expect-error
-      renderElement(api, ctx, target, resolveRenderable(el), placeholder, skipRegistration);
-    } else if (isTagLike(el)) {
-      const node = api.text('');
+  if (isPrimitive(el)) {
+    let node = api.text(el);
+    if (skipRegistration !== true) {
       ctx[RENDERED_NODES_PROPERTY].push(node);
-      api.insert(target, node, placeholder);
-      registerDestructor(ctx, opcodeFor(el, (value) => {
-        api.textContent(node, String(value ?? ''));
-      }));
+    }
+    api.insert(target, node, placeholder);
+    return;
+  }
+  // @ts-expect-error isNode type
+  if (api.isNode(el)) {
+    if (!skipRegistration) {
+      ctx[RENDERED_NODES_PROPERTY].push(el);
+    }
+    api.insert(target, el, placeholder);
+    return;
+  }
+  if (RENDERED_NODES_PROPERTY in el) {
+    if (RENDERED_COMPONENTS.has(el)) {
+      // relocate case
+      // move row case (node already rendered and re-located)
+      const renderedNodes = el[RENDERED_NODES_PROPERTY];
+      if (!renderedNodes.length) {
+        const childs = CHILD.get(el[COMPONENT_ID_PROPERTY]);
+        if (Array.isArray(childs)) {
+          for (let i = 0; i < childs.length; i++) {
+            const child = TREE.get(childs[i])!;
+            renderElement(
+              api,
+              child,
+              target,
+              child![RENDERED_NODES_PROPERTY],
+              placeholder,
+              true,
+            );
+          }
+        }
+      } else {
+        for (let i = 0; i < renderedNodes.length; i++) {
+          renderElement(
+            api,
+            el,
+            target,
+            renderedNodes[i],
+            placeholder,
+            true,
+          );
+        }
+      }
     } else {
-      throw new Error(`Unknown element type ${el}`);
+      // fresh (not rendered component)
+      // TODO: add same logic for IF (inside each)
+      const oldRenderedNodes = el[RENDERED_NODES_PROPERTY].slice();
+      el[RENDERED_NODES_PROPERTY].length = 0;
+      oldRenderedNodes.forEach((node) => {
+        renderElement(api, el as Component<any>, target, node, placeholder);
+      });
+      RENDERED_COMPONENTS.add(el);
+    }
+    return;
+  }
+  if (isTagLike(el)) {
+    const node = api.text('');
+    ctx[RENDERED_NODES_PROPERTY].push(node);
+    api.insert(target, node, placeholder);
+    registerDestructor(
+      ctx,
+      opcodeFor(el, (value) => {
+        api.textContent(node, String(value ?? ''));
+      }),
+    );
+    return;
+  } 
+  if (isArray(el)) {
+    for (let i = 0; i < el.length; i++) {
+      renderElement(api, ctx, target, el[i], placeholder, skipRegistration);
     }
   } else {
-    for (let i = 0; i < el.length; i++) {
-      renderElement(api, ctx, target, el[i], placeholder, true);
-    }
+    throw new Error(`Unknown rendering path`);
   }
 }
 
@@ -140,12 +190,11 @@ export function renderComponent(
   const instance = $_c(component, componentArgs, appRoot);
 
   const dom = initDOM(appRoot);
-  const children = instance[$nodes];
   renderElement(
     dom,
-    instance.ctx!,
+    instance,
     targetElement as unknown as HTMLElement,
-    children,
+    instance,
     targetElement.lastChild,
   );
 
@@ -158,7 +207,7 @@ type Get<T, K, Otherwise = {}> = K extends keyof T
   ? Exclude<T[K], undefined>
   : Otherwise;
 export class Component<T extends Props = any>
-  implements Omit<ComponentReturnType, 'ctx'>
+  implements ComponentReturnType
 {
   args!: Get<T, 'Args'>;
   [RENDERING_CONTEXT_PROPERTY]: undefined | DOMApi = undefined;
@@ -186,40 +235,44 @@ export type TOC<S extends Props = {}> = (
   args?: Get<S, 'Args'>,
 ) => ComponentReturn<Get<S, 'Blocks'>, Get<S, 'Element', null>>;
 
-function destroyNode(node: Node) {
-  // Skip if node is already detached
-  if (!node.isConnected) return;
-  // @ts-expect-error
-  node.remove();
-}
-
 export function destroyElementSync(
   component: ComponentReturnType | Node | Array<ComponentReturnType | Node>,
   skipDom = false,
+  api: DOMApi,
 ) {
   if (isArray(component)) {
-    component.forEach((component) => destroyElementSync(component, skipDom));
+    component.forEach((component) =>
+      destroyElementSync(component, skipDom, api),
+    );
   } else {
-    if ($nodes in component) {
+    if (RENDERED_NODES_PROPERTY in component) {
+      runDestructorsSync(component, skipDom, api);
       if (IS_DEV_MODE) {
-        if (!component.ctx) {
-          throw new Error('context should match');
-        }
+        // TODO: fix it!!
+        // we trying to destroy "not rendered" component (but, likely it's rendered);
+        // if (component[$nodes].length) {
+        //   destroyNodes(api, component[$nodes]);
+        //   console.error('Destroying not rendered node');
+        // }
       }
-      runDestructorsSync(component.ctx!, skipDom);
     } else {
-      destroyNode(component);
+      try {
+        (api as DOMApi).destroy(component);
+      } catch (e) {
+        // @TODO  custom renderer, destroy
+        throw new Error('unknown branch');
+      }
     }
   }
 }
 
-function destroyNodes(roots: Node | Array<Node>) {
+function destroyNodes(api: DOMApi, roots: Node | Array<Node>) {
   if (isArray(roots)) {
     for (let i = 0; i < roots.length; i++) {
-      destroyNode(roots[i]);
+      api.destroy(roots[i]);
     }
   } else {
-    destroyNode(roots);
+    api.destroy(roots);
   }
 }
 
@@ -231,8 +284,8 @@ export function unregisterFromParent(
   }
   if (isArray(component)) {
     component.forEach(unregisterFromParent);
-  } else if ($nodes in component) {
-    const id = component.ctx![COMPONENT_ID_PROPERTY];
+  } else if (RENDERED_NODES_PROPERTY in component) {
+    const id = component[COMPONENT_ID_PROPERTY];
     const arr = CHILD.get(PARENT.get(id)!);
     if (arr !== undefined) {
       const index = arr.indexOf(id);
@@ -250,28 +303,35 @@ export function unregisterFromParent(
 
 export async function destroyElement(
   component: ComponentReturnType | Node | Array<ComponentReturnType | Node>,
+  // should dom be "abstract" (in terms of different renderers)
   skipDom = false,
+  api?: DOMApi,
 ) {
   if (isArray(component)) {
     await Promise.all(
-      component.map((component) => destroyElement(component, skipDom)),
+      component.map((component) => destroyElement(component, skipDom, api)),
     );
   } else {
-    if ($nodes in component) {
+    if (RENDERED_NODES_PROPERTY in component) {
       const destructors: Array<Promise<void>> = [];
-      runDestructors(component.ctx!, destructors, skipDom);
+      runDestructors(component, destructors, skipDom, api);
       await Promise.all(destructors);
     } else {
-      if ('nodeType' in component) {
-        destroyNode(component);
-      } else {
+      try {
+        (api as DOMApi).destroy(component);
+      } catch (e) {
+        // @TODO  custom renderer, destroy
         throw new Error('unknown branch');
       }
     }
   }
 }
 
-function runDestructorsSync(targetNode: Component<any>, skipDom = false) {
+function runDestructorsSync(
+  targetNode: Component<any>,
+  skipDom = false,
+  api: DOMApi,
+) {
   const stack = [targetNode];
 
   while (stack.length > 0) {
@@ -280,7 +340,7 @@ function runDestructorsSync(targetNode: Component<any>, skipDom = false) {
 
     destroySync(currentNode);
     if (skipDom !== true) {
-      destroyNodes(currentNode![RENDERED_NODES_PROPERTY]);
+      destroyNodes(api, currentNode![RENDERED_NODES_PROPERTY]);
     }
     if (nodesToRemove) {
       for (const node of nodesToRemove) {
@@ -293,7 +353,9 @@ export function runDestructors(
   target: Component<any> | Root,
   promises: Array<Promise<void>> = [],
   skipDom = false,
+  _api?: DOMApi,
 ): Array<Promise<void>> {
+  const api = _api || initDOM(target);
   const childComponents = CHILD.get(target[COMPONENT_ID_PROPERTY]);
   // @todo - move it after child components;
   destroy(target, promises);
@@ -307,7 +369,7 @@ export function runDestructors(
       const instance = TREE.get(node);
       // TODO: fix rehydration destroy case;
       if (instance) {
-        runDestructors(instance, promises, skipDom);
+        runDestructors(instance, promises, skipDom, api);
       }
     });
   }
@@ -315,11 +377,11 @@ export function runDestructors(
     if (promises.length) {
       promises.push(
         Promise.all(promises).then(() => {
-          destroyNodes(target[RENDERED_NODES_PROPERTY]);
+          destroyNodes(api, target[RENDERED_NODES_PROPERTY]);
         }),
       );
     } else {
-      destroyNodes(target[RENDERED_NODES_PROPERTY]);
+      destroyNodes(api, target[RENDERED_NODES_PROPERTY]);
     }
   }
   return promises;
@@ -331,7 +393,7 @@ export function targetFor(
   if ('nodeType' in outlet) {
     return outlet as HTMLElement;
   } else {
-    return outlet[$nodes][0] as HTMLElement;
+    return outlet[RENDERED_NODES_PROPERTY][0] as HTMLElement;
   }
 }
 
@@ -341,7 +403,4 @@ export type Slots = Record<
     ...params: unknown[]
   ) => Array<ComponentReturnType | Node | Comment | string | number>
 >;
-export type ComponentReturnType = {
-  nodes: Node[];
-  ctx: Component<any> | null;
-};
+export type ComponentReturnType = Component<any>;

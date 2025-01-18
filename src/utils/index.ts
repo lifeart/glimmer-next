@@ -18,5 +18,5 @@ export { hbs, scope } from '@/utils/template';
 export { effect } from '@/utils/vm';
 export * from '@/utils/dom';
 export * from '@/utils/helpers/index';
-export { $template, $nodes, $args, $fwProp } from '@/utils/shared';
+export { $template, $args, $fwProp } from '@/utils/shared';
 export { syncDom, takeRenderingControl } from '@/utils/runtime';

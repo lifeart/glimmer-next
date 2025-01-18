@@ -5,6 +5,7 @@ type VoidFn = () => void;
 
 export abstract class DOMApi {
   abstract toString(): string;
+  abstract isNode(node: Node): node is Node;
   abstract addEventListener(
     node: Node,
     eventName: string,
@@ -22,12 +23,22 @@ export abstract class DOMApi {
     child: HTMLElement | Node,
     anchor?: HTMLElement | Node | null,
   ): void;
+  abstract destroy(element: Node): void;
 }
 
 export class HTMLBrowserDOMApi implements DOMApi {
   declare doc: Document;
   constructor(document: Document) {
     this.doc = document;
+  }
+  isNode(node: Node): node is Node  {
+    return 'nodeType' in node;
+  }
+  destroy(node: Node): void {
+    // Skip if node is already detached
+    if (!node.isConnected) return;
+    // @ts-expect-error
+    node.remove();
   }
   toString() {
     return 'html:dom-api';

@@ -71,9 +71,9 @@ module('Integration | multiroot', function () {
       .dom(qButton(r3))
       .hasText(name.value, 'button in app three has updated text');
 
-    const appOneRoot = getContext(appOneInstance.ctx!, ROOT_CONTEXT);
-    const appTwoRoot = getContext(appTwoInstance.ctx!, ROOT_CONTEXT);
-    const appThreeRoot = getContext(appThreeInstance.ctx!, ROOT_CONTEXT);
+    const appOneRoot = getContext(appOneInstance, ROOT_CONTEXT);
+    const appTwoRoot = getContext(appTwoInstance, ROOT_CONTEXT);
+    const appThreeRoot = getContext(appThreeInstance, ROOT_CONTEXT);
 
     assert.notEqual(appOneRoot, appTwoRoot, `a1 & a2 roots differ`);
     assert.notEqual(appTwoRoot, appThreeRoot, `a2 & a3 roots differ`);

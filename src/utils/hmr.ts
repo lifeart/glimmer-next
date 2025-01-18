@@ -1,5 +1,5 @@
 import { getFirstNode } from '@/utils/control-flow/list';
-import { COMPONENTS_HMR, IFS_FOR_HMR, isArray, LISTS_FOR_HMR } from './shared';
+import { COMPONENTS_HMR, IFS_FOR_HMR, isArray, LISTS_FOR_HMR, RENDERED_NODES_PROPERTY } from './shared';
 import {
   renderElement,
   destroyElementSync,
@@ -29,7 +29,8 @@ export function createHotReload(
     // TODO: add tests for hot-reload
     renderedBuckets.forEach(({ parent, instance, args, tags }) => {
       const newCmp = component(newKlass, args, parent);
-      const firstElement = getFirstNode(instance);
+      const elApi = initDOM(instance);
+      const firstElement = getFirstNode(elApi, instance);
       const parentElement = firstElement.parentNode;
       if (!parentElement) {
         return;
@@ -64,13 +65,13 @@ export function createHotReload(
           if (dirty) {
             set(scopes);
           }
-        } else if (scopes && 'nodes' in scopes) {
+        } else if (scopes && RENDERED_NODES_PROPERTY in scopes) {
           let dirty = false;
-          for (let i = 0; i < scopes.nodes.length; i++) {
+          for (let i = 0; i < scopes[RENDERED_NODES_PROPERTY].length; i++) {
             // @ts-expect-error
-            if (scopes.nodes[i] === instance) {
+            if (scopes[RENDERED_NODES_PROPERTY][i] === instance) {
               // @ts-expect-error
-              scopes.nodes[i] = newCmp;
+              scopes[RENDERED_NODES_PROPERTY][i] = newCmp;
               dirty = true;
             }
           }
@@ -79,10 +80,9 @@ export function createHotReload(
           }
         }
       });
-      // @ts-expect-error different type for API
-      const api = initDOM(newCmp.ctx);
+      const api = initDOM(newCmp);
       unregisterFromParent(instance);
-      renderElement(api, newCmp.ctx!, parentElement, newCmp, firstElement);
+      renderElement(api, newCmp, parentElement, newCmp, firstElement);
       const newComponents = Array.from(COMPONENTS_HMR.get(newKlass) || []);
       const tagsFromCurrentInstance = newComponents.find((item) => item.instance === newCmp)?.tags ?? [];
       if (tagsFromCurrentInstance.length === tags.length) {
@@ -98,7 +98,7 @@ export function createHotReload(
           }
         });
       }
-      destroyElementSync(instance);
+      destroyElementSync(instance, false, elApi);
     });
     COMPONENTS_HMR.delete(oldklass);
   };

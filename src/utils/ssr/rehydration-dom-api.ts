@@ -12,6 +12,13 @@ export class HTMLRehydrationBrowserDOMApi implements DOMApi {
   constructor(doc: Document) {
     this.doc = doc;
   }
+  isNode(el: Node): el is Node  {
+    return 'nodeType' in el;
+  }
+  destroy(element: Node): void {
+    // @ts-expect-error
+    element.remove();
+  }
   toString() {
     return 'hydration-html:dom-api';
   }
