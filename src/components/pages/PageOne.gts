@@ -1,5 +1,7 @@
-import { cell } from '@lifeart/gxt';
+import { type Cell, cell } from '@lifeart/gxt';
+import { Smile } from './page-one/Smile';
 import { Table } from './page-one/Table.gts';
+import { CanvasRenderer } from '@/utils/renderers/canvas';
 
 function QuoteHeader() {
   const color = cell('rgb(59, 130, 246)');
@@ -44,6 +46,90 @@ function FeatureCard({ icon, title, description, iconClass }: { icon: string; ti
   </template>;
 }
 
+const tx = cell('hello');
+const x = cell(10);
+const y = cell(50);
+const font = cell('48px serif');
+const fillStyle = cell('red');
+const isVisible = cell(false);
+const list = cell([1, 2, 3]);
+
+// setInterval(() => {
+//   // shuffle list
+//   list.update(list.value.slice().reverse());
+// }, 3000);
+
+function update(el: Cell<any>, e: InputEvent & { target: HTMLInputElement }) {
+  if (e.target.type === 'number') {
+    el.update(e.target.valueAsNumber);
+  } else if (e.target.type === 'checkbox') {
+    el.update(e.target.checked);
+  } else {
+    el.update(e.target.value);
+  }
+}
+
+const add = (v1: number, v2: number) => {
+  return v1 + v2;
+};
+const mult = (v1: number, v2: number) => {
+  return v1 * v2;
+};
+
+function Controls() {
+  return <template>
+    <div class="space-y-2 p-4 bg-slate-800/40 rounded-lg">
+      <div class="flex flex-wrap gap-2">
+        <input
+          style.color='black'
+          value={{tx.value}}
+          {{on 'input' (fn update tx)}}
+          placeholder="Text"
+          class="px-2 py-1 rounded"
+        />
+        <input
+          style.color='black'
+          value={{font.value}}
+          {{on 'input' (fn update font)}}
+          placeholder="Font"
+          class="px-2 py-1 rounded"
+        />
+        <input
+          style.color='black'
+          value={{fillStyle.value}}
+          {{on 'input' (fn update fillStyle)}}
+          placeholder="Color"
+          class="px-2 py-1 rounded"
+        />
+        <input
+          style.color='black'
+          value={{x.value}}
+          type='number'
+          {{on 'input' (fn update x)}}
+          placeholder="X"
+          class="px-2 py-1 rounded w-20"
+        />
+        <input
+          style.color='black'
+          value={{y.value}}
+          type='number'
+          {{on 'input' (fn update y)}}
+          placeholder="Y"
+          class="px-2 py-1 rounded w-20"
+        />
+        <label class="flex items-center gap-2 text-white">
+          <input
+            type='checkbox'
+            checked={{isVisible.value}}
+            {{on 'change' (fn update isVisible)}}
+          />
+          Show list
+        </label>
+      </div>
+    </div>
+  </template>;
+}
+
 export function PageOne() {
   return <template>
     <div class='text-white p-6 lg:p-8 max-w-7xl mx-auto'>
@@ -59,6 +145,40 @@ export function PageOne() {
             we're building here — a platform that takes the best of established
             technologies and infuses them with a new, state-of-the-art compiler.
           </p>
+        </div>
+      </div>
+
+      {{! Canvas Renderer Demo }}
+      <div class="mb-10">
+        <div class="flex items-center gap-3 mb-4">
+          <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+            <span class="text-sm">🎨</span>
+          </div>
+          <h2 class="text-xl font-semibold">Canvas Renderer Demo</h2>
+        </div>
+        <div class="bg-slate-800/40 backdrop-blur rounded-2xl border border-slate-700/50 p-4">
+          <Controls />
+          <div class="mt-4">
+            <CanvasRenderer>
+              <text
+                x={{x.value}}
+                y={{y.value}}
+                font={{font.value}}
+                fillStyle={{fillStyle.value}}
+              >{{tx.value}}</text>
+
+              {{#if isVisible}}
+                {{#each list sync=true as |n i|}}
+                  <text
+                    x={{add 40 (mult (mult n i) 8)}}
+                    y={{add 70 (mult (mult n i) 8)}}
+                  >{{n}}</text>
+                {{/each}}
+              {{else}}
+                <text x={{30}} y={{60}}>foo</text>
+              {{/if}}
+            </CanvasRenderer>
+          </div>
         </div>
       </div>
 

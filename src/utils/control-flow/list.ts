@@ -38,6 +38,9 @@ export function getFirstNode(
     | GenericReturnType
     | Array<Node | ComponentReturnType | GenericReturnType>,
 ): Node {
+  if (!rawItem) {
+    debugger;
+  }
   if (isArray(rawItem)) {
     return getFirstNode(api, rawItem[0]);
   } else if (api.isNode(rawItem as unknown as Node)) {
