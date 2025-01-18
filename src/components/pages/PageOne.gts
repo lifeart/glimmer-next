@@ -1,6 +1,8 @@
-import { Component, cell } from '@lifeart/gxt';
+import { cell } from '@lifeart/gxt';
 import { Smile } from './page-one/Smile';
 import { Table } from './page-one/Table.gts';
+import { TresProvider } from '@/utils/renderers/tres';
+import { TresCanvas } from '@/utils/renderers/tres/TresCanvas';
 
 function Controls() {
   const color = cell('red');
@@ -28,7 +30,12 @@ export function PageOne() {
     <div class='text-white p-3'>
       <Controls />
       <br />
-
+      <TresCanvas>
+        <TresMesh>
+          <TresBoxGeometry @args={{array 1 1 1}} />
+          <TresMeshNormalMaterial />
+        </TresMesh>
+      </TresCanvas>
       <div>Imagine a world where the robust, mature ecosystems of development
         tools meet the cutting-edge performance of modern compilers. That's what
         we're building here! Our platform takes the best of established

@@ -99,7 +99,8 @@ export function renderElement(
         api.textContent(node, String(value ?? ''));
       }));
     } else {
-      throw new Error(`Unknown element type ${el}`);
+      api.insert(target, el, placeholder);
+      // throw new Error(`Unknown element type ${el}`);
     }
   } else {
     for (let i = 0; i < el.length; i++) {
