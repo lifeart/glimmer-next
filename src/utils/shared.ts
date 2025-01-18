@@ -46,15 +46,13 @@ export function isEmpty(value: unknown): value is null | undefined {
 }
 
 export function isPrimitive(value: unknown): value is string | number {
-  switch (typeof value) {
-    case 'string':
-    case 'number':
-    case 'boolean':
-    case 'bigint':
-      return true;
-    default:
-      return false;
-  }
+  const vType = typeof value;
+  return (
+    vType === 'string' ||
+    vType === 'number' ||
+    vType === 'boolean' ||
+    vType === 'bigint'
+  );
 }
 
 export function isTagLike(child: unknown): child is AnyCell {
