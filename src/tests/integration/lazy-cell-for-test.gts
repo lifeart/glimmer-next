@@ -18,15 +18,19 @@ module('Integration | Internal | LazyCellFor', function () {
       },
     });
 
-    assert.throws(() => obj.key);
+    assert.throws(() => obj.key, Error, 'Getter is throwing');
 
     const cell = cellFor(obj, 'key');
 
-    assert.ok(cell);
+    assert.ok(cell, 'Cell is created');
 
-    assert.throws(() => cell.value);
+    assert.throws(
+      () => cell.value,
+      Error,
+      'Cell is throwing because of getter',
+    );
 
     shouldThrow = false;
-    assert.equal(cell.value, 42);
+    assert.equal(cell.value, 42, 'Cell is not throwing anymore');
   });
 });

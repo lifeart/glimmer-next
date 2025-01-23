@@ -8,10 +8,7 @@ import { isFn, isTag, isTagLike, debugContext } from '@/utils/shared';
 
 export const asyncOpcodes = new WeakSet<tagOp>();
 // List of DOM operations for each tag
-export const opsForTag: Map<
-  number,
-  Array<tagOp>
-> = new Map();
+export const opsForTag: Map<number, Array<tagOp>> = new Map();
 // REVISION replacement, we use a set of tags to revalidate
 export const tagsToRevalidate: Set<Cell> = new Set();
 // List of derived tags for each cell
@@ -19,6 +16,7 @@ export const relatedTags: Map<number, Set<MergedCell>> = new Map();
 
 export const DEBUG_MERGED_CELLS = new Set<MergedCell>();
 export const DEBUG_CELLS = new Set<Cell>();
+const CELL_VALUES = new WeakMap<Cell, unknown>();
 var currentTracker: Set<Cell> | null = null;
 let _isRendering = false;
 export const cellsMap = new WeakMap<
@@ -108,7 +106,6 @@ function tracker() {
 }
 // "data" cell, it's value can be updated, and it's used to create derived cells
 export class Cell<T extends unknown = unknown> {
-  _value!: T;
   id = tagId++;
   declare toHTML: () => string;
   [Symbol.toPrimitive]() {
@@ -117,7 +114,7 @@ export class Cell<T extends unknown = unknown> {
   _debugName?: string | undefined;
   [isTag] = true;
   constructor(value: T, debugName?: string) {
-    this._value = value;
+    CELL_VALUES.set(this, value);
     if (IS_DEV_MODE) {
       this._debugName = debugContext(debugName);
       DEBUG_CELLS.add(this);
@@ -127,45 +124,54 @@ export class Cell<T extends unknown = unknown> {
     if (currentTracker !== null) {
       currentTracker.add(this);
     }
-    return this._value;
+    return CELL_VALUES.get(this) as T;
   }
   set value(value: T) {
     this.update(value);
   }
   update(value: T) {
-    this._value = value;
+    CELL_VALUES.set(this, value);
     tagsToRevalidate.add(this);
     scheduleRevalidate();
   }
 }
 
 export class LazyCell<T extends unknown = unknown> extends Cell<() => T> {
-  __value!: T;
+  declare v: () => T;
+  isResolved = false;
   constructor(v: () => T, debugName?: string) {
     // @ts-expect-error
     super(null, debugName);
-    let isResolved = false;
-    Object.defineProperty(this, '_value', {
+    this.v = v;
+    Object.defineProperty(this, 'value', {
       get() {
-        if (!isResolved) {
-          let val: unknown = undefined;
+        let value = undefined;
+        if (!this.isResolved) {
           try {
-            val = v();
-            isResolved = true;
+            value = this.v();
+            CELL_VALUES.set(this, value);
+            this.isResolved = true;
           } catch (e) {
             throw e;
           }
-          this.__value = val;
         }
-        return this.__value;
+        if (currentTracker !== null) {
+          currentTracker.add(this);
+        }
+        return CELL_VALUES.get(this) as T;
       },
-      set(v) {
-        if (!isResolved) {
-          isResolved = true;
-        }
-        this.__value = v;
+      set(value) {
+        this.update(value);
       },
     });
+  }
+  // @ts-expect-error
+  update(value: T): void {
+    if (!this.isResolved) {
+      this.isResolved = true;
+    }
+    // @ts-expect-error
+    super.update(value);
   }
 }
 export function listDependentCells(cells: Array<AnyCell>, cell: MergedCell) {

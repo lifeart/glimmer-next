@@ -90,8 +90,8 @@ export function createHotReload(
           const newTag = tagsFromCurrentInstance[index];
           if (newTag && tag._debugName && newTag._debugName) {
             if (tag._debugName?.endsWith(newTag._debugName)) {
-              if (newTag._value !== tag._value) {
-                newTag.value = tag._value;
+              if (newTag.value !== tag.value) {
+                newTag.value = tag.value;
               }
               newTag._debugName = tag._debugName;
             }
