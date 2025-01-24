@@ -188,7 +188,7 @@ export class IfCondition {
     }
     // @ts-expect-error different type for this
     renderElement(this.api, this,
-      this.placeholder.parentNode || this.target,
+      (this.api.parent(this.placeholder)) || this.target,
       this.prevComponent,
       this.placeholder,
     );

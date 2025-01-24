@@ -31,7 +31,7 @@ export function createHotReload(
       const newCmp = component(newKlass, args, parent);
       const elApi = initDOM(instance);
       const firstElement = getFirstNode(elApi, instance);
-      const parentElement = firstElement.parentNode;
+      const parentElement = elApi.parent(firstElement);
       if (!parentElement) {
         return;
       }

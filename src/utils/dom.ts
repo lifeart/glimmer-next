@@ -1073,7 +1073,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
         renderElement(
           api,
           ctx,
-          slotPlaceholder.parentNode!,
+          api.parent(slotPlaceholder)!,
           // @ts-expect-error
           slotRoots,
           slotPlaceholder,
@@ -1095,7 +1095,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
 function getRenderTargets(api: DOMApi, debugName: string) {
   const ifPlaceholder = IS_DEV_MODE ? api.comment(debugName) : api.comment('');
   let outlet = isRehydrationScheduled()
-    ? ifPlaceholder.parentElement || api.fragment()
+    ? api.parent(ifPlaceholder) || api.fragment()
     : api.fragment();
 
   if (!ifPlaceholder.isConnected) {
@@ -1296,12 +1296,13 @@ export function $_dc(
       const newTarget = IS_DEV_MODE
         ? api.comment('placeholder')
         : api.comment();
-      api.insert(target!.parentNode!, newTarget, target);
+      const parent = api.parent(target!)!;
+      api.insert(parent, newTarget, target);
       unregisterFromParent(result);
       destroyElementSync(result, false, api);
       result = component(value, args, ctx);
       result![RENDERED_NODES_PROPERTY].push(newTarget!);
-      renderElement(api, ctx, newTarget!.parentNode!, result, newTarget!);
+      renderElement(api, ctx, parent, result, newTarget!);
     } else {
       result = component(value, args, ctx);
     }

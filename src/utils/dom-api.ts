@@ -5,6 +5,7 @@ type VoidFn = () => void;
 
 export abstract class DOMApi {
   abstract toString(): string;
+  abstract parent(node: Node): Node | null;
   abstract isNode(node: Node): node is Node;
   abstract addEventListener(
     node: Node,
@@ -30,6 +31,9 @@ export class HTMLBrowserDOMApi implements DOMApi {
   declare doc: Document;
   constructor(document: Document) {
     this.doc = document;
+  }
+  parent(node: Node) {
+    return node.parentNode;
   }
   isNode(node: Node): node is Node  {
     return 'nodeType' in node;

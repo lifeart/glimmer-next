@@ -241,7 +241,7 @@ export class BasicListComponent<T extends { id: number }> {
         ? this.api.comment('list fragment target marker')
         : this.api.comment('');
       if (isRehydrationScheduled()) {
-        fragment = marker.parentElement as unknown as DocumentFragment;
+        fragment = this.api.parent(marker) as unknown as DocumentFragment;
         // TODO: figure out, likely error here, because we don't append fragment
       } else {
         fragment = this.api.fragment();
@@ -327,7 +327,7 @@ export class BasicListComponent<T extends { id: number }> {
         if (isAppendOnly) {
           // TODO: in ssr parentNode may not exist
           // @ts-expect-error this;
-          renderElement(api, this, targetNode.parentNode!, row, targetNode);
+          renderElement(api, this, api.parent(targetNode)!, row, targetNode);
         } else {
           rowsToMove.push([row, index]);
           for (let [mapKey, value] of indexMap) {
@@ -375,14 +375,14 @@ export class BasicListComponent<T extends { id: number }> {
           api,
           // @ts-expect-error this
           this,
-          insertBeforeNode.parentNode!,
+          api.parent(insertBeforeNode)!,
           row,
           insertBeforeNode,
         );
       });
     if (targetNode !== bottomMarker) {
-      const parent = targetNode.parentNode!;
-      const trueParent = bottomMarker.parentNode!;
+      const parent = api.parent(targetNode)!;
+      const trueParent = api.parent(bottomMarker)!;
       // parent may not exist in rehydration
       if (!IN_SSR_ENV) {
         if (parent) {
@@ -417,8 +417,8 @@ export class SyncListComponent<
     );
   }
   fastCleanup() {
-    const { keyMap, bottomMarker, topMarker, indexMap } = this;
-    const parent = bottomMarker.parentElement;
+    const { keyMap, bottomMarker, topMarker, indexMap, api } = this;
+    const parent = api.parent(bottomMarker);
     if (
       parent &&
       parent.lastChild === bottomMarker &&
@@ -508,8 +508,8 @@ export class AsyncListComponent<
     );
   }
   async fastCleanup() {
-    const { bottomMarker, topMarker, keyMap, indexMap } = this;
-    const parent = bottomMarker.parentElement;
+    const { bottomMarker, topMarker, keyMap, indexMap, api } = this;
+    const parent = api.parent(bottomMarker);
     if (
       parent &&
       parent.lastChild === bottomMarker &&
