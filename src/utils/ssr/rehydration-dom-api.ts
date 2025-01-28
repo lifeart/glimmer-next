@@ -15,6 +15,9 @@ export class HTMLRehydrationBrowserDOMApi implements DOMApi {
   isNode(el: Node): el is Node  {
     return 'nodeType' in el;
   }
+  parent(el: Node) {
+    return el.parentElement;
+  }
   destroy(element: Node): void {
     // @ts-expect-error
     element.remove();

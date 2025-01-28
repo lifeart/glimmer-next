@@ -1,6 +1,6 @@
 import { module, test } from 'qunit';
-import { render, rerender, click } from '@/tests/utils';
-import { cell } from '@lifeart/gxt';
+import { render, rerender, click, findAll } from '@/tests/utils';
+import { cell, Component } from '@lifeart/gxt';
 import { formula, type Cell } from '@/utils/reactive';
 import { step } from '../utils';
 
@@ -20,6 +20,571 @@ module('Integration | InternalComponent | each', function (hooks) {
       array[j] = temp;
     }
   }
+
+  test('contained child without node with nested child inside list item (list relocation tests)', async function (assert) {
+    const list = cell([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
+    const [i1, i2, i3, i4] = list.value.slice(0);
+
+    class ChildItem extends Component {
+      <template>
+        <div data-test-node-id={{@item.id}} data-test-item-one><i
+          >Item{{@item.id}}</i></div>
+      </template>
+    }
+
+    class SubItem extends Component {
+      <template><ChildItem @item={{@item}} /></template>
+    }
+
+    class ListItem extends Component {
+      <template>
+        <div data-test-node-id={{@item.id}} data-test-item-two-1><i
+          >Item{{@item.id}}</i><SubItem @item={{@item}} /></div>
+        <div data-test-node-id={{@item.id}} data-test-item-two-2><i
+          >Item{{@item.id}}</i></div>
+      </template>
+    }
+
+    await render(
+      <template>
+        <div data-test-list>
+          {{#each list key='id' as |item|}}
+            <ListItem @item={{item}} />
+          {{/each}}
+        </div>
+      </template>,
+    );
+    assert.dom('[data-test-item-one]').exists({ count: 4 });
+    assert.dom('[data-test-item-two-1]').exists({ count: 4 });
+    assert.dom('[data-test-item-two-2]').exists({ count: 4 });
+    let nodes = Array.from(findAll<HTMLDivElement>('[data-test-node-id]'));
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['1', '1', '1', '2', '2', '2', '3', '3', '3', '4', '4', '4'],
+      'Items initially properly rendered',
+    );
+
+    list.update([i4, i2, i3, i1]);
+    await rerender();
+    nodes = Array.from(findAll<HTMLDivElement>('[data-test-node-id]'));
+
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['4', '4', '4', '2', '2', '2', '3', '3', '3', '1', '1', '1'],
+      'Items properly relocated (sides shift)',
+    );
+
+    list.update([i4, i3, i2, i1]);
+    await rerender();
+    nodes = Array.from(findAll<HTMLDivElement>('[data-test-node-id]'));
+
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['4', '4', '4', '3', '3', '3', '2', '2', '2', '1', '1', '1'],
+      'Items properly relocated (center shift)',
+    );
+
+    list.update([i3, i4, i2, i1]);
+    await rerender();
+    nodes = Array.from(findAll<HTMLDivElement>('[data-test-node-id]'));
+
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['3', '3', '3', '4', '4', '4', '2', '2', '2', '1', '1', '1'],
+      'Items properly relocated (center-top shift)',
+    );
+
+    list.update([i3, i2, i1, i4]);
+    await rerender();
+    nodes = Array.from(findAll('[data-test-node-id]'));
+
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['3', '3', '3', '2', '2', '2', '1', '1', '1', '4', '4', '4'],
+      'Items properly relocated (center-bottom shift)',
+    );
+  });
+  test('contained child without node inside list item (list relocation tests)', async function (assert) {
+    const list = cell([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
+    const [i1, i2, i3, i4] = list.value.slice(0);
+
+    class SubItem extends Component {
+      <template></template>
+    }
+
+    class ListItem extends Component {
+      <template>
+        <div data-test-node-id={{@item.id}} data-test-item-one><i
+          >Item{{@item.id}}</i></div>
+        <div data-test-node-id={{@item.id}} data-test-item-two-1><i
+          >Item{{@item.id}}</i><SubItem @item={{@item}} /></div>
+        <div data-test-node-id={{@item.id}} data-test-item-two-2><i
+          >Item{{@item.id}}</i></div>
+      </template>
+    }
+
+    await render(
+      <template>
+        <div data-test-list>
+          {{#each list key='id' as |item|}}
+            <ListItem @item={{item}} />
+          {{/each}}
+        </div>
+      </template>,
+    );
+    assert.dom('[data-test-item-one]').exists({ count: 4 });
+    assert.dom('[data-test-item-two-1]').exists({ count: 4 });
+    assert.dom('[data-test-item-two-2]').exists({ count: 4 });
+    let nodes = Array.from(findAll<HTMLDivElement>('[data-test-node-id]'));
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['1', '1', '1', '2', '2', '2', '3', '3', '3', '4', '4', '4'],
+      'Items initially properly rendered',
+    );
+
+    list.update([i4, i2, i3, i1]);
+    await rerender();
+    nodes = Array.from(findAll<HTMLDivElement>('[data-test-node-id]'));
+
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['4', '4', '4', '2', '2', '2', '3', '3', '3', '1', '1', '1'],
+      'Items properly relocated (sides shift)',
+    );
+
+    list.update([i4, i3, i2, i1]);
+    await rerender();
+    nodes = Array.from(findAll<HTMLDivElement>('[data-test-node-id]'));
+
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['4', '4', '4', '3', '3', '3', '2', '2', '2', '1', '1', '1'],
+      'Items properly relocated (center shift)',
+    );
+
+    list.update([i3, i4, i2, i1]);
+    await rerender();
+    nodes = Array.from(findAll<HTMLDivElement>('[data-test-node-id]'));
+
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['3', '3', '3', '4', '4', '4', '2', '2', '2', '1', '1', '1'],
+      'Items properly relocated (center-top shift)',
+    );
+
+    list.update([i3, i2, i1, i4]);
+    await rerender();
+    nodes = Array.from(findAll('[data-test-node-id]'));
+
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['3', '3', '3', '2', '2', '2', '1', '1', '1', '4', '4', '4'],
+      'Items properly relocated (center-bottom shift)',
+    );
+  });
+  test('contained child node inside list item (list relocation tests)', async function (assert) {
+    const list = cell([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
+    const [i1, i2, i3, i4] = list.value.slice(0);
+
+    class SubItem extends Component {
+      <template>
+        <div data-test-node-id={{@item.id}} data-test-item-one><i
+          >Item{{@item.id}}</i></div>
+      </template>
+    }
+
+    class ListItem extends Component {
+      <template>
+        <div data-test-node-id={{@item.id}} data-test-item-two-1><i
+          >Item{{@item.id}}</i><SubItem @item={{@item}} /></div>
+        <div data-test-node-id={{@item.id}} data-test-item-two-2><i
+          >Item{{@item.id}}</i></div>
+      </template>
+    }
+
+    await render(
+      <template>
+        <div data-test-list>
+          {{#each list key='id' as |item|}}
+            <ListItem @item={{item}} />
+          {{/each}}
+        </div>
+      </template>,
+    );
+    assert.dom('[data-test-item-one]').exists({ count: 4 });
+    assert.dom('[data-test-item-two-1]').exists({ count: 4 });
+    assert.dom('[data-test-item-two-2]').exists({ count: 4 });
+    let nodes = Array.from(findAll<HTMLDivElement>('[data-test-node-id]'));
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['1', '1', '1', '2', '2', '2', '3', '3', '3', '4', '4', '4'],
+      'Items initially properly rendered',
+    );
+
+    list.update([i4, i2, i3, i1]);
+    await rerender();
+    nodes = Array.from(findAll<HTMLDivElement>('[data-test-node-id]'));
+
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['4', '4', '4', '2', '2', '2', '3', '3', '3', '1', '1', '1'],
+      'Items properly relocated (sides shift)',
+    );
+
+    list.update([i4, i3, i2, i1]);
+    await rerender();
+    nodes = Array.from(findAll<HTMLDivElement>('[data-test-node-id]'));
+
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['4', '4', '4', '3', '3', '3', '2', '2', '2', '1', '1', '1'],
+      'Items properly relocated (center shift)',
+    );
+
+    list.update([i3, i4, i2, i1]);
+    await rerender();
+    nodes = Array.from(findAll<HTMLDivElement>('[data-test-node-id]'));
+
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['3', '3', '3', '4', '4', '4', '2', '2', '2', '1', '1', '1'],
+      'Items properly relocated (center-top shift)',
+    );
+
+    list.update([i3, i2, i1, i4]);
+    await rerender();
+    nodes = Array.from(findAll('[data-test-node-id]'));
+
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['3', '3', '3', '2', '2', '2', '1', '1', '1', '4', '4', '4'],
+      'Items properly relocated (center-bottom shift)',
+    );
+  });
+
+  test('nested roots (middle) inside list item (list relocation tests)', async function (assert) {
+    const list = cell([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
+    const [i1, i2, i3, i4] = list.value.slice(0);
+
+    class SubItem extends Component {
+      <template>
+        <div data-test-node-id={{@item.id}} data-test-item-one><i
+          >Item{{@item.id}}</i></div>
+      </template>
+    }
+
+    class ListItem extends Component {
+      <template>
+        <div data-test-node-id={{@item.id}} data-test-item-two-1><i
+          >Item{{@item.id}}</i></div>
+        <SubItem @item={{@item}} />
+        <div data-test-node-id={{@item.id}} data-test-item-two-2><i
+          >Item{{@item.id}}</i></div>
+      </template>
+    }
+
+    await render(
+      <template>
+        <div data-test-list>
+          {{#each list key='id' as |item|}}
+            <ListItem @item={{item}} />
+          {{/each}}
+        </div>
+      </template>,
+    );
+    assert.dom('[data-test-item-one]').exists({ count: 4 });
+    assert.dom('[data-test-item-two-1]').exists({ count: 4 });
+    assert.dom('[data-test-item-two-2]').exists({ count: 4 });
+    let nodes = Array.from(findAll<HTMLDivElement>('[data-test-node-id]'));
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['1', '1', '1', '2', '2', '2', '3', '3', '3', '4', '4', '4'],
+      'Items initially properly rendered',
+    );
+
+    list.update([i4, i2, i3, i1]);
+    await rerender();
+    nodes = Array.from(findAll<HTMLDivElement>('[data-test-node-id]'));
+
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['4', '4', '4', '2', '2', '2', '3', '3', '3', '1', '1', '1'],
+      'Items properly relocated (sides shift)',
+    );
+
+    list.update([i4, i3, i2, i1]);
+    await rerender();
+    nodes = Array.from(findAll<HTMLDivElement>('[data-test-node-id]'));
+
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['4', '4', '4', '3', '3', '3', '2', '2', '2', '1', '1', '1'],
+      'Items properly relocated (center shift)',
+    );
+
+    list.update([i3, i4, i2, i1]);
+    await rerender();
+    nodes = Array.from(findAll<HTMLDivElement>('[data-test-node-id]'));
+
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['3', '3', '3', '4', '4', '4', '2', '2', '2', '1', '1', '1'],
+      'Items properly relocated (center-top shift)',
+    );
+
+    list.update([i3, i2, i1, i4]);
+    await rerender();
+    nodes = Array.from(findAll('[data-test-node-id]'));
+
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['3', '3', '3', '2', '2', '2', '1', '1', '1', '4', '4', '4'],
+      'Items properly relocated (center-bottom shift)',
+    );
+  });
+
+  test('nested roots (bottom) inside list item (list relocation tests)', async function (assert) {
+    const list = cell([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
+    const [i1, i2, i3, i4] = list.value.slice(0);
+
+    class SubItem extends Component {
+      <template>
+        <div data-test-node-id={{@item.id}} data-test-item-one><i
+          >Item{{@item.id}}</i></div>
+      </template>
+    }
+
+    class ListItem extends Component {
+      <template>
+        <div data-test-node-id={{@item.id}} data-test-item-two-1><i
+          >Item{{@item.id}}</i></div>
+        <div data-test-node-id={{@item.id}} data-test-item-two-2><i
+          >Item{{@item.id}}</i></div>
+        <SubItem @item={{@item}} />
+      </template>
+    }
+
+    await render(
+      <template>
+        <div data-test-list>
+          {{#each list key='id' as |item|}}
+            <ListItem @item={{item}} />
+          {{/each}}
+        </div>
+      </template>,
+    );
+    assert.dom('[data-test-item-one]').exists({ count: 4 });
+    assert.dom('[data-test-item-two-1]').exists({ count: 4 });
+    assert.dom('[data-test-item-two-2]').exists({ count: 4 });
+    let nodes = Array.from(findAll<HTMLDivElement>('[data-test-node-id]'));
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['1', '1', '1', '2', '2', '2', '3', '3', '3', '4', '4', '4'],
+      'Items initially properly rendered',
+    );
+
+    list.update([i4, i2, i3, i1]);
+    await rerender();
+    nodes = Array.from(findAll<HTMLDivElement>('[data-test-node-id]'));
+
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['4', '4', '4', '2', '2', '2', '3', '3', '3', '1', '1', '1'],
+      'Items properly relocated (sides shift)',
+    );
+
+    list.update([i4, i3, i2, i1]);
+    await rerender();
+    nodes = Array.from(findAll<HTMLDivElement>('[data-test-node-id]'));
+
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['4', '4', '4', '3', '3', '3', '2', '2', '2', '1', '1', '1'],
+      'Items properly relocated (center shift)',
+    );
+
+    list.update([i3, i4, i2, i1]);
+    await rerender();
+    nodes = Array.from(findAll<HTMLDivElement>('[data-test-node-id]'));
+
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['3', '3', '3', '4', '4', '4', '2', '2', '2', '1', '1', '1'],
+      'Items properly relocated (center-top shift)',
+    );
+
+    list.update([i3, i2, i1, i4]);
+    await rerender();
+    nodes = Array.from(findAll('[data-test-node-id]'));
+
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['3', '3', '3', '2', '2', '2', '1', '1', '1', '4', '4', '4'],
+      'Items properly relocated (center-bottom shift)',
+    );
+  });
+
+  test('nested roots (top) inside list item (list relocation tests)', async function (assert) {
+    const list = cell([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
+    const [i1, i2, i3, i4] = list.value.slice(0);
+
+    class SubItem extends Component {
+      <template>
+        <div data-test-node-id={{@item.id}} data-test-item-one><i
+          >Item{{@item.id}}</i></div>
+      </template>
+    }
+
+    class ListItem extends Component {
+      <template>
+        <SubItem @item={{@item}} />
+        <div data-test-node-id={{@item.id}} data-test-item-two-1><i
+          >Item{{@item.id}}</i></div>
+        <div data-test-node-id={{@item.id}} data-test-item-two-2><i
+          >Item{{@item.id}}</i></div>
+      </template>
+    }
+
+    await render(
+      <template>
+        <div data-test-list>
+          {{#each list key='id' as |item|}}
+            <ListItem @item={{item}} />
+          {{/each}}
+        </div>
+      </template>,
+    );
+    assert.dom('[data-test-item-one]').exists({ count: 4 });
+    assert.dom('[data-test-item-two-1]').exists({ count: 4 });
+    assert.dom('[data-test-item-two-2]').exists({ count: 4 });
+    let nodes = Array.from(findAll<HTMLDivElement>('[data-test-node-id]'));
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['1', '1', '1', '2', '2', '2', '3', '3', '3', '4', '4', '4'],
+      'Items initially properly rendered',
+    );
+
+    list.update([i4, i2, i3, i1]);
+    await rerender();
+    nodes = Array.from(findAll<HTMLDivElement>('[data-test-node-id]'));
+
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['4', '4', '4', '2', '2', '2', '3', '3', '3', '1', '1', '1'],
+      'Items properly relocated (sides shift)',
+    );
+
+    list.update([i4, i3, i2, i1]);
+    await rerender();
+    nodes = Array.from(findAll<HTMLDivElement>('[data-test-node-id]'));
+
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['4', '4', '4', '3', '3', '3', '2', '2', '2', '1', '1', '1'],
+      'Items properly relocated (center shift)',
+    );
+
+    list.update([i3, i4, i2, i1]);
+    await rerender();
+    nodes = Array.from(findAll<HTMLDivElement>('[data-test-node-id]'));
+
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['3', '3', '3', '4', '4', '4', '2', '2', '2', '1', '1', '1'],
+      'Items properly relocated (center-top shift)',
+    );
+
+    list.update([i3, i2, i1, i4]);
+    await rerender();
+    nodes = Array.from(findAll('[data-test-node-id]'));
+
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['3', '3', '3', '2', '2', '2', '1', '1', '1', '4', '4', '4'],
+      'Items properly relocated (center-bottom shift)',
+    );
+  });
+
+  test('multiple roots inside list item (list relocation tests)', async function (assert) {
+    const list = cell([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
+    const [i1, i2, i3, i4] = list.value.slice(0);
+
+    class ItemOne extends Component {
+      <template>
+        <div data-test-node-id={{@item.id}} data-test-item-one><i
+          >Item{{@item.id}}</i></div>
+      </template>
+    }
+
+    class ItemTwo extends Component {
+      <template>
+        <div data-test-node-id={{@item.id}} data-test-item-two-1><i
+          >Item{{@item.id}}</i></div>
+        <div data-test-node-id={{@item.id}} data-test-item-two-2><i
+          >Item{{@item.id}}</i></div>
+      </template>
+    }
+
+    await render(
+      <template>
+        <div data-test-list>
+          {{#each list key='id' as |item|}}
+            <ItemOne @item={{item}} />
+            <ItemTwo @item={{item}} />
+          {{/each}}
+        </div>
+      </template>,
+    );
+    assert.dom('[data-test-item-one]').exists({ count: 4 });
+    assert.dom('[data-test-item-two-1]').exists({ count: 4 });
+    assert.dom('[data-test-item-two-2]').exists({ count: 4 });
+    let nodes = Array.from(findAll<HTMLDivElement>('[data-test-node-id]'));
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['1', '1', '1', '2', '2', '2', '3', '3', '3', '4', '4', '4'],
+      'Items initially properly rendered',
+    );
+
+    list.update([i4, i2, i3, i1]);
+    await rerender();
+    nodes = Array.from(findAll<HTMLDivElement>('[data-test-node-id]'));
+
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['4', '4', '4', '2', '2', '2', '3', '3', '3', '1', '1', '1'],
+      'Items properly relocated (sides shift)',
+    );
+
+    list.update([i4, i3, i2, i1]);
+    await rerender();
+    nodes = Array.from(findAll<HTMLDivElement>('[data-test-node-id]'));
+
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['4', '4', '4', '3', '3', '3', '2', '2', '2', '1', '1', '1'],
+      'Items properly relocated (center shift)',
+    );
+
+    list.update([i3, i4, i2, i1]);
+    await rerender();
+    nodes = Array.from(findAll<HTMLDivElement>('[data-test-node-id]'));
+
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['3', '3', '3', '4', '4', '4', '2', '2', '2', '1', '1', '1'],
+      'Items properly relocated (center-top shift)',
+    );
+
+    list.update([i3, i2, i1, i4]);
+    await rerender();
+    nodes = Array.from(findAll('[data-test-node-id]'));
+
+    assert.deepEqual(
+      nodes.map((el) => el.dataset.testNodeId),
+      ['3', '3', '3', '2', '2', '2', '1', '1', '1', '4', '4', '4'],
+      'Items properly relocated (center-bottom shift)',
+    );
+  });
 
   test('it properly remove all list items if its rendered with update', async function (assert) {
     function toNamedObject(arr: number[]) {

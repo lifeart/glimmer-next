@@ -35,6 +35,7 @@ import {
 } from './context';
 import { createRoot, MergedCell } from '.';
 import { opcodeFor } from './vm';
+import { getFirstNode } from './control-flow/list';
 
 export type ComponentRenderTarget =
   | Element
@@ -98,33 +99,41 @@ export function renderElement(
       // relocate case
       // move row case (node already rendered and re-located)
       const renderedNodes = el[RENDERED_NODES_PROPERTY];
-      if (!renderedNodes.length) {
-        const childs = CHILD.get(el[COMPONENT_ID_PROPERTY]);
-        if (Array.isArray(childs)) {
-          for (let i = 0; i < childs.length; i++) {
-            const child = TREE.get(childs[i])!;
-            renderElement(
-              api,
-              child,
-              target,
-              child![RENDERED_NODES_PROPERTY],
-              placeholder,
-              true,
-            );
-          }
-        }
-      } else {
-        for (let i = 0; i < renderedNodes.length; i++) {
-          renderElement(
-            api,
-            el,
-            target,
-            renderedNodes[i],
-            placeholder,
-            true,
-          );
-        }
+      const childs = CHILD.get(el[COMPONENT_ID_PROPERTY]) ?? [];
+      // we need to do proper relocation, considering initial child position
+      const list: Array<[Node | null, Component<any> | Node]> = renderedNodes.map(
+        (el) => [el, el],
+      );
+      for (let i = 0; i < childs.length; i++) {
+        const child = TREE.get(childs[i])!;
+        const firstChildNode = getFirstNode(api, child);
+        list.push([firstChildNode, child]);
       }
+      list.sort(([node1], [node2]) => {
+        if (!node1) {
+          return -1;
+        }
+        if (!node2) {
+          return 1;
+        }
+        const position = node1.compareDocumentPosition(node2);
+        if (position & Node.DOCUMENT_POSITION_FOLLOWING) {
+          return -1;
+        } else if (position & Node.DOCUMENT_POSITION_PRECEDING) {
+          return 1;
+        }
+        return 0;
+      });
+      list.forEach(([_, item]) => {
+        renderElement(
+          api,
+          el as Component<any>,
+          target,
+          item,
+          placeholder,
+          true,
+        );
+      });
     } else {
       // fresh (not rendered component)
       // TODO: add same logic for IF (inside each)
@@ -148,7 +157,7 @@ export function renderElement(
       }),
     );
     return;
-  } 
+  }
   if (isArray(el)) {
     for (let i = 0; i < el.length; i++) {
       renderElement(api, ctx, target, el[i], placeholder, skipRegistration);
@@ -206,9 +215,7 @@ export type Props = Record<string, unknown>;
 type Get<T, K, Otherwise = {}> = K extends keyof T
   ? Exclude<T[K], undefined>
   : Otherwise;
-export class Component<T extends Props = any>
-  implements ComponentReturnType
-{
+export class Component<T extends Props = any> implements ComponentReturnType {
   args!: Get<T, 'Args'>;
   [RENDERING_CONTEXT_PROPERTY]: undefined | DOMApi = undefined;
   [COMPONENT_ID_PROPERTY] = cId();

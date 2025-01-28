@@ -38,27 +38,30 @@ export function getFirstNode(
     | GenericReturnType
     | Array<Node | ComponentReturnType | GenericReturnType>,
 ): Node {
-  if (!rawItem) {
-    debugger;
-  }
   if (isArray(rawItem)) {
     return getFirstNode(api, rawItem[0]);
   } else if (api.isNode(rawItem as unknown as Node)) {
     return rawItem as Node;
   } else if (RENDERED_NODES_PROPERTY in rawItem) {
-    return (
-      rawItem![RENDERED_NODES_PROPERTY][0] ||
-      Array.from(CHILD.get(rawItem![COMPONENT_ID_PROPERTY]) ?? []).reduce(
-        (acc: null | Node, item: number) => {
-          if (!acc) {
-            return getFirstNode(api, TREE.get(item)!);
-          } else {
-            return acc;
-          }
-        },
-        null,
-      )
-    );
+    const selfNode = rawItem![RENDERED_NODES_PROPERTY][0];
+    const childNode = Array.from(
+      CHILD.get(rawItem![COMPONENT_ID_PROPERTY]) ?? [],
+    ).reduce((acc: null | Node, item: number) => {
+      if (!acc) {
+        return getFirstNode(api, TREE.get(item)!);
+      } else {
+        return acc;
+      }
+    }, null);
+    if (selfNode && childNode) {
+      const position = selfNode.compareDocumentPosition(childNode);
+      if (position & Node.DOCUMENT_POSITION_FOLLOWING) {
+        return selfNode;
+      } else {
+        return childNode;
+      }
+    }
+    return selfNode || childNode;
   } else {
     throw new Error('Unknown branch');
   }
