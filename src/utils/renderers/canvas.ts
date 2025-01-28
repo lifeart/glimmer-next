@@ -132,6 +132,9 @@ export function CanvasRenderer(): ComponentReturn<
     get ctx() {
       return canvasNode.getContext('2d')!;
     },
+    parent(node: BaseElement) {
+      return node.parentElement;
+    },
     fragment() {
       console.log(`c:element:fragment`);
       return this.createNode(Fragment);

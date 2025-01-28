@@ -26,7 +26,7 @@ import {
   Destructors,
   registerDestructor,
 } from './glimmer/destroyable';
-import type { DOMApi } from '@/utils/dom-api';
+import { type DOMApi, HTMLBrowserDOMApi } from '@/utils/dom-api';
 import {
   isFn,
   isPrimitive,
@@ -896,8 +896,7 @@ function component(
         };
       } else {
         return {
-          // @ts-expect-error message may not exit
-          [RENDERED_NODES_PROPERTY]: [HTMLAPI.text(String(e.message))],
+          [RENDERED_NODES_PROPERTY]: [new HTMLBrowserDOMApi(document).text(String((e as unknown as { message: string}).message))],
         };
       }
     } finally {
