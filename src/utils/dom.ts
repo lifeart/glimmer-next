@@ -1130,11 +1130,13 @@ function ifCond(
   const instance = new IfCondition(
     ctx,
     cell,
+    // @ts-expect-error
     outlet,
     placeholder,
     trueBranch,
     falseBranch,
   );
+  // @ts-expect-error outlet
   return toNodeReturnType(outlet, instance);
 }
 export function $_eachSync<T extends { id: number }>(
@@ -1155,9 +1157,11 @@ export function $_eachSync<T extends { id: number }>(
       ctx,
       key,
     },
+    // @ts-expect-error outlet
     outlet,
     placeholder,
   );
+  // @ts-expect-error outlet
   return toNodeReturnType(outlet, instance);
 }
 export function $_each<T extends { id: number }>(
@@ -1178,9 +1182,11 @@ export function $_each<T extends { id: number }>(
       key,
       ctx,
     },
+    // @ts-expect-error outlet
     outlet,
     placeholder,
   );
+  // @ts-expect-error outlet
   return toNodeReturnType(outlet, instance);
 }
 const ArgProxyHandler: ProxyHandler<{}> = {
