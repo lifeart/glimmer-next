@@ -25,7 +25,6 @@ export const SYMBOLS = {
   $template: '$template',
   $_hasBlockParams: '$_hasBlockParams',
   $_hasBlock: '$_hasBlock',
-  $nodes: '$nodes',
   $args: '$args',
   $_maybeHelper: '$_maybeHelper',
   $_maybeModifier: '$_maybeModifier',

@@ -22,6 +22,8 @@ import {
 } from '@/utils/shared';
 import { opcodeFor } from '@/utils/vm';
 import { initDOM } from '@/utils/context';
+import { setParentContext } from '../dom';
+import { DOMApi } from '../dom-api';
 
 export class IfCondition {
   isDestructorRunning = false;
@@ -38,6 +40,7 @@ export class IfCondition {
   [COMPONENT_ID_PROPERTY] = cId();
   trueBranch: (ifContext: Component<any>) => GenericReturnType;
   falseBranch: (ifContext: Component<any>) => GenericReturnType;
+  declare api: DOMApi;
   constructor(
     parentContext: Component<any>,
     maybeCondition: Cell<boolean>,
@@ -53,6 +56,8 @@ export class IfCondition {
     this.falseBranch = falseBranch;
     // @ts-expect-error typings error
     addToTree(parentContext, this, 'from if constructor');
+    // @ts-expect-error
+    this.api = initDOM(this);
     this.destructors.push(opcodeFor(this.condition, this.syncState.bind(this)));
     registerDestructor(parentContext, this.destroy.bind(this));
     if (IS_DEV_MODE) {
@@ -165,19 +170,25 @@ export class IfCondition {
       this.prevComponent = null;
     }
     // @ts-expect-error branch acceptable type for destroy element
-    await destroyElement(branch, false);
+    await destroyElement(branch, false, this.api);
   }
   renderState(nextBranch: (ifContext: Component<any>) => GenericReturnType) {
     if (IS_DEV_MODE) {
       $DEBUG_REACTIVE_CONTEXTS.push(`if:${String(this.lastValue)}`);
     }
-    this.prevComponent = nextBranch(this as unknown as Component<any>);
+    try {
+      // @ts-expect-error 
+      setParentContext(this);
+      this.prevComponent = nextBranch(this as unknown as Component<any>);
+    } finally {
+      setParentContext(null);
+    }
     if (IS_DEV_MODE) {
       $DEBUG_REACTIVE_CONTEXTS.pop();
     }
     // @ts-expect-error different type for this
-    renderElement(initDOM(this), this,
-      this.placeholder.parentNode || this.target,
+    renderElement(this.api, this,
+      (this.api.parent(this.placeholder)) || this.target,
       this.prevComponent,
       this.placeholder,
     );

@@ -127,12 +127,20 @@ export async function rerender(timeout = 16) {
   });
 }
 
-export function find(selector: string): Element {
+export function find<T extends Element>(selector: string): T {
   const element = getDocument()
     .getElementById('ember-testing')!
     .querySelector(selector);
-  return element as Element;
+  return element as T;
 }
+
+export function findAll<T extends Element>(selector: string): NodeListOf<T> {
+  const element = getDocument()
+    .getElementById('ember-testing')!
+    .querySelectorAll(selector);
+  return element as NodeListOf<T>;
+}
+
 
 export async function click(selector: string) {
   const element = find(selector);

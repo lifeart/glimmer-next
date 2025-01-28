@@ -418,8 +418,9 @@ describe.each([
     });
     describe('basic element helper support', () => {
       test('it return kinda valid component-like code', () => {
+        // TODO: fix element tag
         expect($t<ASTv1.BlockStatement>(`{{(element "tag")}}`)).toEqual(
-          `$:() => $:function(args){$_GET_ARGS(this, arguments);const $fw = $_GET_FW(this, arguments);const $slots = $_GET_SLOTS(this, arguments);return{[$nodes]:[$_tag("tag", $fw,[()=>$_slot('default',()=>[],$slots,this)], this)], ctx: this};}`,
+          `$:() => $:function(args){$_GET_ARGS(this, arguments);const $fw = $_GET_FW(this, arguments);const $slots = $_GET_SLOTS(this, arguments);return $_fin([$_tag("tag", $fw,[()=>$_slot('default',()=>[],$slots,this)], this)], this)};`,
         );
       });
     });
@@ -888,9 +889,9 @@ describe.each([
         expect($s(converted)).toEqual(
           `$_each(${$glimmerCompat(
             'smf',
-          )}, (el,idx,ctx0) => $_tag('div', $_edp, [${$glimmerCompat(
+          )}, (el,idx,ctx0) => $_ucw((ctx1) => [$_tag('div', $_edp, [${$glimmerCompat(
             'el',
-          )}, ${$glimmerCompat('idx.value')}], ctx0), null, this)`,
+          )}, ${$glimmerCompat('idx.value')}], ctx1)], ctx0), null, this)`,
         );
       });
       test('it support block-less case', () => {
@@ -926,7 +927,7 @@ describe.each([
         expect($s(converted)).toEqual(
           `$_each(${$glimmerCompat(
             'foo',
-          )}, (bar,$index,ctx0) => [$_ucw((ctx1) => [$_tag('div', $_edp, [], ctx1), $_tag('span', $_edp, [], ctx1)], ctx0)], null, this)`,
+          )}, (bar,$index,ctx0) => $_ucw((ctx1) => [$_tag('div', $_edp, [], ctx1), $_tag('span', $_edp, [], ctx1)], ctx0), null, this)`,
         );
       });
       test('it not add unstable child wrapper for simple node', () => {
@@ -968,9 +969,9 @@ describe.each([
         expect($s(converted)).toEqual(
           `$_each(${$glimmerCompat(
             'foo',
-          )}, (bar,$index,ctx0) => [$_ucw((ctx1) => ["1", $_c(Smile,${$args(
+          )}, (bar,$index,ctx0) => $_ucw((ctx1) => ["1", $_c(Smile,${$args(
             '{}',
-          )},ctx1)], ctx0)], null, this)`,
+          )},ctx1)], ctx0), null, this)`,
         );
       });
       test('it works', () => {

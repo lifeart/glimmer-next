@@ -1,12 +1,10 @@
 import { expect, test, describe } from 'vitest';
 import { hbs, scope } from './template';
-import { $nodes } from './index';
 
 describe('template package', () => {
   describe('hbs', () => {
     test('it works', () => {
       expect(hbs`123`).toEqual({
-        [$nodes]: [],
         ctx: null,
         tpl: ['123'],
       });

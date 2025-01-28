@@ -47,32 +47,33 @@ export class Row extends Component<RowArgs> {
     }
     this.args.onRemove(this.args.item);
   };
-  modifier = (element: HTMLDivElement) => {
+  modifier = (element: HTMLTableRowElement) => {
     const result = async () => {
       if (!this.isClicked) {
         return;
       }
+      const cells = element.querySelectorAll('td, th');
+      cells.forEach((cell: any) => {
+        const width = cell.offsetWidth;
+        cell.style.width = `${width}px`;
+      });
       const scrollTop = document.documentElement.scrollTop;
       const rect = element.getBoundingClientRect();
+      element.style.position = 'absolute';
+      element.style.top = `${rect.top + scrollTop}px`;
+      element.style.left = `${rect.left}px`;
+      element.style.width = `${rect.width}px`;
+      element.style.height = `${rect.height}px`;
+      element.style.backgroundColor = 'rgba(59, 130, 246, 0.5)';
+      element.style.transition = 'all 1.4s cubic-bezier(0.4, 0, 0.2, 1)';
+
       if (Math.random() > 0.5) {
-        element.style.position = 'absolute';
-        element.style.top = `${rect.top + (scrollTop || -80)}px`;
-        element.style.left = `${rect.left}px`;
-        element.style.width = `${rect.width}px`;
-        element.style.height = `${rect.height}px`;
-        element.style.backgroundColor = 'blue';
-        element.style.transition = 'all 1.4s ease';
-        element.style.transform = 'scale(0)';
+        element.style.transform = 'rotate(20deg) translateY(-100vh) scale(0.3)';
       } else {
-        element.style.position = 'absolute';
-        element.style.top = `${rect.top + (scrollTop || -80)}px`;
-        element.style.left = `${rect.left}px`;
-        element.style.width = `${rect.width}px`;
-        element.style.height = `${rect.height}px`;
-        element.style.backgroundColor = 'blue';
-        element.style.transition = 'all 1.4s ease';
-        element.style.transform = 'translateX(100%)';
+        element.style.transform =
+          'rotate(-20deg) translateY(-100vh) scale(0.3)';
       }
+      element.style.opacity = '0';
       await Promise.allSettled(element.getAnimations().map((a) => a.finished));
     };
     return result;

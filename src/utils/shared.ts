@@ -19,7 +19,6 @@ export function cId() {
 }
 
 export const $template = 'template' as const;
-export const $nodes = 'nodes' as const;
 export const $args = 'args' as const;
 export const $_debug_args = '_debug_args' as const;
 export const $fwProp = '$fw' as const;
@@ -86,11 +85,11 @@ export function setBounds(component: ComponentReturnType) {
   if (import.meta.env.SSR) {
     return;
   }
-  const ctx = component.ctx;
+  const ctx = component;
   if (!ctx) {
     return;
   }
-  const maybeBounds: Array<HTMLElement | Comment> = component[$nodes].map(
+  const maybeBounds: Array<HTMLElement | Comment> = component[RENDERED_NODES_PROPERTY].map(
     (node) => {
       const isHTMLElement = node instanceof HTMLElement;
       if (!isHTMLElement) {
@@ -152,6 +151,11 @@ export function addToTree(
   }
   TREE.set(ID, node);
   if (WITH_CONTEXT_API) {
+    if (IS_DEV_MODE) {
+      if (!PARENT_ID) {
+        throw new Error("unknown parent");
+      }
+    }
     PARENT.set(ID, PARENT_ID);
   }
   SEEN_TREE_NODES.add(node);
@@ -162,6 +166,7 @@ export function addToTree(
   if (IS_DEV_MODE) {
     if ('nodeType' in node) {
       throw new Error('invalid node');
+      // TODO: cleanup
     } else if ('ctx' in node && node.ctx === null) {
       // if it's simple node without context, no needs to add it to the tree as well
       // for proper debug this logic need to be removed

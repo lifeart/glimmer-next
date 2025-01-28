@@ -6,6 +6,15 @@ export class MathMLBrowserDOMApi implements DOMApi {
   constructor(document: Document) {
     this.doc = document;
   }
+  isNode(node: Node): node is Node {
+    return 'nodeType' in node;
+  }
+  destroy(node: Node): void {
+    // Skip if node is already detached
+    if (!node.isConnected) return;
+    // @ts-expect-error
+    node.remove();
+  }
   // @ts-expect-error foo
   addEventListener(_, __) {}
   toString() {

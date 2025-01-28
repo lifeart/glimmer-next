@@ -1,5 +1,5 @@
 import * as backburner from 'backburner.js';
-import { $_debug_args, $nodes, CHILD, COMPONENT_ID_PROPERTY, getBounds, isArray, PARENT, RENDERED_NODES_PROPERTY, TREE } from '../shared';
+import { $_debug_args, CHILD, COMPONENT_ID_PROPERTY, getBounds, isArray, PARENT, RENDERED_NODES_PROPERTY, TREE } from '../shared';
 import { Component } from '..';
 import { Cell, MergedCell, getCells, getMergedCells } from '../reactive';
 import { $args } from '../shared';
@@ -450,13 +450,13 @@ const EmberProxy: any = new Proxy(
                   if (!c) {
                     return;
                   }
-                  if ($nodes in c) {
-                    childs.push(c.ctx!);
+                  if (RENDERED_NODES_PROPERTY in c) {
+                    childs.push(c);
                   }
                 });
               } else {
-                if (component.prevComponent && $nodes in component.prevComponent) {
-                  childs.push(component.prevComponent.ctx!);
+                if (component.prevComponent && RENDERED_NODES_PROPERTY in component.prevComponent) {
+                  childs.push(component.prevComponent);
                 }
               }
             }
@@ -543,12 +543,12 @@ const EmberProxy: any = new Proxy(
                 if (Array.isArray(el)) {
                   el.forEach((e) => {
                     if (!('nodeType' in e)) {
-                      children.push(componentToRenderTree(e.ctx!));
+                      children.push(componentToRenderTree(e));
                     }
                   });
                 } else {
                   if (!('nodeType' in el)) {
-                    children.push(componentToRenderTree(el.ctx!));
+                    children.push(componentToRenderTree(el));
                   }
                 }
               });
@@ -563,12 +563,12 @@ const EmberProxy: any = new Proxy(
                 if (Array.isArray(el)) {
                   el.forEach((e) => {
                     if (!('nodeType' in e)) {
-                      children.push(componentToRenderTree(e.ctx!));
+                      children.push(componentToRenderTree(e));
                     }
                   });
                 } else {
                   if (!('nodeType' in el)) {
-                    children.push(componentToRenderTree(el.ctx!));
+                    children.push(componentToRenderTree(el));
                   }
                 }
               });

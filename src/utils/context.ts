@@ -75,7 +75,15 @@ export function getContext<T>(
     }
     const parent = PARENT.get(current[COMPONENT_ID_PROPERTY])!;
     if (parent !== null) {
-      current = TREE.get(parent);
+      current = TREE.get(parent) as Component<any>;
+      if (IS_DEV_MODE) {
+        if (!current) {
+          debugger;
+        }
+      }
+      if (key === RENDERING_CONTEXT && current[RENDERING_CONTEXT_PROPERTY]) {
+        return current[RENDERING_CONTEXT_PROPERTY] as T;
+      }
     } else {
       current = undefined;
     }

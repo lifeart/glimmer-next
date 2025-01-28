@@ -1,11 +1,7 @@
-import { $nodes } from '.';
+import type { ComponentReturnType } from "./component";
 
-export function hbs(tpl: TemplateStringsArray) {
-  return {
-    [$nodes]: [],
-    ctx: null,
-    tpl,
-  };
+export function hbs(_: TemplateStringsArray) {
+  return {} as unknown as ComponentReturnType;
 }
 export function scope(items: Record<string, unknown>): void {
   if (typeof items !== 'object' || items === null) {

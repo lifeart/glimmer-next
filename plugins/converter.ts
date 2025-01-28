@@ -211,11 +211,11 @@ export function convert(
           SYMBOLS.$_GET_FW
         }(this, arguments);const $slots = ${
           SYMBOLS.$_GET_SLOTS
-        }(this, arguments);return{[${SYMBOLS.$nodes}]:[${
+        }(this, arguments);return ${SYMBOLS.FINALIZE_COMPONENT}([${
           SYMBOLS.TAG
         }(${ToJSType(node.params[0])}, $fw,[()=>${
           SYMBOLS.SLOT
-        }('default',()=>[],$slots,this)], this)], ctx: this};}`;
+        }('default',()=>[],$slots,this)], this)], this)};`;
       } else if (node.path.original === SYMBOLS.$__hash) {
         return `$:${SYMBOLS.$__hash}(${toObject(hashArgs)})`;
       }
