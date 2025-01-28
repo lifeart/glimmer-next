@@ -444,7 +444,7 @@ export class SyncListComponent<
   }
   syncList(items: T[]) {
     const { keyMap, keyForItem, indexMap } = this;
-    if (items.length === 0) {
+    if (items.length === 0 && !this.isFirstRender) {
       if (this.fastCleanup()) {
         return;
       }
@@ -541,7 +541,7 @@ export class AsyncListComponent<
     }
   }
   async syncList(items: T[]) {
-    if (items.length === 0) {
+    if (items.length === 0 && !this.isFirstRender) {
       if (await this.fastCleanup()) {
         return;
       }
