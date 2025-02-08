@@ -134,4 +134,25 @@ module('Integration | Internal | effect', function () {
     );
     assert.equal(executionsCount, 3, `executions count not changed`);
   });
+  test('check loop guard', async function (assert) {
+    const source = cell(1);
+    const derived = cell(1);
+    let executionsCount = 0;
+    const destructor = effect(() => {
+      derived.update(source.value);
+      source.value = Math.random();
+      executionsCount++;
+      console.log('effect executed');
+    });
+    assert.notEqual(derived.value, source.value);
+    assert.equal(executionsCount, 1, `effect executed once`);
+    source.update(2);
+    await rerender();
+    assert.notEqual(derived.value, source.value);
+    assert.equal(executionsCount, 2, `effect executed second time`);
+    await rerender();
+    assert.equal(executionsCount, 2, `effect executed second time`);
+
+    destructor();
+  });
 });
