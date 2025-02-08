@@ -9,7 +9,7 @@ import {
   opsFor,
   inNewTrackingFrame,
 } from './reactive';
-import { isFn } from './shared';
+import { ALIVE_CELLS, isFn } from './shared';
 
 type maybeDestructor = undefined | (() => void);
 type maybePromise = undefined | Promise<void>;
@@ -95,7 +95,9 @@ export function opcodeFor(tag: AnyCell, op: tagOp) {
   evaluateOpcode(tag, op);
   const ops = opsFor(tag)!;
   ops.push(op);
+  ALIVE_CELLS.add(tag);
   return () => {
+    ALIVE_CELLS.delete(tag);
     // console.info(`Removing Updating Opcode for ${tag._debugName}`, tag);
     const index = ops.indexOf(op);
     if (index > -1) {

@@ -4,7 +4,8 @@
   We explicitly update DOM only when it's needed and only if tags are changed.
 */
 import { scheduleRevalidate } from '@/utils/runtime';
-import { isFn, isTag, isTagLike, debugContext } from '@/utils/shared';
+import { isFn, isTag, isTagLike, debugContext, ALIVE_CELLS } from '@/utils/shared';
+import { supportChromeExtension } from './redux-devtools';
 
 export const asyncOpcodes = new WeakSet<tagOp>();
 // List of DOM operations for each tag
@@ -51,6 +52,39 @@ function keysFor(obj: object): Map<string | number | symbol, Cell<unknown>> {
   }
   return map!;
 }
+
+const result = supportChromeExtension({
+  get() {
+    const cells: Record<string, unknown> = {};
+    const allCells: Set<Cell> = new Set();
+    Array.from(ALIVE_CELLS).forEach((_cell) => {
+      const cell = _cell as MergedCell;
+      const nestedCells = Array.from(cell.relatedCells ?? []);
+      nestedCells.forEach((cell) => {
+        allCells.add(cell);
+      });
+    });
+    allCells.forEach((cell) => {
+      cells[cell._debugName!] = cell._value;
+    });
+    return cells;
+  },
+  skipDispatch: 0,
+  set() {
+    console.log('set', ...arguments);
+  },
+  on(timeLine: string, fn: () => any) {
+    console.log('on', timeLine, fn);
+    setTimeout(() => {
+      // debugger;
+      fn.call(this, 'updates', {})
+    
+    }, 2000);
+  },
+  trigger() {
+    console.log('trigger', ...arguments);
+  }
+});
 
 export function tracked(
   klass: any,
@@ -106,6 +140,8 @@ export function setIsRendering(value: boolean) {
 function tracker() {
   return new Set<Cell>();
 }
+
+let COUNTER = 0;
 // "data" cell, it's value can be updated, and it's used to create derived cells
 export class Cell<T extends unknown = unknown> {
   _value!: T;
@@ -119,9 +155,12 @@ export class Cell<T extends unknown = unknown> {
   constructor(value: T, debugName?: string) {
     this._value = value;
     if (IS_DEV_MODE) {
-      this._debugName = debugContext(debugName);
+      this._debugName = `${debugContext(debugName)}:${COUNTER++}`;
       DEBUG_CELLS.add(this);
     }
+    result.dispatch({
+      type: 'CELL_CREATED',
+    });
   }
   get value() {
     if (currentTracker !== null) {
@@ -136,6 +175,9 @@ export class Cell<T extends unknown = unknown> {
     this._value = value;
     tagsToRevalidate.add(this);
     scheduleRevalidate();
+    result.dispatch({
+      type: 'CELL_UPDATED',
+    });
   }
 }
 
@@ -419,3 +461,7 @@ export function getTracker() {
 export function setTracker(tracker: Set<Cell> | null) {
   currentTracker = tracker;
 }
+
+
+
+console.log('result', result);
