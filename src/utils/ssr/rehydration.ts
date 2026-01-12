@@ -10,6 +10,7 @@ import { cleanupFastContext, provideContext, RENDERING_CONTEXT, API_FACTORY_CONT
 import { NS_SVG, NS_MATHML } from '@/utils/namespaces';
 
 export type ApiFactory = (namespace?: string) => DOMApi;
+export type ApiFactoryWrapper = { factory: ApiFactory };
 const withRehydrationStack: HTMLElement[] = [];
 const commentsToRehydrate: Comment[] = [];
 let rehydrationScheduled = false;
@@ -136,17 +137,20 @@ export function withRehydration(
   ];
 
   // Factory function that creates namespace-appropriate rehydration APIs
-  const apiFactory: ApiFactory = (namespace?: string) => {
-    let newApi: DOMApi;
-    if (namespace === NS_SVG) {
-      newApi = new SVGRehydrationBrowserDOMApi(document);
-    } else if (namespace === NS_MATHML) {
-      newApi = new MathMLRehydrationBrowserDOMApi(document);
-    } else {
-      newApi = new HTMLRehydrationBrowserDOMApi(document);
-    }
-    createdApis.push({ api: newApi, namespace });
-    return newApi;
+  // Wrapped in an object to prevent getContext from calling it (getContext calls functions)
+  const apiFactory: { factory: ApiFactory } = {
+    factory: (namespace?: string) => {
+      let newApi: DOMApi;
+      if (namespace === NS_SVG) {
+        newApi = new SVGRehydrationBrowserDOMApi(document);
+      } else if (namespace === NS_MATHML) {
+        newApi = new MathMLRehydrationBrowserDOMApi(document);
+      } else {
+        newApi = new HTMLRehydrationBrowserDOMApi(document);
+      }
+      createdApis.push({ api: newApi, namespace });
+      return newApi;
+    },
   };
 
   try {

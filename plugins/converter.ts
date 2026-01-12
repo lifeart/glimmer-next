@@ -496,11 +496,12 @@ export function convert(
       !convertedNodes.has(element)
     ) {
       convertedNodes.add(element);
-      const parent = builders.element(`$:${SYMBOLS.HTML_NAMESPACE}`, {
+      const htmlWrapper = builders.element(`$:${SYMBOLS.HTML_NAMESPACE}`, {
         children: element.children,
       });
-      element.children = [parent];
-      return ElementToNode(parent);
+      element.children = [htmlWrapper];
+      // Don't return early - continue processing the foreignObject element
+      // with the HTML namespace wrapper as its child
     }
     element.blockParams.forEach((p) => {
       bindings.add(p);
