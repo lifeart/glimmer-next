@@ -1249,8 +1249,7 @@ export function $_args(
               if (!isFn(args[key])) {
                 return args[key];
               }
-              // @ts-expect-error function signature
-              return args[key]();
+              return (args[key] as () => unknown)();
             },
             enumerable: true,
           });
@@ -1406,8 +1405,7 @@ export const $_maybeModifier = (
             enumerable: true,
             get() {
               if (typeof args[key] === 'function') {
-                // @ts-expect-error function signature
-                return args[key]();
+                return (args[key] as () => unknown)();
               } else {
                 return args[key];
               }
