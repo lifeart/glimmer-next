@@ -40,8 +40,8 @@ export class IfCondition {
   destroyPromise: Promise<any> | null = null;
   [RENDERED_NODES_PROPERTY] = [];
   [COMPONENT_ID_PROPERTY] = cId();
-  trueBranch: (ifContext: Component<any>) => GenericReturnType;
-  falseBranch: (ifContext: Component<any>) => GenericReturnType;
+  trueBranch: (ifContext: IfCondition) => GenericReturnType;
+  falseBranch: (ifContext: IfCondition) => GenericReturnType;
   declare api: DOMApi;
   constructor(
     parentContext: Component<any>,
@@ -179,9 +179,9 @@ export class IfCondition {
       $DEBUG_REACTIVE_CONTEXTS.push(`if:${String(this.lastValue)}`);
     }
     try {
-      // @ts-expect-error
+      // @ts-expect-error IfCondition is not a Component but has the same shape for context
       setParentContext(this);
-      this.prevComponent = nextBranch(this as unknown as Component<any>);
+      this.prevComponent = nextBranch(this);
     } finally {
       setParentContext(null);
     }
@@ -201,8 +201,10 @@ export class IfCondition {
         this[RENDERED_NODES_PROPERTY] = [this.placeholder];
       }
     }
-    // @ts-expect-error branch destroying
-    unregisterFromParent(this.prevComponent);
+    if (this.prevComponent !== null) {
+      // @ts-expect-error branch destroying
+      unregisterFromParent(this.prevComponent);
+    }
     return;
   }
   async destroy() {

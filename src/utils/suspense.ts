@@ -1,9 +1,9 @@
 import {
   Component,
   type ComponentReturnType,
-  renderComponent,
+  renderElement,
 } from './component';
-import { context, getAnyContext, provideContext } from './context';
+import { context, getContext, provideContext, initDOM } from './context';
 import {
   $_fin,
   $_if,
@@ -12,12 +12,10 @@ import {
   $_slot,
   $_GET_ARGS,
   $_ucw,
-  getRoot,
 } from './dom';
 import { tracked } from './reactive';
-import { $nodes, $template } from './shared';
+import { $template, RENDERED_NODES_PROPERTY } from './shared';
 import { isDestroyed } from './glimmer/destroyable';
-import { api } from './dom-api';
 import type { IfCondition } from './control-flow/if';
 
 export const SUSPENSE_CONTEXT = Symbol('suspense');
@@ -30,10 +28,10 @@ type SuspenseContext = {
 };
 
 export function followPromise<T extends Promise<any>>(ctx: Component<any>, promise: T): T {
-  getAnyContext<SuspenseContext>(ctx, SUSPENSE_CONTEXT)?.start();
+  getContext<SuspenseContext>(ctx, SUSPENSE_CONTEXT)?.start();
   promise.finally(() => {
     Promise.resolve().then(() => {
-      getAnyContext<SuspenseContext>(ctx, SUSPENSE_CONTEXT)?.end();
+      getContext<SuspenseContext>(ctx, SUSPENSE_CONTEXT)?.end();
     });
   });
   return promise;
@@ -44,7 +42,7 @@ export function lazy<T>(factory: () => Promise<{ default: T }>) {
     constructor(params: any) {
       super(params);
       this.params = params;
-      // @ts-ignore args types
+      // @ts-expect-error args types
       this[$template] = this._template;
       i++;
       // this.load();
@@ -67,33 +65,24 @@ export function lazy<T>(factory: () => Promise<{ default: T }>) {
       if (isDestroyed(this)) {
         return;
       }
-      // @ts-ignore component type
+      // @ts-expect-error component type
       this.state = { loading: false, component };
     }
     _template() {
       Promise.resolve().then(() => {
         this.suspense?.start();
       });
-      const root = getRoot()!;
-      // @ts-expect-error
-      console.log(`lazy: ${root.version}`);
 
-      // @ts-ignore
       return $_fin(
         [
           $_if(
-            // @ts-ignore this type
             () => this.isLoading,
             () => {
               return null;
             },
-            // @ts-ignore this type
-            (c) => {
+            (c: IfCondition) => {
               try {
                 if (isDestroyed(c)) {
-                  debugger;
-                }
-                if (isDestroyed(root)) {
                   debugger;
                 }
                 return $_c(
@@ -106,9 +95,8 @@ export function lazy<T>(factory: () => Promise<{ default: T }>) {
               }
             },
             this,
-          ),
+          ) as unknown as ComponentReturnType,
         ],
-        // @ts-ignore
         this,
       );
     }
@@ -120,11 +108,10 @@ export function lazy<T>(factory: () => Promise<{ default: T }>) {
 
 export class Suspense extends Component {
   constructor() {
-    // @ts-ignore args types
+    // @ts-expect-error args types
     super(...arguments);
-    // @ts-ignore this type
     provideContext(this, SUSPENSE_CONTEXT, this);
-    // @ts-ignore args types
+    // @ts-expect-error args types
     this[$template] = this._template;
   }
   @tracked pendingAmount = 0;
@@ -157,10 +144,8 @@ export class Suspense extends Component {
     $_GET_ARGS(this, arguments);
     const $slots = $_GET_SLOTS(this, arguments);
     let trueBranch: null | ComponentReturnType = null;
+    const api = initDOM(this);
     let fragment = api.fragment();
-    const root = getRoot()!;
-    // @ts-expect-error
-    console.log(`Suspense: ${root.version}`);
 
     return $_fin(
       [
@@ -168,23 +153,19 @@ export class Suspense extends Component {
           () => this.pendingAmount === 0,
           (c: IfCondition) => {
             if (trueBranch === null) {
-              trueBranch = $_ucw((c) => {
-                if (isDestroyed(c)) {
-                  debugger;
-                }
-                if (isDestroyed(root)) {
+              trueBranch = $_ucw((ctx) => {
+                if (isDestroyed(ctx)) {
                   debugger;
                 }
                 return (
-                  $_slot('default', () => [], $slots, c) as ComponentReturnType
-                )[$nodes];
-              }, c);
-              renderComponent(trueBranch, fragment, c, true);
+                  $_slot('default', () => [], $slots, ctx) as ComponentReturnType
+                )[RENDERED_NODES_PROPERTY];
+              }, c as unknown as Component<any>);
+              renderElement(api, trueBranch, fragment, trueBranch, null);
               return $_c(this.fallback, {}, c as unknown as Component<any>);
             } else {
               return {
-                ctx: trueBranch.ctx,
-                nodes: Array.from(fragment.childNodes),
+                [RENDERED_NODES_PROPERTY]: Array.from(fragment.childNodes),
               };
             }
           },
@@ -192,7 +173,7 @@ export class Suspense extends Component {
             return $_c(this.fallback, {}, c as unknown as Component<any>);
           },
           this,
-        ),
+        ) as unknown as ComponentReturnType,
       ],
       this,
     );
