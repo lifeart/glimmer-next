@@ -284,6 +284,46 @@ function $prop(
   }
 }
 
+function mergeClassModifiers(
+  api: DOMApi,
+  element: Node,
+  classNameModifiers: Attr[],
+  destructors: Destructors,
+) {
+  if (classNameModifiers.length === 0) {
+    return;
+  }
+  if (IS_DEV_MODE) {
+    $DEBUG_REACTIVE_CONTEXTS.push(`[class]`);
+  }
+  if (classNameModifiers.length === 1) {
+    $prop(api, element, $_className, classNameModifiers[0], destructors);
+  } else {
+    const formulas = classNameModifiers.map((modifier) => {
+      if (isFn(modifier)) {
+        return formula(
+          () => deepFnValue(modifier),
+          'functional modifier for className',
+        );
+      } else {
+        return modifier;
+      }
+    });
+    $prop(
+      api,
+      element,
+      $_className,
+      formula(() => {
+        return formulas.join(' ');
+      }, (element as HTMLElement).tagName + '.className'),
+      destructors,
+    );
+  }
+  if (IS_DEV_MODE) {
+    $DEBUG_REACTIVE_CONTEXTS.pop();
+  }
+}
+
 function $attr(
   api: DOMApi,
   element: HTMLElement,
@@ -569,37 +609,7 @@ function _DOM(
     );
   }
 
-  if (classNameModifiers.length > 0) {
-    if (IS_DEV_MODE) {
-      $DEBUG_REACTIVE_CONTEXTS.push(`[class]`);
-    }
-    if (classNameModifiers.length === 1) {
-      $prop(api, element, $_className, classNameModifiers[0], destructors);
-    } else {
-      const formulas = classNameModifiers.map((modifier) => {
-        if (isFn(modifier)) {
-          return formula(
-            () => deepFnValue(modifier),
-            'functional modifier for className',
-          );
-        } else {
-          return modifier;
-        }
-      });
-      $prop(
-        api,
-        element,
-        $_className,
-        formula(() => {
-          return formulas.join(' ');
-        }, element.tagName + '.className'),
-        destructors,
-      );
-    }
-    if (IS_DEV_MODE) {
-      $DEBUG_REACTIVE_CONTEXTS.pop();
-    }
-  }
+  mergeClassModifiers(api, element, classNameModifiers, destructors);
 
   if (SUPPORT_SHADOW_DOM) {
     let appendRef =
@@ -797,17 +807,16 @@ export const $_maybeHelper = (
   return value;
 };
 
-let parentContext: Array<number> = [];
+// Component context stack - tracks parent component hierarchy
+const parentContextStack: Array<number> = [];
 let parentContextIndex = -1;
 
 if (IS_DEV_MODE) {
   try {
-    // @ts-expect-error
-    window.parentContext = parentContext;
-    // @ts-expect-error
-    window.resolveParents = () => {
-      return parentContext.map((id) => TREE.get(id));
-    };
+    // @ts-expect-error - dev mode debugging
+    window.parentContext = parentContextStack;
+    // @ts-expect-error - dev mode debugging
+    window.resolveParents = () => parentContextStack.map((id) => TREE.get(id));
   } catch (e) {
     // EOL
   }
@@ -816,20 +825,21 @@ if (IS_DEV_MODE) {
 export const setParentContext = (value: Root | Component<any> | null) => {
   if (value === null) {
     parentContextIndex--;
-    parentContext.pop();
+    parentContextStack.pop();
   } else {
     parentContextIndex++;
-    parentContext.push(value[COMPONENT_ID_PROPERTY]!);
+    parentContextStack.push(value[COMPONENT_ID_PROPERTY]!);
   }
 };
-export const getParentContext = () => {
+
+export const getParentContext = (): Component<any> | Root | undefined => {
   if (IS_DEV_MODE) {
-    if (!TREE.get(parentContext[parentContextIndex]!)) {
+    if (!TREE.get(parentContextStack[parentContextIndex]!)) {
       debugger;
       throw new Error('unable to get parent context before set');
     }
   }
-  return TREE.get(parentContext[parentContextIndex]!);
+  return TREE.get(parentContextStack[parentContextIndex]!);
 };
 
 function component(
