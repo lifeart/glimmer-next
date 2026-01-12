@@ -43,12 +43,25 @@ export function getFirstNode(
   } else if (api.isNode(rawItem as unknown as Node)) {
     return rawItem as Node;
   } else if (RENDERED_NODES_PROPERTY in rawItem) {
-    const selfNode = rawItem![RENDERED_NODES_PROPERTY][0];
+    // Get the first element from RENDERED_NODES - could be a Node or a Component
+    const firstRendered = rawItem![RENDERED_NODES_PROPERTY][0];
+    // If firstRendered is a Component, recursively get its first node
+    let selfNode: Node | null = null;
+    if (firstRendered) {
+      if (RENDERED_NODES_PROPERTY in firstRendered) {
+        // It's a component, recursively get its first node
+        selfNode = getFirstNode(api, firstRendered as ComponentReturnType);
+      } else if (api.isNode(firstRendered as Node)) {
+        selfNode = firstRendered as Node;
+      }
+    }
     const childNode = Array.from(
       CHILD.get(rawItem![COMPONENT_ID_PROPERTY]) ?? [],
     ).reduce((acc: null | Node, item: number) => {
       if (!acc) {
-        return getFirstNode(api, TREE.get(item)!);
+        const child = TREE.get(item);
+        if (!child) return null;
+        return getFirstNode(api, child);
       } else {
         return acc;
       }
@@ -61,7 +74,7 @@ export function getFirstNode(
         return childNode;
       }
     }
-    return selfNode || childNode;
+    return (selfNode || childNode)!;
   } else {
     throw new Error('Unknown branch');
   }

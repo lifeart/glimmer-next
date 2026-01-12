@@ -101,12 +101,33 @@ export function renderElement(
       const renderedNodes = el[RENDERED_NODES_PROPERTY];
       const childs = CHILD.get(el[COMPONENT_ID_PROPERTY]) ?? [];
       // we need to do proper relocation, considering initial child position
-      const list: Array<[Node | null, Component<any> | Node]> = renderedNodes.map(
-        (el) => [el, el],
-      );
+      // Build list with proper first node for each item (renderedNodes may contain components)
+      const list: Array<[Node | null, Component<any> | Node]> = [];
+      const componentsInRenderedNodes = new Set<Component<any>>();
+      for (let i = 0; i < renderedNodes.length; i++) {
+        const item = renderedNodes[i];
+        if (RENDERED_NODES_PROPERTY in item) {
+          // item is a component, get its first node for sorting
+          const firstNode = getFirstNode(api, item as Component<any>);
+          list.push([firstNode, item as Component<any>]);
+          componentsInRenderedNodes.add(item as Component<any>);
+        } else {
+          // item is a DOM node
+          list.push([item, item]);
+        }
+      }
       for (let i = 0; i < childs.length; i++) {
-        const child = TREE.get(childs[i])!;
+        const child = TREE.get(childs[i]);
+        if (!child) continue; // Skip if child no longer exists
+        // Skip if this child is already in renderedNodes (avoid duplicates)
+        if (componentsInRenderedNodes.has(child)) continue;
         const firstChildNode = getFirstNode(api, child);
+        // Skip child components whose nodes are already contained within parent's rendered nodes
+        // (e.g., when a component is rendered INSIDE a parent's div, not as a sibling)
+        const isContainedInParent = renderedNodes.some(
+          (parentNode) => parentNode && (parentNode as Node).contains && (parentNode as Node).contains(firstChildNode)
+        );
+        if (isContainedInParent) continue;
         list.push([firstChildNode, child]);
       }
       list.sort(([node1], [node2]) => {

@@ -10,8 +10,8 @@ export class SVGBrowserDOMApi implements DOMApi {
     return 'nodeType' in node;
   }
   destroy(node: Node): void {
-    // Skip if node is already detached
-    if (!node.isConnected) return;
+    // Skip if node is undefined or already detached
+    if (!node || !node.isConnected) return;
     // @ts-expect-error
     node.remove();
   }
