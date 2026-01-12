@@ -28,5 +28,6 @@ test('page-one', async ({ page }) => {
   await expect(page.locator('a[href="/renderers"]')).toBeVisible();
   await expect(page.locator('a[href="/benchmark"]')).toBeVisible();
 
-  // Navigation disabled due to Chromium crash with canvas
+  // Navigate away to avoid browser crash on teardown
+  await page.goto('about:blank').catch(() => {});
 });

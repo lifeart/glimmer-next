@@ -31,5 +31,6 @@ test('renderers', async ({ page }) => {
   // Check navigation link exists
   await expect(page.locator('a[href="/pageOne"]')).toBeVisible();
 
-  // Navigation disabled due to Chromium crash with canvas
+  // Navigate away to avoid browser crash on teardown
+  await page.goto('about:blank').catch(() => {});
 });
