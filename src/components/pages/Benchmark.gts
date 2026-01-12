@@ -72,7 +72,7 @@ export class Benchmark extends Component {
     runlots: () => this.create_5_000itemsCell(),
   };
   <template>
-    <div class='bg-black p-2'>
+    <div class='text-white p-6 max-w-6xl mx-auto'>
       <Header
         @run={{this.actions.run}}
         @add={{this.actions.add}}
@@ -81,36 +81,48 @@ export class Benchmark extends Component {
         @swaprows={{this.actions.swaprows}}
         @runlots={{this.actions.runlots}}
       />
-      <table
-        class='w-full text-sm text-left rtl:text-right text-gray-500 dark:text-gray-400'
-      >
-        <thead
-          class='text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400'
-        >
-          <tr>
-            <th scope='col' class='px-6 py-3'>
-              #
-            </th>
-            <th scope='col' class='px-6 py-3'>
-              Label
-            </th>
-            <th scope='col' class='px-6 py-3'>
-              Edit
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {{#each this.items key='id' as |item|}}
-            <Row
-              @item={{item}}
-              @onSelect={{this.onSelect}}
-              @selected={{this.selected}}
-              @onRemove={{this.removeItem}}
-              class='bg-white border-b dark:bg-gray-800 dark:border-gray-700'
-            />
-          {{/each}}
-        </tbody>
-      </table>
+
+      <div class='bg-slate-800/40 backdrop-blur rounded-xl border border-slate-700/50 overflow-hidden'>
+        <table class='w-full text-sm'>
+          <thead>
+            <tr class='border-b border-slate-600 bg-slate-800/50'>
+              <th class='px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider w-20'>
+                #
+              </th>
+              <th class='px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider'>
+                Label
+              </th>
+              <th class='px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider w-20'>
+                Action
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {{#each this.items key='id' as |item|}}
+              <Row
+                @item={{item}}
+                @onSelect={{this.onSelect}}
+                @selected={{this.selected}}
+                @onRemove={{this.removeItem}}
+              />
+            {{/each}}
+          </tbody>
+        </table>
+
+        {{#unless this._items.length}}
+          <div class='px-6 py-12 text-center'>
+            <div class='w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-700/50 flex items-center justify-center'>
+              <span class='text-3xl'>📋</span>
+            </div>
+            <p class='text-slate-400 mb-2'>No rows yet</p>
+            <p class='text-slate-500 text-sm'>Click "Create 1,000 rows" to start the benchmark</p>
+          </div>
+        {{/unless}}
+      </div>
+
+      <p class='text-xs text-slate-500 mt-4 text-center'>
+        Click on a row label to select it. Selected rows are highlighted in blue.
+      </p>
     </div>
   </template>
 }

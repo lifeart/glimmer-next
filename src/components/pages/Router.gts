@@ -113,9 +113,9 @@ export class Router extends Component {
       <:desktop>
         {{#each this.routes key='name' as |route|}}
           <Button
-            class={{if route.state 'text-sky-500'}}
+            class={{if route.state 'text-blue-400 bg-slate-800'}}
             {{! @glint-expect-error object-ligeral with same props }}
-            class='text-sm font-semibold leading-6 text-gray-900'
+            class='px-4 py-2 text-sm font-medium rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-all'
             @onClick={{fn this.goToRoute route.name}}
           >
             {{route.text}}
@@ -125,9 +125,9 @@ export class Router extends Component {
       <:mobile>
         {{#each this.routes key='name' as |route|}}
           <Button
-            class={{if route.state 'text-sky-500'}}
+            class={{if route.state 'text-blue-400 bg-slate-700'}}
             {{! @glint-expect-error object-ligeral with same props }}
-            class='-mx-3 block rounded-lg px-3 py-2 text-base font-semibold leading-7 text-gray-900 hover:bg-gray-50'
+            class='w-full px-3 py-3 text-left rounded-lg text-base font-medium text-slate-300 hover:text-white hover:bg-slate-700 transition-colors'
             @onClick={{fn this.goToRoute route.name}}
           >
             {{route.text}}
@@ -137,10 +137,17 @@ export class Router extends Component {
 
     </Header>
     <style>
-      .route-container {background-color: black;height:100vh;width:100vw;} .page
-      { box-shadow: -13px -15px 20px 0px #e3e3e3; transition: opacity 0.5s
-      ease-out, transform 0.5s ease-out; opacity: 1; height: 100vh; width:
-      100vw; padding: 20px; color: white; background-color: black; }
+      .route-container {background-color: #0f172a; min-height:100vh; width:100vw;}
+      .page {
+        box-shadow: -10px 0 30px rgba(0, 0, 0, 0.3);
+        transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+        opacity: 1;
+        min-height: 100vh;
+        width: 100vw;
+        color: white;
+        background-color: #0f172a;
+        overflow-y: auto;
+      }
     </style>
     <div class='route-container'>
       {{#each this.routes as |route|}}

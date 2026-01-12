@@ -30,10 +30,10 @@ export class Row extends Component<RowArgs> {
   }
   get className() {
     if (IS_GLIMMER_COMPAT_MODE) {
-      return this.isSelected ? 'bg-blue-500' : '';
+      return this.isSelected ? 'bg-blue-500/20' : '';
     } else {
       return formula(
-        () => (this.isSelected ? 'bg-blue-500' : ''),
+        () => (this.isSelected ? 'bg-blue-500/20' : ''),
         'isSelected',
       );
     }
@@ -64,7 +64,7 @@ export class Row extends Component<RowArgs> {
       element.style.left = `${rect.left}px`;
       element.style.width = `${rect.width}px`;
       element.style.height = `${rect.height}px`;
-      element.style.backgroundColor = 'rgba(59, 130, 246, 0.5)';
+      element.style.backgroundColor = 'rgba(59, 130, 246, 0.3)';
       element.style.transition = 'all 1.4s cubic-bezier(0.4, 0, 0.2, 1)';
 
       if (Math.random() > 0.5) {
@@ -79,26 +79,26 @@ export class Row extends Component<RowArgs> {
     return result;
   };
   <template>
-    <tr ...attributes {{this.modifier}}>
-      <th
+    <tr class='border-b border-slate-700/50 hover:bg-slate-700/30 transition-colors' ...attributes {{this.modifier}}>
+      <td
         scope='row'
         class={{this.className}}
-        class='px-6 py-4 font-medium text-gray-900 whitespace-nowrap dark:text-white'
-      >{{this.id}}</th>
-      <td class='px-6 py-4' class={{this.className}}>
+        class='px-4 py-2.5 font-medium text-slate-400 text-sm'
+      >{{this.id}}</td>
+      <td class='px-4 py-2.5' class={{this.className}}>
         <a
-          class='cursor-pointer'
+          class='cursor-pointer text-slate-200 hover:text-blue-400 transition-colors'
           {{on 'click' this.onClick}}
           data-no-router
           data-test-select
         >{{this.labelCell}}</a>
       </td>
-      <td class='px-6 py-4' class={{this.className}}>
+      <td class='px-4 py-2.5' class={{this.className}}>
         <a
           {{on 'click' this.onClickRemove}}
           data-no-router
           data-test-remove
-          class='cursor-pointer mr-1 rounded bg-indigo-600 px-2 py-1 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600'
+          class='cursor-pointer inline-flex items-center justify-center w-7 h-7 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300 transition-colors'
         >
           <RemoveIcon />
         </a>
