@@ -1345,7 +1345,6 @@ export function $_dc(
   return refResult;
 }
 export const $_component = (component: any) => {
-  console.log('component', component);
   return component;
 };
 export const $_maybeModifier = (

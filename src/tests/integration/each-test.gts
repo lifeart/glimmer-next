@@ -1229,4 +1229,977 @@ module('Integration | InternalComponent | each', function (hooks) {
     assert.dom('[data-test-item="1"]').hasText('1', '1st element text');
     assert.dom('[data-test-item="2"]').hasText('1', '2nd element text');
   });
+
+  // Multiple root nodes (fragment-like) tests
+  test('each item with two root elements renders correctly', async function (assert) {
+    const items = cell([
+      { id: 1, name: 'a', value: '1' },
+      { id: 2, name: 'b', value: '2' },
+      { id: 3, name: 'c', value: '3' },
+    ]);
+
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items key="id" as |item|}}
+            <div data-test-name data-id={{item.id}}>{{item.name}}</div>
+            <span data-test-value data-id={{item.id}}>{{item.value}}</span>
+          {{/each}}
+        </div>
+      </template>,
+    );
+
+    assert.dom('[data-test-name]').exists({ count: 3 }, '3 name divs');
+    assert.dom('[data-test-value]').exists({ count: 3 }, '3 value spans');
+
+    const allNodes = findAll('[data-test-container] > *');
+    assert.equal(allNodes.length, 6, '6 total child nodes (3 items * 2 roots)');
+
+    // Verify order: div, span, div, span, div, span
+    assert.equal(allNodes[0].tagName, 'DIV');
+    assert.equal(allNodes[0].textContent, 'a');
+    assert.equal(allNodes[1].tagName, 'SPAN');
+    assert.equal(allNodes[1].textContent, '1');
+    assert.equal(allNodes[2].tagName, 'DIV');
+    assert.equal(allNodes[2].textContent, 'b');
+    assert.equal(allNodes[3].tagName, 'SPAN');
+    assert.equal(allNodes[3].textContent, '2');
+    assert.equal(allNodes[4].tagName, 'DIV');
+    assert.equal(allNodes[4].textContent, 'c');
+    assert.equal(allNodes[5].tagName, 'SPAN');
+    assert.equal(allNodes[5].textContent, '3');
+  });
+
+  test('each item with two root elements - item removal', async function (assert) {
+    const i1 = { id: 1, name: 'a', value: '1' };
+    const i2 = { id: 2, name: 'b', value: '2' };
+    const i3 = { id: 3, name: 'c', value: '3' };
+    const items = cell([i1, i2, i3]);
+
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items key="id" as |item|}}
+            <div data-test-name data-id={{item.id}}>{{item.name}}</div>
+            <span data-test-value data-id={{item.id}}>{{item.value}}</span>
+          {{/each}}
+        </div>
+      </template>,
+    );
+
+    assert.dom('[data-test-name]').exists({ count: 3 }, 'Initially 3 name divs');
+
+    // Remove middle item
+    items.update([i1, i3]);
+    await rerender();
+
+    assert.dom('[data-test-name]').exists({ count: 2 }, 'After removal: 2 name divs');
+    assert.dom('[data-test-value]').exists({ count: 2 }, 'After removal: 2 value spans');
+
+    const allNodes = findAll('[data-test-container] > *');
+    assert.equal(allNodes.length, 4, '4 total child nodes after removal');
+
+    assert.equal(allNodes[0].textContent, 'a');
+    assert.equal(allNodes[1].textContent, '1');
+    assert.equal(allNodes[2].textContent, 'c');
+    assert.equal(allNodes[3].textContent, '3');
+  });
+
+  test('each item with two root elements - item addition', async function (assert) {
+    const i1 = { id: 1, name: 'a', value: '1' };
+    const i2 = { id: 2, name: 'b', value: '2' };
+    const i3 = { id: 3, name: 'c', value: '3' };
+    const items = cell([i1, i3]);
+
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items key="id" as |item|}}
+            <div data-test-name data-id={{item.id}}>{{item.name}}</div>
+            <span data-test-value data-id={{item.id}}>{{item.value}}</span>
+          {{/each}}
+        </div>
+      </template>,
+    );
+
+    assert.dom('[data-test-name]').exists({ count: 2 }, 'Initially 2 name divs');
+
+    // Add item in the middle
+    items.update([i1, i2, i3]);
+    await rerender();
+
+    assert.dom('[data-test-name]').exists({ count: 3 }, 'After addition: 3 name divs');
+
+    const allNodes = findAll('[data-test-container] > *');
+    assert.equal(allNodes.length, 6, '6 total child nodes after addition');
+
+    assert.equal(allNodes[0].textContent, 'a');
+    assert.equal(allNodes[1].textContent, '1');
+    assert.equal(allNodes[2].textContent, 'b');
+    assert.equal(allNodes[3].textContent, '2');
+    assert.equal(allNodes[4].textContent, 'c');
+    assert.equal(allNodes[5].textContent, '3');
+  });
+
+  test('each item with two root elements - reorder items', async function (assert) {
+    const i1 = { id: 1, name: 'a', value: '1' };
+    const i2 = { id: 2, name: 'b', value: '2' };
+    const i3 = { id: 3, name: 'c', value: '3' };
+    const items = cell([i1, i2, i3]);
+
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items key="id" as |item|}}
+            <div data-test-name data-id={{item.id}}>{{item.name}}</div>
+            <span data-test-value data-id={{item.id}}>{{item.value}}</span>
+          {{/each}}
+        </div>
+      </template>,
+    );
+
+    // Reverse order
+    items.update([i3, i2, i1]);
+    await rerender();
+
+    const allNodes = findAll('[data-test-container] > *');
+    assert.equal(allNodes.length, 6, '6 total child nodes');
+
+    assert.equal(allNodes[0].textContent, 'c');
+    assert.equal(allNodes[1].textContent, '3');
+    assert.equal(allNodes[2].textContent, 'b');
+    assert.equal(allNodes[3].textContent, '2');
+    assert.equal(allNodes[4].textContent, 'a');
+    assert.equal(allNodes[5].textContent, '1');
+  });
+
+  test('each item with three root elements of different types', async function (assert) {
+    const items = cell([
+      { id: 1, title: 'Title 1', subtitle: 'Sub 1' },
+      { id: 2, title: 'Title 2', subtitle: 'Sub 2' },
+    ]);
+
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items key="id" as |item|}}
+            <span data-test-icon data-id={{item.id}}>*</span>
+            <strong data-test-title data-id={{item.id}}>{{item.title}}</strong>
+            <em data-test-subtitle data-id={{item.id}}>{{item.subtitle}}</em>
+          {{/each}}
+        </div>
+      </template>,
+    );
+
+    assert.dom('[data-test-icon]').exists({ count: 2 });
+    assert.dom('[data-test-title]').exists({ count: 2 });
+    assert.dom('[data-test-subtitle]').exists({ count: 2 });
+
+    const allNodes = findAll('[data-test-container] > *');
+    assert.equal(allNodes.length, 6, '6 total child nodes (2 items * 3 roots)');
+
+    assert.equal(allNodes[0].tagName, 'SPAN');
+    assert.equal(allNodes[1].tagName, 'STRONG');
+    assert.equal(allNodes[1].textContent, 'Title 1');
+    assert.equal(allNodes[2].tagName, 'EM');
+    assert.equal(allNodes[2].textContent, 'Sub 1');
+  });
+
+  test('each item with text node and element as roots', async function (assert) {
+    const items = cell([
+      { id: 1, prefix: 'var: ', code: 'x = 1' },
+      { id: 2, prefix: 'const: ', code: 'y = 2' },
+    ]);
+
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items key="id" as |item|}}
+            {{item.prefix}}<code data-test-code data-id={{item.id}}>{{item.code}}</code>
+          {{/each}}
+        </div>
+      </template>,
+    );
+
+    assert.dom('[data-test-code]').exists({ count: 2 });
+    assert.dom('[data-test-container]').hasText('var: x = 1const: y = 2');
+  });
+
+  test('each item with mixed single and multiple roots', async function (assert) {
+    const singleRootItem = { id: 1, type: 'single' as const, text: 'Single' };
+    const multiRootItem = { id: 2, type: 'multi' as const, text1: 'Multi1', text2: 'Multi2' };
+    const items = cell([singleRootItem, multiRootItem]);
+
+    const eq = (a: string, b: string) => a === b;
+
+    class ItemComponent extends Component<{ Args: { item: typeof singleRootItem | typeof multiRootItem } }> {
+      <template>
+        {{#if (eq @item.type "single")}}
+          <div data-test-single>{{@item.text}}</div>
+        {{else}}
+          <div data-test-multi-1>{{@item.text1}}</div>
+          <div data-test-multi-2>{{@item.text2}}</div>
+        {{/if}}
+      </template>
+    }
+
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items key="id" as |item|}}
+            <ItemComponent @item={{item}} />
+          {{/each}}
+        </div>
+      </template>,
+    );
+
+    assert.dom('[data-test-single]').exists({ count: 1 });
+    assert.dom('[data-test-multi-1]').exists({ count: 1 });
+    assert.dom('[data-test-multi-2]').exists({ count: 1 });
+  });
+
+  test('nested each - outer items have multiple roots', async function (assert) {
+    const categories = cell([
+      { id: 1, name: 'Category 1', items: ['a', 'b'] },
+      { id: 2, name: 'Category 2', items: ['c'] },
+    ]);
+
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each categories key="id" as |cat|}}
+            <h2 data-test-category-name data-id={{cat.id}}>{{cat.name}}</h2>
+            <ul data-test-category-list data-id={{cat.id}}>
+              {{#each cat.items as |item|}}
+                <li data-test-item>{{item}}</li>
+              {{/each}}
+            </ul>
+          {{/each}}
+        </div>
+      </template>,
+    );
+
+    assert.dom('[data-test-category-name]').exists({ count: 2 });
+    assert.dom('[data-test-category-list]').exists({ count: 2 });
+    assert.dom('[data-test-item]').exists({ count: 3 });
+
+    const allNodes = findAll('[data-test-container] > *');
+    assert.equal(allNodes.length, 4, '4 top-level nodes (2 categories * 2 roots)');
+    assert.equal(allNodes[0].tagName, 'H2');
+    assert.equal(allNodes[1].tagName, 'UL');
+    assert.equal(allNodes[2].tagName, 'H2');
+    assert.equal(allNodes[3].tagName, 'UL');
+  });
+
+  test('nested each - inner items have multiple roots', async function (assert) {
+    const rows = cell([
+      { id: 1, cols: [{ label: 'A', value: '1' }, { label: 'B', value: '2' }] },
+    ]);
+
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each rows key="id" as |row|}}
+            <div data-test-row data-id={{row.id}}>
+              {{#each row.cols as |col|}}
+                <span data-test-label>{{col.label}}</span>
+                <input data-test-input value={{col.value}} />
+              {{/each}}
+            </div>
+          {{/each}}
+        </div>
+      </template>,
+    );
+
+    assert.dom('[data-test-row]').exists({ count: 1 });
+    assert.dom('[data-test-label]').exists({ count: 2 });
+    assert.dom('[data-test-input]').exists({ count: 2 });
+
+    const rowNodes = findAll('[data-test-row] > *');
+    assert.equal(rowNodes.length, 4, '4 nodes inside row (2 cols * 2 roots)');
+  });
+
+  test('each with comment-like markers as part of multiple roots', async function (assert) {
+    const items = cell([
+      { id: 1, content: 'Content 1' },
+      { id: 2, content: 'Content 2' },
+    ]);
+
+    class MarkedItem extends Component<{ Args: { item: { id: number; content: string } } }> {
+      <template>
+        <div data-test-start data-id={{@item.id}}>[start]</div>
+        <div data-test-content data-id={{@item.id}}>{{@item.content}}</div>
+        <div data-test-end data-id={{@item.id}}>[end]</div>
+      </template>
+    }
+
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items key="id" as |item|}}
+            <MarkedItem @item={{item}} />
+          {{/each}}
+        </div>
+      </template>,
+    );
+
+    assert.dom('[data-test-start]').exists({ count: 2 });
+    assert.dom('[data-test-content]').exists({ count: 2 });
+    assert.dom('[data-test-end]').exists({ count: 2 });
+
+    const allNodes = findAll('[data-test-container] > *');
+    assert.equal(allNodes.length, 6, '6 nodes (2 items * 3 roots)');
+  });
+
+  test('each with many root nodes per item', async function (assert) {
+    const items = cell([{ id: 1 }]);
+
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items key="id" as |item|}}
+            <span data-test-node>1</span>
+            <span data-test-node>2</span>
+            <span data-test-node>3</span>
+            <span data-test-node>4</span>
+            <span data-test-node>5</span>
+          {{/each}}
+        </div>
+      </template>,
+    );
+
+    assert.dom('[data-test-node]').exists({ count: 5 });
+
+    const allNodes = findAll('[data-test-container] > *');
+    assert.equal(allNodes.length, 5, '5 nodes for single item');
+    assert.equal(allNodes[0].textContent, '1');
+    assert.equal(allNodes[4].textContent, '5');
+  });
+
+  test('each - empty list then populate with multi-root items', async function (assert) {
+    const i1 = { id: 1, a: 'A1', b: 'B1' };
+    const i2 = { id: 2, a: 'A2', b: 'B2' };
+    const items = cell<typeof i1[]>([]);
+
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items key="id" as |item|}}
+            <div data-test-a data-id={{item.id}}>{{item.a}}</div>
+            <div data-test-b data-id={{item.id}}>{{item.b}}</div>
+          {{/each}}
+        </div>
+      </template>,
+    );
+
+    assert.dom('[data-test-a]').doesNotExist('Initially empty');
+
+    items.update([i1, i2]);
+    await rerender();
+
+    assert.dom('[data-test-a]').exists({ count: 2 });
+    assert.dom('[data-test-b]').exists({ count: 2 });
+
+    const allNodes = findAll('[data-test-container] > *');
+    assert.equal(allNodes.length, 4, '4 nodes after populating');
+  });
+
+  test('each - clear all multi-root items', async function (assert) {
+    const i1 = { id: 1, a: 'A1', b: 'B1' };
+    const i2 = { id: 2, a: 'A2', b: 'B2' };
+    const items = cell([i1, i2]);
+
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items key="id" as |item|}}
+            <div data-test-a data-id={{item.id}}>{{item.a}}</div>
+            <div data-test-b data-id={{item.id}}>{{item.b}}</div>
+          {{/each}}
+        </div>
+      </template>,
+    );
+
+    assert.dom('[data-test-a]').exists({ count: 2 });
+
+    items.update([]);
+    await rerender();
+
+    assert.dom('[data-test-a]').doesNotExist('All items cleared');
+    assert.dom('[data-test-b]').doesNotExist('All items cleared');
+
+    const allNodes = findAll('[data-test-container] > *');
+    assert.equal(allNodes.length, 0, '0 nodes after clearing');
+  });
+
+  // Corner case tests for multiple root nodes
+  test('each - swap two adjacent items with multiple roots', async function (assert) {
+    const i1 = { id: 1, a: 'A1', b: 'B1' };
+    const i2 = { id: 2, a: 'A2', b: 'B2' };
+    const items = cell([i1, i2]);
+
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items key="id" as |item|}}
+            <div data-test-a data-id={{item.id}}>{{item.a}}</div>
+            <span data-test-b data-id={{item.id}}>{{item.b}}</span>
+          {{/each}}
+        </div>
+      </template>,
+    );
+
+    let nodes = findAll('[data-test-container] > *');
+    assert.equal(nodes[0].textContent, 'A1');
+    assert.equal(nodes[1].textContent, 'B1');
+    assert.equal(nodes[2].textContent, 'A2');
+    assert.equal(nodes[3].textContent, 'B2');
+
+    // Swap items
+    items.update([i2, i1]);
+    await rerender();
+
+    nodes = findAll('[data-test-container] > *');
+    assert.equal(nodes[0].textContent, 'A2', 'After swap: first is A2');
+    assert.equal(nodes[1].textContent, 'B2', 'After swap: second is B2');
+    assert.equal(nodes[2].textContent, 'A1', 'After swap: third is A1');
+    assert.equal(nodes[3].textContent, 'B1', 'After swap: fourth is B1');
+  });
+
+  test('each - swap first and last items with multiple roots', async function (assert) {
+    const i1 = { id: 1, a: 'A1', b: 'B1' };
+    const i2 = { id: 2, a: 'A2', b: 'B2' };
+    const i3 = { id: 3, a: 'A3', b: 'B3' };
+    const items = cell([i1, i2, i3]);
+
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items key="id" as |item|}}
+            <div data-test-a data-id={{item.id}}>{{item.a}}</div>
+            <span data-test-b data-id={{item.id}}>{{item.b}}</span>
+          {{/each}}
+        </div>
+      </template>,
+    );
+
+    // Swap first and last
+    items.update([i3, i2, i1]);
+    await rerender();
+
+    const nodes = findAll('[data-test-container] > *');
+    assert.equal(nodes[0].textContent, 'A3');
+    assert.equal(nodes[1].textContent, 'B3');
+    assert.equal(nodes[2].textContent, 'A2');
+    assert.equal(nodes[3].textContent, 'B2');
+    assert.equal(nodes[4].textContent, 'A1');
+    assert.equal(nodes[5].textContent, 'B1');
+  });
+
+  test('each - complete reverse with multiple roots', async function (assert) {
+    const i1 = { id: 1, x: '1' };
+    const i2 = { id: 2, x: '2' };
+    const i3 = { id: 3, x: '3' };
+    const i4 = { id: 4, x: '4' };
+    const items = cell([i1, i2, i3, i4]);
+
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items key="id" as |item|}}
+            <span data-test-first>{{item.x}}</span>
+            <span data-test-second>-{{item.x}}</span>
+          {{/each}}
+        </div>
+      </template>,
+    );
+
+    // Reverse
+    items.update([i4, i3, i2, i1]);
+    await rerender();
+
+    const nodes = findAll('[data-test-container] > *');
+    assert.equal(nodes.length, 8);
+    assert.equal(nodes[0].textContent, '4');
+    assert.equal(nodes[1].textContent, '-4');
+    assert.equal(nodes[6].textContent, '1');
+    assert.equal(nodes[7].textContent, '-1');
+  });
+
+  test('each - shuffle items with multiple roots', async function (assert) {
+    const i1 = { id: 1, v: '1' };
+    const i2 = { id: 2, v: '2' };
+    const i3 = { id: 3, v: '3' };
+    const i4 = { id: 4, v: '4' };
+    const i5 = { id: 5, v: '5' };
+    const items = cell([i1, i2, i3, i4, i5]);
+
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items key="id" as |item|}}
+            <em data-test-item>{{item.v}}</em>
+            <strong data-test-item>!</strong>
+          {{/each}}
+        </div>
+      </template>,
+    );
+
+    // Shuffle: 3, 1, 5, 2, 4
+    items.update([i3, i1, i5, i2, i4]);
+    await rerender();
+
+    const nodes = findAll('[data-test-container] > em');
+    assert.equal(nodes[0].textContent, '3');
+    assert.equal(nodes[1].textContent, '1');
+    assert.equal(nodes[2].textContent, '5');
+    assert.equal(nodes[3].textContent, '2');
+    assert.equal(nodes[4].textContent, '4');
+  });
+
+  test('each - remove and re-add same item with multiple roots', async function (assert) {
+    const i1 = { id: 1, v: 'A' };
+    const i2 = { id: 2, v: 'B' };
+    const items = cell([i1, i2]);
+
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items key="id" as |item|}}
+            <div data-test-v>{{item.v}}</div>
+            <div data-test-v>{{item.v}}2</div>
+          {{/each}}
+        </div>
+      </template>,
+    );
+
+    assert.dom('[data-test-v]').exists({ count: 4 });
+
+    // Remove i1
+    items.update([i2]);
+    await rerender();
+
+    assert.dom('[data-test-v]').exists({ count: 2 });
+
+    // Re-add i1 at the end
+    items.update([i2, i1]);
+    await rerender();
+
+    assert.dom('[data-test-v]').exists({ count: 4 });
+    const nodes = findAll('[data-test-v]');
+    assert.equal(nodes[0].textContent, 'B');
+    assert.equal(nodes[1].textContent, 'B2');
+    assert.equal(nodes[2].textContent, 'A');
+    assert.equal(nodes[3].textContent, 'A2');
+  });
+
+  test('each - replace all items at once with multiple roots', async function (assert) {
+    const i1 = { id: 1, v: 'old1' };
+    const i2 = { id: 2, v: 'old2' };
+    const i3 = { id: 3, v: 'new1' };
+    const i4 = { id: 4, v: 'new2' };
+    const items = cell([i1, i2]);
+
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items key="id" as |item|}}
+            <p data-test-p>{{item.v}}</p>
+            <hr data-test-hr />
+          {{/each}}
+        </div>
+      </template>,
+    );
+
+    let nodes = findAll('[data-test-p]');
+    assert.equal(nodes[0].textContent, 'old1');
+    assert.equal(nodes[1].textContent, 'old2');
+
+    // Replace all
+    items.update([i3, i4]);
+    await rerender();
+
+    nodes = findAll('[data-test-p]');
+    assert.equal(nodes.length, 2);
+    assert.equal(nodes[0].textContent, 'new1');
+    assert.equal(nodes[1].textContent, 'new2');
+  });
+
+  test('each - rapid sequential updates with multiple roots', async function (assert) {
+    const i1 = { id: 1, v: '1' };
+    const i2 = { id: 2, v: '2' };
+    const i3 = { id: 3, v: '3' };
+    const items = cell([i1]);
+
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items key="id" as |item|}}
+            <span data-test-n>{{item.v}}</span>
+            <span data-test-n>+</span>
+          {{/each}}
+        </div>
+      </template>,
+    );
+
+    // Rapid updates
+    items.update([i1, i2]);
+    items.update([i1, i2, i3]);
+    items.update([i3, i2, i1]);
+    await rerender();
+
+    const nodes = findAll('[data-test-container] > span[data-test-n]:not([data-test-n="+"])');
+    // Filter to get only value spans
+    const valueNodes = Array.from(findAll('[data-test-n]')).filter(n => n.textContent !== '+');
+    assert.equal(valueNodes.length, 3);
+    assert.equal(valueNodes[0].textContent, '3');
+    assert.equal(valueNodes[1].textContent, '2');
+    assert.equal(valueNodes[2].textContent, '1');
+  });
+
+  test('each - item with component that has multiple roots inside', async function (assert) {
+    class MultiRootChild extends Component {
+      <template>
+        <span data-test-child-a>A</span>
+        <span data-test-child-b>B</span>
+      </template>
+    }
+
+    const items = cell([{ id: 1 }, { id: 2 }]);
+
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items key="id" as |item|}}
+            <div data-test-wrapper data-id={{item.id}}>
+              <MultiRootChild />
+            </div>
+          {{/each}}
+        </div>
+      </template>,
+    );
+
+    assert.dom('[data-test-wrapper]').exists({ count: 2 });
+    assert.dom('[data-test-child-a]').exists({ count: 2 });
+    assert.dom('[data-test-child-b]').exists({ count: 2 });
+  });
+
+  test('each - item component yields multiple roots via block', async function (assert) {
+    class Wrapper extends Component<{ Blocks: { default: [] } }> {
+      <template>
+        <div data-test-before>before</div>
+        {{yield}}
+        <div data-test-after>after</div>
+      </template>
+    }
+
+    const items = cell([{ id: 1, text: 'Item 1' }]);
+
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items key="id" as |item|}}
+            <Wrapper>
+              <span data-test-content>{{item.text}}</span>
+            </Wrapper>
+          {{/each}}
+        </div>
+      </template>,
+    );
+
+    assert.dom('[data-test-before]').exists({ count: 1 });
+    assert.dom('[data-test-content]').hasText('Item 1');
+    assert.dom('[data-test-after]').exists({ count: 1 });
+  });
+
+  test('each - conditional rendering changes root count', async function (assert) {
+    const showExtra = cell(false);
+    const items = cell([{ id: 1, v: 'X' }]);
+
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items key="id" as |item|}}
+            <div data-test-main>{{item.v}}</div>
+            {{#if showExtra}}
+              <div data-test-extra>extra</div>
+            {{/if}}
+          {{/each}}
+        </div>
+      </template>,
+    );
+
+    assert.dom('[data-test-main]').exists({ count: 1 });
+    assert.dom('[data-test-extra]').doesNotExist();
+
+    showExtra.update(true);
+    await rerender();
+
+    assert.dom('[data-test-main]').exists({ count: 1 });
+    assert.dom('[data-test-extra]').exists({ count: 1 });
+
+    showExtra.update(false);
+    await rerender();
+
+    assert.dom('[data-test-extra]').doesNotExist();
+  });
+
+  test('each - multiple roots with DOM element retention', async function (assert) {
+    const i1 = { id: 1, v: 'A' };
+    const i2 = { id: 2, v: 'B' };
+    const items = cell([i1, i2]);
+
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items key="id" as |item|}}
+            <div data-test-div data-id={{item.id}}>{{item.v}}</div>
+            <span data-test-span data-id={{item.id}}>{{item.v}}</span>
+          {{/each}}
+        </div>
+      </template>,
+    );
+
+    // Mark elements to verify DOM retention
+    const div1 = document.querySelector('[data-test-div][data-id="1"]');
+    const span1 = document.querySelector('[data-test-span][data-id="1"]');
+    div1?.setAttribute('data-marked', 'yes');
+    span1?.setAttribute('data-marked', 'yes');
+
+    // Reorder
+    items.update([i2, i1]);
+    await rerender();
+
+    // Verify same DOM elements were moved (not recreated)
+    const movedDiv = document.querySelector('[data-test-div][data-id="1"]');
+    const movedSpan = document.querySelector('[data-test-span][data-id="1"]');
+    assert.equal(movedDiv?.getAttribute('data-marked'), 'yes', 'div was moved, not recreated');
+    assert.equal(movedSpan?.getAttribute('data-marked'), 'yes', 'span was moved, not recreated');
+  });
+
+  test('each - insert at beginning with multiple roots', async function (assert) {
+    const i1 = { id: 1, v: '1' };
+    const i2 = { id: 2, v: '2' };
+    const i3 = { id: 3, v: '3' };
+    const items = cell([i2, i3]);
+
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items key="id" as |item|}}
+            <b data-test-b>{{item.v}}</b>
+            <i data-test-i>{{item.v}}</i>
+          {{/each}}
+        </div>
+      </template>,
+    );
+
+    // Insert at beginning
+    items.update([i1, i2, i3]);
+    await rerender();
+
+    const bNodes = findAll('[data-test-b]');
+    assert.equal(bNodes.length, 3);
+    assert.equal(bNodes[0].textContent, '1');
+    assert.equal(bNodes[1].textContent, '2');
+    assert.equal(bNodes[2].textContent, '3');
+  });
+
+  test('each - insert at end with multiple roots', async function (assert) {
+    const i1 = { id: 1, v: '1' };
+    const i2 = { id: 2, v: '2' };
+    const i3 = { id: 3, v: '3' };
+    const items = cell([i1, i2]);
+
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items key="id" as |item|}}
+            <b data-test-b>{{item.v}}</b>
+            <i data-test-i>{{item.v}}</i>
+          {{/each}}
+        </div>
+      </template>,
+    );
+
+    // Insert at end
+    items.update([i1, i2, i3]);
+    await rerender();
+
+    const bNodes = findAll('[data-test-b]');
+    assert.equal(bNodes.length, 3);
+    assert.equal(bNodes[2].textContent, '3');
+  });
+
+  test('each - remove from beginning with multiple roots', async function (assert) {
+    const i1 = { id: 1, v: '1' };
+    const i2 = { id: 2, v: '2' };
+    const i3 = { id: 3, v: '3' };
+    const items = cell([i1, i2, i3]);
+
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items key="id" as |item|}}
+            <u data-test-u>{{item.v}}</u>
+            <s data-test-s>{{item.v}}</s>
+          {{/each}}
+        </div>
+      </template>,
+    );
+
+    // Remove from beginning
+    items.update([i2, i3]);
+    await rerender();
+
+    const uNodes = findAll('[data-test-u]');
+    assert.equal(uNodes.length, 2);
+    assert.equal(uNodes[0].textContent, '2');
+    assert.equal(uNodes[1].textContent, '3');
+  });
+
+  test('each - remove from end with multiple roots', async function (assert) {
+    const i1 = { id: 1, v: '1' };
+    const i2 = { id: 2, v: '2' };
+    const i3 = { id: 3, v: '3' };
+    const items = cell([i1, i2, i3]);
+
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items key="id" as |item|}}
+            <u data-test-u>{{item.v}}</u>
+            <s data-test-s>{{item.v}}</s>
+          {{/each}}
+        </div>
+      </template>,
+    );
+
+    // Remove from end
+    items.update([i1, i2]);
+    await rerender();
+
+    const uNodes = findAll('[data-test-u]');
+    assert.equal(uNodes.length, 2);
+    assert.equal(uNodes[0].textContent, '1');
+    assert.equal(uNodes[1].textContent, '2');
+  });
+
+  test('each - multiple updates: add then remove with multiple roots', async function (assert) {
+    const i1 = { id: 1, v: 'A' };
+    const i2 = { id: 2, v: 'B' };
+    const i3 = { id: 3, v: 'C' };
+    const items = cell([i1]);
+
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items key="id" as |item|}}
+            <div data-test-d>{{item.v}}</div>
+            <div data-test-d>{{item.v}}!</div>
+          {{/each}}
+        </div>
+      </template>,
+    );
+
+    // Add items
+    items.update([i1, i2, i3]);
+    await rerender();
+    assert.dom('[data-test-d]').exists({ count: 6 });
+
+    // Remove middle
+    items.update([i1, i3]);
+    await rerender();
+    assert.dom('[data-test-d]').exists({ count: 4 });
+
+    // Add back in different position
+    items.update([i2, i1, i3]);
+    await rerender();
+
+    const nodes = findAll('[data-test-d]');
+    assert.equal(nodes.length, 6);
+    assert.equal(nodes[0].textContent, 'B');
+    assert.equal(nodes[2].textContent, 'A');
+    assert.equal(nodes[4].textContent, 'C');
+  });
+
+  test('each - single item list with multiple roots', async function (assert) {
+    const i1 = { id: 1, v: 'only' };
+    const items = cell([i1]);
+
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items key="id" as |item|}}
+            <header data-test-header>{{item.v}}</header>
+            <main data-test-main>content</main>
+            <footer data-test-footer>end</footer>
+          {{/each}}
+        </div>
+      </template>,
+    );
+
+    assert.dom('[data-test-header]').hasText('only');
+    assert.dom('[data-test-main]').hasText('content');
+    assert.dom('[data-test-footer]').hasText('end');
+
+    const allNodes = findAll('[data-test-container] > *');
+    assert.equal(allNodes.length, 3);
+  });
+
+  test('each - large list with multiple roots performance', async function (assert) {
+    const createItems = (count: number) =>
+      Array.from({ length: count }, (_, i) => ({ id: i, v: String(i) }));
+
+    const items = cell(createItems(50));
+
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items key="id" as |item|}}
+            <span data-test-a>{{item.v}}</span>
+            <span data-test-b>.</span>
+          {{/each}}
+        </div>
+      </template>,
+    );
+
+    assert.dom('[data-test-a]').exists({ count: 50 });
+    assert.dom('[data-test-b]').exists({ count: 50 });
+
+    // Reverse large list
+    items.update(createItems(50).reverse());
+    await rerender();
+
+    const aNodes = findAll('[data-test-a]');
+    assert.equal(aNodes[0].textContent, '49');
+    assert.equal(aNodes[49].textContent, '0');
+  });
+
+  test('each - identity key with multiple roots', async function (assert) {
+    const obj1 = { name: 'first' };
+    const obj2 = { name: 'second' };
+    const items = cell([obj1, obj2]);
+
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items as |item|}}
+            <div data-test-name>{{item.name}}</div>
+            <div data-test-sep>---</div>
+          {{/each}}
+        </div>
+      </template>,
+    );
+
+    assert.dom('[data-test-name]').exists({ count: 2 });
+
+    // Reorder using identity
+    items.update([obj2, obj1]);
+    await rerender();
+
+    const nameNodes = findAll('[data-test-name]');
+    assert.equal(nameNodes[0].textContent, 'second');
+    assert.equal(nameNodes[1].textContent, 'first');
+  });
 });

@@ -430,9 +430,7 @@ export class SyncListComponent<
       for (const value of keyMap.values()) {
         destroyElementSync(value, true, this.api);
       }
-      // TODO: move it to dom-api
-      // @ts-expect-error
-      parent.innerHTML = '';
+      this.api.clearChildren(parent);
       this.api.insert(parent, topMarker);
       this.api.insert(parent, bottomMarker);
       keyMap.clear();
@@ -528,9 +526,7 @@ export class AsyncListComponent<
       }
       await Promise.all(promises);
       promises.length = 0;
-      // TODO: move it to dom-api
-      // @ts-expect-error
-      parent.innerHTML = '';
+      this.api.clearChildren(parent);
       this.api.insert(parent, topMarker);
       this.api.insert(parent, bottomMarker);
       keyMap.clear();

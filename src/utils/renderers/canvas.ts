@@ -19,29 +19,30 @@ import {
 } from '../shared';
 import { renderElement } from '../component';
 
-const DESTROYED_NODES: WeakSet<BaseElement> = new WeakSet();
-class BaseElement {
+// Exported for testing
+export const DESTROYED_NODES: WeakSet<CanvasBaseElement> = new WeakSet();
+
+export class CanvasBaseElement {
   toCanvas(_: CanvasRenderingContext2D) {
     // console.log(`toCanvase`, ctx);
   }
-  parentElement: BaseElement | undefined | HTMLCanvasElement;
+  parentElement: CanvasBaseElement | undefined | HTMLCanvasElement;
   // neeed for IF
   get parentNode() {
     return this.parentElement;
   }
   // need for list
-  removeChild(child: BaseElement) {
+  removeChild(child: CanvasBaseElement) {
     this.children = this.children.filter((el) => el !== child);
-    console.log('remove child', child);
   }
-  children: BaseElement[] = [];
+  children: CanvasBaseElement[] = [];
   isConnected = false;
   remove() {
     if (DESTROYED_NODES.has(this)) {
       return;
     }
-    if (this.parentElement instanceof BaseElement) {
-      debugger;
+    if (this.parentElement instanceof CanvasBaseElement) {
+      this.parentElement.removeChild(this);
     }
     this.isConnected = false;
     DESTROYED_NODES.add(this);
@@ -52,9 +53,9 @@ class BaseElement {
     return this.children;
   }
 }
-class Comment extends BaseElement {}
-class Fragment extends BaseElement {}
-class TextElement extends BaseElement {
+export class CanvasComment extends CanvasBaseElement {}
+export class CanvasFragment extends CanvasBaseElement {}
+export class CanvasTextElement extends CanvasBaseElement {
   attrs = {
     font: '48px serif',
     fillStyle: 'red',
@@ -108,78 +109,80 @@ export function CanvasRenderer(): ComponentReturn<
   } as unknown as Root; // ctx instanceof Root
 
   const canvasApi = {
-    createNode(klass: typeof BaseElement, debuName?: string) {
-      //   const destroyParent = getParentContext()!;
+    toString() {
+      return 'canvas:dom-api';
+    },
+    createNode(klass: typeof CanvasBaseElement, debuName?: string) {
       const node = new klass();
       // @ts-expect-error
       node.debugName = debuName;
-      //   registerDestructor(destroyParent, () => {
-      //     if (!DESTROYED_NODES.has(node)) {
-      //       this.nodes.delete(node);
-      //       node.remove();
-      //       this.scheduleRerender();
-      //     }
-      //   });
       return node;
     },
-    destroy(el: BaseElement) {
-      // console.log('destroy', el);
+    destroy(el: CanvasBaseElement) {
       this.nodes.delete(el);
       el.remove();
       this.scheduleRerender();
     },
-    nodes: new Set<BaseElement>(),
+    clearChildren(element: CanvasBaseElement) {
+      element.children.forEach((child) => {
+        this.destroy(child);
+      });
+      element.children.length = 0;
+    },
+    addEventListener(
+      _node: CanvasBaseElement,
+      _eventName: string,
+      _fn: EventListener,
+    ) {
+      // Canvas elements don't support DOM events directly
+      return undefined;
+    },
+    prop(_element: CanvasBaseElement, _name: string, _value: unknown) {
+      // Canvas elements don't have properties like DOM elements
+      return _value;
+    },
+    nodes: new Set<CanvasBaseElement>(),
     get ctx() {
       return canvasNode.getContext('2d')!;
     },
-    parent(node: BaseElement) {
+    parent(node: CanvasBaseElement) {
       return node.parentElement;
     },
     fragment() {
-      console.log(`c:element:fragment`);
-      return this.createNode(Fragment);
+      return this.createNode(CanvasFragment);
     },
     element(tagName: string) {
-      console.log(`c:element:${tagName}`);
       if (tagName === 'text') {
-        return this.createNode(TextElement);
+        return this.createNode(CanvasTextElement);
       } else {
-        debugger;
+        throw new Error(`Unknown canvas element: ${tagName}`);
       }
     },
-    attr<T extends keyof TextElement['attrs']>(
-      el: TextElement,
+    attr<T extends keyof CanvasTextElement['attrs']>(
+      el: CanvasTextElement,
       attr: T,
-      value: TextElement['attrs'][T],
+      value: CanvasTextElement['attrs'][T],
     ) {
       el.attrs[attr] = value;
-      if (DESTROYED_NODES.has(el)) {
-        debugger;
-      }
       this.scheduleRerender();
     },
     text(text: string) {
-      console.log('c:text');
-      debugger;
-      this.ctx.fillText(text, 10, 50);
+      const textNode = this.createNode(CanvasTextElement) as CanvasTextElement;
+      textNode.text = text;
+      return textNode;
     },
     clear() {
       this.ctx.clearRect(0, 0, this.ctx.canvas.width, this.ctx.canvas.height);
     },
-    textContent(element: TextElement, text: string) {
-      if (DESTROYED_NODES.has(element)) {
-        debugger;
-      }
-      console.log('c:textContent', `${element.text} => ${text}`);
+    textContent(element: CanvasTextElement, text: string) {
       element.text = text;
       this.scheduleRerender();
     },
     comment(debugName?: string) {
-      console.log(`c:element:comment`);
-      return this.createNode(Comment, debugName);
+      return this.createNode(CanvasComment, debugName);
     },
     isNode(el: unknown) {
-      return el instanceof BaseElement;
+      return el instanceof CanvasBaseElement;
     },
     frameId: 0,
     scheduleRerender() {
@@ -195,19 +198,18 @@ export function CanvasRenderer(): ComponentReturn<
         });
       });
     },
-    _addNode(element: BaseElement) {
-      if (element instanceof Fragment) {
-        debugger;
+    _addNode(element: CanvasBaseElement) {
+      if (element instanceof CanvasFragment) {
+        throw new Error('Cannot add CanvasFragment directly');
       }
       element.isConnected = true;
       element.parentElement = canvasNode;
       this.nodes.add(element);
     },
     insert(
-      element: HTMLCanvasElement | Fragment,
-      node: TextElement | Comment | ComponentReturnType,
+      element: HTMLCanvasElement | CanvasFragment,
+      node: CanvasTextElement | CanvasComment | ComponentReturnType,
     ) {
-      console.log('insert', element, node);
       if (import.meta.env.SSR) {
         return;
       }
@@ -215,10 +217,11 @@ export function CanvasRenderer(): ComponentReturn<
         if (!node || RENDERED_NODES_PROPERTY in node) {
           throw new Error('woops');
         }
-        if (node instanceof Fragment) {
+        if (node instanceof CanvasFragment) {
           node.children.forEach((el) => {
-            if (el instanceof Fragment) {
-              debugger;
+            if (el instanceof CanvasFragment) {
+              // recursively insert nested fragments
+              this.insert(element, el);
             } else {
               el.parentElement = canvasNode;
               this._addNode(el);
@@ -229,11 +232,10 @@ export function CanvasRenderer(): ComponentReturn<
           return;
         }
         this._addNode(node);
-      } else if (element instanceof Fragment) {
-        console.log('c:insert: to Fragment ->', node);
+      } else if (element instanceof CanvasFragment) {
         if (!node || RENDERED_NODES_PROPERTY in node) {
           throw new Error('woops');
-        } else if (node instanceof Fragment) {
+        } else if (node instanceof CanvasFragment) {
           // merge fragment to parent
           node.children.forEach((el) => {
             el.parentElement = element;
@@ -277,7 +279,6 @@ export function CanvasRenderer(): ComponentReturn<
       canvasNode,
       // @ts-expect-error
       () => {
-        console.log('wooosh');
         // @ts-expect-error
         renderElement(canvasApi, root, canvasNode, $_fin(nodes, root));
         return comment;

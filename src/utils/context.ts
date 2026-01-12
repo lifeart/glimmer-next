@@ -119,6 +119,9 @@ export function provideContext<T>(
       // if we trying to set more than one contexts, we resetting fast path
       fastRenderingContext = null;
     }
+    // Update cached rendering context property to ensure initDOM returns the new value
+    // If value is a function, evaluate it (lazy provider pattern)
+    ctx[RENDERING_CONTEXT_PROPERTY] = (isFn(value) ? value() : value) as DOMApi;
   }
   if (!CONTEXTS.has(ctx)) {
     if (import.meta.env.DEV) {

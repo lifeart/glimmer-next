@@ -15,6 +15,19 @@ export class MathMLBrowserDOMApi implements DOMApi {
     // @ts-expect-error
     node.remove();
   }
+  clearChildren(element: Node): void {
+    // @ts-expect-error innerHTML is not on Node type but works on Element
+    element.innerHTML = '';
+  }
+  parent(node: Node) {
+    return node.parentNode;
+  }
+  comment(text = '') {
+    return this.doc.createComment(text);
+  }
+  fragment() {
+    return this.doc.createDocumentFragment();
+  }
   // @ts-expect-error foo
   addEventListener(_, __) {}
   toString() {

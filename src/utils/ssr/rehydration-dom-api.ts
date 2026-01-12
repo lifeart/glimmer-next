@@ -22,6 +22,10 @@ export class HTMLRehydrationBrowserDOMApi implements DOMApi {
     // @ts-expect-error
     element.remove();
   }
+  clearChildren(element: Node): void {
+    // @ts-expect-error innerHTML is not on Node type but works on Element
+    element.innerHTML = '';
+  }
   toString() {
     return 'hydration-html:dom-api';
   }

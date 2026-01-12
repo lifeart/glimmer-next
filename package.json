@@ -27,7 +27,7 @@
     "preview": "vite preview",
     "benchmark": "zx ./bin/setup-bench.mjs",
     "prepublishOnly": "npm run build-lib && node ./utils/write-compiler-types.js",
-    "test": "vitest",
+    "test": "vitest run",
     "fix": "prettier --write .",
     "prerender:main": "node ./bin/prerender-main-page.mjs",
     "ci:nyc:merge": "nyc merge ./coverage-artifacts ./merged-coverage/coverage.json",

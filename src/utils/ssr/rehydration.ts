@@ -160,10 +160,13 @@ export function withRehydration(
     }
     rehydrationScheduled = false;
     nodesMap.clear();
-    // provideContext(root, RENDERING_CONTEXT, api);
-    Object.keys(HTMLBrowserDOMApi.prototype).forEach((key) => {
-      // @ts-expect-error props
-      api[key] = HTMLBrowserDOMApi.prototype[key];
+    // Upgrade the rehydration API to standard browser API methods
+    // Note: Must use getOwnPropertyNames since class methods are non-enumerable
+    Object.getOwnPropertyNames(HTMLBrowserDOMApi.prototype).forEach((key) => {
+      if (key !== 'constructor') {
+        // @ts-expect-error props
+        api[key] = HTMLBrowserDOMApi.prototype[key];
+      }
     });
     // rollbackDOMAPI();
   } catch (e) {

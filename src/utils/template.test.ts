@@ -3,11 +3,14 @@ import { hbs, scope } from './template';
 
 describe('template package', () => {
   describe('hbs', () => {
-    test('it works', () => {
-      expect(hbs`123`).toEqual({
-        ctx: null,
-        tpl: ['123'],
-      });
+    test('throws error when called at runtime (not compiled)', () => {
+      // hbs is a build-time marker that gets transformed by the Vite plugin.
+      // If called at runtime, it means the template wasn't compiled.
+      expect(() => hbs`123`).toThrow('hbs template was not compiled');
+    });
+
+    test('error message mentions Vite plugin configuration', () => {
+      expect(() => hbs`test`).toThrow('Vite plugin');
     });
   });
   describe('scope', () => {

@@ -137,11 +137,30 @@ export function renderElement(
     } else {
       // fresh (not rendered component)
       // TODO: add same logic for IF (inside each)
-      const oldRenderedNodes = el[RENDERED_NODES_PROPERTY].slice();
-      el[RENDERED_NODES_PROPERTY].length = 0;
-      oldRenderedNodes.forEach((node) => {
-        renderElement(api, el as Component<any>, target, node, placeholder);
-      });
+      const renderedNodes = el[RENDERED_NODES_PROPERTY];
+      const len = renderedNodes.length;
+      for (let i = 0; i < len; i++) {
+        let node: unknown = renderedNodes[i];
+        // Resolve renderable if it's a function
+        if (isFn(node)) {
+          node = resolveRenderable(node as () => unknown);
+        }
+        if (isEmpty(node) || node === '') {
+          continue;
+        }
+        if (isPrimitive(node)) {
+          const textNode = api.text(node as string | number);
+          renderedNodes[i] = textNode;
+          api.insert(target, textNode, placeholder);
+        } else if (api.isNode(node as Node)) {
+          renderedNodes[i] = node as Node;
+          api.insert(target, node as Node, placeholder);
+        } else if (isArray(node)) {
+          renderElement(api, el as Component<any>, target, node as RenderableElement[], placeholder, true);
+        } else {
+          renderElement(api, el as Component<any>, target, node as RenderableElement, placeholder, true);
+        }
+      }
       RENDERED_COMPONENTS.add(el);
     }
     return;

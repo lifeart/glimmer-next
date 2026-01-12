@@ -131,8 +131,6 @@ Explore <b>gNext</b> and elevate your web development experience!
 
 ### Notes
 
-#
-
 - modifiers API:
 
 ```js
@@ -157,6 +155,7 @@ function helper(...args: Args): string | boolean | number | null {
 - `@tracked` - decorator to mark class property as reactive primitive. It's autotrack dependencies and update when any of them changed. Note, to use it you need to add `import 'decorator-transforms/globals';` in top-level file.
 
 - `cell<T>(value)` - reactive primitive, for mutable state. We could update cel calling `cell.update(value)`, to get cell value we could use `cell.value`.
+- `cellFor(object, property)` - creates a reactive cell for an object property, useful for tracking nested state.
 - `formula(fn: () => unknown)` - reactive primitive, for derived state.
 
 `formula` could be used to create derived state from `Cell`'s. It's autotrack dependencies and update when any of them changed.
@@ -176,6 +175,60 @@ export function Icon() {
   return hbs`<i class="glyphicon glyphicon-remove"></i>`;
 }
 ```
+
+### Control Flow
+
+GXT provides built-in control flow components for conditional and list rendering.
+
+#### Conditionals with `{{#if}}`
+
+```gts
+<template>
+  {{#if this.isVisible}}
+    <div>Content is visible</div>
+  {{else}}
+    <div>Content is hidden</div>
+  {{/if}}
+</template>
+```
+
+#### List rendering with `{{#each}}`
+
+```gts
+<template>
+  <ul>
+    {{#each this.items key="id" as |item index|}}
+      <li>{{index}}: {{item.name}}</li>
+    {{/each}}
+  </ul>
+</template>
+```
+
+The `key` attribute is important for efficient list updates - it helps GXT track which items have changed, been added, or removed. You can use `key="@identity"` for identity-based tracking.
+
+GXT supports multiple root nodes per iteration (fragment-like rendering):
+
+```gts
+{{#each this.items key="id" as |item|}}
+  <dt>{{item.term}}</dt>
+  <dd>{{item.definition}}</dd>
+{{/each}}
+```
+
+### Built-in Helpers
+
+GXT includes several built-in helpers for common template operations:
+
+- `{{eq a b}}` - equality comparison
+- `{{and a b}}` - logical AND
+- `{{or a b}}` - logical OR
+- `{{not a}}` - logical NOT
+- `{{if condition then else}}` - inline conditional
+- `{{hash key=value}}` - creates an object
+- `{{array a b c}}` - creates an array
+- `{{fn this.method arg}}` - partial application
+- `{{log value}}` - logs to console (for debugging)
+- `{{debugger}}` - triggers debugger breakpoint
 
 ### Setup
 
@@ -224,3 +277,55 @@ import { destroyElement } from "@lifeart/gxt";
 
 destroyElement(Instance);
 ```
+
+### Testing
+
+GXT provides test utilities for writing component tests with QUnit:
+
+```ts
+import { render, rerender, click, find, findAll } from "@lifeart/gxt/test-utils";
+import { cell } from "@lifeart/gxt";
+
+test("component renders correctly", async function (assert) {
+  const count = cell(0);
+
+  await render(
+    <template>
+      <button {{on "click" (fn count.update (inc count.value))}}>
+        Count: {{count}}
+      </button>
+    </template>
+  );
+
+  assert.dom("button").hasText("Count: 0");
+
+  await click("button");
+  await rerender();
+
+  assert.dom("button").hasText("Count: 1");
+});
+```
+
+Available test utilities:
+- `render(template)` - renders a template to the test container
+- `rerender()` - waits for pending async updates
+- `click(selector)` - triggers a click event on matching element
+- `find(selector)` - returns first matching element
+- `findAll(selector)` - returns all matching elements
+
+### Glint Setup (TypeScript Template Type-Checking)
+
+GXT includes a Glint environment for full template type-checking. Add to your `tsconfig.json`:
+
+```json
+{
+  "compilerOptions": {
+    // ... your options
+  },
+  "glint": {
+    "environment": "glint-environment-gxt"
+  }
+}
+```
+
+This enables type-safe templates with autocompletion and error checking in your IDE.

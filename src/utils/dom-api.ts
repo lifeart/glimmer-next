@@ -25,6 +25,7 @@ export abstract class DOMApi {
     anchor?: HTMLElement | Node | null,
   ): void;
   abstract destroy(element: Node): void;
+  abstract clearChildren(element: Node): void;
 }
 
 export class HTMLBrowserDOMApi implements DOMApi {
@@ -43,6 +44,10 @@ export class HTMLBrowserDOMApi implements DOMApi {
     if (!node.isConnected) return;
     // @ts-expect-error
     node.remove();
+  }
+  clearChildren(element: Node): void {
+    // @ts-expect-error innerHTML is not on Node type but works on Element
+    element.innerHTML = '';
   }
   toString() {
     return 'html:dom-api';
