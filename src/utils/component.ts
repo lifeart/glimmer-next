@@ -108,10 +108,9 @@ export function renderElement(
         const item = renderedNodes[i];
         if (RENDERED_NODES_PROPERTY in item) {
           // item is a component, get its first node for sorting
-          const component = item as unknown as Component<any>;
-          const firstNode = getFirstNode(api, component);
-          list.push([firstNode, component]);
-          componentsInRenderedNodes.add(component);
+          const firstNode = getFirstNode(api, item as Component<any>);
+          list.push([firstNode, item as Component<any>]);
+          componentsInRenderedNodes.add(item as Component<any>);
         } else {
           // item is a DOM node
           list.push([item, item]);

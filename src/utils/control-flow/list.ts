@@ -50,7 +50,7 @@ export function getFirstNode(
     if (firstRendered) {
       if (RENDERED_NODES_PROPERTY in firstRendered) {
         // It's a component, recursively get its first node
-        selfNode = getFirstNode(api, firstRendered as unknown as ComponentReturnType);
+        selfNode = getFirstNode(api, firstRendered as ComponentReturnType);
       } else if (api.isNode(firstRendered as Node)) {
         selfNode = firstRendered as Node;
       }
