@@ -52,7 +52,7 @@ test('QUnit', async ({ page }) => {
     }),
   ]);
 
-  await page.goto('http://localhost:5174/tests.html', {
+  await page.goto('/tests.html', {
     waitUntil: 'domcontentloaded',
   });
 
