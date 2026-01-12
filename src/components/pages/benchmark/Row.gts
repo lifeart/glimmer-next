@@ -12,6 +12,26 @@ type RowArgs = {
   Element: HTMLTableRowElement;
 };
 
+// Animation variations for row removal
+const animations = [
+  // Fly up and rotate left
+  { transform: 'translateY(-300px) translateX(-100px) rotate(-30deg) scale(0.5)', opacity: '0' },
+  // Fly up and rotate right
+  { transform: 'translateY(-300px) translateX(100px) rotate(30deg) scale(0.5)', opacity: '0' },
+  // Fly left
+  { transform: 'translateX(-500px) rotate(-15deg) scale(0.7)', opacity: '0' },
+  // Fly right
+  { transform: 'translateX(500px) rotate(15deg) scale(0.7)', opacity: '0' },
+  // Shrink and spin
+  { transform: 'scale(0) rotate(360deg)', opacity: '0' },
+  // Fly up fast
+  { transform: 'translateY(-400px) scale(0.3)', opacity: '0' },
+  // Fall and fade
+  { transform: 'translateY(200px) rotate(10deg) scale(0.8)', opacity: '0' },
+  // Zoom out
+  { transform: 'scale(1.5) translateY(-50px)', opacity: '0' },
+];
+
 export class Row extends Component<RowArgs> {
   isClicked = false;
   get labelCell() {
@@ -47,37 +67,60 @@ export class Row extends Component<RowArgs> {
     }
     this.args.onRemove(this.args.item);
   };
+
   modifier = (element: HTMLTableRowElement) => {
     const result = async () => {
       if (!this.isClicked) {
         return;
       }
-      const cells = element.querySelectorAll('td, th');
-      cells.forEach((cell: any) => {
-        const width = cell.offsetWidth;
-        cell.style.width = `${width}px`;
-      });
-      const scrollTop = document.documentElement.scrollTop;
+
+      // Get current position
       const rect = element.getBoundingClientRect();
-      element.style.position = 'absolute';
-      element.style.top = `${rect.top + scrollTop}px`;
+
+      // Lock cell widths
+      const cells = element.querySelectorAll('td, th');
+      cells.forEach((cell) => {
+        const htmlCell = cell as HTMLElement;
+        htmlCell.style.width = `${htmlCell.offsetWidth}px`;
+      });
+
+      // Position element fixed at its current location
+      element.style.position = 'fixed';
+      element.style.top = `${rect.top}px`;
       element.style.left = `${rect.left}px`;
       element.style.width = `${rect.width}px`;
       element.style.height = `${rect.height}px`;
-      element.style.backgroundColor = 'rgba(59, 130, 246, 0.3)';
-      element.style.transition = 'all 1.4s cubic-bezier(0.4, 0, 0.2, 1)';
+      element.style.margin = '0';
+      element.style.zIndex = '9999';
+      element.style.pointerEvents = 'none';
+      element.style.transformOrigin = 'center center';
+      element.style.background = 'linear-gradient(135deg, rgba(239, 68, 68, 0.4), rgba(239, 68, 68, 0.2))';
+      element.style.borderRadius = '8px';
+      element.style.boxShadow = '0 4px 20px rgba(239, 68, 68, 0.3)';
 
-      if (Math.random() > 0.5) {
-        element.style.transform = 'rotate(20deg) translateY(-100vh) scale(0.3)';
-      } else {
-        element.style.transform =
-          'rotate(-20deg) translateY(-100vh) scale(0.3)';
-      }
-      element.style.opacity = '0';
-      await Promise.allSettled(element.getAnimations().map((a) => a.finished));
+      // Pick random animation
+      const animation = animations[Math.floor(Math.random() * animations.length)];
+      const duration = 500 + Math.random() * 300;
+
+      // Force reflow
+      element.offsetHeight;
+
+      // Apply transition
+      element.style.transition = `all ${duration}ms cubic-bezier(0.4, 0, 0.2, 1)`;
+
+      // Start animation
+      requestAnimationFrame(() => {
+        element.style.transform = animation.transform;
+        element.style.opacity = animation.opacity;
+      });
+
+      // Wait for animation
+      await new Promise(resolve => setTimeout(resolve, duration));
     };
+
     return result;
   };
+
   <template>
     <tr class='border-b border-slate-700/50 hover:bg-slate-700/30 transition-colors' ...attributes {{this.modifier}}>
       <td
