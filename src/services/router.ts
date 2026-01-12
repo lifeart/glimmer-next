@@ -23,6 +23,7 @@ export function createRouter() {
     benchmark: '/benchmark',
     pageOne: '/pageOne',
     pageTwo: '/pageTwo',
+    renderers: '/renderers',
     isPolarisReady: '/is-polaris-ready',
     todomvc: '/todomvc',
     'todomvc.all': '/todomvc/all',

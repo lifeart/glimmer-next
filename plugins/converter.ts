@@ -14,6 +14,8 @@ import {
   resolvePath,
   toOptionalChaining,
   toSafeJSPath,
+  checkBindingsForCollisions,
+  warnOnReservedBinding,
 } from './utils';
 import { CONSTANTS, EVENT_TYPE, SYMBOLS } from './symbols';
 import type { Flags } from './flags';
@@ -84,6 +86,9 @@ export function convert(
 ) {
   setFlags(flags);
   setBindings(bindings);
+
+  // Check for variable name collisions with JS globals and HTML element names
+  checkBindingsForCollisions(bindings, 'scope');
 
   function serializeParam(p: any) {
     if (typeof p !== 'string') {
@@ -307,6 +312,7 @@ export function convert(
         return null;
       }
       node.program.blockParams.forEach((p) => {
+        warnOnReservedBinding(p, 'block param');
         bindings.add(p);
       });
       const childElements = resolvedChildren(node.program.body);
@@ -504,6 +510,7 @@ export function convert(
       // with the HTML namespace wrapper as its child
     }
     element.blockParams.forEach((p) => {
+      warnOnReservedBinding(p, 'component block param');
       bindings.add(p);
     });
     const children = resolvedChildren(element.children)

@@ -1,14 +1,44 @@
 import type { ASTv1 } from '@glimmer/syntax';
 // import { EVENT_TYPE, SYMBOLS } from './symbols';
 import { SYMBOLS } from './symbols';
+import { JS_GLOBALS, ELEMENT_TAG_NAMES } from './constants';
 import type { Flags } from './flags';
 import type { ComplexJSType } from './converter';
 
 let flags!: Flags;
 let bindings: Set<string> = new Set();
+const warnedBindings = new Set<string>();
 
 export function setBindings(b: Set<string>) {
   bindings = b;
+}
+
+export function warnOnReservedBinding(name: string, context?: string): void {
+  if (warnedBindings.has(name)) {
+    return;
+  }
+
+  const contextStr = context ? ` in ${context}` : '';
+
+  if (JS_GLOBALS.has(name)) {
+    warnedBindings.add(name);
+    console.warn(
+      `[GXT Compiler Warning] Variable "${name}"${contextStr} shadows a JavaScript global. ` +
+      `This may cause unexpected behavior if you use <${name}> as an element tag in your template. ` +
+      `Consider renaming to avoid conflicts (e.g., "${name.toLowerCase()}Value", "my${name}").`
+    );
+  } else if (ELEMENT_TAG_NAMES.has(name)) {
+    warnedBindings.add(name);
+    console.warn(
+      `[GXT Compiler Warning] Variable "${name}"${contextStr} matches an HTML/SVG element name. ` +
+      `Using <${name}> in your template will be treated as a component reference, not an HTML element. ` +
+      `Consider renaming to avoid conflicts (e.g., "${name}Value", "my${name.charAt(0).toUpperCase() + name.slice(1)}").`
+    );
+  }
+}
+
+export function checkBindingsForCollisions(bindings: Set<string>, context?: string): void {
+  bindings.forEach((name) => warnOnReservedBinding(name, context));
 }
 
 export function setFlags(f: Flags) {

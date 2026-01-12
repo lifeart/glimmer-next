@@ -3,6 +3,7 @@ import { Button } from './../Button.gts';
 import { PageOne } from './PageOne.gts';
 import { PageTwo } from './PageTwo.gts';
 import { Benchmark } from './Benchmark.gts';
+import { Renderers } from './Renderers.gts';
 import { Tests } from './Tests.gts';
 import { Header } from '@/components/Header.gts';
 
@@ -53,6 +54,12 @@ export class Router extends Component {
       text: 'Benchmark',
       state: cell(false, 'benchmark active'),
       Component: Benchmark,
+    },
+    {
+      name: 'renderers',
+      text: 'Renderers',
+      state: cell(false, 'renderers active'),
+      Component: Renderers,
     },
     {
       name: 'tests',

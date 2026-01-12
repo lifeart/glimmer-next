@@ -55,6 +55,7 @@ export class CanvasBaseElement {
 }
 export class CanvasComment extends CanvasBaseElement {}
 export class CanvasFragment extends CanvasBaseElement {}
+
 export class CanvasTextElement extends CanvasBaseElement {
   attrs = {
     font: '48px serif',
@@ -70,6 +71,74 @@ export class CanvasTextElement extends CanvasBaseElement {
   }
 }
 
+export class CanvasRectElement extends CanvasBaseElement {
+  attrs = {
+    x: 0,
+    y: 0,
+    width: 100,
+    height: 50,
+    fillStyle: 'blue',
+    strokeStyle: '',
+    lineWidth: 1,
+  };
+  toCanvas(ctx: CanvasRenderingContext2D) {
+    if (this.attrs.fillStyle) {
+      ctx.fillStyle = this.attrs.fillStyle;
+      ctx.fillRect(this.attrs.x, this.attrs.y, this.attrs.width, this.attrs.height);
+    }
+    if (this.attrs.strokeStyle) {
+      ctx.strokeStyle = this.attrs.strokeStyle;
+      ctx.lineWidth = this.attrs.lineWidth;
+      ctx.strokeRect(this.attrs.x, this.attrs.y, this.attrs.width, this.attrs.height);
+    }
+  }
+}
+
+export class CanvasCircleElement extends CanvasBaseElement {
+  attrs = {
+    cx: 50,
+    cy: 50,
+    r: 25,
+    fillStyle: 'green',
+    strokeStyle: '',
+    lineWidth: 1,
+  };
+  toCanvas(ctx: CanvasRenderingContext2D) {
+    ctx.beginPath();
+    ctx.arc(this.attrs.cx, this.attrs.cy, this.attrs.r, 0, Math.PI * 2);
+    if (this.attrs.fillStyle) {
+      ctx.fillStyle = this.attrs.fillStyle;
+      ctx.fill();
+    }
+    if (this.attrs.strokeStyle) {
+      ctx.strokeStyle = this.attrs.strokeStyle;
+      ctx.lineWidth = this.attrs.lineWidth;
+      ctx.stroke();
+    }
+  }
+}
+
+export class CanvasLineElement extends CanvasBaseElement {
+  attrs = {
+    x1: 0,
+    y1: 0,
+    x2: 100,
+    y2: 100,
+    strokeStyle: 'black',
+    lineWidth: 2,
+    lineCap: 'round' as CanvasLineCap,
+  };
+  toCanvas(ctx: CanvasRenderingContext2D) {
+    ctx.beginPath();
+    ctx.moveTo(this.attrs.x1, this.attrs.y1);
+    ctx.lineTo(this.attrs.x2, this.attrs.y2);
+    ctx.strokeStyle = this.attrs.strokeStyle;
+    ctx.lineWidth = this.attrs.lineWidth;
+    ctx.lineCap = this.attrs.lineCap;
+    ctx.stroke();
+  }
+}
+
 export function CanvasRenderer(): ComponentReturn<
   {
     default: [];
@@ -78,25 +147,33 @@ export function CanvasRenderer(): ComponentReturn<
 > {
   // @ts-expect-error
   $_GET_ARGS(this, arguments);
+
+  // Default canvas dimensions
+  const width = 400;
+  const height = 160;
+
+  // Get device pixel ratio for retina support
+  const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+
   const canvasNode = $_tag(
     'canvas',
     [[], [], []],
     [],
     // @ts-expect-error
-
     this,
   ) as HTMLCanvasElement;
   // @ts-expect-error
   const api = initDOM(this);
   const comment = api.comment('runtime-placeholder');
+
+  // Set actual canvas size (scaled for retina)
+  canvasNode.width = width * dpr;
+  canvasNode.height = height * dpr;
+
+  // Set display size via CSS
   canvasNode.style.display = 'block';
-  canvasNode.style.border = '1px solid red';
-  canvasNode.style.width = '100%';
-  canvasNode.style.height = '100%';
-  canvasNode.style.position = 'relative';
-  canvasNode.style.top = '0';
-  canvasNode.style.left = '0';
-  canvasNode.style.pointerEvents = 'auto';
+  canvasNode.style.width = `${width}px`;
+  canvasNode.style.height = `${height}px`;
 
   // @ts-expect-error this
   const $slots = $_GET_SLOTS(this, arguments);
@@ -152,17 +229,25 @@ export function CanvasRenderer(): ComponentReturn<
       return this.createNode(CanvasFragment);
     },
     element(tagName: string) {
-      if (tagName === 'text') {
-        return this.createNode(CanvasTextElement);
-      } else {
-        throw new Error(`Unknown canvas element: ${tagName}`);
+      switch (tagName) {
+        case 'text':
+          return this.createNode(CanvasTextElement);
+        case 'rect':
+          return this.createNode(CanvasRectElement);
+        case 'circle':
+          return this.createNode(CanvasCircleElement);
+        case 'line':
+          return this.createNode(CanvasLineElement);
+        default:
+          throw new Error(`Unknown canvas element: ${tagName}`);
       }
     },
-    attr<T extends keyof CanvasTextElement['attrs']>(
-      el: CanvasTextElement,
-      attr: T,
-      value: CanvasTextElement['attrs'][T],
+    attr(
+      el: CanvasTextElement | CanvasRectElement | CanvasCircleElement | CanvasLineElement,
+      attr: string,
+      value: any,
     ) {
+      // @ts-expect-error dynamic attr access
       el.attrs[attr] = value;
       this.scheduleRerender();
     },
@@ -185,16 +270,24 @@ export function CanvasRenderer(): ComponentReturn<
       return el instanceof CanvasBaseElement;
     },
     frameId: 0,
+    dpr,
+    isScaled: false,
     scheduleRerender() {
       if (import.meta.env.SSR) {
         return;
       }
       window.cancelAnimationFrame(this.frameId);
       this.frameId = window.requestAnimationFrame(() => {
+        const ctx = this.ctx;
+        // Scale context for retina displays (only once)
+        if (!this.isScaled && this.dpr > 1) {
+          ctx.scale(this.dpr, this.dpr);
+          this.isScaled = true;
+        }
         this.clear();
         this.nodes.forEach((node) => {
           node.isConnected = true;
-          node.toCanvas(this.ctx);
+          node.toCanvas(ctx);
         });
       });
     },
