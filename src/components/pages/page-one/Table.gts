@@ -1,84 +1,73 @@
 const originalValue = (value: string) => {
-  return value.split(' ')[0] + ' ';
+  return value.split(' ')[0];
 };
+
 const colorForDiff = (diff: string) => {
   if (diff.includes('+')) {
-    return 'text-red-500';
+    return 'text-red-400';
   } else if (diff.includes('-')) {
-    return 'text-green-500';
+    return 'text-emerald-400';
   } else {
-    return '';
+    return 'text-slate-500';
   }
 };
+
 const withDiff = (gxtValue: string, glimmerValue: string) => {
   const gxt = parseFloat(gxtValue.split(' ')[0]);
   const glimmer = parseFloat(glimmerValue.split(' ')[0]);
   const diff = gxt - glimmer;
   const diffPercent = -1 * (diff / glimmer) * 100;
-  const diffPercentString = diffPercent.toFixed(1);
+  const diffPercentString = diffPercent.toFixed(0);
   let diffString = diffPercentString + '%';
   if (!diffString.startsWith('-')) {
     diffString = '+' + diffString;
   }
-  let tail = `(${diffString})`;
-  if (tail === '(+0.0%)') {
-    tail = '';
+  if (diffString === '+0%' || diffString === '-0%') {
+    return '';
   }
-
-  return `${tail}`;
+  return diffString;
 };
 
 const Row = <template>
-  <tr class='bg-white border-b dark:bg-gray-800 dark:border-gray-700'>
-    <th
-      scope='row'
-      class='py-2 px-6 font-medium text-gray-900 whitespace-nowrap dark:text-white'
-    >{{@label}}</th>
-    <td class='bg-red-100 py-2 px-6'>{{originalValue @vanila}}
-      <span class={{colorForDiff (withDiff @gxt @vanila)}}>
-        {{withDiff @gxt @vanila}}
-      </span>
+  <tr class='border-b border-slate-700/50 hover:bg-slate-700/30 transition-colors'>
+    <td class='py-2.5 px-3 font-medium text-slate-200 text-xs'>{{@label}}</td>
+    <td class='py-2.5 px-2 text-center'>
+      <span class='text-slate-300 text-xs'>{{originalValue @vanila}}</span>
+      <span class='text-xs ml-1 {{colorForDiff (withDiff @gxt @vanila)}}'>{{withDiff @gxt @vanila}}</span>
     </td>
-    <td class='bg-red-100 py-2 px-6'>{{originalValue @svelte}}
-      <span class={{colorForDiff (withDiff @gxt @svelte)}}>
-        {{withDiff @gxt @svelte}}
-      </span>
+    <td class='py-2.5 px-2 text-center'>
+      <span class='text-slate-300 text-xs'>{{originalValue @svelte}}</span>
+      <span class='text-xs ml-1 {{colorForDiff (withDiff @gxt @svelte)}}'>{{withDiff @gxt @svelte}}</span>
     </td>
-    <td class='bg-red-100 py-2 px-6'>{{originalValue @react}}
-      <span class={{colorForDiff (withDiff @gxt @react)}}>
-        {{withDiff @gxt @react}}
-      </span>
+    <td class='py-2.5 px-2 text-center'>
+      <span class='text-slate-300 text-xs'>{{originalValue @react}}</span>
+      <span class='text-xs ml-1 {{colorForDiff (withDiff @gxt @react)}}'>{{withDiff @gxt @react}}</span>
     </td>
-    <td class='bg-red-100 py-2 px-6'>{{originalValue @vue}}
-      <span class={{colorForDiff (withDiff @gxt @vue)}}>
-        {{withDiff @gxt @vue}}
-      </span>
+    <td class='py-2.5 px-2 text-center'>
+      <span class='text-slate-300 text-xs'>{{originalValue @vue}}</span>
+      <span class='text-xs ml-1 {{colorForDiff (withDiff @gxt @vue)}}'>{{withDiff @gxt @vue}}</span>
     </td>
-    <td class='bg-red-100 py-2 px-6 text-blue-500 font-bold'>{{originalValue
-        @gxt
-      }}{{withDiff @gxt @gxt}}</td>
-    <td class='bg-red-100 py-2 px-6'>{{originalValue @glimmer}}
-
-      <span class={{colorForDiff (withDiff @gxt @glimmer)}}>
-        {{withDiff @gxt @glimmer}}
-      </span>
+    <td class='py-2.5 px-2 text-center bg-blue-500/10'>
+      <span class='text-blue-400 font-semibold text-xs'>{{originalValue @gxt}}</span>
+    </td>
+    <td class='py-2.5 px-2 text-center'>
+      <span class='text-slate-300 text-xs'>{{originalValue @glimmer}}</span>
+      <span class='text-xs ml-1 {{colorForDiff (withDiff @gxt @glimmer)}}'>{{withDiff @gxt @glimmer}}</span>
     </td>
   </tr>
 </template>;
+
 export const Table = <template>
-  <table class='w-full text-sm text-left text-gray-500 dark:text-gray-400'>
-    <thead
-      class='text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400'
-    >
-      <tr>
-        <th scope='col' class='py-3 px-6'>Name</th>
-        <th scope='col' class='py-3 px-6'>vanillajs</th>
-        <th scope='col' class='py-3 px-6'>svelte-v5</th>
-        <th scope='col' class='py-3 px-6'>react-v18</th>
-        <th scope='col' class='py-3 px-6'>vue-v3</th>
-        <th scope='col' class='py-3 px-6 text-yellow-500'><b
-          >glimmer-next</b></th>
-        <th scope='col' class='py-3 px-6'>glimmer-2</th>
+  <table class='w-full text-sm'>
+    <thead>
+      <tr class='border-b border-slate-600'>
+        <th class='py-2.5 px-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider'>Benchmark</th>
+        <th class='py-2.5 px-2 text-center text-xs font-semibold text-slate-400'>Vanilla</th>
+        <th class='py-2.5 px-2 text-center text-xs font-semibold text-slate-400'>Svelte</th>
+        <th class='py-2.5 px-2 text-center text-xs font-semibold text-slate-400'>React</th>
+        <th class='py-2.5 px-2 text-center text-xs font-semibold text-slate-400'>Vue</th>
+        <th class='py-2.5 px-2 text-center text-xs font-semibold text-blue-400 bg-blue-500/10'>GXT</th>
+        <th class='py-2.5 px-2 text-center text-xs font-semibold text-slate-400'>Glimmer</th>
       </tr>
     </thead>
     <tbody>
