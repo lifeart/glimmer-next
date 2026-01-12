@@ -11,6 +11,7 @@ import {
   initDOM,
 } from '../context';
 import { HTMLBrowserDOMApi, DOMApi } from '../dom-api';
+import { SVGBrowserDOMApi } from '../svg-api';
 import {
   RENDERED_NODES_PROPERTY,
   PARENT,
@@ -20,6 +21,7 @@ import {
 } from '../shared';
 import { Component } from '../component';
 import { Root } from '../dom';
+import { NS_SVG, NS_MATHML } from '../namespaces';
 
 // Custom DOMApi for testing nested contexts
 class TestCustomDOMApi implements DOMApi {
@@ -336,5 +338,210 @@ describe('Context caching during rehydration', () => {
 
     // Should now return 'second' because provideContext updates RENDERING_CONTEXT_PROPERTY
     expect(initDOM(component).toString()).toBe('test:second');
+  });
+});
+
+describe('SVG Rehydration API', () => {
+  let window: Window;
+  let document: Document;
+
+  beforeEach(() => {
+    window = new Window();
+    document = window.document as unknown as Document;
+    cleanupFastContext();
+  });
+
+  afterEach(() => {
+    cleanupFastContext();
+    TREE.clear();
+    PARENT.clear();
+    CHILD.clear();
+    window.close();
+  });
+
+  test('SVGRehydrationBrowserDOMApi creates elements with SVG namespace when not rehydrating', async () => {
+    const { SVGRehydrationBrowserDOMApi } = await import('./svg-rehydration-dom-api');
+    const api = new SVGRehydrationBrowserDOMApi(document);
+
+    const svg = api.element('svg');
+    expect(svg.namespaceURI).toBe(NS_SVG);
+
+    const path = api.element('path');
+    expect(path.namespaceURI).toBe(NS_SVG);
+  });
+
+  test('SVGRehydrationBrowserDOMApi has correct toString identifier', async () => {
+    const { SVGRehydrationBrowserDOMApi } = await import('./svg-rehydration-dom-api');
+    const api = new SVGRehydrationBrowserDOMApi(document);
+
+    expect(api.toString()).toBe('hydration-svg:dom-api');
+  });
+
+  test('SVGRehydrationBrowserDOMApi handles namespaced attributes', async () => {
+    const { SVGRehydrationBrowserDOMApi } = await import('./svg-rehydration-dom-api');
+    const api = new SVGRehydrationBrowserDOMApi(document);
+
+    const use = api.element('use');
+    api.attr(use, 'xlink:href', '#icon');
+
+    // xlink attributes should use the xlink namespace
+    expect(use.getAttributeNS('http://www.w3.org/1999/xlink', 'href')).toBe('#icon');
+  });
+
+  test('SVGRehydrationBrowserDOMApi prop handles className', async () => {
+    const { SVGRehydrationBrowserDOMApi } = await import('./svg-rehydration-dom-api');
+    const api = new SVGRehydrationBrowserDOMApi(document);
+
+    const svg = api.element('svg');
+    api.prop(svg, 'className', 'icon-class');
+
+    expect(svg.getAttribute('class')).toBe('icon-class');
+  });
+});
+
+describe('MathML Rehydration API', () => {
+  let window: Window;
+  let document: Document;
+
+  beforeEach(() => {
+    window = new Window();
+    document = window.document as unknown as Document;
+    cleanupFastContext();
+  });
+
+  afterEach(() => {
+    cleanupFastContext();
+    TREE.clear();
+    PARENT.clear();
+    CHILD.clear();
+    window.close();
+  });
+
+  test('MathMLRehydrationBrowserDOMApi creates elements with MathML namespace when not rehydrating', async () => {
+    const { MathMLRehydrationBrowserDOMApi } = await import('./mathml-rehydration-dom-api');
+    const api = new MathMLRehydrationBrowserDOMApi(document);
+
+    const math = api.element('math');
+    expect(math.namespaceURI).toBe(NS_MATHML);
+
+    const mrow = api.element('mrow');
+    expect(mrow.namespaceURI).toBe(NS_MATHML);
+  });
+
+  test('MathMLRehydrationBrowserDOMApi has correct toString identifier', async () => {
+    const { MathMLRehydrationBrowserDOMApi } = await import('./mathml-rehydration-dom-api');
+    const api = new MathMLRehydrationBrowserDOMApi(document);
+
+    expect(api.toString()).toBe('hydration-mathml:dom-api');
+  });
+});
+
+describe('API Factory in Rehydration', () => {
+  let window: Window;
+  let document: Document;
+
+  beforeEach(() => {
+    window = new Window();
+    document = window.document as unknown as Document;
+    cleanupFastContext();
+  });
+
+  afterEach(() => {
+    cleanupFastContext();
+    TREE.clear();
+    PARENT.clear();
+    CHILD.clear();
+    window.close();
+  });
+
+  test('API_FACTORY_CONTEXT symbol is exported from context', async () => {
+    const { API_FACTORY_CONTEXT } = await import('../context');
+    expect(typeof API_FACTORY_CONTEXT).toBe('symbol');
+    expect(API_FACTORY_CONTEXT.description).toBe('API_FACTORY');
+  });
+
+  test('ApiFactory type creates correct API for SVG namespace', async () => {
+    const { SVGRehydrationBrowserDOMApi } = await import('./svg-rehydration-dom-api');
+    const { MathMLRehydrationBrowserDOMApi } = await import('./mathml-rehydration-dom-api');
+    const { HTMLRehydrationBrowserDOMApi } = await import('./rehydration-dom-api');
+
+    // Simulate the factory function from withRehydration
+    const apiFactory = (namespace?: string) => {
+      if (namespace === NS_SVG) {
+        return new SVGRehydrationBrowserDOMApi(document);
+      } else if (namespace === NS_MATHML) {
+        return new MathMLRehydrationBrowserDOMApi(document);
+      } else {
+        return new HTMLRehydrationBrowserDOMApi(document);
+      }
+    };
+
+    const htmlApi = apiFactory();
+    expect(htmlApi.toString()).toBe('hydration-html:dom-api');
+
+    const svgApi = apiFactory(NS_SVG);
+    expect(svgApi.toString()).toBe('hydration-svg:dom-api');
+
+    const mathmlApi = apiFactory(NS_MATHML);
+    expect(mathmlApi.toString()).toBe('hydration-mathml:dom-api');
+  });
+
+  test('SVGBrowserDOMApi and SVGRehydrationBrowserDOMApi have compatible interfaces', async () => {
+    const { SVGRehydrationBrowserDOMApi } = await import('./svg-rehydration-dom-api');
+
+    const api = new SVGRehydrationBrowserDOMApi(document);
+
+    // Verify all DOMApi methods exist
+    expect(typeof api.element).toBe('function');
+    expect(typeof api.attr).toBe('function');
+    expect(typeof api.prop).toBe('function');
+    expect(typeof api.insert).toBe('function');
+    expect(typeof api.text).toBe('function');
+    expect(typeof api.comment).toBe('function');
+    expect(typeof api.fragment).toBe('function');
+    expect(typeof api.destroy).toBe('function');
+    expect(typeof api.clearChildren).toBe('function');
+    expect(typeof api.parent).toBe('function');
+    expect(typeof api.addEventListener).toBe('function');
+    expect(typeof api.isNode).toBe('function');
+    expect(typeof api.textContent).toBe('function');
+  });
+
+  test('MathMLBrowserDOMApi and MathMLRehydrationBrowserDOMApi have compatible interfaces', async () => {
+    const { MathMLRehydrationBrowserDOMApi } = await import('./mathml-rehydration-dom-api');
+
+    const api = new MathMLRehydrationBrowserDOMApi(document);
+
+    // Verify all DOMApi methods exist
+    expect(typeof api.element).toBe('function');
+    expect(typeof api.attr).toBe('function');
+    expect(typeof api.prop).toBe('function');
+    expect(typeof api.insert).toBe('function');
+    expect(typeof api.text).toBe('function');
+    expect(typeof api.comment).toBe('function');
+    expect(typeof api.fragment).toBe('function');
+    expect(typeof api.destroy).toBe('function');
+    expect(typeof api.clearChildren).toBe('function');
+    expect(typeof api.parent).toBe('function');
+    expect(typeof api.addEventListener).toBe('function');
+    expect(typeof api.isNode).toBe('function');
+    expect(typeof api.textContent).toBe('function');
+  });
+
+  test('API upgrade replaces methods with standard API methods', async () => {
+    const { SVGRehydrationBrowserDOMApi } = await import('./svg-rehydration-dom-api');
+
+    const api = new SVGRehydrationBrowserDOMApi(document);
+    expect(api.toString()).toBe('hydration-svg:dom-api');
+
+    // Simulate the upgrade that happens in withRehydration
+    Object.getOwnPropertyNames(SVGBrowserDOMApi.prototype).forEach((key) => {
+      if (key !== 'constructor') {
+        // @ts-expect-error props
+        api[key] = SVGBrowserDOMApi.prototype[key];
+      }
+    });
+
+    expect(api.toString()).toBe('svg:dom-api');
   });
 });
