@@ -26,7 +26,7 @@ function Controls() {
 
 export function PageOne() {
   return <template>
-    <div class='text-white p-6 max-w-4xl mx-auto'>
+    <div class='text-white p-6 max-w-6xl mx-auto'>
       <Controls />
 
       <div class="bg-slate-800/50 rounded-xl p-6 mb-6">
