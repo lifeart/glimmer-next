@@ -97,9 +97,12 @@ export function PageOne() {
             <Suspense @fallback={{Fallback}}>
               <LoadMeAsync @name='Notifications' />
             </Suspense>
+            <Suspense @fallback={{Fallback}}>
+              <LoadMeAsync @name='Error Demo' />
+            </Suspense>
           </div>
           <p class="text-xs text-slate-500 mt-4 text-center">
-            Components load independently - each with its own suspense boundary
+            Components load independently - each with its own suspense boundary. Try the Error Demo!
           </p>
         </div>
       </div>

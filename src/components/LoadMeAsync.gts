@@ -7,6 +7,7 @@ const colors: Record<string, string> = {
   'Analytics': 'from-green-500/20 to-emerald-500/20',
   'Messages': 'from-amber-500/20 to-orange-500/20',
   'Notifications': 'from-red-500/20 to-rose-500/20',
+  'Error Demo': 'from-red-500/20 to-orange-500/20',
 };
 
 const delays: Record<string, number> = {
@@ -16,6 +17,7 @@ const delays: Record<string, number> = {
   'Analytics': 450,
   'Messages': 600,
   'Notifications': 750,
+  'Error Demo': 900,
 };
 
 // Mini interactive widgets for each card
@@ -189,6 +191,86 @@ function NotificationsWidget() {
   </template>;
 }
 
+function ErrorDemoWidget() {
+  const state = cell<'idle' | 'loading' | 'error' | 'recovered'>('idle');
+  const errorMessage = cell('Network request failed');
+
+  const simulateError = () => {
+    state.update('loading');
+    setTimeout(() => {
+      state.update('error');
+    }, 800);
+  };
+
+  const retry = () => {
+    state.update('loading');
+    setTimeout(() => {
+      state.update('recovered');
+    }, 600);
+  };
+
+  const reset = () => state.update('idle');
+
+  return <template>
+    <div class="flex items-center gap-3">
+      {{#if (eq state.value 'idle')}}
+        <button
+          class="w-10 h-10 rounded-lg bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center text-lg shadow-lg cursor-pointer hover:scale-105 transition-transform active:scale-95"
+          {{on 'click' simulateError}}
+          title="Click to simulate error"
+        >
+          💥
+        </button>
+        <div>
+          <h3 class="font-medium text-white text-sm">Error Demo</h3>
+          <p class="text-xs text-slate-400">Click to simulate failure</p>
+        </div>
+      {{else if (eq state.value 'loading')}}
+        <div class="w-10 h-10 rounded-lg bg-slate-600 flex items-center justify-center">
+          <div class="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+        </div>
+        <div>
+          <h3 class="font-medium text-white text-sm">Loading...</h3>
+          <p class="text-xs text-slate-400">Fetching data</p>
+        </div>
+      {{else if (eq state.value 'error')}}
+        <div class="w-10 h-10 rounded-lg bg-red-500/30 flex items-center justify-center text-lg animate-[shake_0.3s_ease-in-out]">
+          ❌
+        </div>
+        <div class="flex-1">
+          <h3 class="font-medium text-red-400 text-sm">{{errorMessage.value}}</h3>
+          <button
+            class="text-xs text-cyan-400 hover:text-cyan-300 underline cursor-pointer"
+            {{on 'click' retry}}
+          >
+            Click to retry
+          </button>
+        </div>
+      {{else if (eq state.value 'recovered')}}
+        <div class="w-10 h-10 rounded-lg bg-green-500/30 flex items-center justify-center text-lg animate-[popIn_0.3s_ease-out]">
+          ✅
+        </div>
+        <div class="flex-1">
+          <h3 class="font-medium text-green-400 text-sm">Recovered!</h3>
+          <button
+            class="text-xs text-slate-400 hover:text-slate-300 underline cursor-pointer"
+            {{on 'click' reset}}
+          >
+            Try again
+          </button>
+        </div>
+      {{/if}}
+    </div>
+    <style>
+      @keyframes shake {
+        0%, 100% { transform: translateX(0); }
+        25% { transform: translateX(-4px); }
+        75% { transform: translateX(4px); }
+      }
+    </style>
+  </template>;
+}
+
 const widgets: Record<string, unknown> = {
   'User Profile': UserProfileWidget,
   'Dashboard': DashboardWidget,
@@ -196,6 +278,7 @@ const widgets: Record<string, unknown> = {
   'Analytics': AnalyticsWidget,
   'Messages': MessagesWidget,
   'Notifications': NotificationsWidget,
+  'Error Demo': ErrorDemoWidget,
 };
 
 export default class LoadMeAsync extends Component<{
