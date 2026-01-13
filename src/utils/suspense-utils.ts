@@ -12,15 +12,10 @@ export function followPromise<T extends Promise<any>>(
   ctx: Component<any>,
   promise: T,
 ): T {
-  getContext<SuspenseContext>(ctx, SUSPENSE_CONTEXT)?.start();
+  const suspense = getContext<SuspenseContext>(ctx, SUSPENSE_CONTEXT);
+  suspense?.start();
   // Add no-op catch to prevent unhandled rejection from the .finally() chain
   // The original promise rejection is still propagated to the caller
-  promise
-    .finally(() => {
-      Promise.resolve().then(() => {
-        getContext<SuspenseContext>(ctx, SUSPENSE_CONTEXT)?.end();
-      });
-    })
-    .catch(() => {});
+  promise.finally(() => suspense?.end()).catch(() => {});
   return promise;
 }

@@ -47,9 +47,6 @@ export function lazy<T>(factory: () => Promise<{ default: T }>): T {
     get contentComponent(): T {
       return this.stateCell.value.component as T;
     }
-    get suspense(): SuspenseContext | undefined {
-      return getContext<SuspenseContext>(this, SUSPENSE_CONTEXT) ?? undefined;
-    }
     async load(): Promise<void> {
       const { default: component } = await factory();
       if (isDestroyed(this)) {
@@ -58,9 +55,8 @@ export function lazy<T>(factory: () => Promise<{ default: T }>): T {
       this.stateCell.update({ loading: false, component });
     }
     _template() {
-      Promise.resolve().then(() => {
-        this.suspense?.start();
-      });
+      const suspense = getContext<SuspenseContext>(this, SUSPENSE_CONTEXT);
+      suspense?.start();
 
       return $_fin(
         [
@@ -71,16 +67,13 @@ export function lazy<T>(factory: () => Promise<{ default: T }>): T {
             },
             (c: IfCondition) => {
               try {
-                if (isDestroyed(c)) {
-                  debugger;
-                }
                 return $_c(
                   this.contentComponent as unknown as typeof Component,
                   this.params,
                   c as unknown as Component<any>,
                 );
               } finally {
-                this.suspense?.end();
+                suspense?.end();
               }
             },
             this,
@@ -130,26 +123,21 @@ export class Suspense
   }
 
   start(): void {
-    if (isDestroyed(this)) {
-      return;
-    }
-    if (this.isReleased) {
-      console.error('Suspense is already released');
+    if (isDestroyed(this) || this.isReleased) {
+      IS_DEV_MODE && this.isReleased && console.warn('Suspense is already released');
       return;
     }
     this.pendingAmountCell.update(this.pendingAmountCell.value + 1);
   }
 
   end(): void {
-    if (isDestroyed(this)) {
+    if (isDestroyed(this) || this.isReleased) {
+      IS_DEV_MODE && this.isReleased && console.warn('Suspense is already released');
       return;
     }
-    if (this.isReleased) {
-      console.error('Suspense is already released');
-      return;
-    }
-    this.pendingAmountCell.update(this.pendingAmountCell.value - 1);
-    this.isReleased = this.pendingAmountCell.value === 0;
+    const newValue = this.pendingAmountCell.value - 1;
+    this.pendingAmountCell.update(newValue);
+    this.isReleased = newValue === 0;
   }
 
   get fallback(): ComponentReturnType {
@@ -170,9 +158,6 @@ export class Suspense
             if (trueBranch === null) {
               trueBranch = $_ucw(
                 (ctx) => {
-                  if (isDestroyed(ctx)) {
-                    debugger;
-                  }
                   return (
                     $_slot(
                       'default',
