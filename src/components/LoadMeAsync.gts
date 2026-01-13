@@ -79,18 +79,21 @@ function SettingsWidget() {
   const darkMode = cell(true);
   const sounds = cell(false);
 
+  const toggleDarkMode = () => darkMode.update(!darkMode.value);
+  const toggleSounds = () => sounds.update(!sounds.value);
+
   return <template>
     <div class="flex items-center gap-3">
       <div class="flex flex-col gap-1">
         <button
           class="w-8 h-4 rounded-full transition-colors {{if darkMode.value 'bg-blue-500' 'bg-slate-600'}} relative cursor-pointer"
-          {{on 'click' (fn darkMode.update (not darkMode.value))}}
+          {{on 'click' toggleDarkMode}}
         >
           <div class="absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all {{if darkMode.value 'left-4' 'left-0.5'}}"></div>
         </button>
         <button
           class="w-8 h-4 rounded-full transition-colors {{if sounds.value 'bg-green-500' 'bg-slate-600'}} relative cursor-pointer"
-          {{on 'click' (fn sounds.update (not sounds.value))}}
+          {{on 'click' toggleSounds}}
         >
           <div class="absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all {{if sounds.value 'left-4' 'left-0.5'}}"></div>
         </button>
