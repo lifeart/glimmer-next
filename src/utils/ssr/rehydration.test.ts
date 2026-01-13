@@ -564,7 +564,7 @@ describe('Suspense Rehydration Integration', () => {
     CHILD.clear();
     root = new Root(document);
     // Add root to TREE so context lookup can find it when traversing from children
-    TREE.set(root[COMPONENT_ID_PROPERTY], root);
+    TREE.set(root[COMPONENT_ID_PROPERTY], root as unknown as Component<any>);
   });
 
   afterEach(() => {
@@ -578,12 +578,10 @@ describe('Suspense Rehydration Integration', () => {
   describe('Resolved Suspense Context During Rehydration', () => {
     test('suspense context is available during rehydration scenarios', () => {
       // Simulate a resolved suspense by providing context with pendingAmount = 0
-      let startCalled = false;
-      let endCalled = false;
       const resolvedSuspenseContext = {
         pendingAmount: 0,
-        start: () => { startCalled = true; },
-        end: () => { endCalled = true; },
+        start: () => {},
+        end: () => {},
         isResolved: () => true,
       };
 
@@ -593,7 +591,7 @@ describe('Suspense Rehydration Integration', () => {
       const child = createComponent(root);
 
       // Child should be able to access the suspense context
-      const foundContext = getContext(child, SUSPENSE_CONTEXT);
+      const foundContext = getContext(child, SUSPENSE_CONTEXT) as typeof resolvedSuspenseContext;
       expect(foundContext).toBe(resolvedSuspenseContext);
       expect(foundContext.isResolved()).toBe(true);
     });
@@ -655,7 +653,7 @@ describe('Suspense Rehydration Integration', () => {
       provideContext(root, SUSPENSE_CONTEXT, pendingSuspense);
 
       const child = createComponent(root);
-      const foundContext = getContext(child, SUSPENSE_CONTEXT);
+      const foundContext = getContext(child, SUSPENSE_CONTEXT) as typeof pendingSuspense;
 
       // Suspense should be in pending state
       expect(foundContext.isPending()).toBe(true);
@@ -719,10 +717,8 @@ describe('Suspense Rehydration Integration', () => {
 
   describe('Nested Suspense Boundaries', () => {
     test('inner suspense shadows outer suspense context', () => {
-      let outerStartCalled = false;
-      let innerStartCalled = false;
-      const outerSuspense = { id: 'outer', start: () => { outerStartCalled = true; }, end: () => {} };
-      const innerSuspense = { id: 'inner', start: () => { innerStartCalled = true; }, end: () => {} };
+      const outerSuspense = { id: 'outer', start: () => {}, end: () => {} };
+      const innerSuspense = { id: 'inner', start: () => {}, end: () => {} };
 
       provideContext(root, RENDERING_CONTEXT, new HTMLBrowserDOMApi(document));
       provideContext(root, SUSPENSE_CONTEXT, outerSuspense);
@@ -733,7 +729,7 @@ describe('Suspense Rehydration Integration', () => {
       const innerComponent = createComponent(outerComponent);
 
       // Inner component should find inner suspense
-      const foundContext = getContext(innerComponent, SUSPENSE_CONTEXT);
+      const foundContext = getContext(innerComponent, SUSPENSE_CONTEXT) as typeof innerSuspense;
       expect(foundContext.id).toBe('inner');
     });
 
@@ -765,7 +761,7 @@ describe('Suspense Rehydration Integration', () => {
       expect(innerSuspense.isPending()).toBe(true);
 
       // Inner component uses inner suspense context
-      const context = getContext(innerComponent, SUSPENSE_CONTEXT);
+      const context = getContext(innerComponent, SUSPENSE_CONTEXT) as typeof innerSuspense;
       expect(context.isPending()).toBe(true);
     });
 
@@ -776,27 +772,24 @@ describe('Suspense Rehydration Integration', () => {
       const parent = createComponent(root);
 
       // Child 1: resolved
-      let child1Pending = 0;
-      const suspense1 = { isPending: () => child1Pending > 0 };
+      const suspense1 = { isPending: () => false };
       const child1 = createComponent(parent);
       provideContext(child1, SUSPENSE_CONTEXT, suspense1);
 
       // Child 2: pending
-      let child2Pending = 1;
-      const suspense2 = { isPending: () => child2Pending > 0 };
+      const suspense2 = { isPending: () => true };
       const child2 = createComponent(parent);
       provideContext(child2, SUSPENSE_CONTEXT, suspense2);
 
       // Child 3: resolved
-      let child3Pending = 0;
-      const suspense3 = { isPending: () => child3Pending > 0 };
+      const suspense3 = { isPending: () => false };
       const child3 = createComponent(parent);
       provideContext(child3, SUSPENSE_CONTEXT, suspense3);
 
       // Verify different states
-      expect(getContext(child1, SUSPENSE_CONTEXT).isPending()).toBe(false);
-      expect(getContext(child2, SUSPENSE_CONTEXT).isPending()).toBe(true);
-      expect(getContext(child3, SUSPENSE_CONTEXT).isPending()).toBe(false);
+      expect((getContext(child1, SUSPENSE_CONTEXT) as typeof suspense1).isPending()).toBe(false);
+      expect((getContext(child2, SUSPENSE_CONTEXT) as typeof suspense2).isPending()).toBe(true);
+      expect((getContext(child3, SUSPENSE_CONTEXT) as typeof suspense3).isPending()).toBe(false);
     });
   });
 

@@ -65,6 +65,10 @@
     "./test-utils": {
       "import": "./dist/gxt.utils.es.js",
       "types": "./dist/src/tests/utils.d.ts"
+    },
+    "./suspense": {
+      "import": "./dist/gxt.suspense.es.js",
+      "types": "./dist/src/utils/suspense.d.ts"
     }
   },
   "devDependencies": {

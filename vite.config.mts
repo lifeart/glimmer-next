@@ -110,6 +110,7 @@ export default defineConfig(({ mode }) => ({
               "glimmer-compat.ts",
             ),
             path.join(currentPath, "src", "tests", "utils.ts"),
+            path.join(currentPath, "src", "utils", "suspense.ts"),
           ],
           name: "gxt",
           formats: ["es"],

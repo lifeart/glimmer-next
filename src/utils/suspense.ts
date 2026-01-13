@@ -22,37 +22,33 @@ import type { IfCondition } from './control-flow/if';
 export { SUSPENSE_CONTEXT, followPromise, type SuspenseContext } from './suspense-utils';
 import { SUSPENSE_CONTEXT, type SuspenseContext } from './suspense-utils';
 
-let i = 0;
+type LazyState<T> =
+  | { loading: true; component: null }
+  | { loading: false; component: T };
 
-export function lazy<T>(factory: () => Promise<{ default: T }>) {
+export function lazy<T>(factory: () => Promise<{ default: T }>): T {
   class LazyComponent extends Component {
-    constructor(params: any) {
+    constructor(params: Record<string, unknown>) {
       super(params);
       this.params = params;
       // @ts-expect-error args types
       this[$template] = this._template;
-      i++;
-      // this.load();
-      setTimeout(() => this.load(), 1000 * i + 500);
-      if (i === 3) {
-        i = 0;
-      }
+      this.load();
     }
-    params = {};
-    @tracked state = { loading: true, component: null };
-    get isLoading() {
+    params: Record<string, unknown> = {};
+    @tracked state: LazyState<T> = { loading: true, component: null };
+    get isLoading(): boolean {
       return this.state.loading;
     }
-    get contentComponent() {
-      return this.state.component as unknown as Component<any>;
+    get contentComponent(): T {
+      return this.state.component as T;
     }
     @context(SUSPENSE_CONTEXT) suspense?: SuspenseContext;
-    async load() {
+    async load(): Promise<void> {
       const { default: component } = await factory();
       if (isDestroyed(this)) {
         return;
       }
-      // @ts-expect-error component type
       this.state = { loading: false, component };
     }
     _template() {
@@ -73,7 +69,7 @@ export function lazy<T>(factory: () => Promise<{ default: T }>) {
                   debugger;
                 }
                 return $_c(
-                  this.contentComponent,
+                  this.contentComponent as unknown as typeof Component,
                   this.params,
                   c as unknown as Component<any>,
                 );
@@ -88,12 +84,28 @@ export function lazy<T>(factory: () => Promise<{ default: T }>) {
       );
     }
   }
-  return LazyComponent as unknown as Awaited<
-    ReturnType<typeof factory>
-  >['default'];
+  return LazyComponent as unknown as T;
 }
 
-export class Suspense extends Component {
+/**
+ * Props for the Suspense component
+ */
+export type SuspenseArgs = {
+  Args: {
+    /** Component to render while async content is loading */
+    fallback: ComponentReturnType;
+  };
+  Blocks: {
+    /** Default block containing async content */
+    default: [];
+  };
+};
+
+/**
+ * Suspense boundary component that shows a fallback while async children are loading.
+ * Implements SuspenseContext to track pending async operations.
+ */
+export class Suspense extends Component<SuspenseArgs> implements SuspenseContext {
   constructor() {
     // @ts-expect-error args types
     super(...arguments);
@@ -103,7 +115,8 @@ export class Suspense extends Component {
   }
   @tracked pendingAmount = 0;
   isReleased = false;
-  start() {
+
+  start(): void {
     if (isDestroyed(this)) {
       return;
     }
@@ -113,7 +126,8 @@ export class Suspense extends Component {
     }
     this.pendingAmount++;
   }
-  end() {
+
+  end(): void {
     if (isDestroyed(this)) {
       return;
     }
@@ -124,6 +138,7 @@ export class Suspense extends Component {
     this.pendingAmount--;
     this.isReleased = this.pendingAmount === 0;
   }
+
   get fallback(): ComponentReturnType {
     return this.args.fallback;
   }

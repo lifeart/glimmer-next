@@ -8,7 +8,7 @@ import { Component } from './component';
 import { provideContext, getContext, cleanupFastContext, RENDERING_CONTEXT } from './context';
 import { HTMLBrowserDOMApi } from './dom-api';
 import { RENDERED_NODES_PROPERTY, TREE, PARENT, CHILD, addToTree } from './shared';
-import { Root, createRoot } from './dom';
+import { Root } from './dom';
 
 describe('Suspense API exports', () => {
   describe('SUSPENSE_CONTEXT', () => {
@@ -27,7 +27,7 @@ describe('Suspense API exports', () => {
       window = new Window();
       document = window.document as unknown as Document;
       cleanupFastContext();
-      root = createRoot(document);
+      root = new Root(document);
       const api = new HTMLBrowserDOMApi(document);
       provideContext(root, RENDERING_CONTEXT, api);
     });
@@ -177,7 +177,7 @@ describe('Suspense context protocol', () => {
     window = new Window();
     document = window.document as unknown as Document;
     cleanupFastContext();
-    root = createRoot(document);
+    root = new Root(document);
     const api = new HTMLBrowserDOMApi(document);
     provideContext(root, RENDERING_CONTEXT, api);
   });
