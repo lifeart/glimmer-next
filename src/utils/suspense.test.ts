@@ -1,13 +1,21 @@
 import { expect, test, describe, beforeEach, afterEach, vi } from 'vitest';
 import { Window } from 'happy-dom';
-import {
-  SUSPENSE_CONTEXT,
-  followPromise,
-} from './suspense-utils';
+import { SUSPENSE_CONTEXT, followPromise } from './suspense-utils';
 import { Component } from './component';
-import { provideContext, getContext, cleanupFastContext, RENDERING_CONTEXT } from './context';
+import {
+  provideContext,
+  getContext,
+  cleanupFastContext,
+  RENDERING_CONTEXT,
+} from './context';
 import { HTMLBrowserDOMApi } from './dom-api';
-import { RENDERED_NODES_PROPERTY, TREE, PARENT, CHILD, addToTree } from './shared';
+import {
+  RENDERED_NODES_PROPERTY,
+  TREE,
+  PARENT,
+  CHILD,
+  addToTree,
+} from './shared';
 import { Root } from './dom';
 
 describe('Suspense API exports', () => {
@@ -81,7 +89,7 @@ describe('Suspense API exports', () => {
 
       await promise;
       // Wait for microtask (Promise.resolve().then in followPromise)
-      await new Promise(resolve => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
 
       expect(mockSuspense.end).toHaveBeenCalled();
     });
@@ -115,7 +123,7 @@ describe('Suspense API exports', () => {
       await handledPromise;
 
       // Wait for microtask
-      await new Promise(resolve => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
 
       expect(mockSuspense.end).toHaveBeenCalled();
     });
@@ -197,14 +205,18 @@ describe('Suspense context protocol', () => {
 
     let pendingCount = 0;
     const mockSuspense = {
-      start: vi.fn(() => { pendingCount++; }),
-      end: vi.fn(() => { pendingCount--; }),
+      start: vi.fn(() => {
+        pendingCount++;
+      }),
+      end: vi.fn(() => {
+        pendingCount--;
+      }),
     };
     provideContext(child, SUSPENSE_CONTEXT, mockSuspense);
 
     // Simulate multiple async operations
-    const promise1 = new Promise(resolve => setTimeout(resolve, 10));
-    const promise2 = new Promise(resolve => setTimeout(resolve, 20));
+    const promise1 = new Promise((resolve) => setTimeout(resolve, 10));
+    const promise2 = new Promise((resolve) => setTimeout(resolve, 20));
 
     followPromise(child, promise1);
     followPromise(child, promise2);
@@ -213,11 +225,11 @@ describe('Suspense context protocol', () => {
     expect(pendingCount).toBe(2);
 
     await promise1;
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(pendingCount).toBe(1);
 
     await promise2;
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(pendingCount).toBe(0);
   });
 
@@ -234,7 +246,10 @@ describe('Suspense context protocol', () => {
 
     // Simulate typical lazy loading pattern
     const loadData = async () => {
-      const data = await followPromise(child, Promise.resolve({ name: 'test' }));
+      const data = await followPromise(
+        child,
+        Promise.resolve({ name: 'test' }),
+      );
       return data;
     };
 
@@ -242,7 +257,7 @@ describe('Suspense context protocol', () => {
     expect(result).toEqual({ name: 'test' });
 
     // Wait for cleanup
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(mockSuspense.start).toHaveBeenCalledTimes(1);
     expect(mockSuspense.end).toHaveBeenCalledTimes(1);

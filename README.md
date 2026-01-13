@@ -241,7 +241,9 @@ import { Suspense, lazy } from "@lifeart/gxt/suspense";
 const AsyncComponent = lazy(() => import("./AsyncComponent"));
 
 function LoadingSpinner() {
-  return <template><div>Loading...</div></template>;
+  return <template>
+    <div>Loading...</div>
+  </template>;
 }
 
 export function App() {
@@ -275,13 +277,17 @@ import { followPromise } from "@lifeart/gxt/suspense";
 class DataLoader extends Component {
   async loadData() {
     // This promise will be tracked by the nearest suspense boundary
-    const data = await followPromise(this, fetch("/api/data").then(r => r.json()));
+    const data = await followPromise(
+      this,
+      fetch("/api/data").then((r) => r.json()),
+    );
     return data;
   }
 }
 ```
 
 The `followPromise` function:
+
 - Calls `start()` on the nearest suspense context when the promise begins
 - Calls `end()` when the promise resolves or rejects
 - Returns the original promise unchanged
@@ -329,16 +335,14 @@ To render root component, use `renderComponent` function.
 import { renderComponent } from "@lifeart/gxt";
 import App from "./App.gts";
 
-const Instance = renderComponent(
-  App, {
-    // application arguments
-    args: {
-      name: 'My App'
-    },
-    // render target (append to)
-    element: document.getElementById("app"),
-  }
-);
+const Instance = renderComponent(App, {
+  // application arguments
+  args: {
+    name: "My App",
+  },
+  // render target (append to)
+  element: document.getElementById("app"),
+});
 ```
 
 To destroy component, use `destroyElement` function.
@@ -378,6 +382,7 @@ test("component renders correctly", async function (assert) {
 ```
 
 Available test utilities:
+
 - `render(template)` - renders a template to the test container
 - `rerender()` - waits for pending async updates
 - `click(selector)` - triggers a click event on matching element

@@ -1,9 +1,6 @@
 import { expect, test, describe, beforeEach, afterEach } from 'vitest';
 import { Window } from 'happy-dom';
-import {
-  isRehydrationScheduled,
-  lastItemInStack,
-} from './rehydration';
+import { isRehydrationScheduled, lastItemInStack } from './rehydration';
 import {
   cleanupFastContext,
   provideContext,
@@ -269,7 +266,9 @@ describe('Rehydration Context Issues', () => {
       // Object.getOwnPropertyNames returns all property names including methods
 
       const keysResult = Object.keys(HTMLBrowserDOMApi.prototype);
-      const ownPropsResult = Object.getOwnPropertyNames(HTMLBrowserDOMApi.prototype);
+      const ownPropsResult = Object.getOwnPropertyNames(
+        HTMLBrowserDOMApi.prototype,
+      );
 
       // Object.keys should return empty array (class methods are non-enumerable)
       expect(keysResult).toEqual([]);
@@ -364,7 +363,9 @@ describe('SVG Rehydration API', () => {
   });
 
   test('SVGRehydrationBrowserDOMApi creates elements with SVG namespace when not rehydrating', async () => {
-    const { SVGRehydrationBrowserDOMApi } = await import('./svg-rehydration-dom-api');
+    const { SVGRehydrationBrowserDOMApi } = await import(
+      './svg-rehydration-dom-api'
+    );
     const api = new SVGRehydrationBrowserDOMApi(document);
 
     const svg = api.element('svg');
@@ -375,25 +376,33 @@ describe('SVG Rehydration API', () => {
   });
 
   test('SVGRehydrationBrowserDOMApi has correct toString identifier', async () => {
-    const { SVGRehydrationBrowserDOMApi } = await import('./svg-rehydration-dom-api');
+    const { SVGRehydrationBrowserDOMApi } = await import(
+      './svg-rehydration-dom-api'
+    );
     const api = new SVGRehydrationBrowserDOMApi(document);
 
     expect(api.toString()).toBe('hydration-svg:dom-api');
   });
 
   test('SVGRehydrationBrowserDOMApi handles namespaced attributes', async () => {
-    const { SVGRehydrationBrowserDOMApi } = await import('./svg-rehydration-dom-api');
+    const { SVGRehydrationBrowserDOMApi } = await import(
+      './svg-rehydration-dom-api'
+    );
     const api = new SVGRehydrationBrowserDOMApi(document);
 
     const use = api.element('use');
     api.attr(use, 'xlink:href', '#icon');
 
     // xlink attributes should use the xlink namespace
-    expect(use.getAttributeNS('http://www.w3.org/1999/xlink', 'href')).toBe('#icon');
+    expect(use.getAttributeNS('http://www.w3.org/1999/xlink', 'href')).toBe(
+      '#icon',
+    );
   });
 
   test('SVGRehydrationBrowserDOMApi prop handles className', async () => {
-    const { SVGRehydrationBrowserDOMApi } = await import('./svg-rehydration-dom-api');
+    const { SVGRehydrationBrowserDOMApi } = await import(
+      './svg-rehydration-dom-api'
+    );
     const api = new SVGRehydrationBrowserDOMApi(document);
 
     const svg = api.element('svg');
@@ -422,7 +431,9 @@ describe('MathML Rehydration API', () => {
   });
 
   test('MathMLRehydrationBrowserDOMApi creates elements with MathML namespace when not rehydrating', async () => {
-    const { MathMLRehydrationBrowserDOMApi } = await import('./mathml-rehydration-dom-api');
+    const { MathMLRehydrationBrowserDOMApi } = await import(
+      './mathml-rehydration-dom-api'
+    );
     const api = new MathMLRehydrationBrowserDOMApi(document);
 
     const math = api.element('math');
@@ -433,7 +444,9 @@ describe('MathML Rehydration API', () => {
   });
 
   test('MathMLRehydrationBrowserDOMApi has correct toString identifier', async () => {
-    const { MathMLRehydrationBrowserDOMApi } = await import('./mathml-rehydration-dom-api');
+    const { MathMLRehydrationBrowserDOMApi } = await import(
+      './mathml-rehydration-dom-api'
+    );
     const api = new MathMLRehydrationBrowserDOMApi(document);
 
     expect(api.toString()).toBe('hydration-mathml:dom-api');
@@ -465,9 +478,15 @@ describe('API Factory in Rehydration', () => {
   });
 
   test('ApiFactory type creates correct API for SVG namespace', async () => {
-    const { SVGRehydrationBrowserDOMApi } = await import('./svg-rehydration-dom-api');
-    const { MathMLRehydrationBrowserDOMApi } = await import('./mathml-rehydration-dom-api');
-    const { HTMLRehydrationBrowserDOMApi } = await import('./rehydration-dom-api');
+    const { SVGRehydrationBrowserDOMApi } = await import(
+      './svg-rehydration-dom-api'
+    );
+    const { MathMLRehydrationBrowserDOMApi } = await import(
+      './mathml-rehydration-dom-api'
+    );
+    const { HTMLRehydrationBrowserDOMApi } = await import(
+      './rehydration-dom-api'
+    );
 
     // Simulate the factory function from withRehydration
     const apiFactory = (namespace?: string) => {
@@ -491,7 +510,9 @@ describe('API Factory in Rehydration', () => {
   });
 
   test('SVGBrowserDOMApi and SVGRehydrationBrowserDOMApi have compatible interfaces', async () => {
-    const { SVGRehydrationBrowserDOMApi } = await import('./svg-rehydration-dom-api');
+    const { SVGRehydrationBrowserDOMApi } = await import(
+      './svg-rehydration-dom-api'
+    );
 
     const api = new SVGRehydrationBrowserDOMApi(document);
 
@@ -512,7 +533,9 @@ describe('API Factory in Rehydration', () => {
   });
 
   test('MathMLBrowserDOMApi and MathMLRehydrationBrowserDOMApi have compatible interfaces', async () => {
-    const { MathMLRehydrationBrowserDOMApi } = await import('./mathml-rehydration-dom-api');
+    const { MathMLRehydrationBrowserDOMApi } = await import(
+      './mathml-rehydration-dom-api'
+    );
 
     const api = new MathMLRehydrationBrowserDOMApi(document);
 
@@ -533,7 +556,9 @@ describe('API Factory in Rehydration', () => {
   });
 
   test('API upgrade replaces methods with standard API methods', async () => {
-    const { SVGRehydrationBrowserDOMApi } = await import('./svg-rehydration-dom-api');
+    const { SVGRehydrationBrowserDOMApi } = await import(
+      './svg-rehydration-dom-api'
+    );
 
     const api = new SVGRehydrationBrowserDOMApi(document);
     expect(api.toString()).toBe('hydration-svg:dom-api');
@@ -591,7 +616,10 @@ describe('Suspense Rehydration Integration', () => {
       const child = createComponent(root);
 
       // Child should be able to access the suspense context
-      const foundContext = getContext(child, SUSPENSE_CONTEXT) as typeof resolvedSuspenseContext;
+      const foundContext = getContext(
+        child,
+        SUSPENSE_CONTEXT,
+      ) as typeof resolvedSuspenseContext;
       expect(foundContext).toBe(resolvedSuspenseContext);
       expect(foundContext.isResolved()).toBe(true);
     });
@@ -602,8 +630,12 @@ describe('Suspense Rehydration Integration', () => {
       const resolvedSuspense = {
         pendingAmount: () => pendingAmount,
         isResolved: () => pendingAmount === 0,
-        start: () => { pendingAmount++; },
-        end: () => { pendingAmount--; },
+        start: () => {
+          pendingAmount++;
+        },
+        end: () => {
+          pendingAmount--;
+        },
       };
 
       provideContext(root, RENDERING_CONTEXT, new HTMLBrowserDOMApi(document));
@@ -645,15 +677,22 @@ describe('Suspense Rehydration Integration', () => {
       const pendingSuspense = {
         pendingAmount: () => pendingAmount,
         isPending: () => pendingAmount > 0,
-        start: () => { pendingAmount++; },
-        end: () => { pendingAmount--; },
+        start: () => {
+          pendingAmount++;
+        },
+        end: () => {
+          pendingAmount--;
+        },
       };
 
       provideContext(root, RENDERING_CONTEXT, new HTMLBrowserDOMApi(document));
       provideContext(root, SUSPENSE_CONTEXT, pendingSuspense);
 
       const child = createComponent(root);
-      const foundContext = getContext(child, SUSPENSE_CONTEXT) as typeof pendingSuspense;
+      const foundContext = getContext(
+        child,
+        SUSPENSE_CONTEXT,
+      ) as typeof pendingSuspense;
 
       // Suspense should be in pending state
       expect(foundContext.isPending()).toBe(true);
@@ -688,27 +727,38 @@ describe('Suspense Rehydration Integration', () => {
         document.body.appendChild(fallback);
       }
 
-      expect(document.body.querySelector('.loading')?.textContent).toBe('Loading...');
+      expect(document.body.querySelector('.loading')?.textContent).toBe(
+        'Loading...',
+      );
     });
 
     test('rehydration with pending suspense matches fallback DOM', () => {
       // SSR produced fallback HTML
-      document.body.innerHTML = '<div class="fallback-container"><span class="spinner">Loading...</span></div>';
+      document.body.innerHTML =
+        '<div class="fallback-container"><span class="spinner">Loading...</span></div>';
 
       let pendingAmount = 1;
       let startCallCount = 0;
       let endCallCount = 0;
       const pendingSuspense = {
         isPending: () => pendingAmount > 0,
-        start: () => { pendingAmount++; startCallCount++; },
-        end: () => { pendingAmount--; endCallCount++; },
+        start: () => {
+          pendingAmount++;
+          startCallCount++;
+        },
+        end: () => {
+          pendingAmount--;
+          endCallCount++;
+        },
       };
 
       provideContext(root, RENDERING_CONTEXT, new HTMLBrowserDOMApi(document));
       provideContext(root, SUSPENSE_CONTEXT, pendingSuspense);
 
       // Verify the DOM structure matches SSR output
-      expect(document.body.querySelector('.spinner')?.textContent).toBe('Loading...');
+      expect(document.body.querySelector('.spinner')?.textContent).toBe(
+        'Loading...',
+      );
 
       // The suspense is still pending during rehydration
       expect(pendingSuspense.isPending()).toBe(true);
@@ -729,7 +779,10 @@ describe('Suspense Rehydration Integration', () => {
       const innerComponent = createComponent(outerComponent);
 
       // Inner component should find inner suspense
-      const foundContext = getContext(innerComponent, SUSPENSE_CONTEXT) as typeof innerSuspense;
+      const foundContext = getContext(
+        innerComponent,
+        SUSPENSE_CONTEXT,
+      ) as typeof innerSuspense;
       expect(foundContext.id).toBe('inner');
     });
 
@@ -739,13 +792,21 @@ describe('Suspense Rehydration Integration', () => {
 
       const outerSuspense = {
         isPending: () => outerPending > 0,
-        start: () => { outerPending++; },
-        end: () => { outerPending--; },
+        start: () => {
+          outerPending++;
+        },
+        end: () => {
+          outerPending--;
+        },
       };
       const innerSuspense = {
         isPending: () => innerPending > 0,
-        start: () => { innerPending++; },
-        end: () => { innerPending--; },
+        start: () => {
+          innerPending++;
+        },
+        end: () => {
+          innerPending--;
+        },
       };
 
       provideContext(root, RENDERING_CONTEXT, new HTMLBrowserDOMApi(document));
@@ -761,7 +822,10 @@ describe('Suspense Rehydration Integration', () => {
       expect(innerSuspense.isPending()).toBe(true);
 
       // Inner component uses inner suspense context
-      const context = getContext(innerComponent, SUSPENSE_CONTEXT) as typeof innerSuspense;
+      const context = getContext(
+        innerComponent,
+        SUSPENSE_CONTEXT,
+      ) as typeof innerSuspense;
       expect(context.isPending()).toBe(true);
     });
 
@@ -787,9 +851,15 @@ describe('Suspense Rehydration Integration', () => {
       provideContext(child3, SUSPENSE_CONTEXT, suspense3);
 
       // Verify different states
-      expect((getContext(child1, SUSPENSE_CONTEXT) as typeof suspense1).isPending()).toBe(false);
-      expect((getContext(child2, SUSPENSE_CONTEXT) as typeof suspense2).isPending()).toBe(true);
-      expect((getContext(child3, SUSPENSE_CONTEXT) as typeof suspense3).isPending()).toBe(false);
+      expect(
+        (getContext(child1, SUSPENSE_CONTEXT) as typeof suspense1).isPending(),
+      ).toBe(false);
+      expect(
+        (getContext(child2, SUSPENSE_CONTEXT) as typeof suspense2).isPending(),
+      ).toBe(true);
+      expect(
+        (getContext(child3, SUSPENSE_CONTEXT) as typeof suspense3).isPending(),
+      ).toBe(false);
     });
   });
 
@@ -799,8 +869,14 @@ describe('Suspense Rehydration Integration', () => {
       let startCallCount = 0;
       let endCallCount = 0;
       const suspenseContext = {
-        start: () => { pendingCount++; startCallCount++; },
-        end: () => { pendingCount--; endCallCount++; },
+        start: () => {
+          pendingCount++;
+          startCallCount++;
+        },
+        end: () => {
+          pendingCount--;
+          endCallCount++;
+        },
       };
 
       provideContext(root, RENDERING_CONTEXT, new HTMLBrowserDOMApi(document));
@@ -820,7 +896,7 @@ describe('Suspense Rehydration Integration', () => {
       expect(pendingCount).toBe(1);
 
       await promise;
-      await new Promise(resolve => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
 
       // End should be called after promise resolves
       expect(endCallCount).toBe(1);
@@ -830,8 +906,12 @@ describe('Suspense Rehydration Integration', () => {
     test('multiple promises tracked correctly during rehydration', async () => {
       let pendingCount = 0;
       const suspenseContext = {
-        start: () => { pendingCount++; },
-        end: () => { pendingCount--; },
+        start: () => {
+          pendingCount++;
+        },
+        end: () => {
+          pendingCount--;
+        },
       };
 
       provideContext(root, RENDERING_CONTEXT, new HTMLBrowserDOMApi(document));
@@ -840,8 +920,8 @@ describe('Suspense Rehydration Integration', () => {
       const child = createComponent(root);
 
       // Simulate multiple lazy components loading during rehydration
-      const promise1 = new Promise(resolve => setTimeout(resolve, 10));
-      const promise2 = new Promise(resolve => setTimeout(resolve, 20));
+      const promise1 = new Promise((resolve) => setTimeout(resolve, 10));
+      const promise2 = new Promise((resolve) => setTimeout(resolve, 20));
 
       followPromise(child, promise1);
       followPromise(child, promise2);
@@ -849,11 +929,11 @@ describe('Suspense Rehydration Integration', () => {
       expect(pendingCount).toBe(2);
 
       await promise1;
-      await new Promise(resolve => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
       expect(pendingCount).toBe(1);
 
       await promise2;
-      await new Promise(resolve => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
       expect(pendingCount).toBe(0);
     });
   });
@@ -880,7 +960,9 @@ describe('Suspense Rehydration Integration', () => {
       let pendingAmount = 1;
       const suspense = {
         isPending: () => pendingAmount > 0,
-        resolve: () => { pendingAmount = 0; },
+        resolve: () => {
+          pendingAmount = 0;
+        },
       };
 
       provideContext(root, RENDERING_CONTEXT, new HTMLBrowserDOMApi(document));

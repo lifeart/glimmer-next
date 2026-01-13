@@ -19,7 +19,11 @@ import { isDestroyed } from './glimmer/destroyable';
 import type { IfCondition } from './control-flow/if';
 
 // Re-export utilities from suspense-utils for backwards compatibility
-export { SUSPENSE_CONTEXT, followPromise, type SuspenseContext } from './suspense-utils';
+export {
+  SUSPENSE_CONTEXT,
+  followPromise,
+  type SuspenseContext,
+} from './suspense-utils';
 import { SUSPENSE_CONTEXT, type SuspenseContext } from './suspense-utils';
 
 type LazyState<T> =
@@ -105,7 +109,10 @@ export type SuspenseArgs = {
  * Suspense boundary component that shows a fallback while async children are loading.
  * Implements SuspenseContext to track pending async operations.
  */
-export class Suspense extends Component<SuspenseArgs> implements SuspenseContext {
+export class Suspense
+  extends Component<SuspenseArgs>
+  implements SuspenseContext
+{
   constructor() {
     // @ts-expect-error args types
     super(...arguments);
@@ -155,14 +162,22 @@ export class Suspense extends Component<SuspenseArgs> implements SuspenseContext
           () => this.pendingAmount === 0,
           (c: IfCondition) => {
             if (trueBranch === null) {
-              trueBranch = $_ucw((ctx) => {
-                if (isDestroyed(ctx)) {
-                  debugger;
-                }
-                return (
-                  $_slot('default', () => [], $slots, ctx) as ComponentReturnType
-                )[RENDERED_NODES_PROPERTY];
-              }, c as unknown as Component<any>);
+              trueBranch = $_ucw(
+                (ctx) => {
+                  if (isDestroyed(ctx)) {
+                    debugger;
+                  }
+                  return (
+                    $_slot(
+                      'default',
+                      () => [],
+                      $slots,
+                      ctx,
+                    ) as ComponentReturnType
+                  )[RENDERED_NODES_PROPERTY];
+                },
+                c as unknown as Component<any>,
+              );
               renderElement(api, trueBranch, fragment, trueBranch, null);
               return $_c(this.fallback, {}, c as unknown as Component<any>);
             } else {
