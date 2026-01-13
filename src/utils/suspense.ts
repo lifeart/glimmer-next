@@ -33,11 +33,16 @@ type LazyState<T> =
 
 export function lazy<T>(factory: () => Promise<{ default: T }>): T {
   class LazyComponent extends Component {
+    suspenseContext: SuspenseContext | null = null;
+
     constructor(params: Record<string, unknown>) {
       super(params);
       this.params = params;
       // @ts-expect-error args types
       this[$template] = this._template;
+      // Get suspense context and start tracking before loading
+      this.suspenseContext = getContext<SuspenseContext>(this, SUSPENSE_CONTEXT);
+      this.suspenseContext?.start();
       this.load();
     }
     params: Record<string, unknown> = {};
@@ -58,17 +63,16 @@ export function lazy<T>(factory: () => Promise<{ default: T }>): T {
           return;
         }
         this.stateCell.update({ loading: false, error: null, component });
+        this.suspenseContext?.end();
       } catch (err) {
         if (isDestroyed(this)) {
           return;
         }
         this.stateCell.update({ loading: false, error: err as Error, component: null });
+        this.suspenseContext?.end();
       }
     }
     _template() {
-      const suspense = getContext<SuspenseContext>(this, SUSPENSE_CONTEXT);
-      suspense?.start();
-
       return $_fin(
         [
           $_if(
@@ -77,18 +81,14 @@ export function lazy<T>(factory: () => Promise<{ default: T }>): T {
               return null;
             },
             (c: IfCondition) => {
-              try {
-                if (this.error) {
-                  throw this.error;
-                }
-                return $_c(
-                  this.contentComponent as unknown as typeof Component,
-                  this.params,
-                  c as unknown as Component<any>,
-                );
-              } finally {
-                suspense?.end();
+              if (this.error) {
+                throw this.error;
               }
+              return $_c(
+                this.contentComponent as unknown as typeof Component,
+                this.params,
+                c as unknown as Component<any>,
+              );
             },
             this,
           ) as unknown as ComponentReturnType,
