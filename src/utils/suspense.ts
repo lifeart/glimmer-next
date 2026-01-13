@@ -3,7 +3,7 @@ import {
   type ComponentReturnType,
   renderElement,
 } from './component';
-import { context, provideContext, initDOM } from './context';
+import { provideContext, getContext, initDOM } from './context';
 import {
   $_fin,
   $_if,
@@ -13,7 +13,7 @@ import {
   $_GET_ARGS,
   $_ucw,
 } from './dom';
-import { tracked } from './reactive';
+import { cell, type Cell } from './reactive';
 import { $template, RENDERED_NODES_PROPERTY } from './shared';
 import { isDestroyed } from './glimmer/destroyable';
 import type { IfCondition } from './control-flow/if';
@@ -40,20 +40,22 @@ export function lazy<T>(factory: () => Promise<{ default: T }>): T {
       this.load();
     }
     params: Record<string, unknown> = {};
-    @tracked state: LazyState<T> = { loading: true, component: null };
+    stateCell: Cell<LazyState<T>> = cell({ loading: true, component: null });
     get isLoading(): boolean {
-      return this.state.loading;
+      return this.stateCell.value.loading;
     }
     get contentComponent(): T {
-      return this.state.component as T;
+      return this.stateCell.value.component as T;
     }
-    @context(SUSPENSE_CONTEXT) suspense?: SuspenseContext;
+    get suspense(): SuspenseContext | undefined {
+      return getContext<SuspenseContext>(this, SUSPENSE_CONTEXT) ?? undefined;
+    }
     async load(): Promise<void> {
       const { default: component } = await factory();
       if (isDestroyed(this)) {
         return;
       }
-      this.state = { loading: false, component };
+      this.stateCell.update({ loading: false, component });
     }
     _template() {
       Promise.resolve().then(() => {
@@ -120,8 +122,12 @@ export class Suspense
     // @ts-expect-error args types
     this[$template] = this._template;
   }
-  @tracked pendingAmount = 0;
+  pendingAmountCell: Cell<number> = cell(0);
   isReleased = false;
+
+  get pendingAmount(): number {
+    return this.pendingAmountCell.value;
+  }
 
   start(): void {
     if (isDestroyed(this)) {
@@ -131,7 +137,7 @@ export class Suspense
       console.error('Suspense is already released');
       return;
     }
-    this.pendingAmount++;
+    this.pendingAmountCell.update(this.pendingAmountCell.value + 1);
   }
 
   end(): void {
@@ -142,8 +148,8 @@ export class Suspense
       console.error('Suspense is already released');
       return;
     }
-    this.pendingAmount--;
-    this.isReleased = this.pendingAmount === 0;
+    this.pendingAmountCell.update(this.pendingAmountCell.value - 1);
+    this.isReleased = this.pendingAmountCell.value === 0;
   }
 
   get fallback(): ComponentReturnType {
