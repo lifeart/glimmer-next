@@ -361,7 +361,8 @@ describe('Suspense.end() safety guard', () => {
   let window: Window;
   let document: Document;
   let root: Root;
-  let consoleWarnSpy: ReturnType<typeof vi.spyOn>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let consoleWarnSpy: any;
 
   // Cast Suspense to accept args (it uses ...arguments pattern internally)
   const SuspenseWithArgs = Suspense as unknown as new (
