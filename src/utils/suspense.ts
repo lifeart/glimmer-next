@@ -150,8 +150,8 @@ export class Suspense
       return;
     }
     const currentValue = this.pendingAmountCell.value;
-    if (IS_DEV_MODE && currentValue <= 0) {
-      console.warn('Suspense.end() called more times than start()');
+    if (currentValue <= 0) {
+      IS_DEV_MODE && console.warn('Suspense.end() called more times than start()');
       return;
     }
     const newValue = currentValue - 1;
