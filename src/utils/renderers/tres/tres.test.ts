@@ -1469,6 +1469,155 @@ describe('List Rendering in Tres Context', () => {
       });
     });
   });
+
+  describe('list re-rendering', () => {
+    test('handles item reordering (reverse)', () => {
+      // Initial order: A, B, C
+      const meshA = new Mesh();
+      meshA.name = 'A';
+      const meshB = new Mesh();
+      meshB.name = 'B';
+      const meshC = new Mesh();
+      meshC.name = 'C';
+
+      api.insert(scene as any, meshA as any);
+      api.insert(scene as any, meshB as any);
+      api.insert(scene as any, meshC as any);
+
+      expect(scene.children.map(c => c.name)).toEqual(['A', 'B', 'C']);
+
+      // Simulate re-render with reversed order: C, B, A
+      // This is how @each would handle it: remove all, re-add in new order
+      api.clearChildren(scene as any);
+
+      api.insert(scene as any, meshC as any);
+      api.insert(scene as any, meshB as any);
+      api.insert(scene as any, meshA as any);
+
+      expect(scene.children.map(c => c.name)).toEqual(['C', 'B', 'A']);
+    });
+
+    test('handles item replacement (swap)', () => {
+      const mesh1 = new Mesh();
+      mesh1.name = 'item-1';
+      const mesh2 = new Mesh();
+      mesh2.name = 'item-2';
+
+      api.insert(scene as any, mesh1 as any);
+      api.insert(scene as any, mesh2 as any);
+
+      expect(scene.children[0].name).toBe('item-1');
+      expect(scene.children[1].name).toBe('item-2');
+
+      // Replace first item with a new mesh
+      const newMesh = new Mesh();
+      newMesh.name = 'item-new';
+
+      api.destroy(mesh1 as any);
+      // Insert at beginning by clearing and re-adding
+      mesh2.removeFromParent();
+      api.insert(scene as any, newMesh as any);
+      api.insert(scene as any, mesh2 as any);
+
+      expect(scene.children[0].name).toBe('item-new');
+      expect(scene.children[1].name).toBe('item-2');
+    });
+
+    test('handles partial list update (add in middle)', () => {
+      const mesh1 = new Mesh();
+      mesh1.name = '1';
+      const mesh3 = new Mesh();
+      mesh3.name = '3';
+
+      api.insert(scene as any, mesh1 as any);
+      api.insert(scene as any, mesh3 as any);
+
+      expect(scene.children.map(c => c.name)).toEqual(['1', '3']);
+
+      // Insert item in the middle - need to reconstruct
+      const mesh2 = new Mesh();
+      mesh2.name = '2';
+
+      // Remove mesh3, add mesh2, re-add mesh3
+      mesh3.removeFromParent();
+      api.insert(scene as any, mesh2 as any);
+      api.insert(scene as any, mesh3 as any);
+
+      expect(scene.children.map(c => c.name)).toEqual(['1', '2', '3']);
+    });
+
+    test('handles keyed list updates (preserves existing nodes)', () => {
+      // Simulate keyed @each behavior where items are reused
+      const items = [
+        { id: 'a', mesh: new Mesh() },
+        { id: 'b', mesh: new Mesh() },
+        { id: 'c', mesh: new Mesh() },
+      ];
+
+      items.forEach(item => {
+        item.mesh.name = item.id;
+        api.insert(scene as any, item.mesh as any);
+      });
+
+      expect(scene.children.map(c => c.name)).toEqual(['a', 'b', 'c']);
+
+      // Store references to verify same objects are reused
+      const originalMeshes = [...scene.children];
+
+      // Simulate update: remove 'b', keep 'a' and 'c'
+      api.destroy(items[1].mesh as any);
+
+      expect(scene.children.length).toBe(2);
+      expect(scene.children[0]).toBe(originalMeshes[0]); // 'a' preserved
+      expect(scene.children[1]).toBe(originalMeshes[2]); // 'c' preserved
+    });
+
+    test('handles empty list to populated list', () => {
+      expect(scene.children.length).toBe(0);
+
+      // Add items
+      const meshes = [new Mesh(), new Mesh(), new Mesh()];
+      meshes.forEach((mesh, i) => {
+        mesh.name = `mesh-${i}`;
+        api.insert(scene as any, mesh as any);
+      });
+
+      expect(scene.children.length).toBe(3);
+      expect(scene.children.map(c => c.name)).toEqual(['mesh-0', 'mesh-1', 'mesh-2']);
+    });
+
+    test('handles populated list to empty list', () => {
+      const meshes = [new Mesh(), new Mesh(), new Mesh()];
+      meshes.forEach(mesh => api.insert(scene as any, mesh as any));
+
+      expect(scene.children.length).toBe(3);
+
+      // Clear all
+      api.clearChildren(scene as any);
+
+      expect(scene.children.length).toBe(0);
+    });
+
+    test('handles rapid successive updates', () => {
+      // Simulate rapid updates that might happen during animations
+      for (let iteration = 0; iteration < 5; iteration++) {
+        // Clear and repopulate
+        api.clearChildren(scene as any);
+
+        const count = (iteration % 3) + 1; // 1, 2, 3, 1, 2
+        for (let i = 0; i < count; i++) {
+          const mesh = new Mesh();
+          mesh.name = `iter-${iteration}-item-${i}`;
+          api.insert(scene as any, mesh as any);
+        }
+
+        expect(scene.children.length).toBe(count);
+      }
+
+      // Final state should have 2 items (iteration 4 % 3 + 1 = 2)
+      expect(scene.children.length).toBe(2);
+    });
+  });
 });
 
 // ============================================
