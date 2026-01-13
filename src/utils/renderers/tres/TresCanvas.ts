@@ -4,119 +4,196 @@ import {
   Component,
   $_GET_ARGS,
   $_GET_SLOTS,
-  $_slot,
   Root,
+  setParentContext,
+  cell,
 } from '@lifeart/gxt';
+import { initDOM, provideContext, RENDERING_CONTEXT } from '@/utils/context';
+import { TresBrowserDOMApi, TresPlaceholder } from './tres-api';
+import { PerspectiveCamera, Scene, WebGLRenderer, Camera } from 'three';
+import type { TresScene } from './types';
 import {
-  getContext,
-  provideContext,
-  RENDERING_CONTEXT,
-  ROOT_CONTEXT,
-} from '@/utils/context';
-import { TresBrowserDOMApi } from './tres-api';
-import { useTresContextProvider } from './useTresContextProvider';
-import { PerspectiveCamera, Scene } from 'three';
-import { TresScene } from './types';
-import { watchEffect } from './vue';
+  addToTree,
+  cId,
+  COMPONENT_ID_PROPERTY,
+  RENDERED_NODES_PROPERTY,
+} from '@/utils/shared';
+import { renderElement } from '@/utils/component';
 
-// <canvas
-//     ref="canvas"
-//     :data-scene="scene.uuid"
-//     :class="$attrs.class"
-//     :data-tres="`tresjs ${pkg.version}`"
-//     :style="{
-//       display: 'block',
-//       width: '100%',
-//       height: '100%',
-//       position: windowSize ? 'fixed' : 'relative',
-//       top: 0,
-//       left: 0,
-//       pointerEvents: 'auto',
-//       touchAction: 'none',
-//       ...$attrs.style as Object,
-//     }"
-//   ></canvas>
-
+/**
+ * TresCanvas - A canvas component for rendering Three.js scenes in GXT
+ *
+ * Usage:
+ * <TresCanvas>
+ *   <TresMesh>
+ *     <TresBoxGeometry @args={{array 1 1 1}} />
+ *     <TresMeshNormalMaterial />
+ *   </TresMesh>
+ * </TresCanvas>
+ */
 export function TresCanvas(this: Component) {
   $_GET_ARGS(this, arguments);
-  const canvasNode = $_tag(
-    'canvas',
-    [[], [], []],
-    [],
-    this,
-  ) as HTMLCanvasElement;
+
+  // Create the canvas element
+  const canvasNode = $_tag('canvas', [[], [], []], [], this) as HTMLCanvasElement;
   canvasNode.setAttribute('data-tres', 'tresjs 0.0.0');
   canvasNode.style.display = 'block';
-  canvasNode.style.border = '1px solid red';
   canvasNode.style.width = '100%';
-  canvasNode.style.height = '100%';
+  canvasNode.style.height = '400px';
   canvasNode.style.position = 'relative';
   canvasNode.style.top = '0';
   canvasNode.style.left = '0';
   canvasNode.style.pointerEvents = 'auto';
-  const existingCanvas = canvasNode;
-  const scene = new Scene();
+  canvasNode.style.touchAction = 'none';
+
+  const parentApi = initDOM(this);
+  const comment = parentApi.comment('tres-placeholder');
 
   const $slots = $_GET_SLOTS(this, arguments);
 
+  // Create the Three.js scene
+  const scene = new Scene() as TresScene;
+
+  // Create a root context for GXT rendering
+  const root = {
+    [COMPONENT_ID_PROPERTY]: cId(),
+    [RENDERED_NODES_PROPERTY]: [],
+  } as unknown as Root;
+
+  // Create the Tres DOM API with scene reference
   const api = new TresBrowserDOMApi();
-  const root = {} as Root;
+
+  // State for camera management
+  const cameras = cell<Camera[]>([]);
+  const activeCamera = cell<Camera | null>(null);
+
+  // Register camera handlers on scene userData
+  scene.userData.tres__registerCamera = (camera: Camera) => {
+    if (!cameras.value.includes(camera)) {
+      cameras.update([...cameras.value, camera]);
+    }
+    if (!activeCamera.value) {
+      activeCamera.update(camera);
+    }
+  };
+
+  scene.userData.tres__deregisterCamera = (camera: Camera) => {
+    cameras.update(cameras.value.filter((c) => c !== camera));
+    if (activeCamera.value === camera) {
+      activeCamera.update(cameras.value[0] || null);
+    }
+  };
+
+  // Provide the rendering context
   provideContext(root, RENDERING_CONTEXT, api);
-  requestAnimationFrame(() => {
 
-    const nodes = $slots.default(root);
-    nodes.forEach((node: unknown) => {
-      api.insert(scene, node);
+  addToTree(this, root as unknown as Component<any>);
+
+  // Animation loop state
+  let animationFrameId: number | null = null;
+  let renderer: WebGLRenderer | null = null;
+
+  // Setup renderer and animation loop after canvas is mounted
+  const setupRenderer = () => {
+    if (import.meta.env.SSR) return;
+
+    // Create WebGL renderer
+    renderer = new WebGLRenderer({
+      canvas: canvasNode,
+      antialias: true,
+      alpha: true,
     });
 
-    let context = useTresContextProvider({
-      scene: scene as TresScene,
-      canvas: existingCanvas,
-      windowSize: false,
-      rendererOptions: {},
-      emit: {},
+    // Set size
+    const width = canvasNode.clientWidth || 400;
+    const height = canvasNode.clientHeight || 400;
+    renderer.setSize(width, height);
+    renderer.setPixelRatio(window.devicePixelRatio);
+
+    // Add default camera if none provided
+    if (!activeCamera.value) {
+      const defaultCamera = new PerspectiveCamera(75, width / height, 0.1, 1000);
+      defaultCamera.position.set(3, 3, 3);
+      defaultCamera.lookAt(0, 0, 0);
+      scene.userData.tres__registerCamera?.(defaultCamera);
+    }
+
+    // Animation loop
+    const animate = () => {
+      if (!renderer) return;
+      animationFrameId = requestAnimationFrame(animate);
+
+      if (activeCamera.value) {
+        renderer.render(scene, activeCamera.value);
+      }
+    };
+
+    animate();
+  };
+
+  // Handle resize
+  const handleResize = () => {
+    if (!renderer || !activeCamera.value) return;
+    const width = canvasNode.clientWidth || 400;
+    const height = canvasNode.clientHeight || 400;
+    renderer.setSize(width, height);
+
+    if ((activeCamera.value as PerspectiveCamera).isPerspectiveCamera) {
+      (activeCamera.value as PerspectiveCamera).aspect = width / height;
+      (activeCamera.value as PerspectiveCamera).updateProjectionMatrix();
+    }
+  };
+
+  // Cleanup function
+  const cleanup = () => {
+    if (animationFrameId !== null) {
+      cancelAnimationFrame(animationFrameId);
+    }
+    if (renderer) {
+      renderer.dispose();
+    }
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('resize', handleResize);
+    }
+  };
+
+  // Use requestAnimationFrame to delay setup until canvas is in DOM
+  if (typeof window !== 'undefined') {
+    requestAnimationFrame(() => {
+      setupRenderer();
+      window.addEventListener('resize', handleResize);
     });
-    const { registerCamera, camera, cameras, deregisterCamera } = context;
+  }
 
-    console.log({
-      registerCamera, camera, cameras, deregisterCamera
-    })
+  // Store cleanup for later
+  // @ts-expect-error attaching cleanup to canvas
+  canvasNode.__tres_cleanup = cleanup;
 
-    const addDefaultCamera = () => {
-      const camera = new PerspectiveCamera(
-        45,
-        window.innerWidth / window.innerHeight,
-        0.1,
-        1000,
-      )
-      camera.position.set(3, 3, 3)
-      camera.lookAt(0, 0, 0)
-      registerCamera(camera)
-  
-      const unwatch = watchEffect(() => {
-        if (cameras.value.length >= 2) {
-          camera.removeFromParent()
-          deregisterCamera(camera)
-          unwatch?.()
-        }
-      })
-    }
+  // Render slots with proper context
+  let nodes: any[] = [];
+  try {
+    setParentContext(root);
+    nodes = $slots.default(root);
+  } finally {
+    setParentContext(null);
+  }
 
-    // debugger;
-    if (!camera.value) {
-      console.warn(
-        'No camera found. Creating a default perspective camera. '
-        + 'To have full control over a camera, please add one to the scene.',
-      )
-      addDefaultCamera()
-    }
-  
-  
-    // mountCustomRenderer(context);
+  // Process nodes and add to Three.js scene
+  const processNodes = (items: unknown[]) => {
+    items.forEach((node: unknown) => {
+      if (node && !(node instanceof TresPlaceholder)) {
+        api.insert(scene, node as any);
+      }
+    });
+  };
 
-    console.log('$slots', nodes);
-  });
-  // $_slot("default", () => [canvasNode], $slots, self)]
-  // @ts-expect-error
-  return $_fin([canvasNode], this);
+  if (Array.isArray(nodes)) {
+    processNodes(nodes);
+  }
+
+  // @ts-expect-error using renderElement for proper component handling
+  renderElement(api, root as unknown as Component<any>, scene as unknown as Node, nodes);
+
+  // Return just the canvas node to the DOM
+  return $_fin([canvasNode, comment], this);
 }

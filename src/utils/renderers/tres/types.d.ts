@@ -1,5 +1,4 @@
 import type * as THREE from 'three'
-// import type { EventProps as PointerEventHandlerEventProps } from '../composables/usePointerEventHandler'
 
 // Based on React Three Fiber types by Pmndrs
 // https://github.com/pmndrs/react-three-fiber/blob/v9/packages/fiber/src/three-types.ts
@@ -18,6 +17,24 @@ export interface TresCatalogue {
   [name: string]: ConstructorRepresentation
 }
 export type TresCamera = THREE.OrthographicCamera | THREE.PerspectiveCamera
+
+// Local state attached to each Tres instance
+export interface LocalState {
+  type: string
+  eventCount: number
+  handlers: Record<string, (event: any) => void>
+  memoizedProps: Record<string, any>
+  objects: TresInstance[]
+  parent: TresInstance | null
+  previousAttach: any
+  attach?: AttachType
+  root?: any
+}
+
+// A Three.js object with Tres metadata attached
+export type TresInstance = TresObject & {
+  __tres: LocalState
+}
 
 export type TresPrimitive = TresInstance & { object: TresInstance, isPrimitive: true }
 
@@ -55,7 +72,7 @@ export interface TresScene extends THREE.Scene {
     // keys are prefixed with tres__ to avoid name collisions
     tres__registerCamera?: (newCamera: THREE.Camera, active?: boolean) => void
     tres__deregisterCamera?: (camera: THREE.Camera) => void
-    tres__registerAtPointerEventHandler?: (object: THREE.Object3D & PointerEventHandlerEventProps) => void
+    tres__registerAtPointerEventHandler?: (object: THREE.Object3D) => void
     tres__deregisterAtPointerEventHandler?: (object: THREE.Object3D) => void
     tres__registerBlockingObjectAtPointerEventHandler?: (object: THREE.Object3D) => void
     tres__deregisterBlockingObjectAtPointerEventHandler?: (object: THREE.Object3D) => void
@@ -158,14 +175,15 @@ interface RaycastableRepresentation {
 }
 type EventProps<P> = P extends RaycastableRepresentation ? Partial<EventHandlers> : unknown
 
-export interface VueProps<P> {
-  children?: VNode<P>[]
-  ref?: VNodeRef
+// Simplified props interface (Vue types removed)
+export interface TresProps<P> {
+  children?: any[]
+  ref?: any
   key?: string | number | symbol
 }
 
 type ElementProps<T extends ConstructorRepresentation, P = InstanceType<T>> = Partial<
-  Overwrite<WithMathProps<P>, VueProps<P> & EventProps<P>>
+  Overwrite<WithMathProps<P>, TresProps<P> & EventProps<P>>
 >
 
 export type ThreeElement<T extends ConstructorRepresentation> = Mutable<
@@ -181,8 +199,4 @@ type ThreeInstancesImpl = {
 
 export interface ThreeInstances extends ThreeInstancesImpl {
   primitive: Omit<ThreeElement<any>, 'args'> & { object: object }
-}
-
-type TresComponents = {
-  [K in keyof ThreeInstances as `Tres${Capitalize<string & K>}`]: DefineComponent<ThreeInstances[K]>
 }
