@@ -13,6 +13,7 @@ import type { DOMApi } from './dom-api';
 const CONTEXTS = new WeakMap<Component<any> | Root, Map<symbol, any>>();
 export const RENDERING_CONTEXT = Symbol('RENDERING_CONTEXT');
 export const ROOT_CONTEXT = Symbol('ROOT');
+export const API_FACTORY_CONTEXT = Symbol('API_FACTORY');
 export function context(
   contextKey: symbol,
 ): (
@@ -75,7 +76,15 @@ export function getContext<T>(
     }
     const parent = PARENT.get(current[COMPONENT_ID_PROPERTY])!;
     if (parent !== null) {
-      current = TREE.get(parent);
+      current = TREE.get(parent) as Component<any>;
+      if (IS_DEV_MODE) {
+        if (!current) {
+          debugger;
+        }
+      }
+      if (key === RENDERING_CONTEXT && current[RENDERING_CONTEXT_PROPERTY]) {
+        return current[RENDERING_CONTEXT_PROPERTY] as T;
+      }
     } else {
       current = undefined;
     }
@@ -111,6 +120,9 @@ export function provideContext<T>(
       // if we trying to set more than one contexts, we resetting fast path
       fastRenderingContext = null;
     }
+    // Update cached rendering context property to ensure initDOM returns the new value
+    // If value is a function, evaluate it (lazy provider pattern)
+    ctx[RENDERING_CONTEXT_PROPERTY] = (isFn(value) ? value() : value) as DOMApi;
   }
   if (!CONTEXTS.has(ctx)) {
     if (import.meta.env.DEV) {

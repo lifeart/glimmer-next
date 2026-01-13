@@ -26,13 +26,12 @@ import {
   Destructors,
   registerDestructor,
 } from './glimmer/destroyable';
-import type { DOMApi } from '@/utils/dom-api';
+import { type DOMApi, HTMLBrowserDOMApi } from '@/utils/dom-api';
 import {
   isFn,
   isPrimitive,
   isTagLike,
   $template,
-  $nodes,
   addToTree,
   setBounds,
   $args,
@@ -282,6 +281,46 @@ function $prop(
         prevPropValue = api.prop(element, key, value);
       }),
     );
+  }
+}
+
+function mergeClassModifiers(
+  api: DOMApi,
+  element: Node,
+  classNameModifiers: Attr[],
+  destructors: Destructors,
+) {
+  if (classNameModifiers.length === 0) {
+    return;
+  }
+  if (IS_DEV_MODE) {
+    $DEBUG_REACTIVE_CONTEXTS.push(`[class]`);
+  }
+  if (classNameModifiers.length === 1) {
+    $prop(api, element, $_className, classNameModifiers[0], destructors);
+  } else {
+    const formulas = classNameModifiers.map((modifier) => {
+      if (isFn(modifier)) {
+        return formula(
+          () => deepFnValue(modifier),
+          'functional modifier for className',
+        );
+      } else {
+        return modifier;
+      }
+    });
+    $prop(
+      api,
+      element,
+      $_className,
+      formula(() => {
+        return formulas.join(' ');
+      }, (element as HTMLElement).tagName + '.className'),
+      destructors,
+    );
+  }
+  if (IS_DEV_MODE) {
+    $DEBUG_REACTIVE_CONTEXTS.pop();
   }
 }
 
@@ -570,37 +609,7 @@ function _DOM(
     );
   }
 
-  if (classNameModifiers.length > 0) {
-    if (IS_DEV_MODE) {
-      $DEBUG_REACTIVE_CONTEXTS.push(`[class]`);
-    }
-    if (classNameModifiers.length === 1) {
-      $prop(api, element, $_className, classNameModifiers[0], destructors);
-    } else {
-      const formulas = classNameModifiers.map((modifier) => {
-        if (isFn(modifier)) {
-          return formula(
-            () => deepFnValue(modifier),
-            'functional modifier for className',
-          );
-        } else {
-          return modifier;
-        }
-      });
-      $prop(
-        api,
-        element,
-        $_className,
-        formula(() => {
-          return formulas.join(' ');
-        }, element.tagName + '.className'),
-        destructors,
-      );
-    }
-    if (IS_DEV_MODE) {
-      $DEBUG_REACTIVE_CONTEXTS.pop();
-    }
-  }
+  mergeClassModifiers(api, element, classNameModifiers, destructors);
 
   if (SUPPORT_SHADOW_DOM) {
     let appendRef =
@@ -615,18 +624,22 @@ function _DOM(
         api.attr(tpl, 'shadowrootmode', 'open');
         api.insert(element, tpl);
         // @ts-expect-error children type mismatch
-        renderElement(api, ctx, tpl, children);
+        renderElement(api, ctx, tpl, children, null, true);
       } else {
         // @ts-expect-error children type mismatch
-        renderElement(api, ctx, appendRef!, children);
+        renderElement(api, ctx, appendRef!, children, null, true);
       }
     } else {
-      // @ts-expect-error children type mismatch
-      renderElement(api, ctx, appendRef!, children);
+      for (let i = 0; i < children.length; i++) {
+        // @ts-expect-error children type mismatch
+        renderElement(api, ctx, appendRef!, children[i], null, true);
+      }
     }
   } else {
-    // @ts-expect-error children type mismatch
-    renderElement(api, ctx, element, children);
+    for (let i = 0; i < children.length; i++) {
+      // @ts-expect-error children type mismatch
+      renderElement(api, ctx, element, children[i], null, true);
+    }
   }
 
   if (destructors.length) {
@@ -686,7 +699,12 @@ export function $_ucw(
         // @ts-expect-error construct signature
         this.debugName = `UnstableChildWrapper-${unstableWrapperId++}`;
       }
-      return $_fin(roots(this), this);
+      try {
+        setParentContext(this);
+        return $_fin(roots(this), this);
+      } finally {
+        setParentContext(null);
+      }
     } as unknown as Component<any>,
     {},
     ctx,
@@ -789,25 +807,39 @@ export const $_maybeHelper = (
   return value;
 };
 
-let parentContext: Array<number> = [];
+// Component context stack - tracks parent component hierarchy
+const parentContextStack: Array<number> = [];
 let parentContextIndex = -1;
+
+if (IS_DEV_MODE) {
+  try {
+    // @ts-expect-error - dev mode debugging
+    window.parentContext = parentContextStack;
+    // @ts-expect-error - dev mode debugging
+    window.resolveParents = () => parentContextStack.map((id) => TREE.get(id));
+  } catch (e) {
+    // EOL
+  }
+}
 
 export const setParentContext = (value: Root | Component<any> | null) => {
   if (value === null) {
     parentContextIndex--;
-    parentContext.pop();
+    parentContextStack.pop();
   } else {
     parentContextIndex++;
-    parentContext.push(value[COMPONENT_ID_PROPERTY]!);
+    parentContextStack.push(value[COMPONENT_ID_PROPERTY]!);
   }
 };
-export const getParentContext = () => {
+
+export const getParentContext = (): Component<any> | Root | undefined => {
   if (IS_DEV_MODE) {
-    if (!TREE.get(parentContext[parentContextIndex]!)) {
+    if (!TREE.get(parentContextStack[parentContextIndex]!)) {
+      debugger;
       throw new Error('unable to get parent context before set');
     }
   }
-  return TREE.get(parentContext[parentContextIndex]!);
+  return TREE.get(parentContextStack[parentContextIndex]!);
 };
 
 function component(
@@ -851,6 +883,7 @@ function component(
         throw e;
       }
       if (IS_DEV_MODE) {
+        debugger;
         let ErrorOverlayClass = customElements.get('vite-error-overlay');
         let errorOverlay!: HTMLElement;
         // @ts-expect-error message may not exit
@@ -869,18 +902,11 @@ function component(
         console.error(label, e);
 
         return {
-          ctx: {
-            [RENDERED_NODES_PROPERTY]: [],
-          },
-          nodes: [errorOverlay],
+          [RENDERED_NODES_PROPERTY]: [errorOverlay],
         };
       } else {
         return {
-          ctx: {
-            [RENDERED_NODES_PROPERTY]: [],
-          },
-          // @ts-expect-error message may not exit
-          nodes: [HTMLAPI.text(String(e.message))],
+          [RENDERED_NODES_PROPERTY]: [new HTMLBrowserDOMApi(document).text(String((e as unknown as { message: string}).message))],
         };
       }
     } finally {
@@ -960,16 +986,13 @@ function _component(
       registerDestructor(ctx, () => {
         COMPONENTS_HMR.get(comp)?.delete(bucket);
       });
-      if (!result.ctx || result.ctx !== instance) {
-        throw new Error('Invalid context');
-      }
       setBounds(result);
     }
     return result;
-  } else if (instance.ctx !== null) {
+  } else if (instance) {
     // for now we adding only components with context
     // debugger;
-    addToTree(ctx, instance.ctx, 'from !$template');
+    addToTree(ctx, instance, 'from !$template');
     // addToTree(ctx, instance);
 
     if (IS_DEV_MODE) {
@@ -1059,7 +1082,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
         renderElement(
           api,
           ctx,
-          slotPlaceholder.parentNode!,
+          api.parent(slotPlaceholder)!,
           // @ts-expect-error
           slotRoots,
           slotPlaceholder,
@@ -1081,7 +1104,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
 function getRenderTargets(api: DOMApi, debugName: string) {
   const ifPlaceholder = IS_DEV_MODE ? api.comment(debugName) : api.comment('');
   let outlet = isRehydrationScheduled()
-    ? ifPlaceholder.parentElement || api.fragment()
+    ? api.parent(ifPlaceholder) || api.fragment()
     : api.fragment();
 
   if (!ifPlaceholder.isConnected) {
@@ -1116,11 +1139,13 @@ function ifCond(
   const instance = new IfCondition(
     ctx,
     cell,
+    // @ts-expect-error
     outlet,
     placeholder,
     trueBranch,
     falseBranch,
   );
+  // @ts-expect-error outlet
   return toNodeReturnType(outlet, instance);
 }
 export function $_eachSync<T extends { id: number }>(
@@ -1141,9 +1166,11 @@ export function $_eachSync<T extends { id: number }>(
       ctx,
       key,
     },
+    // @ts-expect-error outlet
     outlet,
     placeholder,
   );
+  // @ts-expect-error outlet
   return toNodeReturnType(outlet, instance);
 }
 export function $_each<T extends { id: number }>(
@@ -1164,9 +1191,11 @@ export function $_each<T extends { id: number }>(
       key,
       ctx,
     },
+    // @ts-expect-error outlet
     outlet,
     placeholder,
   );
+  // @ts-expect-error outlet
   return toNodeReturnType(outlet, instance);
 }
 const ArgProxyHandler: ProxyHandler<{}> = {
@@ -1220,8 +1249,7 @@ export function $_args(
               if (!isFn(args[key])) {
                 return args[key];
               }
-              // @ts-expect-error function signature
-              return args[key]();
+              return (args[key] as () => unknown)();
             },
             enumerable: true,
           });
@@ -1278,22 +1306,23 @@ export function $_dc(
       return;
     }
     if (result) {
-      const target = result.ctx![RENDERED_NODES_PROPERTY].pop();
+      const target = result[RENDERED_NODES_PROPERTY].pop();
       const newTarget = IS_DEV_MODE
         ? api.comment('placeholder')
         : api.comment();
-      api.insert(target!.parentNode!, newTarget, target);
+      const parent = api.parent(target!)!;
+      api.insert(parent, newTarget, target);
       unregisterFromParent(result);
-      destroyElementSync(result);
+      destroyElementSync(result, false, api);
       result = component(value, args, ctx);
-      result![$nodes].push(newTarget!);
-      renderElement(api, ctx, newTarget!.parentNode!, result, newTarget!);
+      result![RENDERED_NODES_PROPERTY].push(newTarget!);
+      renderElement(api, ctx, parent, result, newTarget!);
     } else {
       result = component(value, args, ctx);
     }
   });
   if (!_cmp.isConst) {
-    result!.nodes.push(
+    result![RENDERED_NODES_PROPERTY].push(
       IS_DEV_MODE ? api.comment('placeholder') : api.comment(),
     );
     registerDestructor(ctx, destructor);
@@ -1301,20 +1330,30 @@ export function $_dc(
     _cmp.destroy();
     destructor();
   }
-  return {
-    get ctx() {
-      return result!.ctx;
+  // TODO: - check destroy and re-create tree & destructors logic
+  const refResult = {
+    get [RENDERING_CONTEXT_PROPERTY]() {
+      return result![RENDERING_CONTEXT_PROPERTY];
     },
-    get [$nodes]() {
-      return result![$nodes];
+    set [RENDERING_CONTEXT_PROPERTY](value) {
+      result![RENDERING_CONTEXT_PROPERTY] =  value;
     },
-    set [$nodes](value) {
-      result![$nodes] = value;
+    get [COMPONENT_ID_PROPERTY]() {
+      return result![COMPONENT_ID_PROPERTY];
+    },
+    set [COMPONENT_ID_PROPERTY](value) {
+      result![COMPONENT_ID_PROPERTY] = value;
+    },
+    get [RENDERED_NODES_PROPERTY]() {
+      return result![RENDERED_NODES_PROPERTY];
+    },
+    set [RENDERED_NODES_PROPERTY](value) {
+      result![RENDERED_NODES_PROPERTY] = value;
     },
   };
+  return refResult;
 }
 export const $_component = (component: any) => {
-  console.log('component', component);
   return component;
 };
 export const $_maybeModifier = (
@@ -1366,8 +1405,7 @@ export const $_maybeModifier = (
             enumerable: true,
             get() {
               if (typeof args[key] === 'function') {
-                // @ts-expect-error function signature
-                return args[key]();
+                return (args[key] as () => unknown)();
               } else {
                 return args[key];
               }
@@ -1400,9 +1438,7 @@ export function $_fin(
       throw new Error('Components without context is not supported');
     }
   }
-
-  return {
-    [$nodes]: roots,
-    ctx,
-  };
+  // @ts-expect-error
+  ctx[RENDERED_NODES_PROPERTY] = roots;
+  return ctx;
 }

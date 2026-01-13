@@ -12,6 +12,26 @@ type RowArgs = {
   Element: HTMLTableRowElement;
 };
 
+// Animation variations for row removal
+const animations = [
+  // Fly up and rotate left
+  { transform: 'translateY(-300px) translateX(-100px) rotate(-30deg) scale(0.5)', opacity: '0' },
+  // Fly up and rotate right
+  { transform: 'translateY(-300px) translateX(100px) rotate(30deg) scale(0.5)', opacity: '0' },
+  // Fly left
+  { transform: 'translateX(-500px) rotate(-15deg) scale(0.7)', opacity: '0' },
+  // Fly right
+  { transform: 'translateX(500px) rotate(15deg) scale(0.7)', opacity: '0' },
+  // Shrink and spin
+  { transform: 'scale(0) rotate(360deg)', opacity: '0' },
+  // Fly up fast
+  { transform: 'translateY(-400px) scale(0.3)', opacity: '0' },
+  // Fall and fade
+  { transform: 'translateY(200px) rotate(10deg) scale(0.8)', opacity: '0' },
+  // Zoom out
+  { transform: 'scale(1.5) translateY(-50px)', opacity: '0' },
+];
+
 export class Row extends Component<RowArgs> {
   isClicked = false;
   get labelCell() {
@@ -30,10 +50,10 @@ export class Row extends Component<RowArgs> {
   }
   get className() {
     if (IS_GLIMMER_COMPAT_MODE) {
-      return this.isSelected ? 'bg-blue-500' : '';
+      return this.isSelected ? 'bg-blue-500/20' : '';
     } else {
       return formula(
-        () => (this.isSelected ? 'bg-blue-500' : ''),
+        () => (this.isSelected ? 'bg-blue-500/20' : ''),
         'isSelected',
       );
     }
@@ -47,57 +67,81 @@ export class Row extends Component<RowArgs> {
     }
     this.args.onRemove(this.args.item);
   };
-  modifier = (element: HTMLDivElement) => {
+
+  modifier = (element: HTMLTableRowElement) => {
     const result = async () => {
       if (!this.isClicked) {
         return;
       }
-      const scrollTop = document.documentElement.scrollTop;
+
+      // Get current position
       const rect = element.getBoundingClientRect();
-      if (Math.random() > 0.5) {
-        element.style.position = 'absolute';
-        element.style.top = `${rect.top + (scrollTop || -80)}px`;
-        element.style.left = `${rect.left}px`;
-        element.style.width = `${rect.width}px`;
-        element.style.height = `${rect.height}px`;
-        element.style.backgroundColor = 'blue';
-        element.style.transition = 'all 1.4s ease';
-        element.style.transform = 'scale(0)';
-      } else {
-        element.style.position = 'absolute';
-        element.style.top = `${rect.top + (scrollTop || -80)}px`;
-        element.style.left = `${rect.left}px`;
-        element.style.width = `${rect.width}px`;
-        element.style.height = `${rect.height}px`;
-        element.style.backgroundColor = 'blue';
-        element.style.transition = 'all 1.4s ease';
-        element.style.transform = 'translateX(100%)';
-      }
-      await Promise.allSettled(element.getAnimations().map((a) => a.finished));
+
+      // Lock cell widths
+      const cells = element.querySelectorAll('td, th');
+      cells.forEach((cell) => {
+        const htmlCell = cell as HTMLElement;
+        htmlCell.style.width = `${htmlCell.offsetWidth}px`;
+      });
+
+      // Position element fixed at its current location
+      element.style.position = 'fixed';
+      element.style.top = `${rect.top}px`;
+      element.style.left = `${rect.left}px`;
+      element.style.width = `${rect.width}px`;
+      element.style.height = `${rect.height}px`;
+      element.style.margin = '0';
+      element.style.zIndex = '9999';
+      element.style.pointerEvents = 'none';
+      element.style.transformOrigin = 'center center';
+      element.style.background = 'linear-gradient(135deg, rgba(239, 68, 68, 0.4), rgba(239, 68, 68, 0.2))';
+      element.style.borderRadius = '8px';
+      element.style.boxShadow = '0 4px 20px rgba(239, 68, 68, 0.3)';
+
+      // Pick random animation
+      const animation = animations[Math.floor(Math.random() * animations.length)];
+      const duration = 500 + Math.random() * 300;
+
+      // Force reflow
+      element.offsetHeight;
+
+      // Apply transition
+      element.style.transition = `all ${duration}ms cubic-bezier(0.4, 0, 0.2, 1)`;
+
+      // Start animation
+      requestAnimationFrame(() => {
+        element.style.transform = animation.transform;
+        element.style.opacity = animation.opacity;
+      });
+
+      // Wait for animation
+      await new Promise(resolve => setTimeout(resolve, duration));
     };
+
     return result;
   };
+
   <template>
-    <tr ...attributes {{this.modifier}}>
-      <th
+    <tr class='border-b border-slate-700/50 hover:bg-slate-700/30 transition-colors' ...attributes {{this.modifier}}>
+      <td
         scope='row'
         class={{this.className}}
-        class='px-6 py-4 font-medium text-gray-900 whitespace-nowrap dark:text-white'
-      >{{this.id}}</th>
-      <td class='px-6 py-4' class={{this.className}}>
+        class='px-4 py-2.5 font-medium text-slate-400 text-sm'
+      >{{this.id}}</td>
+      <td class='px-4 py-2.5' class={{this.className}}>
         <a
-          class='cursor-pointer'
+          class='cursor-pointer text-slate-200 hover:text-blue-400 transition-colors'
           {{on 'click' this.onClick}}
           data-no-router
           data-test-select
         >{{this.labelCell}}</a>
       </td>
-      <td class='px-6 py-4' class={{this.className}}>
+      <td class='px-4 py-2.5' class={{this.className}}>
         <a
           {{on 'click' this.onClickRemove}}
           data-no-router
           data-test-remove
-          class='cursor-pointer mr-1 rounded bg-indigo-600 px-2 py-1 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600'
+          class='cursor-pointer inline-flex items-center justify-center w-7 h-7 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300 transition-colors'
         >
           <RemoveIcon />
         </a>

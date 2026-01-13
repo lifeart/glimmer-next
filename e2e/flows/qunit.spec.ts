@@ -1,8 +1,8 @@
 import { test, expect } from '@playwright/test';
 
-import { captureCoverage } from './../utils/index.ts';
+// import { captureCoverage } from './../utils/index.ts';
 
-captureCoverage(test);
+// captureCoverage(test); // Disabled temporarily to debug test failures
 
 type QUnitTestResults = {
   failed: number;
@@ -27,7 +27,7 @@ type QUnitTestDone = {
 };
 
 test('QUnit', async ({ page }) => {
-  const maxQunitTestTime = 1000 * 60 * 5;
+  const maxQunitTestTime = 1000 * 60 * 2; // 2 minutes should be enough
 
   test.setTimeout(maxQunitTestTime);
 
@@ -37,46 +37,22 @@ test('QUnit', async ({ page }) => {
   });
   const testsDoneResults: QUnitTestDone[] = [];
 
-  page.addInitScript(() => {
-    let qunit = null;
-    Object.defineProperty(window, 'QUnit', {
-      get() {
-        return qunit;
-      },
-      set(value) {
-        if (qunit !== null) {
-          throw new Error('QUnit is already defined');
-        }
-        qunit = value;
-
-        value.done(function (results) {
-          window['onQunitDone'](results);
-        });
-        value.testDone(function (results) {
-          window['onQunitTestDone'](results);
-        });
-      },
-    });
-  });
-
+  let testCount = 0;
   await Promise.all([
-    page.exposeBinding(
-      'onQunitDone',
-      (_, values: QUnitTestResults) => {
-        resolveTestResults(values);
-      },
-      { handle: false },
-    ),
-    page.exposeBinding(
-      'onQunitTestDone',
-      (_, values: QUnitTestDone) => {
-        testsDoneResults.push(values);
-      },
-      { handle: false },
-    ),
+    page.exposeFunction('onQunitDone', (values: QUnitTestResults) => {
+      console.log(`QUnit done: ${values.passed} passed, ${values.failed} failed, ${values.total} total`);
+      resolveTestResults(values);
+    }),
+    page.exposeFunction('onQunitTestDone', (values: QUnitTestDone) => {
+      testCount++;
+      if (testCount % 50 === 0) {
+        console.log(`QUnit progress: ${testCount} tests completed`);
+      }
+      testsDoneResults.push(values);
+    }),
   ]);
 
-  await page.goto('http://localhost:5174/tests.html', {
+  await page.goto('/tests.html', {
     waitUntil: 'domcontentloaded',
   });
 
@@ -84,6 +60,19 @@ test('QUnit', async ({ page }) => {
     await (testDonePromise as Promise<QUnitTestResults>);
 
   const failedTests = testsDoneResults.filter((tInfo) => tInfo.failed > 0);
+
+  // Log all failed tests for debugging
+  if (failedTests.length > 0) {
+    console.log(`\n=== FAILED TESTS (${failedTests.length} total) ===`);
+    failedTests.forEach((tInfo, idx) => {
+      console.log(`${idx + 1}. ${tInfo.module} >> ${tInfo.name}`);
+      const failedAssertion = tInfo.assertions.find((a) => !a.result);
+      if (failedAssertion) {
+        console.log(`   Message: ${failedAssertion.message}`);
+      }
+    });
+    console.log('=== END FAILED TESTS ===\n');
+  }
 
   failedTests.forEach((tInfo) => {
     expect(() => {

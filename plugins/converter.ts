@@ -14,6 +14,8 @@ import {
   resolvePath,
   toOptionalChaining,
   toSafeJSPath,
+  checkBindingsForCollisions,
+  warnOnReservedBinding,
 } from './utils';
 import { CONSTANTS, EVENT_TYPE, SYMBOLS } from './symbols';
 import type { Flags } from './flags';
@@ -84,6 +86,9 @@ export function convert(
 ) {
   setFlags(flags);
   setBindings(bindings);
+
+  // Check for variable name collisions with JS globals and HTML element names
+  checkBindingsForCollisions(bindings, 'scope');
 
   function serializeParam(p: any) {
     if (typeof p !== 'string') {
@@ -211,11 +216,11 @@ export function convert(
           SYMBOLS.$_GET_FW
         }(this, arguments);const $slots = ${
           SYMBOLS.$_GET_SLOTS
-        }(this, arguments);return{[${SYMBOLS.$nodes}]:[${
+        }(this, arguments);return ${SYMBOLS.FINALIZE_COMPONENT}([${
           SYMBOLS.TAG
         }(${ToJSType(node.params[0])}, $fw,[()=>${
           SYMBOLS.SLOT
-        }('default',()=>[],$slots,this)], this)], ctx: this};}`;
+        }('default',()=>[],$slots,this)], this)], this)};`;
       } else if (node.path.original === SYMBOLS.$__hash) {
         return `$:${SYMBOLS.$__hash}(${toObject(hashArgs)})`;
       }
@@ -307,6 +312,7 @@ export function convert(
         return null;
       }
       node.program.blockParams.forEach((p) => {
+        warnOnReservedBinding(p, 'block param');
         bindings.add(p);
       });
       const childElements = resolvedChildren(node.program.body);
@@ -496,13 +502,15 @@ export function convert(
       !convertedNodes.has(element)
     ) {
       convertedNodes.add(element);
-      const parent = builders.element(`$:${SYMBOLS.HTML_NAMESPACE}`, {
+      const htmlWrapper = builders.element(`$:${SYMBOLS.HTML_NAMESPACE}`, {
         children: element.children,
       });
-      element.children = [parent];
-      return ElementToNode(parent);
+      element.children = [htmlWrapper];
+      // Don't return early - continue processing the foreignObject element
+      // with the HTML namespace wrapper as its child
     }
     element.blockParams.forEach((p) => {
+      warnOnReservedBinding(p, 'component block param');
       bindings.add(p);
     });
     const children = resolvedChildren(element.children)

@@ -33,19 +33,40 @@ export function createBenchmark(doc: Document) {
         }
       });
 
-      performance.measure('load', 'navigationStart', 'renderStart');
+      // Measure load time if navigationStart is available
+      try {
+        performance.measure('load', 'navigationStart', 'renderStart');
+      } catch {
+        // navigationStart might not exist in some contexts
+      }
 
       return async (name: string, update: () => void) => {
-        await measureRender(
-          name,
-          name + 'Start',
-          name + 'End',
-          () =>
-            new Promise((resolve) => {
-              setResolveRender(resolve);
-              update();
-            }),
-        );
+        const startMark = name + 'Start';
+        const endMark = name + 'End';
+
+        // Create start mark synchronously - no delays before this
+        performance.mark(startMark);
+
+        await new Promise<void>((resolve) => {
+          let resolved = false;
+          const safeResolve = () => {
+            if (!resolved) {
+              resolved = true;
+              resolve();
+            }
+          };
+          setResolveRender(safeResolve);
+          update();
+          // Fallback timeout in case no revalidation is triggered
+          // (e.g., clearing an already empty list, or click doesn't trigger update)
+          setTimeout(safeResolve, 100);
+        });
+
+        // Create end mark synchronously after the work completes
+        performance.mark(endMark);
+
+        // Create measure to link the marks
+        performance.measure(name, startMark, endMark);
       };
     },
   };

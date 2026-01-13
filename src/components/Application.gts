@@ -3,6 +3,7 @@ import { PageOne } from './pages/PageOne.gts';
 import { PageTwo } from './pages/PageTwo.gts';
 import { PageThree } from './pages/PageThree.gts';
 import { Benchmark } from './pages/Benchmark.gts';
+import { Renderers } from './pages/Renderers.gts';
 import { NestedRouter } from './pages/NestedRouter.gts';
 import { router } from './../services/router';
 
@@ -19,6 +20,7 @@ export class Application extends Component {
     pageTwo: PageTwo,
     main: PageThree,
     benchmark: Benchmark,
+    renderers: Renderers,
   };
   async destroy() {
     await Promise.all(runDestructors(this));

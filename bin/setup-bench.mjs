@@ -43,13 +43,9 @@ const appMarkers = [
   "swapRows1",
   "swapRows2",
   "clearItems4",
-].reduce((acc, marker) => {
-  return acc + "," + marker + "Start," + marker + "End";
-}, "");
-const markers = (process.env["MARKERS"] || appMarkers)
-  .split(",")
-  .filter((el) => el.length)
-  .join(",");
+].flatMap((marker) => [marker + "Start", marker + "End"]).join(",");
+
+const markers = process.env["MARKERS"] || appMarkers;
 const fidelity = process.env["FIDELITY"] || "20";
 const throttleRate = process.env["THROTTLE"] || "2";
 const FORK_NAME = process.env["FORK_NAME"] || "";
@@ -121,17 +117,38 @@ console.info({
 });
 
 // start build assets
-$`cd ${CONTROL_BENCH_DIR} && pnpm vite preview --port ${CONTROL_PORT}`;
-$`cd ${EXPERIMENT_BENCH_DIR} && pnpm vite preview --port ${EXPERIMENT_PORT}`;
+const controlServer = $`cd ${CONTROL_BENCH_DIR} && pnpm vite preview --port ${CONTROL_PORT}`;
+const experimentServer = $`cd ${EXPERIMENT_BENCH_DIR} && pnpm vite preview --port ${EXPERIMENT_PORT}`;
 
-await new Promise((resolve) => {
-  // giving 5 seconds for the server to start
-  setTimeout(resolve, 5000);
-});
+// Helper to check if server is ready
+async function waitForServer(url, maxAttempts = 30) {
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      const response = await fetch(url);
+      if (response.ok) {
+        console.info(`Server ready: ${url}`);
+        return true;
+      }
+    } catch {
+      // Server not ready yet
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  throw new Error(`Server failed to start: ${url}`);
+}
+
+// Wait for both servers to be ready
+await Promise.all([
+  waitForServer(CONTROL_URL),
+  waitForServer(EXPERIMENT_URL),
+]);
+
+console.info("Both servers are ready");
 
 try {
+  const browserArgs = "--headless,--disable-gpu,--no-sandbox,--disable-dev-shm-usage,--disable-extensions";
   const output =
-    await $`./node_modules/.bin/tracerbench compare --regressionThreshold 25 --sampleTimeout 60 --fidelity ${fidelity} --markers ${markers} --controlURL ${CONTROL_URL} --experimentURL ${EXPERIMENT_URL} --report --headless --cpuThrottleRate ${throttleRate}`;
+    await $`./node_modules/.bin/tracerbench compare --debug --browserArgs ${browserArgs} --regressionThreshold 25 --sampleTimeout 240 --fidelity ${fidelity} --markers ${markers} --controlURL ${CONTROL_URL} --experimentURL ${EXPERIMENT_URL} --report --cpuThrottleRate ${throttleRate} --tbResultsFolder ./tracerbench-results`;
 
   try {
     fs.writeFileSync(
@@ -143,7 +160,13 @@ try {
   }
 } catch (p) {
   console.error(p);
+  // Kill server processes
+  controlServer.kill();
+  experimentServer.kill();
   process.exit(1);
 }
 
+// Kill server processes
+controlServer.kill();
+experimentServer.kill();
 process.exit(0);

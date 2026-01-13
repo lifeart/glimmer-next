@@ -13,14 +13,12 @@ type ButtonWrapperSignature = {
 
 export class ButtonWrapper extends Component<ButtonWrapperSignature> {
   <template>
-    <div class='mb-2'>
-      <Button
-        class='rounded bg-indigo-600 px-2 py-1 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600'
-        @onClick={{@onClick}}
-        ...attributes
-      >
-        {{yield}}
-      </Button>
-    </div>
+    <Button
+      class='px-3 py-2 text-xs font-medium rounded-lg bg-slate-700 text-slate-200 hover:bg-slate-600 hover:text-white border border-slate-600 transition-all shadow-sm'
+      @onClick={{@onClick}}
+      ...attributes
+    >
+      {{yield}}
+    </Button>
   </template>
 }

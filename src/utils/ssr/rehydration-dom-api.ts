@@ -12,6 +12,20 @@ export class HTMLRehydrationBrowserDOMApi implements DOMApi {
   constructor(doc: Document) {
     this.doc = doc;
   }
+  isNode(el: Node): el is Node  {
+    return 'nodeType' in el;
+  }
+  parent(el: Node) {
+    return el.parentElement;
+  }
+  destroy(element: Node): void {
+    // @ts-expect-error
+    element.remove();
+  }
+  clearChildren(element: Node): void {
+    // @ts-expect-error innerHTML is not on Node type but works on Element
+    element.innerHTML = '';
+  }
   toString() {
     return 'hydration-html:dom-api';
   }
@@ -68,17 +82,17 @@ export class HTMLRehydrationBrowserDOMApi implements DOMApi {
     }
     return this.doc.createComment(`${text} $[${getNodeCounter()}]`);
   }
-  // @ts-expect-error
-  text(text = '') {
-    // console.log('text', text);
+  text(text: string | number = ''): Node {
+    const textStr = String(text);
+    // console.log('text', textStr);
     if (isRehydrationScheduled()) {
       const nextItem = lastItemInStack('text');
       if (nextItem && nextItem.nodeType === Node.TEXT_NODE) {
         const node = itemFromRehydrationStack();
         // check tagName
         if (node && node.nodeType === Node.TEXT_NODE) {
-          if (node.textContent !== text) {
-            node.textContent = text;
+          if (node.textContent !== textStr) {
+            node.textContent = textStr;
           }
           return node;
         } else {
@@ -88,7 +102,7 @@ export class HTMLRehydrationBrowserDOMApi implements DOMApi {
         }
       }
     }
-    return this.doc.createTextNode(text);
+    return this.doc.createTextNode(textStr);
   }
   textContent(node: Node, text: string) {
     if (isRehydrationScheduled()) {

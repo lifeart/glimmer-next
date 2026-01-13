@@ -10,7 +10,6 @@ import { Cell, MergedCell, formula, deepFnValue } from '@/utils/reactive';
 import { opcodeFor } from '@/utils/vm';
 import {
   $_debug_args,
-  $nodes,
   IN_SSR_ENV,
   isArray,
   isFn,
@@ -28,8 +27,10 @@ import {
 import { isRehydrationScheduled } from '@/utils/ssr/rehydration';
 import { initDOM } from '@/utils/context';
 import { registerDestructor } from '../glimmer/destroyable';
+import { setParentContext } from '../dom';
 
 export function getFirstNode(
+  api: DOMApi,
   rawItem:
     | Node
     | ComponentReturnType
@@ -38,25 +39,44 @@ export function getFirstNode(
     | Array<Node | ComponentReturnType | GenericReturnType>,
 ): Node {
   if (isArray(rawItem)) {
-    return getFirstNode(rawItem[0]);
-  } else if ('nodeType' in rawItem) {
-    return rawItem;
-  } else if ('ctx' in rawItem) {
-    return getFirstNode(rawItem.ctx!);
+    return getFirstNode(api, rawItem[0]);
+  } else if (api.isNode(rawItem as unknown as Node)) {
+    return rawItem as Node;
+  } else if (RENDERED_NODES_PROPERTY in rawItem) {
+    // Get the first element from RENDERED_NODES - could be a Node or a Component
+    const firstRendered = rawItem![RENDERED_NODES_PROPERTY][0];
+    // If firstRendered is a Component, recursively get its first node
+    let selfNode: Node | null = null;
+    if (firstRendered) {
+      if (RENDERED_NODES_PROPERTY in firstRendered) {
+        // It's a component, recursively get its first node
+        selfNode = getFirstNode(api, firstRendered as unknown as ComponentReturnType);
+      } else if (api.isNode(firstRendered as Node)) {
+        selfNode = firstRendered as Node;
+      }
+    }
+    const childNode = Array.from(
+      CHILD.get(rawItem![COMPONENT_ID_PROPERTY]) ?? [],
+    ).reduce((acc: null | Node, item: number) => {
+      if (!acc) {
+        const child = TREE.get(item);
+        if (!child) return null;
+        return getFirstNode(api, child);
+      } else {
+        return acc;
+      }
+    }, null);
+    if (selfNode && childNode) {
+      const position = selfNode.compareDocumentPosition(childNode);
+      if (position & Node.DOCUMENT_POSITION_FOLLOWING) {
+        return selfNode;
+      } else {
+        return childNode;
+      }
+    }
+    return (selfNode || childNode)!;
   } else {
-    return (
-      rawItem![RENDERED_NODES_PROPERTY][0] ||
-      Array.from(CHILD.get(rawItem![COMPONENT_ID_PROPERTY]) ?? []).reduce(
-        (acc: null | Node, item: number) => {
-          if (!acc) {
-            return getFirstNode(TREE.get(item)!);
-          } else {
-            return acc;
-          }
-        },
-        null,
-      )
-    );
+    throw new Error('Unknown branch');
   }
 }
 
@@ -129,7 +149,7 @@ export class BasicListComponent<T extends { id: number }> {
     // @ts-expect-error typings error
     addToTree(ctx, this, 'from list constructor');
     const mainNode = outlet;
-    this[$nodes] = [];
+    this[RENDERED_NODES_PROPERTY] = [];
     if (key) {
       this.key = key;
     }
@@ -160,7 +180,7 @@ export class BasicListComponent<T extends { id: number }> {
       // @ts-expect-error
       this[RENDERED_NODES_PROPERTY] = [topMarker];
     }
-   
+
     this.api.insert(mainNode, this.topMarker);
     this.api.insert(mainNode, this.bottomMarker);
 
@@ -237,7 +257,7 @@ export class BasicListComponent<T extends { id: number }> {
         ? this.api.comment('list fragment target marker')
         : this.api.comment('');
       if (isRehydrationScheduled()) {
-        fragment = marker.parentElement as unknown as DocumentFragment;
+        fragment = this.api.parent(marker) as unknown as DocumentFragment;
         // TODO: figure out, likely error here, because we don't append fragment
       } else {
         fragment = this.api.fragment();
@@ -247,6 +267,7 @@ export class BasicListComponent<T extends { id: number }> {
     }
   }
   updateItems(items: T[], amountOfKeys: number, removedIndexes: number[]) {
+    // console.log('update - items', items);
     const {
       indexMap,
       keyMap,
@@ -258,7 +279,6 @@ export class BasicListComponent<T extends { id: number }> {
     } = this;
     const rowsToMove: Array<[GenericReturnType, number]> = [];
     const amountOfExistingKeys = amountOfKeys - removedIndexes.length;
-
     if (removedIndexes.length > 0 && keyMap.size > 0) {
       removedIndexes.sort((a, b) => a - b);
       for (const key of keyMap.keys()) {
@@ -276,6 +296,8 @@ export class BasicListComponent<T extends { id: number }> {
     let seenKeys = 0;
     const appendedIndexes = new Set<number>();
     let isAppendOnly = isFirstRender;
+    // @ts-expect-error this
+    setParentContext(this);
     items.forEach((item, index) => {
       // @todo - fix here
       if (seenKeys === amountOfExistingKeys) {
@@ -310,13 +332,18 @@ export class BasicListComponent<T extends { id: number }> {
             return itemIndex;
           }, `each.index[${index}]`);
         }
+        // const row = isPrimitive(item) ? ItemComponent(formula(() => {
+        //   return items[index];
+        // }), idx, this as unknown) : ItemComponent(item, idx, this as unknown as Component<any>);
+
         const row = ItemComponent(item, idx, this as unknown as Component<any>);
+
         keyMap.set(key, row);
         indexMap.set(key, index);
         if (isAppendOnly) {
           // TODO: in ssr parentNode may not exist
           // @ts-expect-error this;
-          renderElement(api, this, targetNode.parentNode!, row, targetNode);
+          renderElement(api, this, api.parent(targetNode)!, row, targetNode);
         } else {
           rowsToMove.push([row, index]);
           for (let [mapKey, value] of indexMap) {
@@ -334,6 +361,7 @@ export class BasicListComponent<T extends { id: number }> {
         }
       }
     });
+    setParentContext(null);
     const childs = CHILD.get(this[COMPONENT_ID_PROPERTY]);
     if (childs !== undefined) {
       childs.length = 0;
@@ -345,21 +373,37 @@ export class BasicListComponent<T extends { id: number }> {
       .forEach(([row, index]) => {
         const nextItem = items[index + 1];
         const insertBeforeNode = nextItem
-          ? getFirstNode(keyMap.get(keyForItem(nextItem, index + 1))!)
+          ? getFirstNode(api, keyMap.get(keyForItem(nextItem, index + 1))!)
           : bottomMarker;
-        // node relocation, assume we have only once root node :)
-        api.insert(
-          insertBeforeNode.parentNode!,
-          getFirstNode(row),
+        // WE CAN't use API.insert here, because row may contain sub-components,
+        // and we handle it in `renderElement` adapter
+        // debugger;
+        // api.insert(
+        //   insertBeforeNode.parentNode!,
+        //   getFirstNode(api, row),
+        //   insertBeforeNode,
+        // );
+        // getFirstNode(api, row) -> row
+        // console.log('getFirstNode(api, row)', getFirstNode(api, row));
+        // debugger;
+        // debugger;
+        renderElement(
+          api,
+          // @ts-expect-error this
+          this,
+          api.parent(insertBeforeNode)!,
+          row,
           insertBeforeNode,
         );
       });
     if (targetNode !== bottomMarker) {
-      const parent = targetNode.parentNode!;
-      const trueParent = bottomMarker.parentNode!;
+      const parent = api.parent(targetNode)!;
+      const trueParent = api.parent(bottomMarker)!;
       // parent may not exist in rehydration
       if (!IN_SSR_ENV) {
-        parent && parent.removeChild(targetNode);
+        if (parent) {
+          api.destroy(targetNode);
+        }
       }
       if (parent && trueParent !== parent) {
         api.insert(trueParent, parent, bottomMarker);
@@ -389,17 +433,17 @@ export class SyncListComponent<
     );
   }
   fastCleanup() {
-    const { keyMap, bottomMarker, topMarker, indexMap } = this;
-    const parent = bottomMarker.parentElement;
+    const { keyMap, bottomMarker, topMarker, indexMap, api } = this;
+    const parent = api.parent(bottomMarker);
     if (
       parent &&
       parent.lastChild === bottomMarker &&
       parent.firstChild === topMarker
     ) {
       for (const value of keyMap.values()) {
-        destroyElementSync(value, true);
+        destroyElementSync(value, true, this.api);
       }
-      parent.innerHTML = '';
+      this.api.clearChildren(parent);
       this.api.insert(parent, topMarker);
       this.api.insert(parent, bottomMarker);
       keyMap.clear();
@@ -411,7 +455,7 @@ export class SyncListComponent<
   }
   syncList(items: T[]) {
     const { keyMap, keyForItem, indexMap } = this;
-    if (items.length === 0) {
+    if (items.length === 0 && !this.isFirstRender) {
       if (this.fastCleanup()) {
         return;
       }
@@ -446,13 +490,12 @@ export class SyncListComponent<
         }
       }
     }
-
     this.updateItems(items, amountOfKeys, indexesToRemove);
   }
   destroyItem(row: GenericReturnType, key: string) {
     this.keyMap.delete(key);
     this.indexMap.delete(key);
-    destroyElementSync(row);
+    destroyElementSync(row, false, this.api);
   }
 }
 export class AsyncListComponent<
@@ -481,8 +524,8 @@ export class AsyncListComponent<
     );
   }
   async fastCleanup() {
-    const { bottomMarker, topMarker, keyMap, indexMap } = this;
-    const parent = bottomMarker.parentElement;
+    const { bottomMarker, topMarker, keyMap, indexMap, api } = this;
+    const parent = api.parent(bottomMarker);
     if (
       parent &&
       parent.lastChild === bottomMarker &&
@@ -491,12 +534,12 @@ export class AsyncListComponent<
       const promises = new Array(keyMap.size);
       let i = 0;
       for (const value of keyMap.values()) {
-        promises[i] = destroyElement(value, true);
+        promises[i] = destroyElement(value, true, this.api);
         i++;
       }
       await Promise.all(promises);
       promises.length = 0;
-      parent.innerHTML = '';
+      this.api.clearChildren(parent);
       this.api.insert(parent, topMarker);
       this.api.insert(parent, bottomMarker);
       keyMap.clear();
@@ -507,7 +550,7 @@ export class AsyncListComponent<
     }
   }
   async syncList(items: T[]) {
-    if (items.length === 0) {
+    if (items.length === 0 && !this.isFirstRender) {
       if (await this.fastCleanup()) {
         return;
       }
@@ -538,6 +581,7 @@ export class AsyncListComponent<
             indexesToRemove.length = 0;
           }
         }
+
         for (let i = 0; i < keysToRemove.length; i++) {
           removeQueue.push(this.destroyItem(rowsToRemove[i], keysToRemove[i]));
         }
@@ -557,6 +601,6 @@ export class AsyncListComponent<
   async destroyItem(row: GenericReturnType, key: string) {
     this.keyMap.delete(key);
     this.indexMap.delete(key);
-    await destroyElement(row);
+    await destroyElement(row, false, this.api);
   }
 }

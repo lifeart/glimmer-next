@@ -1,8 +1,16 @@
 import { renderComponent, runDestructors, Component } from '@/utils/component';
 import { createRoot, getNodeCounter, resetNodeCounter, Root } from '@/utils/dom';
 import { HTMLRehydrationBrowserDOMApi } from '@/utils/ssr/rehydration-dom-api';
-import { HTMLBrowserDOMApi } from '@/utils/dom-api';
-import { cleanupFastContext, provideContext, RENDERING_CONTEXT } from '../context';
+import { SVGRehydrationBrowserDOMApi } from '@/utils/ssr/svg-rehydration-dom-api';
+import { MathMLRehydrationBrowserDOMApi } from '@/utils/ssr/mathml-rehydration-dom-api';
+import { HTMLBrowserDOMApi, type DOMApi } from '@/utils/dom-api';
+import { SVGBrowserDOMApi } from '@/utils/svg-api';
+import { MathMLBrowserDOMApi } from '@/utils/math-api';
+import { cleanupFastContext, provideContext, RENDERING_CONTEXT, API_FACTORY_CONTEXT } from '../context';
+import { NS_SVG, NS_MATHML } from '@/utils/namespaces';
+
+export type ApiFactory = (namespace?: string) => DOMApi;
+export type ApiFactoryWrapper = { factory: ApiFactory };
 const withRehydrationStack: HTMLElement[] = [];
 const commentsToRehydrate: Comment[] = [];
 let rehydrationScheduled = false;
@@ -123,12 +131,35 @@ export function withRehydration(
   root: Root = createRoot(),
 ) {
   const api = new HTMLRehydrationBrowserDOMApi(document);
+  // Track all APIs created during rehydration for upgrading after completion
+  const createdApis: Array<{ api: DOMApi; namespace?: string }> = [
+    { api, namespace: undefined },
+  ];
+
+  // Factory function that creates namespace-appropriate rehydration APIs
+  // Wrapped in an object to prevent getContext from calling it (getContext calls functions)
+  const apiFactory: { factory: ApiFactory } = {
+    factory: (namespace?: string) => {
+      let newApi: DOMApi;
+      if (namespace === NS_SVG) {
+        newApi = new SVGRehydrationBrowserDOMApi(document);
+      } else if (namespace === NS_MATHML) {
+        newApi = new MathMLRehydrationBrowserDOMApi(document);
+      } else {
+        newApi = new HTMLRehydrationBrowserDOMApi(document);
+      }
+      createdApis.push({ api: newApi, namespace });
+      return newApi;
+    },
+  };
+
   try {
     rehydrationScheduled = true;
     pushToStack(targetNode, true);
     resetNodeCounter();
     cleanupFastContext();
     provideContext(root, RENDERING_CONTEXT, api);
+    provideContext(root, API_FACTORY_CONTEXT, apiFactory);
 
     nodesToRemove.forEach((node) => {
       // replace node with comment
@@ -140,7 +171,7 @@ export function withRehydration(
         node.remove();
       }
     });
- 
+
     renderComponent(componentCreationCallback, {
       args, element: targetNode, owner: root,
     });
@@ -160,12 +191,25 @@ export function withRehydration(
     }
     rehydrationScheduled = false;
     nodesMap.clear();
-    // provideContext(root, RENDERING_CONTEXT, api);
-    Object.keys(HTMLBrowserDOMApi.prototype).forEach((key) => {
-      // @ts-expect-error props
-      api[key] = HTMLBrowserDOMApi.prototype[key];
-    });
-    // rollbackDOMAPI();
+
+    // Upgrade all rehydration APIs to standard browser API methods
+    // Note: Must use getOwnPropertyNames since class methods are non-enumerable
+    for (const { api: rehydrationApi, namespace } of createdApis) {
+      let targetPrototype: object;
+      if (namespace === NS_SVG) {
+        targetPrototype = SVGBrowserDOMApi.prototype;
+      } else if (namespace === NS_MATHML) {
+        targetPrototype = MathMLBrowserDOMApi.prototype;
+      } else {
+        targetPrototype = HTMLBrowserDOMApi.prototype;
+      }
+      Object.getOwnPropertyNames(targetPrototype).forEach((key) => {
+        if (key !== 'constructor') {
+          // @ts-expect-error props
+          rehydrationApi[key] = targetPrototype[key];
+        }
+      });
+    }
   } catch (e) {
     rehydrationScheduled = false;
     withRehydrationStack.length = 0;

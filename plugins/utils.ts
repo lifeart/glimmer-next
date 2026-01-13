@@ -1,13 +1,44 @@
 import type { ASTv1 } from '@glimmer/syntax';
-import { EVENT_TYPE, SYMBOLS } from './symbols';
+// import { EVENT_TYPE, SYMBOLS } from './symbols';
+import { SYMBOLS } from './symbols';
+import { JS_GLOBALS, ELEMENT_TAG_NAMES } from './constants';
 import type { Flags } from './flags';
 import type { ComplexJSType } from './converter';
 
 let flags!: Flags;
 let bindings: Set<string> = new Set();
+const warnedBindings = new Set<string>();
 
 export function setBindings(b: Set<string>) {
   bindings = b;
+}
+
+export function warnOnReservedBinding(name: string, context?: string): void {
+  if (warnedBindings.has(name)) {
+    return;
+  }
+
+  const contextStr = context ? ` in ${context}` : '';
+
+  if (JS_GLOBALS.has(name)) {
+    warnedBindings.add(name);
+    console.warn(
+      `[GXT Compiler Warning] Variable "${name}"${contextStr} shadows a JavaScript global. ` +
+      `This may cause unexpected behavior if you use <${name}> as an element tag in your template. ` +
+      `Consider renaming to avoid conflicts (e.g., "${name.toLowerCase()}Value", "my${name}").`
+    );
+  } else if (ELEMENT_TAG_NAMES.has(name)) {
+    warnedBindings.add(name);
+    console.warn(
+      `[GXT Compiler Warning] Variable "${name}"${contextStr} matches an HTML/SVG element name. ` +
+      `Using <${name}> in your template will be treated as a component reference, not an HTML element. ` +
+      `Consider renaming to avoid conflicts (e.g., "${name}Value", "my${name.charAt(0).toUpperCase() + name.slice(1)}").`
+    );
+  }
+}
+
+export function checkBindingsForCollisions(bindings: Set<string>, context?: string): void {
+  bindings.forEach((name) => warnOnReservedBinding(name, context));
 }
 
 export function setFlags(f: Flags) {
@@ -328,22 +359,30 @@ function toArgs(
 function hasStableChildsForControlNode(
   childs: null | (null | string | HBSNode | HBSControlExpression)[],
 ) {
+  // TODO: we need to fix case where we render static node (for example, DIV) with dynamic content (opcode),
+  // in this case we bind opcode destructor to context (and it will be if or each), and it will be re-executed multiple times;
+  // same for node if it's already destroyed, opcode will work while context is active
+  // return false;
   if (childs === null) {
     return true;
   }
+  const realChilds = childs.filter((el) => el !== null);
   let hasStableChild = false;
-  if (childs.length === 1 && typeof childs[0] === 'object') {
+  if (realChilds.length === 1 && typeof childs[0] === 'object') {
     const child = childs[0];
-    if (child === null) {
-      return true;
+    if (typeof child === 'string' || child === null) {
+      return false;
     }
     if ('isControl' in child) {
-      hasStableChild = false;
+      return false;
     } else {
-      if (child.events.filter(([id]) => id === EVENT_TYPE.ON_CREATED).length) {
-        return false;
+      if (bindings.has(child.tag.split('.')!.pop()!)) {
+        // if there is only one node and this node is component node - we are good
+        return true;
+      } else if (child.events.length === 0 && child.children.length === 0) {
+        return true;
       }
-      hasStableChild = true;
+      return false;
     }
   }
   return hasStableChild;
@@ -420,7 +459,7 @@ export function serializeNode(
           .split(paramBounds)
           .filter(Boolean)
           .join(`${indexParamName}.value`);
-        return `${FN_NAME}(${arrayName}, (${FN_FN_ARGS}) => [${SYMBOLS.$_ucw}((${extraContextName}) => ${childText}, ${newCtxName})], ${EACH_KEY}, ${ctxName})`;
+        return `${FN_NAME}(${arrayName}, (${FN_FN_ARGS}) => ${SYMBOLS.$_ucw}((${extraContextName}) => ${childText}, ${newCtxName}), ${EACH_KEY}, ${ctxName})`;
       }
     } else if (key === '@if') {
       let hasStableTrueChild = hasStableChildsForControlNode(childs);

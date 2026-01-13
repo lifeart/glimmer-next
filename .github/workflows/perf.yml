@@ -33,7 +33,8 @@ jobs:
           fetch-depth: 0
       - uses: wyvox/action-setup-pnpm@v3
         with:
-          node-version: "20.1.0"
+          # Use Node 18 for tracerbench compatibility (may have issues with Node 20+)
+          node-version: "18.20.5"
 
       - name: RUN
         run: pnpm run benchmark

@@ -1,6 +1,7 @@
 import { module, test } from 'qunit';
-import { rehydrate, renderTarget, ssr } from '@lifeart/gxt/test-utils';
+import { rehydrate, renderTarget, ssr, find, rerender } from '@lifeart/gxt/test-utils';
 import { cell } from '@/utils/reactive';
+import { NS_SVG, NS_MATHML, NS_HTML } from '@/utils/namespaces';
 
 function qs(str: string) {
   return renderTarget().querySelector(str);
@@ -265,5 +266,318 @@ module('Integration | Rehydration', function () {
     assert.dom('a[data-test-id="1"]').hasTextContaining(samples[0].text);
     assert.dom('a[data-test-id="2"]').hasTextContaining(samples[1].text);
     assert.dom('a[data-test-id="3"]').hasTextContaining(samples[2].text);
+  });
+
+  // SVG Rehydration Tests
+  test('it rehydrates simple SVG elements', async function (assert) {
+    const Sample = <template>
+      <svg id='svg-root' viewBox='0 0 24 24' class='icon'>
+        <path id='svg-path' d='M12 2L2 7' stroke='currentColor' />
+      </svg>
+    </template>;
+    await ssr(Sample);
+    const svgRef = qs('svg');
+    const pathRef = qs('path');
+    await rehydrate(Sample);
+    assert.dom('svg').exists();
+    assert.dom('path').exists();
+    assert.equal(qs('svg'), svgRef, 'SVG element is reused');
+    assert.equal(qs('path'), pathRef, 'path element is reused');
+    assert.equal(
+      find('#svg-root').namespaceURI,
+      NS_SVG,
+      'SVG has correct namespace',
+    );
+    assert.equal(
+      find('#svg-path').namespaceURI,
+      NS_SVG,
+      'path has correct namespace',
+    );
+    assert.dom('svg').hasAttribute('viewBox', '0 0 24 24');
+    assert.dom('svg').hasClass('icon');
+  });
+  test('it rehydrates SVG with multiple nested elements', async function (assert) {
+    const Sample = <template>
+      <svg class='h-6 w-6' fill='none' viewBox='0 0 24 24'>
+        <path id='p1' stroke-linecap='round' d='M3.75 6.75h16.5' />
+        <circle id='c1' cx='12' cy='12' r='10' />
+        <rect id='r1' x='0' y='0' width='10' height='10' />
+      </svg>
+    </template>;
+    await ssr(Sample);
+    const svgRef = qs('svg');
+    const pathRef = qs('path');
+    const circleRef = qs('circle');
+    const rectRef = qs('rect');
+    await rehydrate(Sample);
+    assert.equal(qs('svg'), svgRef, 'SVG element is reused');
+    assert.equal(qs('path'), pathRef, 'path element is reused');
+    assert.equal(qs('circle'), circleRef, 'circle element is reused');
+    assert.equal(qs('rect'), rectRef, 'rect element is reused');
+    assert.equal(find('#p1').namespaceURI, NS_SVG);
+    assert.equal(find('#c1').namespaceURI, NS_SVG);
+    assert.equal(find('#r1').namespaceURI, NS_SVG);
+  });
+  test('it rehydrates SVG with dynamic attributes', async function (assert) {
+    const strokeColor = cell('red');
+    const Sample = <template>
+      <svg viewBox='0 0 24 24'>
+        <path id='dynamic-path' d='M0 0' stroke={{strokeColor}} />
+      </svg>
+    </template>;
+    await ssr(Sample);
+    const pathRef = qs('path');
+    await rehydrate(Sample);
+    assert.equal(qs('path'), pathRef, 'path element is reused');
+    strokeColor.update('blue');   
+    await rerender();                                                                      
+    assert.dom('path').hasAttribute('stroke', 'blue');  
+  });
+  test('it rehydrates SVG with foreignObject containing HTML', async function (assert) {
+    const Sample = <template>
+      <svg id='svg-foreign' viewBox='0 0 200 200'>
+        <rect width='200' height='200' fill='#eee' />
+        <foreignObject x='20' y='20' width='160' height='160'>
+          <div id='foreign-div' class='inner-html'>
+            <input id='foreign-input' type='text' />
+          </div>
+        </foreignObject>
+      </svg>
+    </template>;
+    await ssr(Sample);
+    const svgRef = qs('svg');
+    const divRef = qs('#foreign-div');
+    const inputRef = qs('#foreign-input');
+    await rehydrate(Sample);
+    assert.equal(qs('svg'), svgRef, 'SVG element is reused');
+    assert.equal(
+      qs('#foreign-div'),
+      divRef,
+      'div inside foreignObject is reused',
+    );
+    assert.equal(
+      qs('#foreign-input'),
+      inputRef,
+      'input inside foreignObject is reused',
+    );
+    assert.equal(
+      find('#svg-foreign').namespaceURI,
+      NS_SVG,
+      'SVG has SVG namespace',
+    );
+    assert.equal(
+      find('#foreign-div').namespaceURI,
+      NS_HTML,
+      'div has HTML namespace',
+    );
+    assert.equal(
+      find('#foreign-input').namespaceURI,
+      NS_HTML,
+      'input has HTML namespace',
+    );
+  });
+
+  // MathML Rehydration Tests
+  test('it rehydrates simple MathML elements', async function (assert) {
+    const Sample = <template>
+      <p>The fraction
+        <math id='math-root'>
+          <mfrac id='math-frac'>
+            <mn>1</mn>
+            <mn>3</mn>
+          </mfrac>
+        </math>
+        is not a decimal.
+      </p>
+    </template>;
+    await ssr(Sample);
+    const mathRef = qs('math');
+    const mfracRef = qs('mfrac');
+    await rehydrate(Sample);
+    assert.dom('math').exists();
+    assert.dom('mfrac').exists();
+    assert.equal(qs('math'), mathRef, 'math element is reused');
+    assert.equal(qs('mfrac'), mfracRef, 'mfrac element is reused');
+    assert.equal(
+      find('#math-root').namespaceURI,
+      NS_MATHML,
+      'math has MathML namespace',
+    );
+    assert.equal(
+      find('#math-frac').namespaceURI,
+      NS_MATHML,
+      'mfrac has MathML namespace',
+    );
+  });
+  test('it rehydrates MathML with complex expressions', async function (assert) {
+    const Sample = <template>
+      <math id='complex-math'>
+        <mrow>
+          <mi id='mi-x'>x</mi>
+          <mo>=</mo>
+          <mfrac>
+            <mrow>
+              <mo>-</mo>
+              <mi>b</mi>
+              <mo>+</mo>
+              <msqrt>
+                <msup>
+                  <mi>b</mi>
+                  <mn>2</mn>
+                </msup>
+              </msqrt>
+            </mrow>
+            <mrow>
+              <mn>2</mn>
+              <mi>a</mi>
+            </mrow>
+          </mfrac>
+        </mrow>
+      </math>
+    </template>;
+    await ssr(Sample);
+    const mathRef = qs('math');
+    const miRef = qs('mi');
+    await rehydrate(Sample);
+    assert.equal(qs('math'), mathRef, 'math element is reused');
+    assert.equal(qs('mi'), miRef, 'mi element is reused');
+    assert.equal(find('#complex-math').namespaceURI, NS_MATHML);
+    assert.equal(find('#mi-x').namespaceURI, NS_MATHML);
+  });
+
+  // Nested HTML/SVG/MathML Rehydration Tests
+  test('it rehydrates HTML with nested SVG components', async function (assert) {
+    const IconComponent = <template>
+      <svg class='icon' viewBox='0 0 24 24'>
+        <path d='M12 2L2 7' />
+      </svg>
+    </template>;
+    const Sample = <template>
+      <div id='wrapper' class='flex'>
+        <IconComponent />
+        <span>Label</span>
+      </div>
+    </template>;
+    // For SSR we need to inline the SVG
+    const SsrSample = <template>
+      <div id='wrapper' class='flex'>
+        <svg class='icon' viewBox='0 0 24 24'>
+          <path d='M12 2L2 7' />
+        </svg>
+        <span>Label</span>
+      </div>
+    </template>;
+    await ssr(SsrSample);
+    const divRef = qs('#wrapper');
+    const svgRef = qs('svg');
+    const pathRef = qs('path');
+    const spanRef = qs('span');
+    await rehydrate(Sample);
+    assert.equal(qs('#wrapper'), divRef, 'wrapper div is reused');
+    assert.equal(qs('svg'), svgRef, 'SVG is reused');
+    assert.equal(qs('path'), pathRef, 'path is reused');
+    assert.equal(qs('span'), spanRef, 'span is reused');
+    assert.equal(find('#wrapper').namespaceURI, NS_HTML);
+    assert.equal(find('svg').namespaceURI, NS_SVG);
+  });
+  test('it rehydrates multiple SVG icons in a row', async function (assert) {
+    const Sample = <template>
+      <div class='icons'>
+        <svg id='icon1' class='h-6 w-6'><path d='M1' /></svg>
+        <svg id='icon2' class='h-6 w-6'><path d='M2' /></svg>
+        <svg id='icon3' class='h-6 w-6'><path d='M3' /></svg>
+      </div>
+    </template>;
+    await ssr(Sample);
+    const icon1Ref = qs('#icon1');
+    const icon2Ref = qs('#icon2');
+    const icon3Ref = qs('#icon3');
+    await rehydrate(Sample);
+    assert.equal(qs('#icon1'), icon1Ref, 'icon1 is reused');
+    assert.equal(qs('#icon2'), icon2Ref, 'icon2 is reused');
+    assert.equal(qs('#icon3'), icon3Ref, 'icon3 is reused');
+    assert.equal(find('#icon1').namespaceURI, NS_SVG);
+    assert.equal(find('#icon2').namespaceURI, NS_SVG);
+    assert.equal(find('#icon3').namespaceURI, NS_SVG);
+  });
+  test('it rehydrates SVG inside conditional', async function (assert) {
+    const showIcon = true;
+    const Sample = <template>
+      <div>
+        {{#if showIcon}}
+          <svg id='conditional-svg' viewBox='0 0 24 24'>
+            <path d='M0 0' />
+          </svg>
+        {{/if}}
+      </div>
+    </template>;
+    await ssr(Sample);
+    const svgRef = qs('svg');
+    await rehydrate(Sample);
+    assert.dom('svg').exists();
+    assert.equal(qs('svg'), svgRef, 'SVG inside conditional is reused');
+    assert.equal(find('#conditional-svg').namespaceURI, NS_SVG);
+  });
+  test('it rehydrates SVG inside each loop', async function (assert) {
+    const icons = [
+      { id: 'loop-icon-1', path: 'M1' },
+      { id: 'loop-icon-2', path: 'M2' },
+      { id: 'loop-icon-3', path: 'M3' },
+    ];
+    const Sample = <template>
+      <div class='icon-list'>
+        {{#each icons as |icon|}}
+          <svg id={{icon.id}} viewBox='0 0 24 24'>
+            <path d={{icon.path}} />
+          </svg>
+        {{/each}}
+      </div>
+    </template>;
+    await ssr(Sample);
+    const icon1Ref = qs('#loop-icon-1');
+    const icon2Ref = qs('#loop-icon-2');
+    const icon3Ref = qs('#loop-icon-3');
+    await rehydrate(Sample);
+    assert.dom('svg').exists({ count: 3 });
+    assert.equal(qs('#loop-icon-1'), icon1Ref, 'first loop SVG is reused');
+    assert.equal(qs('#loop-icon-2'), icon2Ref, 'second loop SVG is reused');
+    assert.equal(qs('#loop-icon-3'), icon3Ref, 'third loop SVG is reused');
+    assert.equal(find('#loop-icon-1').namespaceURI, NS_SVG);
+    assert.equal(find('#loop-icon-2').namespaceURI, NS_SVG);
+    assert.equal(find('#loop-icon-3').namespaceURI, NS_SVG);
+  });
+  test('it rehydrates HTML with both SVG and MathML', async function (assert) {
+    const Sample = <template>
+      <article>
+        <h1>Mixed Content</h1>
+        <svg id='mixed-svg' viewBox='0 0 100 100'>
+          <circle cx='50' cy='50' r='40' />
+        </svg>
+        <p>The formula is:
+          <math id='mixed-math'>
+            <mrow>
+              <mi>E</mi>
+              <mo>=</mo>
+              <mi>m</mi>
+              <msup>
+                <mi>c</mi>
+                <mn>2</mn>
+              </msup>
+            </mrow>
+          </math>
+        </p>
+      </article>
+    </template>;
+    await ssr(Sample);
+    const svgRef = qs('svg');
+    const mathRef = qs('math');
+    const articleRef = qs('article');
+    await rehydrate(Sample);
+    assert.equal(qs('article'), articleRef, 'article is reused');
+    assert.equal(qs('svg'), svgRef, 'SVG is reused');
+    assert.equal(qs('math'), mathRef, 'math is reused');
+    assert.equal(find('article').namespaceURI, NS_HTML);
+    assert.equal(find('#mixed-svg').namespaceURI, NS_SVG);
+    assert.equal(find('#mixed-math').namespaceURI, NS_MATHML);
   });
 });
