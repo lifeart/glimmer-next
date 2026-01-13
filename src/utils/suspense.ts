@@ -3,7 +3,7 @@ import {
   type ComponentReturnType,
   renderElement,
 } from './component';
-import { context, getContext, provideContext, initDOM } from './context';
+import { context, provideContext, initDOM } from './context';
 import {
   $_fin,
   $_if,
@@ -18,24 +18,11 @@ import { $template, RENDERED_NODES_PROPERTY } from './shared';
 import { isDestroyed } from './glimmer/destroyable';
 import type { IfCondition } from './control-flow/if';
 
-export const SUSPENSE_CONTEXT = Symbol('suspense');
+// Re-export utilities from suspense-utils for backwards compatibility
+export { SUSPENSE_CONTEXT, followPromise, type SuspenseContext } from './suspense-utils';
+import { SUSPENSE_CONTEXT, type SuspenseContext } from './suspense-utils';
 
 let i = 0;
-
-type SuspenseContext = {
-  start: () => void;
-  end: () => void;
-};
-
-export function followPromise<T extends Promise<any>>(ctx: Component<any>, promise: T): T {
-  getContext<SuspenseContext>(ctx, SUSPENSE_CONTEXT)?.start();
-  promise.finally(() => {
-    Promise.resolve().then(() => {
-      getContext<SuspenseContext>(ctx, SUSPENSE_CONTEXT)?.end();
-    });
-  });
-  return promise;
-}
 
 export function lazy<T>(factory: () => Promise<{ default: T }>) {
   class LazyComponent extends Component {
