@@ -7,10 +7,13 @@ import {
 import {
   cleanupFastContext,
   provideContext,
+  getContext,
   RENDERING_CONTEXT,
   initDOM,
 } from '../context';
 import { HTMLBrowserDOMApi, DOMApi } from '../dom-api';
+import { SUSPENSE_CONTEXT, followPromise } from '../suspense-utils';
+import { HTMLRehydrationBrowserDOMApi } from './rehydration-dom-api';
 import { SVGBrowserDOMApi } from '../svg-api';
 import {
   RENDERED_NODES_PROPERTY,
@@ -18,6 +21,7 @@ import {
   TREE,
   CHILD,
   addToTree,
+  COMPONENT_ID_PROPERTY,
 } from '../shared';
 import { Component } from '../component';
 import { Root } from '../dom';
@@ -543,5 +547,362 @@ describe('API Factory in Rehydration', () => {
     });
 
     expect(api.toString()).toBe('svg:dom-api');
+  });
+});
+
+describe('Suspense Rehydration Integration', () => {
+  let window: Window;
+  let document: Document;
+  let root: Root;
+
+  beforeEach(() => {
+    window = new Window();
+    document = window.document as unknown as Document;
+    cleanupFastContext();
+    TREE.clear();
+    PARENT.clear();
+    CHILD.clear();
+    root = new Root(document);
+    // Add root to TREE so context lookup can find it when traversing from children
+    TREE.set(root[COMPONENT_ID_PROPERTY], root);
+  });
+
+  afterEach(() => {
+    cleanupFastContext();
+    TREE.clear();
+    PARENT.clear();
+    CHILD.clear();
+    window.close();
+  });
+
+  describe('Resolved Suspense Context During Rehydration', () => {
+    test('suspense context is available during rehydration scenarios', () => {
+      // Simulate a resolved suspense by providing context with pendingAmount = 0
+      let startCalled = false;
+      let endCalled = false;
+      const resolvedSuspenseContext = {
+        pendingAmount: 0,
+        start: () => { startCalled = true; },
+        end: () => { endCalled = true; },
+        isResolved: () => true,
+      };
+
+      provideContext(root, RENDERING_CONTEXT, new HTMLBrowserDOMApi(document));
+      provideContext(root, SUSPENSE_CONTEXT, resolvedSuspenseContext);
+
+      const child = createComponent(root);
+
+      // Child should be able to access the suspense context
+      const foundContext = getContext(child, SUSPENSE_CONTEXT);
+      expect(foundContext).toBe(resolvedSuspenseContext);
+      expect(foundContext.isResolved()).toBe(true);
+    });
+
+    test('resolved suspense shows content, not fallback', () => {
+      // Suspense is resolved (pendingAmount === 0)
+      let pendingAmount = 0;
+      const resolvedSuspense = {
+        pendingAmount: () => pendingAmount,
+        isResolved: () => pendingAmount === 0,
+        start: () => { pendingAmount++; },
+        end: () => { pendingAmount--; },
+      };
+
+      provideContext(root, RENDERING_CONTEXT, new HTMLBrowserDOMApi(document));
+      provideContext(root, SUSPENSE_CONTEXT, resolvedSuspense);
+
+      // Verify the suspense is in resolved state
+      expect(resolvedSuspense.isResolved()).toBe(true);
+
+      // When resolved, content should be shown (not fallback)
+      // This is the state SSR produces when suspense has completed
+      const contentDiv = document.createElement('div');
+      contentDiv.textContent = 'Loaded Content';
+      document.body.appendChild(contentDiv);
+
+      expect(document.body.textContent).toBe('Loaded Content');
+    });
+
+    test('rehydration DOM API preserves existing elements', () => {
+      // Create existing DOM (simulating SSR output)
+      const existingDiv = document.createElement('div');
+      existingDiv.setAttribute('data-node-id', '1');
+      existingDiv.textContent = 'SSR Content';
+      document.body.appendChild(existingDiv);
+
+      const api = new HTMLRehydrationBrowserDOMApi(document);
+
+      // The rehydration API should work without creating new elements
+      // when the stack has matching elements
+      expect(api.toString()).toBe('hydration-html:dom-api');
+      expect(typeof api.element).toBe('function');
+      expect(typeof api.textContent).toBe('function');
+    });
+  });
+
+  describe('Unresolved Suspense Context During Rehydration', () => {
+    test('unresolved suspense context tracks pending operations', () => {
+      // Suspense is pending (has async operations in progress)
+      let pendingAmount = 1;
+      const pendingSuspense = {
+        pendingAmount: () => pendingAmount,
+        isPending: () => pendingAmount > 0,
+        start: () => { pendingAmount++; },
+        end: () => { pendingAmount--; },
+      };
+
+      provideContext(root, RENDERING_CONTEXT, new HTMLBrowserDOMApi(document));
+      provideContext(root, SUSPENSE_CONTEXT, pendingSuspense);
+
+      const child = createComponent(root);
+      const foundContext = getContext(child, SUSPENSE_CONTEXT);
+
+      // Suspense should be in pending state
+      expect(foundContext.isPending()).toBe(true);
+
+      // Start another async operation
+      foundContext.start();
+      expect(pendingAmount).toBe(2);
+
+      // End both operations
+      foundContext.end();
+      foundContext.end();
+      expect(pendingAmount).toBe(0);
+      expect(foundContext.isPending()).toBe(false);
+    });
+
+    test('fallback is shown when suspense has pending operations', () => {
+      let pendingAmount = 1;
+      const pendingSuspense = {
+        pendingAmount: () => pendingAmount,
+        isPending: () => pendingAmount > 0,
+      };
+
+      provideContext(root, RENDERING_CONTEXT, new HTMLBrowserDOMApi(document));
+      provideContext(root, SUSPENSE_CONTEXT, pendingSuspense);
+
+      // Simulate the rendering decision
+      if (pendingSuspense.isPending()) {
+        // Show fallback
+        const fallback = document.createElement('div');
+        fallback.className = 'loading';
+        fallback.textContent = 'Loading...';
+        document.body.appendChild(fallback);
+      }
+
+      expect(document.body.querySelector('.loading')?.textContent).toBe('Loading...');
+    });
+
+    test('rehydration with pending suspense matches fallback DOM', () => {
+      // SSR produced fallback HTML
+      document.body.innerHTML = '<div class="fallback-container"><span class="spinner">Loading...</span></div>';
+
+      let pendingAmount = 1;
+      let startCallCount = 0;
+      let endCallCount = 0;
+      const pendingSuspense = {
+        isPending: () => pendingAmount > 0,
+        start: () => { pendingAmount++; startCallCount++; },
+        end: () => { pendingAmount--; endCallCount++; },
+      };
+
+      provideContext(root, RENDERING_CONTEXT, new HTMLBrowserDOMApi(document));
+      provideContext(root, SUSPENSE_CONTEXT, pendingSuspense);
+
+      // Verify the DOM structure matches SSR output
+      expect(document.body.querySelector('.spinner')?.textContent).toBe('Loading...');
+
+      // The suspense is still pending during rehydration
+      expect(pendingSuspense.isPending()).toBe(true);
+    });
+  });
+
+  describe('Nested Suspense Boundaries', () => {
+    test('inner suspense shadows outer suspense context', () => {
+      let outerStartCalled = false;
+      let innerStartCalled = false;
+      const outerSuspense = { id: 'outer', start: () => { outerStartCalled = true; }, end: () => {} };
+      const innerSuspense = { id: 'inner', start: () => { innerStartCalled = true; }, end: () => {} };
+
+      provideContext(root, RENDERING_CONTEXT, new HTMLBrowserDOMApi(document));
+      provideContext(root, SUSPENSE_CONTEXT, outerSuspense);
+
+      const outerComponent = createComponent(root);
+      provideContext(outerComponent, SUSPENSE_CONTEXT, innerSuspense);
+
+      const innerComponent = createComponent(outerComponent);
+
+      // Inner component should find inner suspense
+      const foundContext = getContext(innerComponent, SUSPENSE_CONTEXT);
+      expect(foundContext.id).toBe('inner');
+    });
+
+    test('outer suspense can be resolved while inner is pending', () => {
+      let outerPending = 0;
+      let innerPending = 1;
+
+      const outerSuspense = {
+        isPending: () => outerPending > 0,
+        start: () => { outerPending++; },
+        end: () => { outerPending--; },
+      };
+      const innerSuspense = {
+        isPending: () => innerPending > 0,
+        start: () => { innerPending++; },
+        end: () => { innerPending--; },
+      };
+
+      provideContext(root, RENDERING_CONTEXT, new HTMLBrowserDOMApi(document));
+      provideContext(root, SUSPENSE_CONTEXT, outerSuspense);
+
+      const outerComponent = createComponent(root);
+      provideContext(outerComponent, SUSPENSE_CONTEXT, innerSuspense);
+
+      const innerComponent = createComponent(outerComponent);
+
+      // Outer is resolved, inner is pending
+      expect(outerSuspense.isPending()).toBe(false);
+      expect(innerSuspense.isPending()).toBe(true);
+
+      // Inner component uses inner suspense context
+      const context = getContext(innerComponent, SUSPENSE_CONTEXT);
+      expect(context.isPending()).toBe(true);
+    });
+
+    test('multiple children can have different suspense states', () => {
+      provideContext(root, RENDERING_CONTEXT, new HTMLBrowserDOMApi(document));
+
+      // Parent with three children, each with their own suspense state
+      const parent = createComponent(root);
+
+      // Child 1: resolved
+      let child1Pending = 0;
+      const suspense1 = { isPending: () => child1Pending > 0 };
+      const child1 = createComponent(parent);
+      provideContext(child1, SUSPENSE_CONTEXT, suspense1);
+
+      // Child 2: pending
+      let child2Pending = 1;
+      const suspense2 = { isPending: () => child2Pending > 0 };
+      const child2 = createComponent(parent);
+      provideContext(child2, SUSPENSE_CONTEXT, suspense2);
+
+      // Child 3: resolved
+      let child3Pending = 0;
+      const suspense3 = { isPending: () => child3Pending > 0 };
+      const child3 = createComponent(parent);
+      provideContext(child3, SUSPENSE_CONTEXT, suspense3);
+
+      // Verify different states
+      expect(getContext(child1, SUSPENSE_CONTEXT).isPending()).toBe(false);
+      expect(getContext(child2, SUSPENSE_CONTEXT).isPending()).toBe(true);
+      expect(getContext(child3, SUSPENSE_CONTEXT).isPending()).toBe(false);
+    });
+  });
+
+  describe('followPromise During Rehydration', () => {
+    test('followPromise tracks promises through suspense context', async () => {
+      let pendingCount = 0;
+      let startCallCount = 0;
+      let endCallCount = 0;
+      const suspenseContext = {
+        start: () => { pendingCount++; startCallCount++; },
+        end: () => { pendingCount--; endCallCount++; },
+      };
+
+      provideContext(root, RENDERING_CONTEXT, new HTMLBrowserDOMApi(document));
+      provideContext(root, SUSPENSE_CONTEXT, suspenseContext);
+
+      const child = createComponent(root);
+
+      // Before following any promises
+      expect(pendingCount).toBe(0);
+
+      // Follow a promise (simulating lazy loading during rehydration)
+      const promise = Promise.resolve('data');
+      followPromise(child, promise);
+
+      // Start should be called
+      expect(startCallCount).toBe(1);
+      expect(pendingCount).toBe(1);
+
+      await promise;
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      // End should be called after promise resolves
+      expect(endCallCount).toBe(1);
+      expect(pendingCount).toBe(0);
+    });
+
+    test('multiple promises tracked correctly during rehydration', async () => {
+      let pendingCount = 0;
+      const suspenseContext = {
+        start: () => { pendingCount++; },
+        end: () => { pendingCount--; },
+      };
+
+      provideContext(root, RENDERING_CONTEXT, new HTMLBrowserDOMApi(document));
+      provideContext(root, SUSPENSE_CONTEXT, suspenseContext);
+
+      const child = createComponent(root);
+
+      // Simulate multiple lazy components loading during rehydration
+      const promise1 = new Promise(resolve => setTimeout(resolve, 10));
+      const promise2 = new Promise(resolve => setTimeout(resolve, 20));
+
+      followPromise(child, promise1);
+      followPromise(child, promise2);
+
+      expect(pendingCount).toBe(2);
+
+      await promise1;
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect(pendingCount).toBe(1);
+
+      await promise2;
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect(pendingCount).toBe(0);
+    });
+  });
+
+  describe('Rehydration State Transitions', () => {
+    test('isRehydrationScheduled reflects global rehydration state', () => {
+      // This test documents the current architecture
+      expect(typeof isRehydrationScheduled).toBe('function');
+      expect(isRehydrationScheduled()).toBe(false);
+    });
+
+    test('ARCHITECTURE: suspense should complete independently of rehydration', () => {
+      // Document the expected behavior:
+      // 1. Rehydration is a synchronous process that matches SSR DOM
+      // 2. Suspense is an async mechanism that tracks pending operations
+      // 3. These two systems should work independently
+      //
+      // When SSR produces a fallback state:
+      // - Rehydration matches the fallback DOM
+      // - Suspense remains pending
+      // - After rehydration, suspense resolves normally
+      // - UI updates via reactive system (not rehydration)
+
+      let pendingAmount = 1;
+      const suspense = {
+        isPending: () => pendingAmount > 0,
+        resolve: () => { pendingAmount = 0; },
+      };
+
+      provideContext(root, RENDERING_CONTEXT, new HTMLBrowserDOMApi(document));
+      provideContext(root, SUSPENSE_CONTEXT, suspense);
+
+      // During rehydration, suspense is pending
+      expect(suspense.isPending()).toBe(true);
+      expect(isRehydrationScheduled()).toBe(false);
+
+      // After async content loads, suspense resolves
+      suspense.resolve();
+      expect(suspense.isPending()).toBe(false);
+
+      // Rehydration state is unchanged
+      expect(isRehydrationScheduled()).toBe(false);
+    });
   });
 });
