@@ -33,7 +33,6 @@ if (isLibBuild) {
             },
           ],
         ],
-        plugins: [["module:decorator-transforms"]],
       },
     }),
     dts({
