@@ -14,6 +14,7 @@ const CONTEXTS = new WeakMap<Component<any> | Root, Map<symbol, any>>();
 export const RENDERING_CONTEXT = Symbol('RENDERING_CONTEXT');
 export const ROOT_CONTEXT = Symbol('ROOT');
 export const API_FACTORY_CONTEXT = Symbol('API_FACTORY');
+
 export function context(
   contextKey: symbol,
 ): (

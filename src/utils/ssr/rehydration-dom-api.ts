@@ -257,7 +257,7 @@ export class HTMLRehydrationBrowserDOMApi implements DOMApi {
             if (child.isConnected) {
               return;
             }
-           
+
             if (child.nodeType !== Node.TEXT_NODE) {
               if (child.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
                 if ((child as DocumentFragment).childElementCount !== 0) {
@@ -277,7 +277,7 @@ export class HTMLRehydrationBrowserDOMApi implements DOMApi {
                   } else {
                     parent.replaceChild(child, existingChild);
                   }
-                 
+
                 }
               }
             }

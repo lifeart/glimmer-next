@@ -7,8 +7,10 @@ import { Renderers } from './pages/Renderers.gts';
 import { NestedRouter } from './pages/NestedRouter.gts';
 import { router } from './../services/router';
 
+let version = 0;
 export class Application extends Component {
   declare router: typeof router;
+  version = version++;
   constructor(args: { router?: typeof router }) {
     super(args);
     this.router = args.router || router;

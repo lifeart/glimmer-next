@@ -1,5 +1,9 @@
 import { cell } from '@lifeart/gxt';
 import { Table } from './page-one/Table.gts';
+import { Suspense, lazy } from '@/utils/suspense';
+import Fallback from '@/components/Fallback';
+
+const LoadMeAsync = lazy(() => import('@/components/LoadMeAsync'));
 
 function QuoteHeader() {
   const color = cell('rgb(59, 130, 246)');
@@ -58,6 +62,47 @@ export function PageOne() {
             tools meet the cutting-edge performance of modern compilers. That's what
             we're building here — a platform that takes the best of established
             technologies and infuses them with a new, state-of-the-art compiler.
+          </p>
+        </div>
+      </div>
+
+      {{! Suspense Demo }}
+      <div class="mb-10">
+        <div class="flex items-center gap-3 mb-4">
+          <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center">
+            <span class="text-sm">⏳</span>
+          </div>
+          <h2 class="text-xl font-semibold">Async Loading with Suspense</h2>
+        </div>
+        <p class="text-slate-400 text-sm mb-4">
+          Watch these components load asynchronously with graceful fallbacks. Each card represents a lazy-loaded module.
+        </p>
+        <div class="bg-slate-800/40 backdrop-blur rounded-2xl border border-slate-700/50 p-6">
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <Suspense @fallback={{Fallback}}>
+              <LoadMeAsync @name='User Profile' />
+            </Suspense>
+            <Suspense @fallback={{Fallback}}>
+              <LoadMeAsync @name='Dashboard' />
+            </Suspense>
+            <Suspense @fallback={{Fallback}}>
+              <LoadMeAsync @name='Settings' />
+            </Suspense>
+            <Suspense @fallback={{Fallback}}>
+              <LoadMeAsync @name='Analytics' />
+            </Suspense>
+            <Suspense @fallback={{Fallback}}>
+              <LoadMeAsync @name='Messages' />
+            </Suspense>
+            <Suspense @fallback={{Fallback}}>
+              <LoadMeAsync @name='Notifications' />
+            </Suspense>
+            <Suspense @fallback={{Fallback}}>
+              <LoadMeAsync @name='Error Demo' />
+            </Suspense>
+          </div>
+          <p class="text-xs text-slate-500 mt-4 text-center">
+            Components load independently - each with its own suspense boundary. Try the Error Demo!
           </p>
         </div>
       </div>

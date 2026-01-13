@@ -25,6 +25,8 @@ import { initDOM } from '@/utils/context';
 import { setParentContext } from '../dom';
 import { DOMApi } from '../dom-api';
 
+export type IfFunction = () => boolean;
+
 export class IfCondition {
   isDestructorRunning = false;
   prevComponent: GenericReturnType | null = null;
@@ -38,16 +40,16 @@ export class IfCondition {
   destroyPromise: Promise<any> | null = null;
   [RENDERED_NODES_PROPERTY] = [];
   [COMPONENT_ID_PROPERTY] = cId();
-  trueBranch: (ifContext: Component<any>) => GenericReturnType;
-  falseBranch: (ifContext: Component<any>) => GenericReturnType;
+  trueBranch: (ifContext: IfCondition) => GenericReturnType;
+  falseBranch: (ifContext: IfCondition) => GenericReturnType;
   declare api: DOMApi;
   constructor(
     parentContext: Component<any>,
-    maybeCondition: Cell<boolean>,
+    maybeCondition: Cell<boolean> | IfFunction | MergedCell,
     target: DocumentFragment | HTMLElement,
     placeholder: Comment,
-    trueBranch: (ifContext: Component<any>) => GenericReturnType,
-    falseBranch: (ifContext: Component<any>) => GenericReturnType,
+    trueBranch: (ifContext: IfCondition) => GenericReturnType,
+    falseBranch: (ifContext: IfCondition) => GenericReturnType,
   ) {
     this.target = target;
     this.placeholder = placeholder;
@@ -121,7 +123,7 @@ export class IfCondition {
     this.renderBranch(nextBranch, this.runNumber);
   }
   renderBranch(
-    nextBranch: (ifContext: Component<any>) => GenericReturnType,
+    nextBranch: (ifContext: IfCondition) => GenericReturnType,
     runNumber: number,
   ) {
     if (this.destroyPromise) {
@@ -150,8 +152,8 @@ export class IfCondition {
       // because it may broke form overall syncLogic delay.
       if (IS_DEV_MODE) {
         this.throwedError = new Error(`
-            Woops, error in ifCondition, managed by ${this.condition._debugName}: 
-              Run number mismatch, looks like some modifier is removed longer than re-rendering takes. 
+            Woops, error in ifCondition, managed by ${this.condition._debugName}:
+              Run number mismatch, looks like some modifier is removed longer than re-rendering takes.
               It may be a bug in your code. We can't sync DOM because it's always outdated.
               Removing opcode to not break whole app.
           `);
@@ -172,14 +174,14 @@ export class IfCondition {
     // @ts-expect-error branch acceptable type for destroy element
     await destroyElement(branch, false, this.api);
   }
-  renderState(nextBranch: (ifContext: Component<any>) => GenericReturnType) {
+  renderState(nextBranch: (ifContext: IfCondition) => GenericReturnType) {
     if (IS_DEV_MODE) {
       $DEBUG_REACTIVE_CONTEXTS.push(`if:${String(this.lastValue)}`);
     }
     try {
-      // @ts-expect-error 
+      // @ts-expect-error IfCondition is not a Component but has the same shape for context
       setParentContext(this);
-      this.prevComponent = nextBranch(this as unknown as Component<any>);
+      this.prevComponent = nextBranch(this);
     } finally {
       setParentContext(null);
     }
@@ -199,11 +201,16 @@ export class IfCondition {
         this[RENDERED_NODES_PROPERTY] = [this.placeholder];
       }
     }
-    // @ts-expect-error branch destroying
-    unregisterFromParent(this.prevComponent);
+    if (this.prevComponent !== null) {
+      // @ts-expect-error branch destroying
+      unregisterFromParent(this.prevComponent);
+    }
     return;
   }
   async destroy() {
+    if (this.isDestructorRunning) {
+      throw new Error('Already destroying');
+    }
     this.isDestructorRunning = true;
     if (this.placeholder.isConnected) {
       // should be handled on the top level
@@ -212,7 +219,7 @@ export class IfCondition {
     await this.destroyBranch();
     await Promise.all(this.destructors.map((destroyFn) => destroyFn()));
   }
-  setupCondition(maybeCondition: Cell<boolean>) {
+  setupCondition(maybeCondition: Cell<boolean> | IfFunction | MergedCell) {
     if (isFn(maybeCondition)) {
       this.condition = formula(() => {
         const v = maybeCondition();

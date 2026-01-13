@@ -215,6 +215,83 @@ GXT supports multiple root nodes per iteration (fragment-like rendering):
 {{/each}}
 ```
 
+### Suspense and Lazy Loading
+
+GXT provides built-in support for async component loading with suspense boundaries.
+
+#### Lazy Components
+
+Use `lazy()` to create code-split components that load on demand:
+
+```ts
+import { lazy } from "@lifeart/gxt/suspense";
+
+const MyAsyncComponent = lazy(() => import("./MyComponent"));
+```
+
+The lazy component will trigger the suspense boundary while loading.
+
+#### Suspense Boundaries
+
+Wrap lazy components with `<Suspense>` to show fallback content during loading:
+
+```gts
+import { Suspense, lazy } from "@lifeart/gxt/suspense";
+
+const AsyncComponent = lazy(() => import("./AsyncComponent"));
+
+function LoadingSpinner() {
+  return <template>
+    <div>Loading...</div>
+  </template>;
+}
+
+export function App() {
+  return <template>
+    <Suspense @fallback={{LoadingSpinner}}>
+      <AsyncComponent />
+    </Suspense>
+  </template>;
+}
+```
+
+Suspense boundaries can be nested for fine-grained loading states:
+
+```gts
+<Suspense @fallback={{PageLoader}}>
+  <Header />
+  <Suspense @fallback={{ContentLoader}}>
+    <MainContent />
+  </Suspense>
+</Suspense>
+```
+
+#### Tracking Custom Async Operations
+
+Use `followPromise()` to track custom async operations within a suspense boundary:
+
+```ts
+import { Component } from "@lifeart/gxt";
+import { followPromise } from "@lifeart/gxt/suspense";
+
+class DataLoader extends Component {
+  async loadData() {
+    // This promise will be tracked by the nearest suspense boundary
+    const data = await followPromise(
+      this,
+      fetch("/api/data").then((r) => r.json()),
+    );
+    return data;
+  }
+}
+```
+
+The `followPromise` function:
+
+- Calls `start()` on the nearest suspense context when the promise begins
+- Calls `end()` when the promise resolves or rejects
+- Returns the original promise unchanged
+
 ### Built-in Helpers
 
 GXT includes several built-in helpers for common template operations:
@@ -258,16 +335,14 @@ To render root component, use `renderComponent` function.
 import { renderComponent } from "@lifeart/gxt";
 import App from "./App.gts";
 
-const Instance = renderComponent(
-  App, {
-    // application arguments
-    args: {
-      name: 'My App'
-    },
-    // render target (append to)
-    element: document.getElementById("app"),
-  }
-);
+const Instance = renderComponent(App, {
+  // application arguments
+  args: {
+    name: "My App",
+  },
+  // render target (append to)
+  element: document.getElementById("app"),
+});
 ```
 
 To destroy component, use `destroyElement` function.
@@ -307,6 +382,7 @@ test("component renders correctly", async function (assert) {
 ```
 
 Available test utilities:
+
 - `render(template)` - renders a template to the test container
 - `rerender()` - waits for pending async updates
 - `click(selector)` - triggers a click event on matching element
