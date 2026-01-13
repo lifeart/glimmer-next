@@ -27,6 +27,16 @@ const iconColors: Record<string, string> = {
   'Notifications': 'from-red-500 to-rose-500',
 };
 
+// Staggered delays for one-by-one loading effect
+const delays: Record<string, number> = {
+  'User Profile': 0,
+  'Dashboard': 150,
+  'Settings': 300,
+  'Analytics': 450,
+  'Messages': 600,
+  'Notifications': 750,
+};
+
 export default class LoadMeAsync extends Component<{
   Args: { name: string };
 }> {
@@ -42,13 +52,38 @@ export default class LoadMeAsync extends Component<{
     return iconColors[this.args.name] || 'from-slate-400 to-slate-500';
   }
 
+  get animationDelay() {
+    return delays[this.args.name] ?? 0;
+  }
+
+  get cardStyle() {
+    return `animation-delay: ${this.animationDelay}ms`;
+  }
+
+  get iconStyle() {
+    return `animation-delay: ${this.animationDelay + 100}ms`;
+  }
+
+  get textStyle() {
+    return `animation-delay: ${this.animationDelay + 150}ms`;
+  }
+
   <template>
-    <div class="bg-gradient-to-br {{this.gradientClass}} rounded-xl p-4 border border-slate-600/30 animate-[fadeSlideIn_0.4s_ease-out_forwards] opacity-0">
+    <div
+      class="bg-gradient-to-br {{this.gradientClass}} rounded-xl p-4 border border-slate-600/30 animate-[fadeSlideIn_0.5s_ease-out_forwards] opacity-0"
+      style={{this.cardStyle}}
+    >
       <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-lg bg-gradient-to-br {{this.iconGradientClass}} flex items-center justify-center text-lg shadow-lg animate-[scaleIn_0.3s_ease-out_0.1s_forwards] scale-0">
+        <div
+          class="w-10 h-10 rounded-lg bg-gradient-to-br {{this.iconGradientClass}} flex items-center justify-center text-lg shadow-lg animate-[scaleIn_0.3s_ease-out_forwards] scale-0"
+          style={{this.iconStyle}}
+        >
           {{this.icon}}
         </div>
-        <div class="animate-[slideRight_0.3s_ease-out_0.15s_forwards] opacity-0 -translate-x-2">
+        <div
+          class="animate-[slideRight_0.3s_ease-out_forwards] opacity-0 -translate-x-2"
+          style={{this.textStyle}}
+        >
           <h3 class="font-medium text-white text-sm">{{@name}}</h3>
           <p class="text-xs text-slate-400">Module loaded</p>
         </div>
@@ -56,15 +91,15 @@ export default class LoadMeAsync extends Component<{
     </div>
     <style>
       @keyframes fadeSlideIn {
-        from { opacity: 0; transform: translateY(8px); }
+        from { opacity: 0; transform: translateY(12px); }
         to { opacity: 1; transform: translateY(0); }
       }
       @keyframes scaleIn {
-        from { transform: scale(0); }
-        to { transform: scale(1); }
+        from { transform: scale(0) rotate(-10deg); }
+        to { transform: scale(1) rotate(0deg); }
       }
       @keyframes slideRight {
-        from { opacity: 0; transform: translateX(-8px); }
+        from { opacity: 0; transform: translateX(-12px); }
         to { opacity: 1; transform: translateX(0); }
       }
     </style>
