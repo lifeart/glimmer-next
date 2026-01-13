@@ -27,8 +27,9 @@ export {
 import { SUSPENSE_CONTEXT, type SuspenseContext } from './suspense-utils';
 
 type LazyState<T> =
-  | { loading: true; component: null }
-  | { loading: false; component: T };
+  | { loading: true; error: null; component: null }
+  | { loading: false; error: null; component: T }
+  | { loading: false; error: Error; component: null };
 
 export function lazy<T>(factory: () => Promise<{ default: T }>): T {
   class LazyComponent extends Component {
@@ -40,19 +41,29 @@ export function lazy<T>(factory: () => Promise<{ default: T }>): T {
       this.load();
     }
     params: Record<string, unknown> = {};
-    stateCell: Cell<LazyState<T>> = cell({ loading: true, component: null });
+    stateCell: Cell<LazyState<T>> = cell({ loading: true, error: null, component: null });
     get isLoading(): boolean {
       return this.stateCell.value.loading;
+    }
+    get error(): Error | null {
+      return this.stateCell.value.error;
     }
     get contentComponent(): T {
       return this.stateCell.value.component as T;
     }
     async load(): Promise<void> {
-      const { default: component } = await factory();
-      if (isDestroyed(this)) {
-        return;
+      try {
+        const { default: component } = await factory();
+        if (isDestroyed(this)) {
+          return;
+        }
+        this.stateCell.update({ loading: false, error: null, component });
+      } catch (err) {
+        if (isDestroyed(this)) {
+          return;
+        }
+        this.stateCell.update({ loading: false, error: err as Error, component: null });
       }
-      this.stateCell.update({ loading: false, component });
     }
     _template() {
       const suspense = getContext<SuspenseContext>(this, SUSPENSE_CONTEXT);
@@ -67,6 +78,9 @@ export function lazy<T>(factory: () => Promise<{ default: T }>): T {
             },
             (c: IfCondition) => {
               try {
+                if (this.error) {
+                  throw this.error;
+                }
                 return $_c(
                   this.contentComponent as unknown as typeof Component,
                   this.params,
@@ -135,7 +149,12 @@ export class Suspense
       IS_DEV_MODE && this.isReleased && console.warn('Suspense is already released');
       return;
     }
-    const newValue = this.pendingAmountCell.value - 1;
+    const currentValue = this.pendingAmountCell.value;
+    if (IS_DEV_MODE && currentValue <= 0) {
+      console.warn('Suspense.end() called more times than start()');
+      return;
+    }
+    const newValue = currentValue - 1;
     this.pendingAmountCell.update(newValue);
     this.isReleased = newValue === 0;
   }
