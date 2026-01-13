@@ -240,10 +240,10 @@ function ErrorDemoWidget() {
         <div class="flex-1">
           <h3 class="font-medium text-red-400 text-sm">{{errorMessage.value}}</h3>
           <button
-            class="text-xs text-cyan-400 hover:text-cyan-300 underline cursor-pointer"
+            class="mt-1 px-3 py-1 text-xs bg-cyan-500 hover:bg-cyan-400 text-white rounded-md cursor-pointer transition-colors"
             {{on 'click' retry}}
           >
-            Click to retry
+            🔄 Retry
           </button>
         </div>
       {{else if (eq state.value 'recovered')}}
