@@ -22,10 +22,10 @@ const delays: Record<string, number> = {
 function UserProfileWidget() {
   const statusIndex = cell(0);
   const statuses = ['online', 'away', 'busy'] as const;
-  const statusColors = ['bg-green-500', 'bg-yellow-500', 'bg-red-500'];
+  const statusColors = ['#22c55e', '#eab308', '#ef4444']; // green, yellow, red
 
   const getStatus = () => statuses[statusIndex.value];
-  const getStatusColor = () => statusColors[statusIndex.value];
+  const getStatusStyle = () => `background-color: ${statusColors[statusIndex.value]}`;
   const cycleStatus = () => statusIndex.update((statusIndex.value + 1) % 3);
 
   return <template>
@@ -33,7 +33,8 @@ function UserProfileWidget() {
       <div class="relative">
         <div class="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-cyan-400 flex items-center justify-center text-lg">👤</div>
         <button
-          class="absolute -bottom-0.5 -right-0.5 w-4 h-4 {{getStatusColor}} rounded-full border-2 border-slate-800 cursor-pointer hover:scale-110 transition-transform"
+          class="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-slate-800 cursor-pointer hover:scale-110 transition-all"
+          style={{getStatusStyle}}
           title="Click to change status"
           {{on 'click' cycleStatus}}
         ></button>
