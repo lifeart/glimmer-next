@@ -7,6 +7,7 @@ import {
   Root,
   setParentContext,
   cell,
+  registerDestructor,
 } from '@lifeart/gxt';
 import { initDOM, provideContext, RENDERING_CONTEXT } from '@/utils/context';
 import { TresBrowserDOMApi, TresPlaceholder } from './tres-api';
@@ -165,9 +166,8 @@ export function TresCanvas(this: Component) {
     });
   }
 
-  // Store cleanup for later
-  // @ts-expect-error attaching cleanup to canvas
-  canvasNode.__tres_cleanup = cleanup;
+  // Register cleanup destructor
+  registerDestructor(this, cleanup);
 
   // Render slots with proper context
   let nodes: any[] = [];
