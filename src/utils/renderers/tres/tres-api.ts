@@ -3,6 +3,7 @@ import type { Camera } from 'three';
 import { deepArrayEqual, isHTMLTag, kebabToCamel } from './utils/index';
 
 import type { TresObject, TresObject3D, TresScene } from './types';
+import type { TresContext } from './context';
 import { catalogue } from './catalogue';
 import { isFn } from '@/utils/shared';
 
@@ -57,8 +58,25 @@ export class TresText extends TresPlaceholder {
 type Props = [any[], [string, any][], any[]];
 
 export class TresBrowserDOMApi {
+  private _context: TresContext | null = null;
+
   toString() {
     return 'tres:dom-api';
+  }
+
+  /**
+   * Set the TresContext for this API instance
+   * This allows access to scene, camera, renderer from within components
+   */
+  setContext(context: TresContext): void {
+    this._context = context;
+  }
+
+  /**
+   * Get the TresContext
+   */
+  getContext(): TresContext | null {
+    return this._context;
   }
 
   isNode(node: unknown): node is TresObject | TresPlaceholder {
@@ -196,7 +214,9 @@ export class TresBrowserDOMApi {
 
     // Handle fragment insertion
     if (child instanceof TresFragment) {
-      child.children.forEach((grandchild) => {
+      // Copy children array since adding to new parent removes from fragment
+      const children = [...child.children];
+      children.forEach((grandchild) => {
         this.insert(parentObject as TresObject, grandchild as TresObject);
       });
       return;

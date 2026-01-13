@@ -64,7 +64,11 @@ import {
   findObjectsByType,
   findCameras,
   findMeshes,
+  TRES_CONTEXT,
+  createTresContext,
+  createTresContextState,
 } from './index';
+import type { TresContext, TresContextState } from './context';
 
 // ============================================
 // Type Guards Tests (utils/is.ts)
@@ -895,6 +899,672 @@ describe('Dispose & Traverse Utilities', () => {
       expect(meshes).toContain(mesh1);
       expect(meshes).toContain(mesh2);
       expect(meshes.length).toBe(2);
+    });
+  });
+});
+
+// ============================================
+// TresContext Tests
+// ============================================
+
+describe('TresContext', () => {
+  describe('TRES_CONTEXT', () => {
+    test('is a symbol', () => {
+      expect(typeof TRES_CONTEXT).toBe('symbol');
+    });
+
+    test('has correct description', () => {
+      expect(TRES_CONTEXT.description).toBe('TRES_CONTEXT');
+    });
+  });
+
+  describe('createTresContextState', () => {
+    test('creates state with scene', () => {
+      const scene = new Scene();
+      const state = createTresContextState(scene);
+
+      expect(state.scene).toBe(scene);
+    });
+
+    test('initializes camera as null', () => {
+      const scene = new Scene();
+      const state = createTresContextState(scene);
+
+      expect(state.camera.value).toBe(null);
+    });
+
+    test('initializes cameras as empty array', () => {
+      const scene = new Scene();
+      const state = createTresContextState(scene);
+
+      expect(state.cameras.value).toEqual([]);
+    });
+
+    test('initializes renderer as null', () => {
+      const scene = new Scene();
+      const state = createTresContextState(scene);
+
+      expect(state.renderer.value).toBe(null);
+    });
+
+    test('initializes callback sets', () => {
+      const scene = new Scene();
+      const state = createTresContextState(scene);
+
+      expect(state.onBeforeRender).toBeInstanceOf(Set);
+      expect(state.onAfterRender).toBeInstanceOf(Set);
+      expect(state.interactiveObjects).toBeInstanceOf(Set);
+    });
+  });
+
+  describe('createTresContext', () => {
+    let scene: Scene;
+    let state: TresContextState;
+    let context: TresContext;
+
+    beforeEach(() => {
+      scene = new Scene();
+      state = createTresContextState(scene);
+      context = createTresContext(state);
+    });
+
+    test('exposes scene', () => {
+      expect(context.scene).toBe(scene);
+    });
+
+    test('exposes state', () => {
+      expect(context.state).toBe(state);
+    });
+
+    test('getCamera returns null initially', () => {
+      expect(context.getCamera()).toBe(null);
+    });
+
+    test('getCamera returns camera when set', () => {
+      const camera = new PerspectiveCamera();
+      state.camera.update(camera);
+
+      expect(context.getCamera()).toBe(camera);
+    });
+
+    test('getCameras returns empty array initially', () => {
+      expect(context.getCameras()).toEqual([]);
+    });
+
+    test('getCameras returns cameras when added', () => {
+      const cam1 = new PerspectiveCamera();
+      const cam2 = new PerspectiveCamera();
+      state.cameras.update([cam1, cam2]);
+
+      expect(context.getCameras()).toEqual([cam1, cam2]);
+    });
+
+    test('getRenderer returns null initially', () => {
+      expect(context.getRenderer()).toBe(null);
+    });
+
+    test('onBeforeRender registers callback', () => {
+      const callback = vi.fn();
+      context.onBeforeRender(callback);
+
+      expect(state.onBeforeRender.has(callback)).toBe(true);
+    });
+
+    test('onBeforeRender returns unregister function', () => {
+      const callback = vi.fn();
+      const unregister = context.onBeforeRender(callback);
+
+      expect(state.onBeforeRender.has(callback)).toBe(true);
+      unregister();
+      expect(state.onBeforeRender.has(callback)).toBe(false);
+    });
+
+    test('onAfterRender registers callback', () => {
+      const callback = vi.fn();
+      context.onAfterRender(callback);
+
+      expect(state.onAfterRender.has(callback)).toBe(true);
+    });
+
+    test('onAfterRender returns unregister function', () => {
+      const callback = vi.fn();
+      const unregister = context.onAfterRender(callback);
+
+      expect(state.onAfterRender.has(callback)).toBe(true);
+      unregister();
+      expect(state.onAfterRender.has(callback)).toBe(false);
+    });
+
+    test('registerInteractiveObject adds object', () => {
+      const mesh = new Mesh();
+      context.registerInteractiveObject(mesh);
+
+      expect(state.interactiveObjects.has(mesh)).toBe(true);
+    });
+
+    test('unregisterInteractiveObject removes object', () => {
+      const mesh = new Mesh();
+      context.registerInteractiveObject(mesh);
+      expect(state.interactiveObjects.has(mesh)).toBe(true);
+
+      context.unregisterInteractiveObject(mesh);
+      expect(state.interactiveObjects.has(mesh)).toBe(false);
+    });
+  });
+});
+
+// ============================================
+// TresBrowserDOMApi Context Tests
+// ============================================
+
+describe('TresBrowserDOMApi Context', () => {
+  let api: TresBrowserDOMApi;
+
+  beforeEach(() => {
+    api = new TresBrowserDOMApi();
+  });
+
+  describe('setContext', () => {
+    test('stores context', () => {
+      const scene = new Scene();
+      const state = createTresContextState(scene);
+      const context = createTresContext(state);
+
+      api.setContext(context);
+
+      expect(api.getContext()).toBe(context);
+    });
+  });
+
+  describe('getContext', () => {
+    test('returns null when no context set', () => {
+      expect(api.getContext()).toBe(null);
+    });
+
+    test('returns context when set', () => {
+      const scene = new Scene();
+      const state = createTresContextState(scene);
+      const context = createTresContext(state);
+
+      api.setContext(context);
+
+      expect(api.getContext()).toBe(context);
+    });
+  });
+});
+
+// ============================================
+// Shorthand Props Tests
+// ============================================
+
+describe('Shorthand Props Support', () => {
+  let api: TresBrowserDOMApi;
+
+  beforeEach(() => {
+    api = new TresBrowserDOMApi();
+  });
+
+  describe('position array prop', () => {
+    test('sets position from array', () => {
+      const mesh = new Mesh();
+      api.prop(mesh as any, 'position', [1, 2, 3]);
+
+      expect(mesh.position.x).toBe(1);
+      expect(mesh.position.y).toBe(2);
+      expect(mesh.position.z).toBe(3);
+    });
+  });
+
+  describe('rotation array prop', () => {
+    test('sets rotation from array', () => {
+      const mesh = new Mesh();
+      api.prop(mesh as any, 'rotation', [Math.PI / 2, Math.PI, 0]);
+
+      expect(mesh.rotation.x).toBeCloseTo(Math.PI / 2);
+      expect(mesh.rotation.y).toBeCloseTo(Math.PI);
+      expect(mesh.rotation.z).toBeCloseTo(0);
+    });
+  });
+
+  describe('scale array prop', () => {
+    test('sets scale from array', () => {
+      const mesh = new Mesh();
+      api.prop(mesh as any, 'scale', [2, 3, 4]);
+
+      expect(mesh.scale.x).toBe(2);
+      expect(mesh.scale.y).toBe(3);
+      expect(mesh.scale.z).toBe(4);
+    });
+  });
+
+  describe('scale scalar prop', () => {
+    test('sets uniform scale from scalar', () => {
+      const mesh = new Mesh();
+      api.prop(mesh as any, 'scale', 2);
+
+      expect(mesh.scale.x).toBe(2);
+      expect(mesh.scale.y).toBe(2);
+      expect(mesh.scale.z).toBe(2);
+    });
+  });
+
+  describe('color prop', () => {
+    test('sets color from hex number', () => {
+      const mat = new MeshBasicMaterial();
+      api.prop(mat as any, 'color', 0xff0000);
+
+      expect(mat.color.getHex()).toBe(0xff0000);
+    });
+
+    test('sets color from array', () => {
+      const mat = new MeshBasicMaterial();
+      api.prop(mat as any, 'color', [1, 0, 0]);
+
+      expect(mat.color.r).toBeCloseTo(1);
+      expect(mat.color.g).toBeCloseTo(0);
+      expect(mat.color.b).toBeCloseTo(0);
+    });
+  });
+});
+
+// ============================================
+// Event Handler Props Tests
+// ============================================
+
+describe('Event Handler Props', () => {
+  let api: TresBrowserDOMApi;
+
+  beforeEach(() => {
+    api = new TresBrowserDOMApi();
+  });
+
+  describe('onClick prop', () => {
+    test('stores onClick handler on object', () => {
+      const mesh = new Mesh();
+      const handler = vi.fn();
+      api.prop(mesh as any, 'onClick', handler);
+
+      // onClick should be stored on the object for raycasting
+      expect((mesh as any).onClick).toBe(handler);
+    });
+  });
+
+  describe('onPointerMove prop', () => {
+    test('stores onPointerMove handler on object', () => {
+      const mesh = new Mesh();
+      const handler = vi.fn();
+      api.prop(mesh as any, 'onPointerMove', handler);
+
+      expect((mesh as any).onPointerMove).toBe(handler);
+    });
+  });
+
+  describe('onPointerEnter prop', () => {
+    test('stores onPointerEnter handler on object', () => {
+      const mesh = new Mesh();
+      const handler = vi.fn();
+      api.prop(mesh as any, 'onPointerEnter', handler);
+
+      expect((mesh as any).onPointerEnter).toBe(handler);
+    });
+  });
+
+  describe('onPointerLeave prop', () => {
+    test('stores onPointerLeave handler on object', () => {
+      const mesh = new Mesh();
+      const handler = vi.fn();
+      api.prop(mesh as any, 'onPointerLeave', handler);
+
+      expect((mesh as any).onPointerLeave).toBe(handler);
+    });
+  });
+});
+
+// ============================================
+// Conditional Rendering Tests (#if/else)
+// ============================================
+
+describe('Conditional Rendering in Tres Context', () => {
+  let api: TresBrowserDOMApi;
+  let scene: Scene;
+
+  beforeEach(() => {
+    api = new TresBrowserDOMApi();
+    scene = new Scene();
+  });
+
+  describe('conditional insertion', () => {
+    test('inserts node when condition is true', () => {
+      const mesh = new Mesh();
+      api.insert(scene as any, mesh as any);
+
+      expect(scene.children).toContain(mesh);
+      expect(scene.children.length).toBe(1);
+    });
+
+    test('placeholder can be inserted without affecting scene', () => {
+      const placeholder = new TresPlaceholder('if-placeholder');
+      api.insert(scene as any, placeholder);
+
+      // Placeholder should be added but invisible
+      expect(scene.children).toContain(placeholder);
+      expect(placeholder.visible).toBe(false);
+    });
+
+    test('can toggle between mesh and placeholder', () => {
+      const mesh = new Mesh();
+      const placeholder = new TresPlaceholder('if-placeholder');
+
+      // Condition true - insert mesh
+      api.insert(scene as any, mesh as any);
+      expect(scene.children).toContain(mesh);
+
+      // Condition false - remove mesh, insert placeholder
+      api.destroy(mesh as any);
+      api.insert(scene as any, placeholder);
+      expect(scene.children).not.toContain(mesh);
+      expect(scene.children).toContain(placeholder);
+
+      // Condition true again - remove placeholder, insert mesh
+      api.destroy(placeholder as any);
+      const newMesh = new Mesh();
+      api.insert(scene as any, newMesh as any);
+      expect(scene.children).not.toContain(placeholder);
+      expect(scene.children).toContain(newMesh);
+    });
+  });
+
+  describe('conditional with fragments', () => {
+    test('fragment children are inserted into parent', () => {
+      const fragment = new TresFragment();
+      const mesh1 = new Mesh();
+      const mesh2 = new Mesh();
+      fragment.add(mesh1);
+      fragment.add(mesh2);
+
+      api.insert(scene as any, fragment);
+
+      // Fragment children should be added to scene
+      expect(scene.children).toContain(mesh1);
+      expect(scene.children).toContain(mesh2);
+    });
+  });
+
+  describe('nested conditional', () => {
+    test('handles nested conditions', () => {
+      const group = new Group();
+      api.insert(scene as any, group as any);
+
+      // Outer condition true, inner condition true
+      const mesh = new Mesh();
+      api.insert(group as any, mesh as any);
+      expect(group.children).toContain(mesh);
+
+      // Inner condition false
+      api.destroy(mesh as any);
+      const innerPlaceholder = new TresPlaceholder('inner-if');
+      api.insert(group as any, innerPlaceholder);
+      expect(group.children).not.toContain(mesh);
+      expect(group.children).toContain(innerPlaceholder);
+
+      // Outer condition false
+      api.destroy(group as any);
+      expect(scene.children).not.toContain(group);
+    });
+  });
+});
+
+// ============================================
+// List Rendering Tests (@each)
+// ============================================
+
+describe('List Rendering in Tres Context', () => {
+  let api: TresBrowserDOMApi;
+  let scene: Scene;
+
+  beforeEach(() => {
+    api = new TresBrowserDOMApi();
+    scene = new Scene();
+  });
+
+  describe('list insertion', () => {
+    test('inserts multiple items', () => {
+      const meshes = [new Mesh(), new Mesh(), new Mesh()];
+
+      meshes.forEach((mesh) => {
+        api.insert(scene as any, mesh as any);
+      });
+
+      expect(scene.children.length).toBe(3);
+      meshes.forEach((mesh) => {
+        expect(scene.children).toContain(mesh);
+      });
+    });
+
+    test('items maintain insertion order', () => {
+      const mesh1 = new Mesh();
+      mesh1.name = 'mesh1';
+      const mesh2 = new Mesh();
+      mesh2.name = 'mesh2';
+      const mesh3 = new Mesh();
+      mesh3.name = 'mesh3';
+
+      api.insert(scene as any, mesh1 as any);
+      api.insert(scene as any, mesh2 as any);
+      api.insert(scene as any, mesh3 as any);
+
+      expect(scene.children[0]).toBe(mesh1);
+      expect(scene.children[1]).toBe(mesh2);
+      expect(scene.children[2]).toBe(mesh3);
+    });
+  });
+
+  describe('list removal', () => {
+    test('removes items from list', () => {
+      const mesh1 = new Mesh();
+      const mesh2 = new Mesh();
+      const mesh3 = new Mesh();
+
+      api.insert(scene as any, mesh1 as any);
+      api.insert(scene as any, mesh2 as any);
+      api.insert(scene as any, mesh3 as any);
+
+      expect(scene.children.length).toBe(3);
+
+      // Remove middle item
+      api.destroy(mesh2 as any);
+
+      expect(scene.children.length).toBe(2);
+      expect(scene.children).toContain(mesh1);
+      expect(scene.children).not.toContain(mesh2);
+      expect(scene.children).toContain(mesh3);
+    });
+
+    test('removes all items', () => {
+      const meshes = [new Mesh(), new Mesh(), new Mesh()];
+      meshes.forEach((mesh) => api.insert(scene as any, mesh as any));
+
+      meshes.forEach((mesh) => api.destroy(mesh as any));
+
+      expect(scene.children.length).toBe(0);
+    });
+  });
+
+  describe('list update', () => {
+    test('handles adding items to existing list', () => {
+      const mesh1 = new Mesh();
+      api.insert(scene as any, mesh1 as any);
+
+      const mesh2 = new Mesh();
+      api.insert(scene as any, mesh2 as any);
+
+      expect(scene.children.length).toBe(2);
+      expect(scene.children).toContain(mesh1);
+      expect(scene.children).toContain(mesh2);
+    });
+
+    test('handles removing items from existing list', () => {
+      const mesh1 = new Mesh();
+      const mesh2 = new Mesh();
+      const mesh3 = new Mesh();
+
+      api.insert(scene as any, mesh1 as any);
+      api.insert(scene as any, mesh2 as any);
+      api.insert(scene as any, mesh3 as any);
+
+      // Remove first item
+      api.destroy(mesh1 as any);
+
+      expect(scene.children.length).toBe(2);
+      expect(scene.children[0]).toBe(mesh2);
+      expect(scene.children[1]).toBe(mesh3);
+    });
+  });
+
+  describe('list with groups', () => {
+    test('renders list items as groups', () => {
+      const items = [
+        { geometry: new BoxGeometry(), material: new MeshBasicMaterial({ color: 0xff0000 }) },
+        { geometry: new BoxGeometry(), material: new MeshBasicMaterial({ color: 0x00ff00 }) },
+        { geometry: new BoxGeometry(), material: new MeshBasicMaterial({ color: 0x0000ff }) },
+      ];
+
+      const meshes = items.map((item) => new Mesh(item.geometry, item.material));
+
+      meshes.forEach((mesh) => {
+        api.insert(scene as any, mesh as any);
+      });
+
+      expect(scene.children.length).toBe(3);
+      meshes.forEach((mesh, index) => {
+        expect(scene.children[index]).toBe(mesh);
+      });
+    });
+  });
+
+  describe('nested lists', () => {
+    test('renders nested list structure', () => {
+      // Create a grid of meshes (3x3)
+      const groups: Group[] = [];
+
+      for (let i = 0; i < 3; i++) {
+        const group = new Group();
+        group.name = `row-${i}`;
+        api.insert(scene as any, group as any);
+        groups.push(group);
+
+        for (let j = 0; j < 3; j++) {
+          const mesh = new Mesh();
+          mesh.name = `mesh-${i}-${j}`;
+          api.insert(group as any, mesh as any);
+        }
+      }
+
+      expect(scene.children.length).toBe(3);
+      groups.forEach((group, i) => {
+        expect(group.children.length).toBe(3);
+        group.children.forEach((child, j) => {
+          expect(child.name).toBe(`mesh-${i}-${j}`);
+        });
+      });
+    });
+  });
+});
+
+// ============================================
+// Node Relocation Tests
+// ============================================
+
+describe('Node Relocation in Tres Context', () => {
+  let api: TresBrowserDOMApi;
+  let scene: Scene;
+
+  beforeEach(() => {
+    api = new TresBrowserDOMApi();
+    scene = new Scene();
+  });
+
+  describe('moving nodes between parents', () => {
+    test('moves node from one parent to another', () => {
+      const group1 = new Group();
+      const group2 = new Group();
+      const mesh = new Mesh();
+
+      api.insert(scene as any, group1 as any);
+      api.insert(scene as any, group2 as any);
+      api.insert(group1 as any, mesh as any);
+
+      expect(group1.children).toContain(mesh);
+      expect(group2.children).not.toContain(mesh);
+
+      // Move mesh from group1 to group2
+      mesh.removeFromParent();
+      api.insert(group2 as any, mesh as any);
+
+      expect(group1.children).not.toContain(mesh);
+      expect(group2.children).toContain(mesh);
+    });
+  });
+
+  describe('clearChildren', () => {
+    test('clears all children from a node', () => {
+      const group = new Group();
+      api.insert(scene as any, group as any);
+
+      const mesh1 = new Mesh();
+      const mesh2 = new Mesh();
+      const mesh3 = new Mesh();
+
+      api.insert(group as any, mesh1 as any);
+      api.insert(group as any, mesh2 as any);
+      api.insert(group as any, mesh3 as any);
+
+      expect(group.children.length).toBe(3);
+
+      api.clearChildren(group as any);
+
+      expect(group.children.length).toBe(0);
+    });
+
+    test('disposes geometry and materials when clearing', () => {
+      const group = new Group();
+      const geometry = new BoxGeometry();
+      const material = new MeshBasicMaterial();
+      const mesh = new Mesh(geometry, material);
+
+      api.insert(scene as any, group as any);
+      api.insert(group as any, mesh as any);
+
+      const geometryDispose = vi.spyOn(geometry, 'dispose');
+      const materialDispose = vi.spyOn(material, 'dispose');
+
+      api.clearChildren(group as any);
+
+      expect(geometryDispose).toHaveBeenCalled();
+      expect(materialDispose).toHaveBeenCalled();
+    });
+  });
+
+  describe('replacing list items', () => {
+    test('handles replacing entire list', () => {
+      // Initial list
+      const initialMeshes = [new Mesh(), new Mesh()];
+      initialMeshes.forEach((mesh) => api.insert(scene as any, mesh as any));
+
+      expect(scene.children.length).toBe(2);
+
+      // Clear and replace with new list
+      api.clearChildren(scene as any);
+      const newMeshes = [new Mesh(), new Mesh(), new Mesh()];
+      newMeshes.forEach((mesh) => api.insert(scene as any, mesh as any));
+
+      expect(scene.children.length).toBe(3);
+      newMeshes.forEach((mesh) => {
+        expect(scene.children).toContain(mesh);
+      });
+      initialMeshes.forEach((mesh) => {
+        expect(scene.children).not.toContain(mesh);
+      });
     });
   });
 });

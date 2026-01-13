@@ -3,11 +3,21 @@ import { getContext, provideContext, RENDERING_CONTEXT } from '@/utils/context';
 import { TresBrowserDOMApi } from './tres-api';
 import type { Camera, Object3D, Material } from 'three';
 import type { TresObject, TresObject3D } from './types';
+import type { TresContext } from './context';
 
 // Core exports
 export { TresCanvas } from './TresCanvas';
 export { TresBrowserDOMApi, TresPlaceholder, TresFragment, TresComment, TresText } from './tres-api';
 export { catalogue, extend } from './catalogue';
+
+// Context exports
+export {
+  TRES_CONTEXT,
+  createTresContext,
+  createTresContextState,
+  type TresContext,
+  type TresContextState,
+} from './context';
 
 // Type guards - useful for checking Three.js object types
 export {
@@ -76,6 +86,30 @@ export type {
  */
 export function useTresContext(ctx: Component<any>): TresBrowserDOMApi | null {
   return getContext<TresBrowserDOMApi>(ctx, RENDERING_CONTEXT);
+}
+
+/**
+ * useTres - Hook to access the Three.js context (scene, camera, renderer)
+ *
+ * Usage:
+ * ```ts
+ * function MyComponent(this: Component) {
+ *   const tres = useTres(this);
+ *   // Access scene, camera, renderer
+ *   const scene = tres?.scene;
+ *   const camera = tres?.getCamera();
+ *   const renderer = tres?.getRenderer();
+ *
+ *   // Register render callbacks
+ *   tres?.onBeforeRender((state, delta) => {
+ *     // Called before each frame
+ *   });
+ * }
+ * ```
+ */
+export function useTres(ctx: Component<any>): TresContext | null {
+  const api = getContext<TresBrowserDOMApi>(ctx, RENDERING_CONTEXT);
+  return api?.getContext() ?? null;
 }
 
 /**
