@@ -34,15 +34,13 @@ type LazyState<T> =
 export function lazy<T>(factory: () => Promise<{ default: T }>): T {
   class LazyComponent extends Component {
     suspenseContext: SuspenseContext | null = null;
+    suspenseStarted = false;
 
     constructor(params: Record<string, unknown>) {
       super(params);
       this.params = params;
       // @ts-expect-error args types
       this[$template] = this._template;
-      // Get suspense context and start tracking before loading
-      this.suspenseContext = getContext<SuspenseContext>(this, SUSPENSE_CONTEXT);
-      this.suspenseContext?.start();
       this.load();
     }
     params: Record<string, unknown> = {};
@@ -73,6 +71,17 @@ export function lazy<T>(factory: () => Promise<{ default: T }>): T {
       }
     }
     _template() {
+      // Get context here when component is in tree, defer start() to avoid rehydration issues
+      if (!this.suspenseStarted) {
+        this.suspenseStarted = true;
+        this.suspenseContext = getContext<SuspenseContext>(this, SUSPENSE_CONTEXT);
+        queueMicrotask(() => {
+          if (!isDestroyed(this) && this.isLoading) {
+            this.suspenseContext?.start();
+          }
+        });
+      }
+
       return $_fin(
         [
           $_if(
