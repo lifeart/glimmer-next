@@ -27,13 +27,15 @@ export function emitDomClickEvent(selector: ButtonSelectors) {
 }
 
 export function waitForIdle() {
-  return new Promise((resolve) => {
-    if (typeof requestIdleCallback === 'undefined') {
-      setTimeout(resolve, 50);
-      return;
-    } else {
-      requestIdleCallback(resolve);
-    }
+  return new Promise<void>((resolve) => {
+    // In headless Chrome, requestAnimationFrame may not fire reliably
+    // Use setTimeout as primary mechanism with a small delay
+    // This ensures consistent behavior in both headful and headless modes
+    setTimeout(() => {
+      // Double setTimeout to ensure we yield to other tasks
+      // and allow microtasks to complete
+      setTimeout(resolve, 0);
+    }, 16); // ~1 frame at 60fps
   });
 }
 

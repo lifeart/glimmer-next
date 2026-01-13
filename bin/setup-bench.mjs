@@ -2,6 +2,31 @@ import "zx/globals";
 import os from "node:os";
 import { join } from "node:path";
 
+import { mkdirSync, appendFileSync, writeFileSync } from "node:fs";
+
+// Create log file for debugging CI failures (use absolute path since within() changes cwd)
+const resultsDir = join(process.cwd(), "tracerbench-results");
+const logFile = join(resultsDir, "setup.log");
+try {
+  mkdirSync(resultsDir, { recursive: true });
+} catch (e) {
+  // Directory might already exist, that's fine
+}
+const log = (...args) => {
+  const timestamp = new Date().toISOString();
+  const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ');
+  const line = `[${timestamp}] ${msg}`;
+  console.info(line);
+  appendFileSync(logFile, line + "\n");
+};
+
+const startTime = Date.now();
+const elapsed = () => `[+${((Date.now() - startTime) / 1000).toFixed(1)}s]`;
+
+log("=== Benchmark setup script starting ===");
+log(`Node version: ${process.version}`);
+log(`Working directory: ${process.cwd()}`);
+
 /*
 
   To run proper bench setup we need to do following things:
@@ -21,6 +46,10 @@ const experimentBranchName =
 const controlBranchName = process.env["CONTROL_BRANCH_NAME"] || "master";
 
 // same order as in benchmark/benchmarks/krausest/lib/index.ts
+// Note: diagnostic markers (afterInitialRender, benchmarkPathVerified, beforeBenchmarkLoop) are also created
+// but not included in markers list - they're just for debugging if the trace is saved
+// Note: benchmarkComplete markers are only in experiment branch, not control (master),
+// so they cannot be used until merged to master
 const appMarkers = [
   "render",
   "render1000Items1",
@@ -43,13 +72,9 @@ const appMarkers = [
   "swapRows1",
   "swapRows2",
   "clearItems4",
-].reduce((acc, marker) => {
-  return acc + "," + marker + "Start," + marker + "End";
-}, "");
-const markers = (process.env["MARKERS"] || appMarkers)
-  .split(",")
-  .filter((el) => el.length)
-  .join(",");
+].flatMap((marker) => [marker + "Start", marker + "End"]).join(",");
+
+const markers = process.env["MARKERS"] || appMarkers;
 const fidelity = process.env["FIDELITY"] || "20";
 const throttleRate = process.env["THROTTLE"] || "2";
 const FORK_NAME = process.env["FORK_NAME"] || "";
@@ -92,28 +117,54 @@ const EXPERIMENT_URL = `http://localhost:${EXPERIMENT_PORT}/benchmark`;
 // setup experiment
 await within(async () => {
   await cd(EXPERIMENT_DIR);
+  log(`${elapsed()} Cloning experiment from ${originUrlStr}...`);
   await $`git clone ${originUrlStr} .`;
+  log(`Checking out branch ${experimentBranchName}...`);
   await $`git checkout ${experimentBranchName}`;
 
-  console.info("installing experiment source");
-  await $`pnpm install --no-frozen-lockfile`.quiet();
-  console.info("building experiment source, may take a while");
-  await $`pnpm build:prod`.quiet();
+  log("installing experiment source...");
+  try {
+    await $`pnpm install --no-frozen-lockfile`.quiet();
+  } catch (e) {
+    log("pnpm install failed for experiment:", e.stderr || e.message);
+    throw e;
+  }
+  log("building experiment source, may take a while...");
+  try {
+    await $`pnpm build:prod`.quiet();
+  } catch (e) {
+    log("pnpm build:prod failed for experiment:", e.stderr || e.message);
+    throw e;
+  }
+  log(`${elapsed()} experiment build complete`);
 });
 
 // setup control
 await within(async () => {
   await cd(CONTROL_DIR);
+  log(`${elapsed()} Cloning control from ${upstreamUrlStr}...`);
   await $`git clone ${upstreamUrlStr} .`;
+  log(`Checking out branch ${controlBranchName}...`);
   await $`git checkout ${controlBranchName}`;
 
-  console.info("installing control source");
-  await $`pnpm install --no-frozen-lockfile`.quiet();
-  console.info("building control source, may take a while");
-  await $`pnpm build:prod`.quiet();
+  log("installing control source...");
+  try {
+    await $`pnpm install --no-frozen-lockfile`.quiet();
+  } catch (e) {
+    log("pnpm install failed for control:", e.stderr || e.message);
+    throw e;
+  }
+  log("building control source, may take a while...");
+  try {
+    await $`pnpm build:prod`.quiet();
+  } catch (e) {
+    log("pnpm build:prod failed for control:", e.stderr || e.message);
+    throw e;
+  }
+  log(`${elapsed()} control build complete`);
 });
 
-console.info({
+log({
   upstreamUrlStr,
   originUrlStr,
   EXPERIMENT_DIR,
@@ -121,29 +172,69 @@ console.info({
 });
 
 // start build assets
-$`cd ${CONTROL_BENCH_DIR} && pnpm vite preview --port ${CONTROL_PORT}`;
-$`cd ${EXPERIMENT_BENCH_DIR} && pnpm vite preview --port ${EXPERIMENT_PORT}`;
+const controlServer = $`cd ${CONTROL_BENCH_DIR} && pnpm vite preview --port ${CONTROL_PORT}`;
+const experimentServer = $`cd ${EXPERIMENT_BENCH_DIR} && pnpm vite preview --port ${EXPERIMENT_PORT}`;
 
-await new Promise((resolve) => {
-  // giving 5 seconds for the server to start
-  setTimeout(resolve, 5000);
-});
+// Helper to check if server is ready
+async function waitForServer(url, maxAttempts = 30) {
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      const response = await fetch(url);
+      if (response.ok) {
+        log(`Server ready: ${url}`);
+        return true;
+      }
+    } catch {
+      // Server not ready yet
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  throw new Error(`Server failed to start: ${url}`);
+}
+
+// Wait for both servers to be ready
+await Promise.all([
+  waitForServer(CONTROL_URL),
+  waitForServer(EXPERIMENT_URL),
+]);
+
+log(`${elapsed()} Both servers are ready`);
 
 try {
+  // Using headless Chrome for CI performance
+  const browserArgs = [
+    "--headless",
+    "--disable-gpu",
+    "--no-sandbox",
+    "--disable-dev-shm-usage",
+    "--disable-extensions",
+  ].join(",");
+  log(`${elapsed()} Starting tracerbench...`);
+  log(`browserArgs: ${browserArgs}`);
+  log(`markers: ${markers.substring(0, 100)}...`);
   const output =
-    await $`./node_modules/.bin/tracerbench compare --regressionThreshold 25 --sampleTimeout 60 --fidelity ${fidelity} --markers ${markers} --controlURL ${CONTROL_URL} --experimentURL ${EXPERIMENT_URL} --report --headless --cpuThrottleRate ${throttleRate}`;
+    await $`./node_modules/.bin/tracerbench compare --debug --browserArgs ${browserArgs} --regressionThreshold 25 --sampleTimeout 240 --fidelity ${fidelity} --markers ${markers} --controlURL ${CONTROL_URL} --experimentURL ${EXPERIMENT_URL} --report --cpuThrottleRate ${throttleRate} --tbResultsFolder ./tracerbench-results`;
 
   try {
-    fs.writeFileSync(
-      "tracerbench-results/msg.txt",
+    writeFileSync(
+      join(resultsDir, "msg.txt"),
       output.stdout.split("Benchmark Results Summary").pop() ?? "",
     );
   } catch (e) {
     // fine
   }
 } catch (p) {
-  console.error(p);
+  log("=== TRACERBENCH FAILED ===");
+  log("Error:", p?.message || p);
+  if (p?.stderr) log("Stderr:", p.stderr);
+  if (p?.stdout) log("Stdout tail:", p.stdout?.slice(-2000));
+  // Kill server processes
+  controlServer.kill();
+  experimentServer.kill();
   process.exit(1);
 }
 
+// Kill server processes
+controlServer.kill();
+experimentServer.kill();
 process.exit(0);

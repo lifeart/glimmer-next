@@ -134,6 +134,7 @@ dist
 playwright-report/
 playwright-report
 tracerbench-results
+tracerbench-*
 tmp
 coverage
 .eslintcache
