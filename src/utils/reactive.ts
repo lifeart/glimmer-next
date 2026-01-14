@@ -8,6 +8,13 @@ import { isFn, isTag, isTagLike, debugContext } from '@/utils/shared';
 import { AdaptivePool, config } from '@/utils/config';
 
 export const asyncOpcodes = new WeakSet<tagOp>();
+// Fast path: skip WeakSet checks when no async opcodes have ever been registered
+let hasAnyAsyncOpcodes = false;
+
+export function markOpcodeAsync(op: tagOp) {
+  asyncOpcodes.add(op);
+  hasAnyAsyncOpcodes = true;
+}
 // List of DOM operations for each tag
 export const opsForTag: Map<
   number,
@@ -296,15 +303,49 @@ export type tagOp = (...values: unknown[]) => Promise<void> | void;
 export async function executeTag(tag: Cell | MergedCell) {
   let opcode: null | tagOp = null;
   const ops = opsFor(tag);
+  const value = tag.value;
+
+  // Fast path: when no async opcodes exist, skip all WeakSet lookups
+  if (!hasAnyAsyncOpcodes) {
+    if (TRY_CATCH_ERROR_HANDLING) {
+      try {
+        for (let i = 0; i < ops.length; i++) {
+          opcode = ops[i];
+          opcode(value);
+        }
+      } catch (e: any) {
+        if (IS_DEV_MODE) {
+          console.error({
+            message: 'Error executing tag',
+            error: e,
+            tag,
+            opcode: opcode?.toString(),
+          });
+        }
+        if (opcode) {
+          const index = ops.indexOf(opcode);
+          if (index > -1) {
+            ops.splice(index, 1);
+          }
+        }
+      }
+    } else {
+      for (let i = 0; i < ops.length; i++) {
+        ops[i](value);
+      }
+    }
+    return;
+  }
+
+  // Slow path: check async status for each opcode
   if (TRY_CATCH_ERROR_HANDLING) {
     try {
-      const value = tag.value;
-      for (const op of ops) {
-        opcode = op;
-        if (asyncOpcodes.has(op)) {
-          await op(value);
+      for (let i = 0; i < ops.length; i++) {
+        opcode = ops[i];
+        if (asyncOpcodes.has(opcode)) {
+          await opcode(value);
         } else {
-          op(value);
+          opcode(value);
         }
       }
     } catch (e: any) {
@@ -317,20 +358,19 @@ export async function executeTag(tag: Cell | MergedCell) {
         });
       }
       if (opcode) {
-        let index = ops.indexOf(opcode);
+        const index = ops.indexOf(opcode);
         if (index > -1) {
           ops.splice(index, 1);
         }
       }
     }
   } else {
-    const value = tag.value;
-    for (const op of ops) {
-      opcode = op;
-      if (asyncOpcodes.has(op)) {
-        await op(value);
+    for (let i = 0; i < ops.length; i++) {
+      opcode = ops[i];
+      if (asyncOpcodes.has(opcode)) {
+        await opcode(value);
       } else {
-        op(value);
+        opcode(value);
       }
     }
   }

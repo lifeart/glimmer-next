@@ -59,7 +59,10 @@ export async function syncDom() {
       if (sharedTags === null) {
         sharedTags = [];
       }
-      sharedTags.push(...subTags.values());
+      // Direct iteration is faster than spread operator on Set.values()
+      for (const tag of subTags) {
+        sharedTags.push(tag);
+      }
       subTags.clear();
     }
   }

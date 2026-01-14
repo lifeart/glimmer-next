@@ -2,7 +2,7 @@ import {
   opsForTag,
   type AnyCell,
   type tagOp,
-  asyncOpcodes,
+  markOpcodeAsync,
   setIsRendering,
   isRendering,
   formula,
@@ -75,7 +75,7 @@ const executeOpcode = (tag: AnyCell, op: tagOp) => {
   const value = op(tag.value) as unknown as void | Promise<void>;
   if (value !== undefined) {
     // console.info(`Adding Async Updating Opcode for ${tag._debugName}`);
-    asyncOpcodes.add(op);
+    markOpcodeAsync(op);
   }
 };
 

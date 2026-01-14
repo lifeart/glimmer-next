@@ -895,13 +895,23 @@ if (IS_DEV_MODE) {
   }
 }
 
+// Split into push/pop for hot path performance - avoids null check on every call
+export const pushParentContext = (value: Root | Component<any>) => {
+  parentContextIndex++;
+  parentContextStack.push(value[COMPONENT_ID_PROPERTY]!);
+};
+
+export const popParentContext = () => {
+  parentContextIndex--;
+  parentContextStack.pop();
+};
+
+// Keep for backward compatibility
 export const setParentContext = (value: Root | Component<any> | null) => {
   if (value === null) {
-    parentContextIndex--;
-    parentContextStack.pop();
+    popParentContext();
   } else {
-    parentContextIndex++;
-    parentContextStack.push(value[COMPONENT_ID_PROPERTY]!);
+    pushParentContext(value);
   }
 };
 
