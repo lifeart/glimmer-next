@@ -2016,3 +2016,168 @@ describe('Node Relocation in Tres Context', () => {
     });
   });
 });
+
+// ============================================
+// TresContext Cleanup Tests
+// ============================================
+
+describe('TresContext Cleanup', () => {
+  let scene: Scene;
+  let state: TresContextState;
+  let context: TresContext;
+
+  beforeEach(() => {
+    scene = new Scene();
+    state = createTresContextState(scene);
+    context = createTresContext(state);
+  });
+
+  describe('onBeforeRender cleanup', () => {
+    test('registered callback is stored in state', () => {
+      const callback = vi.fn();
+      context.onBeforeRender(callback);
+
+      expect(state.onBeforeRender.has(callback)).toBe(true);
+    });
+
+    test('unregister function removes callback', () => {
+      const callback = vi.fn();
+      const unregister = context.onBeforeRender(callback);
+
+      expect(state.onBeforeRender.has(callback)).toBe(true);
+
+      unregister();
+
+      expect(state.onBeforeRender.has(callback)).toBe(false);
+    });
+
+    test('clearing onBeforeRender removes all callbacks', () => {
+      const callback1 = vi.fn();
+      const callback2 = vi.fn();
+      const callback3 = vi.fn();
+
+      context.onBeforeRender(callback1);
+      context.onBeforeRender(callback2);
+      context.onBeforeRender(callback3);
+
+      expect(state.onBeforeRender.size).toBe(3);
+
+      state.onBeforeRender.clear();
+
+      expect(state.onBeforeRender.size).toBe(0);
+    });
+  });
+
+  describe('onAfterRender cleanup', () => {
+    test('registered callback is stored in state', () => {
+      const callback = vi.fn();
+      context.onAfterRender(callback);
+
+      expect(state.onAfterRender.has(callback)).toBe(true);
+    });
+
+    test('unregister function removes callback', () => {
+      const callback = vi.fn();
+      const unregister = context.onAfterRender(callback);
+
+      expect(state.onAfterRender.has(callback)).toBe(true);
+
+      unregister();
+
+      expect(state.onAfterRender.has(callback)).toBe(false);
+    });
+
+    test('clearing onAfterRender removes all callbacks', () => {
+      const callback1 = vi.fn();
+      const callback2 = vi.fn();
+
+      context.onAfterRender(callback1);
+      context.onAfterRender(callback2);
+
+      expect(state.onAfterRender.size).toBe(2);
+
+      state.onAfterRender.clear();
+
+      expect(state.onAfterRender.size).toBe(0);
+    });
+  });
+
+  describe('interactiveObjects cleanup', () => {
+    test('registered object is stored in state', () => {
+      const mesh = new Mesh();
+      context.registerInteractiveObject(mesh);
+
+      expect(state.interactiveObjects.has(mesh)).toBe(true);
+    });
+
+    test('unregistered object is removed from state', () => {
+      const mesh = new Mesh();
+      context.registerInteractiveObject(mesh);
+      context.unregisterInteractiveObject(mesh);
+
+      expect(state.interactiveObjects.has(mesh)).toBe(false);
+    });
+
+    test('clearing interactiveObjects removes all objects', () => {
+      const mesh1 = new Mesh();
+      const mesh2 = new Mesh();
+      const mesh3 = new Mesh();
+
+      context.registerInteractiveObject(mesh1);
+      context.registerInteractiveObject(mesh2);
+      context.registerInteractiveObject(mesh3);
+
+      expect(state.interactiveObjects.size).toBe(3);
+
+      state.interactiveObjects.clear();
+
+      expect(state.interactiveObjects.size).toBe(0);
+    });
+  });
+
+  describe('full cleanup scenario', () => {
+    test('simulates TresCanvas cleanup', () => {
+      // Simulate registering various callbacks and objects (like TresScene would)
+      const animationCallback = vi.fn();
+      const renderCallback = vi.fn();
+      const mesh1 = new Mesh();
+      const mesh2 = new Mesh();
+
+      context.onBeforeRender(animationCallback);
+      context.onAfterRender(renderCallback);
+      context.registerInteractiveObject(mesh1);
+      context.registerInteractiveObject(mesh2);
+
+      expect(state.onBeforeRender.size).toBe(1);
+      expect(state.onAfterRender.size).toBe(1);
+      expect(state.interactiveObjects.size).toBe(2);
+
+      // Simulate the cleanup that happens when TresCanvas is destroyed
+      // (matches the cleanup function in TresCanvas.ts)
+      state.onBeforeRender.clear();
+      state.onAfterRender.clear();
+      state.interactiveObjects.clear();
+
+      expect(state.onBeforeRender.size).toBe(0);
+      expect(state.onAfterRender.size).toBe(0);
+      expect(state.interactiveObjects.size).toBe(0);
+
+      // Animation callback should no longer be triggered
+      // (In real usage, the animation loop would not call callbacks after clear)
+    });
+
+    test('unregister functions work even after other callbacks are cleared', () => {
+      const callback1 = vi.fn();
+      const callback2 = vi.fn();
+
+      const unregister1 = context.onBeforeRender(callback1);
+      context.onBeforeRender(callback2);
+
+      // Clear callback2 by clearing all
+      state.onBeforeRender.clear();
+
+      // Calling unregister1 should not throw even though the set is empty
+      expect(() => unregister1()).not.toThrow();
+    });
+  });
+});

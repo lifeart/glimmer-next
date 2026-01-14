@@ -5,7 +5,7 @@ import {
   type Component,
   unregisterFromParent,
 } from '@/utils/component';
-import { Destructors, registerDestructor } from '@/utils/glimmer/destroyable';
+import { Destructors, registerDestructor, destroy } from '@/utils/glimmer/destroyable';
 import { formula, type Cell, type MergedCell } from '@/utils/reactive';
 import {
   $_debug_args,
@@ -217,6 +217,14 @@ export class IfCondition {
       // this.placeholder.parentNode!.removeChild(this.placeholder);
     }
     await this.destroyBranch();
+    // Run destructors registered via registerDestructor(ifCondition, ...)
+    // These include opcodes for reactive bindings in the branch
+    const promises: Promise<void>[] = [];
+    destroy(this, promises);
+    if (promises.length) {
+      await Promise.all(promises);
+    }
+    // Run local destructors (condition opcode, HMR cleanup)
     await Promise.all(this.destructors.map((destroyFn) => destroyFn()));
   }
   setupCondition(maybeCondition: Cell<boolean> | IfFunction | MergedCell) {
