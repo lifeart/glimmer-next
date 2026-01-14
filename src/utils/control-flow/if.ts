@@ -19,6 +19,9 @@ import {
   RENDERED_NODES_PROPERTY,
   cId,
   COMPONENT_ID_PROPERTY,
+  CHILD,
+  TREE,
+  PARENT,
 } from '@/utils/shared';
 import { opcodeFor } from '@/utils/vm';
 import { initDOM } from '@/utils/context';
@@ -129,12 +132,29 @@ export class IfCondition {
     if (this.destroyPromise) {
       this.destroyPromise.then(() => {
         this.destroyPromise = null;
+        // Re-validate epoch after async wait - condition may have changed again
+        if (!this.validateEpoch(runNumber)) {
+          return;
+        }
         this.renderBranch(nextBranch, runNumber);
+      }).catch(() => {
+        // Destruction was interrupted or failed - reset state
+        this.destroyPromise = null;
       });
       return;
     } else if (this.prevComponent) {
-      this.destroyBranch().then(() => {
+      // Track the destroy promise to prevent race conditions
+      this.destroyPromise = this.destroyBranch();
+      this.destroyPromise.then(() => {
+        this.destroyPromise = null;
+        // Re-validate epoch after async destroy
+        if (!this.validateEpoch(runNumber)) {
+          return;
+        }
         this.renderBranch(nextBranch, runNumber);
+      }).catch(() => {
+        // Destruction failed - reset state
+        this.destroyPromise = null;
       });
       return;
     }
@@ -226,6 +246,11 @@ export class IfCondition {
     }
     // Run local destructors (condition opcode, HMR cleanup)
     await Promise.all(this.destructors.map((destroyFn) => destroyFn()));
+    // Clean up the IfCondition's own TREE/PARENT/CHILD entries
+    const ifId = this[COMPONENT_ID_PROPERTY];
+    CHILD.delete(ifId);
+    TREE.delete(ifId);
+    PARENT.delete(ifId);
   }
   setupCondition(maybeCondition: Cell<boolean> | IfFunction | MergedCell) {
     if (isFn(maybeCondition)) {

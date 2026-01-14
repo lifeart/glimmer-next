@@ -23,6 +23,7 @@ import {
   isEmpty,
   CHILD,
   TREE,
+  PARENT,
 } from '@/utils/shared';
 import { isRehydrationScheduled } from '@/utils/ssr/rehydration';
 import { initDOM } from '@/utils/context';
@@ -116,6 +117,8 @@ function countLessThan(arr: number[], target: number) {
 export class BasicListComponent<T extends { id: number }> {
   keyMap: Map<string, GenericReturnType> = new Map();
   indexMap: Map<string, number> = new Map();
+  // Track reactive index formulas for cleanup (dev mode only)
+  indexFormulaMap: Map<string, MergedCell> = new Map();
   nodes: Node[] = [];
   [RENDERED_NODES_PROPERTY] = [];
   [COMPONENT_ID_PROPERTY] = cId();
@@ -154,6 +157,13 @@ export class BasicListComponent<T extends { id: number }> {
       this.key = key;
     }
     this.setupKeyForItem();
+    // Register destructor to clean up the list's own TREE/PARENT/CHILD entries
+    const listId = this[COMPONENT_ID_PROPERTY];
+    registerDestructor(ctx, () => {
+      CHILD.delete(listId);
+      TREE.delete(listId);
+      PARENT.delete(listId);
+    });
     if (IS_DEV_MODE) {
       Object.defineProperty(this, $_debug_args, {
         get() {
@@ -318,7 +328,7 @@ export class BasicListComponent<T extends { id: number }> {
         if (IS_DEV_MODE) {
           // @todo - add `hasIndex` argument to compiler to tree-shake this
           // for now reactive indexes works only in dev mode
-          idx = formula(() => {
+          const indexFormula = formula(() => {
             if (isPrimitive(item)) {
               return index;
             }
@@ -331,6 +341,9 @@ export class BasicListComponent<T extends { id: number }> {
             }
             return itemIndex;
           }, `each.index[${index}]`);
+          idx = indexFormula;
+          // Track formula for cleanup when item is destroyed
+          this.indexFormulaMap.set(key, indexFormula);
         }
         // const row = isPrimitive(item) ? ItemComponent(formula(() => {
         //   return items[index];
@@ -362,10 +375,10 @@ export class BasicListComponent<T extends { id: number }> {
       }
     });
     setParentContext(null);
-    const childs = CHILD.get(this[COMPONENT_ID_PROPERTY]);
-    if (childs !== undefined) {
-      childs.length = 0;
-    }
+    // Note: We don't clear childs here anymore because:
+    // 1. destroyItem properly removes children via destroyElementSync
+    // 2. New items are added to CHILD via addToTree during rendering
+    // 3. Clearing childs here would orphan preserved items in TREE/PARENT
     rowsToMove
       .sort((r1, r2) => {
         return r2[1] - r1[1];
@@ -433,7 +446,7 @@ export class SyncListComponent<
     );
   }
   fastCleanup() {
-    const { keyMap, bottomMarker, topMarker, indexMap, api } = this;
+    const { keyMap, bottomMarker, topMarker, indexMap, indexFormulaMap, api } = this;
     const parent = api.parent(bottomMarker);
     if (
       parent &&
@@ -443,11 +456,16 @@ export class SyncListComponent<
       for (const value of keyMap.values()) {
         destroyElementSync(value, true, this.api);
       }
+      // Clean up all reactive index formulas
+      for (const formula of indexFormulaMap.values()) {
+        formula.destroy();
+      }
       this.api.clearChildren(parent);
       this.api.insert(parent, topMarker);
       this.api.insert(parent, bottomMarker);
       keyMap.clear();
       indexMap.clear();
+      indexFormulaMap.clear();
       return true;
     } else {
       return false;
@@ -495,6 +513,12 @@ export class SyncListComponent<
   destroyItem(row: GenericReturnType, key: string) {
     this.keyMap.delete(key);
     this.indexMap.delete(key);
+    // Clean up reactive index formula if it exists
+    const indexFormula = this.indexFormulaMap.get(key);
+    if (indexFormula) {
+      indexFormula.destroy();
+      this.indexFormulaMap.delete(key);
+    }
     destroyElementSync(row, false, this.api);
   }
 }
@@ -524,7 +548,7 @@ export class AsyncListComponent<
     );
   }
   async fastCleanup() {
-    const { bottomMarker, topMarker, keyMap, indexMap, api } = this;
+    const { bottomMarker, topMarker, keyMap, indexMap, indexFormulaMap, api } = this;
     const parent = api.parent(bottomMarker);
     if (
       parent &&
@@ -539,11 +563,16 @@ export class AsyncListComponent<
       }
       await Promise.all(promises);
       promises.length = 0;
+      // Clean up all reactive index formulas
+      for (const formula of indexFormulaMap.values()) {
+        formula.destroy();
+      }
       this.api.clearChildren(parent);
       this.api.insert(parent, topMarker);
       this.api.insert(parent, bottomMarker);
       keyMap.clear();
       indexMap.clear();
+      indexFormulaMap.clear();
       return true;
     } else {
       return false;
@@ -601,6 +630,12 @@ export class AsyncListComponent<
   async destroyItem(row: GenericReturnType, key: string) {
     this.keyMap.delete(key);
     this.indexMap.delete(key);
+    // Clean up reactive index formula if it exists
+    const indexFormula = this.indexFormulaMap.get(key);
+    if (indexFormula) {
+      indexFormula.destroy();
+      this.indexFormulaMap.delete(key);
+    }
     await destroyElement(row, false, this.api);
   }
 }
