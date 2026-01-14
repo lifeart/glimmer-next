@@ -8,6 +8,7 @@ import {
   TREE,
   CHILD,
   addToTree,
+  COMPONENT_ID_PROPERTY,
 } from './shared';
 import { cleanupFastContext, provideContext, RENDERING_CONTEXT } from './context';
 import { Root } from './dom';
@@ -609,5 +610,168 @@ describe('If Component Destruction', () => {
 
     // Opcode should not have been called again
     expect(opcodeCallCount).toBe(countAfterDestroy);
+  });
+
+  test('HMR: IFS_FOR_HMR is cleaned up after destruction', async () => {
+    // Skip if IS_DEV_MODE is not set (lib builds / production)
+    if (typeof IS_DEV_MODE === 'undefined' || !IS_DEV_MODE) {
+      return;
+    }
+
+    const { IFS_FOR_HMR } = await import('./shared');
+
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, parentComponent);
+
+    const condition = cell(true);
+    const placeholder = document.createComment('if');
+    container.appendChild(placeholder);
+
+    const initialHmrSize = IFS_FOR_HMR.size;
+
+    const ifInstance = new IfCondition(
+      parentComponent,
+      condition,
+      container,
+      placeholder,
+      () => [document.createElement('div')],
+      () => null,
+    );
+
+    // Wait for initial render
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // In dev mode, if should be added to IFS_FOR_HMR
+    expect(IFS_FOR_HMR.size).toBe(initialHmrSize + 1);
+
+    // Destroy the if component
+    await ifInstance.destroy();
+
+    // IFS_FOR_HMR should be cleaned up
+    expect(IFS_FOR_HMR.size).toBe(initialHmrSize);
+  });
+
+  test('tree structure is cleaned up after destruction', async () => {
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, parentComponent);
+
+    const condition = cell(true);
+    const placeholder = document.createComment('if');
+    container.appendChild(placeholder);
+
+    const ifInstance = new IfCondition(
+      parentComponent,
+      condition,
+      container,
+      placeholder,
+      () => [document.createElement('div')],
+      () => null,
+    );
+
+    // Wait for initial render
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    const ifId = ifInstance[COMPONENT_ID_PROPERTY];
+
+    // Verify if is in tree
+    expect(TREE.has(ifId)).toBe(true);
+    expect(PARENT.has(ifId)).toBe(true);
+
+    // Destroy the if component
+    await ifInstance.destroy();
+
+    // Tree structure should be cleaned up
+    expect(TREE.has(ifId)).toBe(false);
+    expect(PARENT.has(ifId)).toBe(false);
+    expect(CHILD.has(ifId)).toBe(false);
+  });
+
+  test('multiple create/destroy cycles do not leak (HMR simulation)', async () => {
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, parentComponent);
+
+    const initialTreeSize = TREE.size;
+
+    // Simulate 5 HMR cycles
+    for (let cycle = 0; cycle < 5; cycle++) {
+      const condition = cell(true);
+      const placeholder = document.createComment('if');
+      container.appendChild(placeholder);
+
+      const ifInstance = new IfCondition(
+        parentComponent,
+        condition,
+        container,
+        placeholder,
+        (ctx) => {
+          // Create nested component with reactive binding
+          const reactiveValue = cell(cycle);
+          const div = document.createElement('div');
+          const destructor = opcodeFor(reactiveValue, (value) => {
+            div.textContent = String(value);
+          });
+          registerDestructor(ctx as unknown as Component<any>, destructor);
+          return [div];
+        },
+        () => null,
+      );
+
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      // Destroy
+      await ifInstance.destroy();
+      placeholder.remove();
+    }
+
+    // No leaks - tree size should be back to initial
+    expect(TREE.size).toBe(initialTreeSize);
+  });
+
+  test('complete destruction cleans up all branch opcodes', async () => {
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, parentComponent);
+
+    const condition = cell(true);
+    const trueBranchValue = cell('true-value');
+    let trueBranchOpcodeCount = 0;
+
+    const placeholder = document.createComment('if');
+    container.appendChild(placeholder);
+
+    const ifInstance = new IfCondition(
+      parentComponent,
+      condition,
+      container,
+      placeholder,
+      (ctx) => {
+        const div = document.createElement('div');
+        const destructor = opcodeFor(trueBranchValue, () => {
+          trueBranchOpcodeCount++;
+        });
+        registerDestructor(ctx as unknown as Component<any>, destructor);
+        return [div];
+      },
+      () => null,
+    );
+
+    // Wait for initial render (true branch)
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Verify true branch opcode was called during initial render
+    expect(trueBranchOpcodeCount).toBeGreaterThanOrEqual(1);
+
+    // Destroy the entire IfCondition
+    await ifInstance.destroy();
+
+    const countAfterDestroy = trueBranchOpcodeCount;
+
+    // Update true branch value after destruction - should NOT trigger opcode
+    trueBranchValue.update('should-not-trigger');
+    await new Promise(resolve => setTimeout(resolve, 10));
+    expect(trueBranchOpcodeCount).toBe(countAfterDestroy);
   });
 });
