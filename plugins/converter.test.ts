@@ -1052,5 +1052,286 @@ describe.each([
         );
       });
     });
+
+    describe('SVG namespace handling', () => {
+      test('wraps svg element in namespace provider', () => {
+        const converted = $t<ASTv1.ElementNode>(`<svg></svg>`);
+        expect(converted).toEqual(
+          $node({
+            tag: `$:${SYMBOLS.SVG_NAMESPACE}`,
+            children: [
+              $node({
+                tag: 'svg',
+              }),
+            ],
+          }),
+        );
+      });
+
+      test('svg with children is properly wrapped', () => {
+        const converted = $t<ASTv1.ElementNode>(`<svg><rect></rect></svg>`);
+        expect(converted).toEqual(
+          $node({
+            tag: `$:${SYMBOLS.SVG_NAMESPACE}`,
+            children: [
+              $node({
+                tag: 'svg',
+                children: [$node({ tag: 'rect' })],
+              }),
+            ],
+          }),
+        );
+      });
+    });
+
+    describe('MathML namespace handling', () => {
+      test('wraps math element in namespace provider', () => {
+        const converted = $t<ASTv1.ElementNode>(`<math></math>`);
+        expect(converted).toEqual(
+          $node({
+            tag: `$:${SYMBOLS.MATH_NAMESPACE}`,
+            children: [
+              $node({
+                tag: 'math',
+              }),
+            ],
+          }),
+        );
+      });
+    });
+
+    describe('foreignObject handling', () => {
+      test('wraps foreignObject children in HTML namespace', () => {
+        const converted = $t<ASTv1.ElementNode>(`<foreignObject><div></div></foreignObject>`) as HBSNode;
+        expect(converted.tag).toEqual('foreignObject');
+        expect(converted.children).toHaveLength(1);
+        const wrapper = converted.children[0] as HBSNode;
+        expect(wrapper.tag).toEqual(`$:${SYMBOLS.HTML_NAMESPACE}`);
+        expect(wrapper.children).toHaveLength(1);
+        expect((wrapper.children[0] as HBSNode).tag).toEqual('div');
+      });
+    });
+
+    describe('style.* attribute events', () => {
+      test('converts style.property to event', () => {
+        const converted = $t<ASTv1.ElementNode>(`<div style.color="red"></div>`);
+        expect(converted).toEqual(
+          $node({
+            tag: 'div',
+            events: [
+              [EVENT_TYPE.ON_CREATED, expect.stringContaining("style.setProperty('color'")],
+            ],
+          }),
+        );
+      });
+
+      test('converts dynamic style.property', () => {
+        const converted = $t<ASTv1.ElementNode>(`<div style.color={{myColor}}></div>`, ['myColor']);
+        expect(converted).toEqual(
+          $node({
+            tag: 'div',
+            events: [
+              [EVENT_TYPE.ON_CREATED, expect.stringContaining("style.setProperty('color'")],
+            ],
+          }),
+        );
+      });
+    });
+
+    describe('in-element block', () => {
+      test('converts in-element block', () => {
+        const converted = $t<ASTv1.BlockStatement>(`{{#in-element destination}}<div></div>{{/in-element}}`) as HBSControlExpression;
+        expect(converted.type).toEqual('in-element');
+        expect(converted.isControl).toBe(true);
+        expect(converted.children).toHaveLength(1);
+        expect((converted.children[0] as HBSNode).tag).toEqual('div');
+      });
+    });
+
+    describe('yield handling', () => {
+      test('converts basic yield', () => {
+        const converted = $t<ASTv1.MustacheStatement>(`{{yield}}`);
+        expect(converted).toEqual(
+          $control({
+            type: 'yield',
+            condition: '',
+            blockParams: [],
+            children: [],
+            inverse: [],
+            key: 'default',
+            isSync: true,
+          }),
+        );
+      });
+
+      test('converts yield with params', () => {
+        const converted = $t<ASTv1.MustacheStatement>(`{{yield foo bar}}`, ['foo', 'bar']);
+        expect(converted).toEqual(
+          $control({
+            type: 'yield',
+            condition: '',
+            blockParams: ['$:foo', '$:bar'],
+            children: [],
+            inverse: [],
+            key: 'default',
+            isSync: true,
+          }),
+        );
+      });
+
+      test('converts yield to named slot', () => {
+        const converted = $t<ASTv1.MustacheStatement>(`{{yield to="header"}}`);
+        expect(converted).toEqual(
+          $control({
+            type: 'yield',
+            condition: '',
+            blockParams: [],
+            children: [],
+            inverse: [],
+            key: '"header"',
+            isSync: true,
+          }),
+        );
+      });
+    });
+
+    describe('boolean attributes', () => {
+      test('converts empty disabled to true', () => {
+        const converted = $t<ASTv1.ElementNode>(`<input disabled />`);
+        expect(converted).toEqual(
+          $node({
+            tag: 'input',
+            selfClosing: true,
+            properties: [['disabled', true]],
+          }),
+        );
+      });
+
+      test('converts empty readonly to readOnly true', () => {
+        const converted = $t<ASTv1.ElementNode>(`<input readonly />`);
+        expect(converted).toEqual(
+          $node({
+            tag: 'input',
+            selfClosing: true,
+            properties: [['readOnly', true]],
+          }),
+        );
+      });
+
+      test('converts empty checked to true', () => {
+        const converted = $t<ASTv1.ElementNode>(`<input checked />`);
+        expect(converted).toEqual(
+          $node({
+            tag: 'input',
+            selfClosing: true,
+            properties: [['checked', true]],
+          }),
+        );
+      });
+    });
+
+    describe('component slots', () => {
+      test('named slots are properly parsed', () => {
+        const converted = $t<ASTv1.ElementNode>(
+          `<Card><:header>Title</:header><:body>Content</:body></Card>`,
+          ['Card'],
+        );
+        expect(converted).toEqual(
+          $node({
+            tag: 'Card',
+            hasStableChild: false,
+            children: [
+              $node({
+                tag: ':header',
+                children: ['Title'],
+              }),
+              $node({
+                tag: ':body',
+                children: ['Content'],
+              }),
+            ],
+          }),
+        );
+      });
+
+      test('slots with block params', () => {
+        const converted = $t<ASTv1.ElementNode>(
+          `<List as |item|><div>{{item}}</div></List>`,
+          ['List'],
+        ) as HBSNode;
+        expect(converted.tag).toEqual('List');
+        expect(converted.blockParams).toEqual(['item']);
+        expect(converted.children).toHaveLength(1);
+        const div = converted.children[0] as HBSNode;
+        expect(div.tag).toEqual('div');
+        // item reference is in children or events
+        const hasItemRef = div.children.some(c =>
+          typeof c === 'string' && c.includes('item')
+        ) || div.events.some(e =>
+          typeof e[1] === 'string' && e[1].includes('item')
+        );
+        expect(hasItemRef).toBe(true);
+      });
+    });
+
+    describe('has-block helpers', () => {
+      test('has-block is converted to helper call', () => {
+        const converted = $t<ASTv1.MustacheStatement>(`{{has-block}}`);
+        expect(converted).toEqual(expect.stringContaining('$_hasBlock'));
+      });
+
+      test('has-block-params is converted to helper call', () => {
+        const converted = $t<ASTv1.MustacheStatement>(`{{has-block-params}}`);
+        expect(converted).toEqual(expect.stringContaining('$_hasBlockParams'));
+      });
+    });
+
+    describe('edge cases', () => {
+      test('preserves &nbsp; character', () => {
+        const converted = $t<ASTv1.ElementNode>(`<span>&nbsp;</span>`);
+        expect(converted).not.toEqual(null);
+        expect((converted as HBSNode).events).toBeDefined();
+      });
+
+      test('handles empty element', () => {
+        const converted = $t<ASTv1.ElementNode>(`<div></div>`);
+        expect(converted).toEqual($node({ tag: 'div' }));
+      });
+
+      test('handles self-closing element', () => {
+        const converted = $t<ASTv1.ElementNode>(`<br />`);
+        expect(converted).toEqual($node({ tag: 'br', selfClosing: true }));
+      });
+
+      test('handles multiple modifiers', () => {
+        const converted = $t<ASTv1.ElementNode>(`<div {{foo-bar}} {{baz-qux}}></div>`);
+        expect(converted).toEqual(
+          $node({
+            tag: 'div',
+            events: [
+              [EVENT_TYPE.ON_CREATED, $mm('foo-bar')],
+              [EVENT_TYPE.ON_CREATED, $mm('baz-qux')],
+            ],
+          }),
+        );
+      });
+
+      test('handles nested conditionals', () => {
+        const converted = $t<ASTv1.BlockStatement>(
+          `{{#if foo}}{{#if bar}}nested{{/if}}{{/if}}`,
+        );
+        expect(converted).toEqual(
+          $control({
+            condition: $glimmerCompat('$:foo'),
+            children: [
+              $control({
+                condition: $glimmerCompat('$:bar'),
+                children: ['nested'],
+              }),
+            ],
+          }),
+        );
+      });
+    });
   });
 });
