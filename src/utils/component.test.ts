@@ -8,6 +8,7 @@ import {
   TREE,
   CHILD,
   addToTree,
+  COMPONENT_ID_PROPERTY,
 } from './shared';
 import { cleanupFastContext, provideContext, RENDERING_CONTEXT } from './context';
 import { Root } from './dom';
@@ -426,5 +427,351 @@ describe('Custom DOMApi integration', () => {
 
     // Non-node object
     expect(customApi.isNode({} as any)).toBe(false);
+  });
+});
+
+// ============================================
+// If Component Destruction Tests
+// ============================================
+
+import { IfCondition } from './control-flow/if';
+import { cell, formula, opsForTag, relatedTags, tagsToRevalidate } from './reactive';
+import { opcodeFor } from './vm';
+import { registerDestructor } from './glimmer/destroyable';
+
+describe('If Component Destruction', () => {
+  let window: Window;
+  let document: Document;
+  let api: DOMApi;
+  let root: Root;
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    window = new Window();
+    document = window.document as unknown as Document;
+    api = new HTMLBrowserDOMApi(document);
+    cleanupFastContext();
+    root = new Root(document);
+    provideContext(root, RENDERING_CONTEXT, api);
+    container = document.createElement('div');
+    document.body.appendChild(container);
+  });
+
+  afterEach(() => {
+    cleanupFastContext();
+    TREE.clear();
+    PARENT.clear();
+    CHILD.clear();
+    tagsToRevalidate.clear();
+    window.close();
+  });
+
+  test('opcodes are removed when if branch is destroyed', async () => {
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, parentComponent);
+
+    const condition = cell(true);
+    const reactiveValue = cell(42);
+    let opcodeCallCount = 0;
+
+    // Create an if condition
+    const placeholder = document.createComment('if');
+    container.appendChild(placeholder);
+
+    const ifInstance = new IfCondition(
+      parentComponent,
+      condition,
+      container,
+      placeholder,
+      (ctx) => {
+        // True branch: register an opcode for reactiveValue
+        const div = document.createElement('div');
+        const destructor = opcodeFor(reactiveValue, (value) => {
+          opcodeCallCount++;
+          div.textContent = String(value);
+        });
+        registerDestructor(ctx as unknown as Component<any>, destructor);
+        return [div];
+      },
+      () => null, // False branch
+    );
+
+    // Wait for initial render
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Verify opcode is registered
+    const opsBeforeDestroy = opsForTag.get(reactiveValue.id);
+    expect(opsBeforeDestroy?.length).toBe(1);
+
+    // Destroy the if component
+    await ifInstance.destroy();
+
+    // Verify opcodes are removed
+    const opsAfterDestroy = opsForTag.get(reactiveValue.id);
+    expect(opsAfterDestroy?.length ?? 0).toBe(0);
+  });
+
+  test('relatedTags are cleaned up when MergedCells are destroyed', async () => {
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, parentComponent);
+
+    const condition = cell(true);
+    const baseCell = cell(10);
+
+    const placeholder = document.createComment('if');
+    container.appendChild(placeholder);
+
+    let mergedCellId: number | null = null;
+
+    const ifInstance = new IfCondition(
+      parentComponent,
+      condition,
+      container,
+      placeholder,
+      (ctx) => {
+        // True branch: create a formula that depends on baseCell
+        const derivedCell = formula(() => baseCell.value * 2, 'test-derived');
+        mergedCellId = derivedCell.id;
+
+        const div = document.createElement('div');
+        const destructor = opcodeFor(derivedCell, (value) => {
+          div.textContent = String(value);
+        });
+        registerDestructor(ctx as unknown as Component<any>, destructor);
+        return [div];
+      },
+      () => null,
+    );
+
+    // Wait for initial render
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Verify relatedTags contains the derived cell
+    const relatedBefore = relatedTags.get(baseCell.id);
+    expect(relatedBefore?.size).toBeGreaterThan(0);
+
+    // Destroy the if component
+    await ifInstance.destroy();
+
+    // Verify relatedTags is cleaned up
+    const relatedAfter = relatedTags.get(baseCell.id);
+    // Either deleted or empty
+    expect(relatedAfter?.size ?? 0).toBe(0);
+  });
+
+  test('updating destroyed cell does not trigger opcodes', async () => {
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, parentComponent);
+
+    const condition = cell(true);
+    const reactiveValue = cell(1);
+    let opcodeCallCount = 0;
+
+    const placeholder = document.createComment('if');
+    container.appendChild(placeholder);
+
+    const ifInstance = new IfCondition(
+      parentComponent,
+      condition,
+      container,
+      placeholder,
+      (ctx) => {
+        const div = document.createElement('div');
+        const destructor = opcodeFor(reactiveValue, () => {
+          opcodeCallCount++;
+        });
+        registerDestructor(ctx as unknown as Component<any>, destructor);
+        return [div];
+      },
+      () => null,
+    );
+
+    // Wait for initial render
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    const initialCallCount = opcodeCallCount;
+
+    // Update the cell - should trigger opcode
+    reactiveValue.update(2);
+    await new Promise(resolve => setTimeout(resolve, 10));
+    expect(opcodeCallCount).toBe(initialCallCount + 1);
+
+    // Destroy the if component
+    await ifInstance.destroy();
+
+    const countAfterDestroy = opcodeCallCount;
+
+    // Update the cell after destruction - should NOT trigger opcode
+    reactiveValue.update(3);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Opcode should not have been called again
+    expect(opcodeCallCount).toBe(countAfterDestroy);
+  });
+
+  test('HMR: IFS_FOR_HMR is cleaned up after destruction', async () => {
+    // Skip if IS_DEV_MODE is not set (lib builds / production)
+    if (typeof IS_DEV_MODE === 'undefined' || !IS_DEV_MODE) {
+      return;
+    }
+
+    const { IFS_FOR_HMR } = await import('./shared');
+
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, parentComponent);
+
+    const condition = cell(true);
+    const placeholder = document.createComment('if');
+    container.appendChild(placeholder);
+
+    const initialHmrSize = IFS_FOR_HMR.size;
+
+    const ifInstance = new IfCondition(
+      parentComponent,
+      condition,
+      container,
+      placeholder,
+      () => [document.createElement('div')],
+      () => null,
+    );
+
+    // Wait for initial render
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // In dev mode, if should be added to IFS_FOR_HMR
+    expect(IFS_FOR_HMR.size).toBe(initialHmrSize + 1);
+
+    // Destroy the if component
+    await ifInstance.destroy();
+
+    // IFS_FOR_HMR should be cleaned up
+    expect(IFS_FOR_HMR.size).toBe(initialHmrSize);
+  });
+
+  test('tree structure is cleaned up after destruction', async () => {
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, parentComponent);
+
+    const condition = cell(true);
+    const placeholder = document.createComment('if');
+    container.appendChild(placeholder);
+
+    const ifInstance = new IfCondition(
+      parentComponent,
+      condition,
+      container,
+      placeholder,
+      () => [document.createElement('div')],
+      () => null,
+    );
+
+    // Wait for initial render
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    const ifId = ifInstance[COMPONENT_ID_PROPERTY];
+
+    // Verify if is in tree
+    expect(TREE.has(ifId)).toBe(true);
+    expect(PARENT.has(ifId)).toBe(true);
+
+    // Destroy the if component
+    await ifInstance.destroy();
+
+    // Tree structure should be cleaned up
+    expect(TREE.has(ifId)).toBe(false);
+    expect(PARENT.has(ifId)).toBe(false);
+    expect(CHILD.has(ifId)).toBe(false);
+  });
+
+  test('multiple create/destroy cycles do not leak (HMR simulation)', async () => {
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, parentComponent);
+
+    const initialTreeSize = TREE.size;
+
+    // Simulate 5 HMR cycles
+    for (let cycle = 0; cycle < 5; cycle++) {
+      const condition = cell(true);
+      const placeholder = document.createComment('if');
+      container.appendChild(placeholder);
+
+      const ifInstance = new IfCondition(
+        parentComponent,
+        condition,
+        container,
+        placeholder,
+        (ctx) => {
+          // Create nested component with reactive binding
+          const reactiveValue = cell(cycle);
+          const div = document.createElement('div');
+          const destructor = opcodeFor(reactiveValue, (value) => {
+            div.textContent = String(value);
+          });
+          registerDestructor(ctx as unknown as Component<any>, destructor);
+          return [div];
+        },
+        () => null,
+      );
+
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      // Destroy
+      await ifInstance.destroy();
+      placeholder.remove();
+    }
+
+    // No leaks - tree size should be back to initial
+    expect(TREE.size).toBe(initialTreeSize);
+  });
+
+  test('complete destruction cleans up all branch opcodes', async () => {
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, parentComponent);
+
+    const condition = cell(true);
+    const trueBranchValue = cell('true-value');
+    let trueBranchOpcodeCount = 0;
+
+    const placeholder = document.createComment('if');
+    container.appendChild(placeholder);
+
+    const ifInstance = new IfCondition(
+      parentComponent,
+      condition,
+      container,
+      placeholder,
+      (ctx) => {
+        const div = document.createElement('div');
+        const destructor = opcodeFor(trueBranchValue, () => {
+          trueBranchOpcodeCount++;
+        });
+        registerDestructor(ctx as unknown as Component<any>, destructor);
+        return [div];
+      },
+      () => null,
+    );
+
+    // Wait for initial render (true branch)
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Verify true branch opcode was called during initial render
+    expect(trueBranchOpcodeCount).toBeGreaterThanOrEqual(1);
+
+    // Destroy the entire IfCondition
+    await ifInstance.destroy();
+
+    const countAfterDestroy = trueBranchOpcodeCount;
+
+    // Update true branch value after destruction - should NOT trigger opcode
+    trueBranchValue.update('should-not-trigger');
+    await new Promise(resolve => setTimeout(resolve, 10));
+    expect(trueBranchOpcodeCount).toBe(countAfterDestroy);
   });
 });

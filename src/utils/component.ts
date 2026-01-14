@@ -289,26 +289,28 @@ export function destroyElementSync(
   api: DOMApi,
 ) {
   if (isArray(component)) {
-    component.forEach((component) =>
+    // Slice to prevent mutation during iteration
+    const componentsCopy = component.slice();
+    componentsCopy.forEach((component) =>
       destroyElementSync(component, skipDom, api),
     );
   } else {
-    if (RENDERED_NODES_PROPERTY in component) {
-      runDestructorsSync(component, skipDom, api);
-      if (IS_DEV_MODE) {
-        // TODO: fix it!!
-        // we trying to destroy "not rendered" component (but, likely it's rendered);
-        // if (component[$nodes].length) {
-        //   destroyNodes(api, component[$nodes]);
-        //   console.error('Destroying not rendered node');
-        // }
+    if (component && RENDERED_NODES_PROPERTY in component) {
+      try {
+        runDestructorsSync(component, skipDom, api);
+      } catch (e) {
+        if (IS_DEV_MODE) {
+          console.error('Error during destruction:', e);
+        }
+        // Continue destruction even if there's an error
       }
-    } else {
+    } else if (component) {
       try {
         (api as DOMApi).destroy(component);
       } catch (e) {
-        // @TODO  custom renderer, destroy
-        throw new Error('unknown branch');
+        if (IS_DEV_MODE) {
+          console.error('Error destroying node:', e);
+        }
       }
     }
   }
@@ -332,14 +334,21 @@ export function unregisterFromParent(
   }
   if (isArray(component)) {
     component.forEach(unregisterFromParent);
-  } else if (RENDERED_NODES_PROPERTY in component) {
+  } else if (component && RENDERED_NODES_PROPERTY in component) {
     const id = component[COMPONENT_ID_PROPERTY];
-    const arr = CHILD.get(PARENT.get(id)!);
+    if (id === undefined) {
+      return;
+    }
+    const parentId = PARENT.get(id);
+    if (parentId === undefined) {
+      return;
+    }
+    const arr = CHILD.get(parentId);
     if (arr !== undefined) {
       const index = arr.indexOf(id);
       if (IS_DEV_MODE) {
         if (index === -1) {
-          console.warn('TOOD: hmr negative index');
+          console.warn('TODO: hmr negative index');
         }
       }
       if (index !== -1) {
@@ -391,8 +400,13 @@ function runDestructorsSync(
       destroyNodes(api, currentNode![RENDERED_NODES_PROPERTY]);
     }
     if (nodesToRemove) {
-      for (const node of nodesToRemove) {
-        stack.push(TREE.get(node)!);
+      // Slice to prevent mutation during iteration
+      const nodesToRemoveCopy = nodesToRemove.slice();
+      for (const node of nodesToRemoveCopy) {
+        const instance = TREE.get(node);
+        if (instance) {
+          stack.push(instance);
+        }
       }
     }
   }
@@ -408,12 +422,9 @@ export function runDestructors(
   // @todo - move it after child components;
   destroy(target, promises);
   if (childComponents) {
-    /*
-      we need slice here because of search for it:
-      @todo - case 42 (associateDestroyable)
-      tldr list may be mutated during removal and forEach is stopped
-    */
-    childComponents.forEach((node) => {
+    // Slice to prevent mutation during iteration (case 42)
+    const childComponentsCopy = childComponents.slice();
+    childComponentsCopy.forEach((node) => {
       const instance = TREE.get(node);
       // TODO: fix rehydration destroy case;
       if (instance) {

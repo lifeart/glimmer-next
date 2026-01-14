@@ -45,7 +45,7 @@ export function createHotReload(
               }
             }
           } else if (instance === lineItems) {
-            list.keyMap.set(key, instance);
+            list.keyMap.set(key, newCmp);
           }
           
         });

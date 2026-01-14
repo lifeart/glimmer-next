@@ -335,25 +335,50 @@ function mergeClassModifiers(
   if (classNameModifiers.length === 1) {
     $prop(api, element, $_className, classNameModifiers[0], destructors);
   } else {
+    // Track formulas created for each modifier so we can clean them up
+    const formulasToDestroy: MergedCell[] = [];
     const formulas = classNameModifiers.map((modifier) => {
       if (isFn(modifier)) {
-        return formula(
+        const f = formula(
           () => deepFnValue(modifier),
           'functional modifier for className',
         );
+        // Track non-const formulas for cleanup
+        if (!f.isConst) {
+          formulasToDestroy.push(f);
+        } else {
+          // Const formulas can be destroyed immediately after getting value
+          const value = f.value;
+          f.destroy();
+          return value;
+        }
+        return f;
       } else {
         return modifier;
       }
     });
+    const outerFormula = formula(() => {
+      return formulas.join(' ');
+    }, (element as HTMLElement).tagName + '.className');
+    // Track outer formula too if not const
+    if (!outerFormula.isConst) {
+      formulasToDestroy.push(outerFormula);
+    }
     $prop(
       api,
       element,
       $_className,
-      formula(() => {
-        return formulas.join(' ');
-      }, (element as HTMLElement).tagName + '.className'),
+      outerFormula,
       destructors,
     );
+    // Register destructor to clean up all tracked formulas
+    if (formulasToDestroy.length > 0) {
+      destructors.push(() => {
+        for (const f of formulasToDestroy) {
+          f.destroy();
+        }
+      });
+    }
   }
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.pop();
@@ -441,7 +466,11 @@ function $ev(
   } else if (eventName === EVENT_TYPE.ON_CREATED) {
     if (REACTIVE_MODIFIERS) {
       let destructor = () => void 0;
+      let isDestroying = false;
       const updatingCell = formula(() => {
+        if (isDestroying) {
+          return undefined;
+        }
         destructor();
         return (fn as ModifierFn)(element);
       }, `${element.tagName}.modifier`);
@@ -457,11 +486,14 @@ function $ev(
           return destructor();
         });
       } else {
+        // Destroy formula first to prevent re-evaluation during destruction,
+        // then clean up opcode, then run modifier cleanup
         destructors.push(
-          opcodeDestructor,
           () => {
+            isDestroying = true;
             updatingCell.destroy();
           },
+          opcodeDestructor,
           () => {
             return destructor();
           },
@@ -1061,7 +1093,6 @@ function createSlot(
   name: string,
   ctx: any,
 ) {
-  // @todo - figure out destructors for slot (shoud work, bu need to be tested)
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.push(`:${name}`);
   }
@@ -1073,16 +1104,29 @@ function createSlot(
   };
   // @ts-expect-error slot return type
   addToTree(ctx, slotContext);
-  // @TODO: params to reactive cells (or getters)
+  // Track formulas created for slot params so we can destroy them
+  const formulasToDestroy: MergedCell[] = [];
   const paramsArray = params().map((_, i) => {
     const v = formula(() => params()[i], `slot:param:${i}`);
     const value = v.value;
     if (v.isConst || typeof value === 'object') {
+      // Const formulas don't need tracking, destroy immediately
+      v.destroy();
       return value;
     } else {
+      // Track non-const formulas for cleanup
+      formulasToDestroy.push(v);
       return v;
     }
   });
+  // Register destructor to clean up slot param formulas
+  if (formulasToDestroy.length > 0) {
+    registerDestructor(slotContext, () => {
+      for (const f of formulasToDestroy) {
+        f.destroy();
+      }
+    });
+  }
   const elements = value ? value(...[slotContext, ...paramsArray]) : [];
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.pop();
@@ -1367,12 +1411,16 @@ export function $_dc(
     result![RENDERED_NODES_PROPERTY].push(
       IS_DEV_MODE ? api.comment('placeholder') : api.comment(),
     );
+    // Register destructor for the opcode
     registerDestructor(ctx, destructor);
+    // Also register destructor to clean up the formula itself
+    registerDestructor(ctx, () => {
+      _cmp.destroy();
+    });
   } else {
     _cmp.destroy();
     destructor();
   }
-  // TODO: - check destroy and re-create tree & destructors logic
   const refResult = {
     get [RENDERING_CONTEXT_PROPERTY]() {
       return result![RENDERING_CONTEXT_PROPERTY];

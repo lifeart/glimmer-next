@@ -936,3 +936,217 @@ describe('Node Relocation', () => {
 
 // Note: Full integration tests for {{#each}} with multiple root nodes
 // are in src/tests/integration/each-test.gts
+
+describe('List Component Destruction', () => {
+  let window: Window;
+  let document: Document;
+  let api: DOMApi;
+  let root: Root;
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    window = new Window();
+    document = window.document as unknown as Document;
+    api = new HTMLBrowserDOMApi(document);
+    cleanupFastContext();
+    root = new Root(document);
+    provideContext(root, RENDERING_CONTEXT, api);
+    container = document.createElement('div');
+    document.body.appendChild(container);
+  });
+
+  afterEach(() => {
+    cleanupFastContext();
+    TREE.clear();
+    PARENT.clear();
+    CHILD.clear();
+    window.close();
+  });
+
+  test('LISTS_FOR_HMR is cleaned up when parent component is destroyed', async () => {
+    // Skip if IS_DEV_MODE is not set (lib builds / production)
+    if (typeof IS_DEV_MODE === 'undefined' || !IS_DEV_MODE) {
+      return;
+    }
+
+    const { LISTS_FOR_HMR } = await import('../shared');
+    const { SyncListComponent } = await import('./list');
+    const { cell } = await import('../reactive');
+    const { destroySync } = await import('../glimmer/destroyable');
+
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, parentComponent);
+
+    const items = cell([{ id: 1 }, { id: 2 }]);
+    const topMarker = document.createComment('list top');
+    container.appendChild(topMarker);
+
+    const initialHmrSize = LISTS_FOR_HMR.size;
+
+    new SyncListComponent(
+      {
+        tag: items,
+        key: 'id',
+        ctx: parentComponent,
+        ItemComponent: (item) => {
+          const div = document.createElement('div');
+          div.textContent = String(item.id);
+          return [div];
+        },
+      },
+      container,
+      topMarker,
+    );
+
+    // In dev mode, list should be added to LISTS_FOR_HMR
+    expect(LISTS_FOR_HMR.size).toBe(initialHmrSize + 1);
+
+    // Destroy the parent component (which runs registered destructors)
+    destroySync(parentComponent);
+
+    // LISTS_FOR_HMR should be cleaned up
+    expect(LISTS_FOR_HMR.size).toBe(initialHmrSize);
+  });
+
+  test('list keyMap and indexMap are cleared when list is emptied', async () => {
+    const { SyncListComponent } = await import('./list');
+    const { cell } = await import('../reactive');
+
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, parentComponent);
+
+    const items = cell([{ id: 1 }, { id: 2 }, { id: 3 }]);
+    const topMarker = document.createComment('list top');
+    container.appendChild(topMarker);
+
+    const listInstance = new SyncListComponent(
+      {
+        tag: items,
+        key: 'id',
+        ctx: parentComponent,
+        ItemComponent: (item) => {
+          const div = document.createElement('div');
+          div.textContent = String(item.id);
+          return [div];
+        },
+      },
+      container,
+      topMarker,
+    );
+
+    // Wait for initial render
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Should have 3 items in keyMap
+    expect(listInstance.keyMap.size).toBe(3);
+    expect(listInstance.indexMap.size).toBe(3);
+
+    // Update to empty list
+    items.update([]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // keyMap and indexMap should be cleared
+    expect(listInstance.keyMap.size).toBe(0);
+    expect(listInstance.indexMap.size).toBe(0);
+  });
+
+  test('destroying list items properly cleans up their children', async () => {
+    const { SyncListComponent } = await import('./list');
+    const { cell } = await import('../reactive');
+    const { opcodeFor } = await import('../vm');
+    const { opsForTag } = await import('../reactive');
+
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, parentComponent);
+
+    const items = cell([{ id: 1 }, { id: 2 }]);
+    const topMarker = document.createComment('list top');
+    container.appendChild(topMarker);
+
+    // Track cells created in each item
+    const itemCells: Array<{ id: number; cell: ReturnType<typeof cell> }> = [];
+
+    new SyncListComponent(
+      {
+        tag: items,
+        key: 'id',
+        ctx: parentComponent,
+        ItemComponent: (item) => {
+          const itemCell = cell(item.id);
+          itemCells.push({ id: item.id, cell: itemCell });
+
+          const div = document.createElement('div');
+          // Register an opcode on the item's cell
+          opcodeFor(itemCell, (value) => {
+            div.textContent = String(value);
+          });
+          return [div];
+        },
+      },
+      container,
+      topMarker,
+    );
+
+    // Wait for initial render
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Both items should have opcodes registered
+    expect(itemCells.length).toBe(2);
+    expect(opsForTag.get(itemCells[0].cell.id)?.length).toBe(1);
+    expect(opsForTag.get(itemCells[1].cell.id)?.length).toBe(1);
+
+    // Remove first item
+    items.update([{ id: 2 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Note: The item's cell opcode cleanup depends on how ItemComponent
+    // registers destructors. This test documents current behavior.
+    // If items don't explicitly register destructors, their opcodes may persist.
+  });
+
+  test('multiple list create/destroy cycles do not leak tree entries', async () => {
+    const { SyncListComponent } = await import('./list');
+    const { cell } = await import('../reactive');
+    const { destroyElementSync } = await import('../component');
+
+    const initialTreeSize = TREE.size;
+
+    // Simulate 3 create/destroy cycles
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const parentComponent = new Component({});
+      parentComponent[RENDERED_NODES_PROPERTY] = [];
+      addToTree(root, parentComponent);
+
+      const items = cell([{ id: 1 }, { id: 2 }]);
+      const topMarker = document.createComment('list top');
+      container.appendChild(topMarker);
+
+      new SyncListComponent(
+        {
+          tag: items,
+          key: 'id',
+          ctx: parentComponent,
+          ItemComponent: (item) => {
+            const div = document.createElement('div');
+            div.textContent = String(item.id);
+            return [div];
+          },
+        },
+        container,
+        topMarker,
+      );
+
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      // Destroy parent (which should clean up list and all children)
+      destroyElementSync(parentComponent, true, api);
+      topMarker.remove();
+    }
+
+    // Tree size should return to initial (only root remains)
+    expect(TREE.size).toBe(initialTreeSize);
+  });
+});

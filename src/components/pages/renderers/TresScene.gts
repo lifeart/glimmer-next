@@ -110,17 +110,16 @@ export function TresScene() {
   // Animation state
   const isAnimating = cell(true);
 
-  // Auto-rotate when animating
-  if (typeof window !== 'undefined') {
-    const animate = () => {
+  // Animation callback - will be registered via TresCanvas onReady
+  // and automatically cleaned up when TresCanvas is destroyed
+  const onCanvasReady = (context: import('@/utils/renderers/tres/context').TresContext) => {
+    context.onBeforeRender(() => {
       if (isAnimating.value) {
         rotY.update(rotY.value + 0.01);
         torusRotation.update(torusRotation.value + 0.02);
       }
-      requestAnimationFrame(animate);
-    };
-    requestAnimationFrame(animate);
-  }
+    });
+  };
 
   const toggleAnimation = () => {
     isAnimating.update(!isAnimating.value);
@@ -160,7 +159,7 @@ export function TresScene() {
           </div>
         </div>
         <div class='rounded-lg overflow-hidden border border-slate-600 bg-gradient-to-b from-slate-900 to-slate-800'>
-          <TresCanvas>
+          <TresCanvas @onReady={{onCanvasReady}}>
             {{! Main interactive cube }}
             <TresMesh
               position-x={{posX.value}}
