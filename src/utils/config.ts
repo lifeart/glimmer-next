@@ -25,6 +25,13 @@ export interface GXTConfig {
   idPool: PoolConfig;
 }
 
+/** Partial config type for configureGXT - allows partial pool configs */
+export type GXTConfigInput = {
+  opsArrayPool?: Partial<PoolConfig>;
+  destructorArrayPool?: Partial<PoolConfig>;
+  idPool?: Partial<PoolConfig>;
+};
+
 const defaultPoolConfig: PoolConfig = {
   initial: 50,
   max: 500,
@@ -43,7 +50,7 @@ export const config: GXTConfig = {
  * Configure GXT runtime settings.
  * Call this before rendering to customize pool behavior.
  */
-export function configureGXT(userConfig: Partial<GXTConfig>) {
+export function configureGXT(userConfig: GXTConfigInput) {
   if (userConfig.opsArrayPool) {
     Object.assign(config.opsArrayPool, userConfig.opsArrayPool);
   }

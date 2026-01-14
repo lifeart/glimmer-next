@@ -131,7 +131,7 @@ function tracker() {
 }
 // "data" cell, it's value can be updated, and it's used to create derived cells
 export class Cell<T extends unknown = unknown> {
-  _value!: T;
+  private __value!: T;
   id = tagId++;
   declare toHTML: () => string;
   [Symbol.toPrimitive]() {
@@ -140,11 +140,18 @@ export class Cell<T extends unknown = unknown> {
   _debugName?: string | undefined;
   [isTag] = true;
   constructor(value: T, debugName?: string) {
-    this._value = value;
+    this.__value = value;
     if (IS_DEV_MODE) {
       this._debugName = debugContext(debugName);
       DEBUG_CELLS.add(this);
     }
+  }
+  // Use accessor so LazyCell can override
+  get _value(): T {
+    return this.__value;
+  }
+  set _value(v: T) {
+    this.__value = v;
   }
   get value() {
     if (currentTracker !== null) {

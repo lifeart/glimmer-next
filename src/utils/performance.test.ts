@@ -2,9 +2,8 @@
  * @vitest-environment happy-dom
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { cell, formula, Cell, MergedCell } from './reactive';
-import { opcodeFor, evaluateOpcode } from './vm';
-import { syncDom } from './runtime';
+import { cell, formula } from './reactive';
+import { opcodeFor } from './vm';
 import { HTMLBrowserDOMApi } from './dom-api';
 import { pushParentContext, popParentContext, setParentContext, Root } from './dom';
 import { TREE, COMPONENT_ID_PROPERTY, RENDERED_NODES_PROPERTY } from './shared';
@@ -154,8 +153,8 @@ describe('Performance Optimizations', () => {
       const results1: number[] = [];
       const results2: number[] = [];
 
-      const destroy1 = opcodeFor(cell1, (v) => results1.push(v as number));
-      const destroy2 = opcodeFor(cell2, (v) => results2.push(v as number));
+      const destroy1 = opcodeFor(cell1, (v) => { results1.push(v as number); });
+      const destroy2 = opcodeFor(cell2, (v) => { results2.push(v as number); });
 
       // Update both cells
       cell1.update(10);
@@ -175,7 +174,7 @@ describe('Performance Optimizations', () => {
       const derivedFormula = formula(() => baseCell.value * 2, 'derived-formula');
       const results: number[] = [];
 
-      const destroy = opcodeFor(derivedFormula, (v) => results.push(v as number));
+      const destroy = opcodeFor(derivedFormula, (v) => { results.push(v as number); });
 
       expect(results).toEqual([10]);
 

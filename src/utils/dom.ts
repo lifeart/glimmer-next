@@ -46,7 +46,7 @@ import {
   CHILD,
   TREE,
   PARENT,
-  SEEN_TREE_NODES,
+  ADDED_TO_TREE_FLAG,
 } from './shared';
 import { isRehydrationScheduled } from './ssr/rehydration';
 import { createHotReload } from './hmr';
@@ -1315,7 +1315,8 @@ export function $_GET_ARGS(ctx: Component<any>, args: IArguments) {
   ctx[$args] = ctx[$args] || args[0] || {};
   ctx[RENDERED_NODES_PROPERTY] = ctx[RENDERED_NODES_PROPERTY] ?? [];
   ctx[COMPONENT_ID_PROPERTY] = ctx[COMPONENT_ID_PROPERTY] ?? cId();
-  if (!SEEN_TREE_NODES.has(ctx)) {
+  // @ts-expect-error - dynamic property
+  if (!ctx[ADDED_TO_TREE_FLAG]) {
     addToTree(getParentContext()!, ctx);
   }
 }
