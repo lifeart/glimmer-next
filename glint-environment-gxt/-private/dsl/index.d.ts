@@ -61,17 +61,163 @@ export declare function applyModifier(
   modifierResult: Promise<void> | ModifierReturn | void | (() => void),
 ): void;
 
+// =============================================================================
+// PDF Element Type Definitions
+// =============================================================================
+
+// PDF element attribute types - import from the PDF types module
+import type {
+  PdfStyle,
+  PageSize,
+  PageOrientation,
+  PageMode,
+  PageLayout,
+  ImageSource,
+} from '../../../src/utils/renderers/pdf/types';
+
+// PDF element types - branded interfaces for unique type identification
+interface PdfDocumentElement extends HTMLElement { readonly __pdfType: 'document'; }
+interface PdfPageElement extends HTMLElement { readonly __pdfType: 'page'; }
+interface PdfViewElement extends HTMLElement { readonly __pdfType: 'view'; }
+interface PdfTextElement extends HTMLElement { readonly __pdfType: 'text'; }
+interface PdfImageElement extends HTMLElement { readonly __pdfType: 'image'; }
+interface PdfLinkElement extends HTMLElement { readonly __pdfType: 'link'; }
+
+// PDF element attribute interfaces
+interface PdfDocumentAttributes {
+  title?: string;
+  author?: string;
+  subject?: string;
+  keywords?: string;
+  creator?: string;
+  producer?: string;
+  pdfVersion?: string;
+  language?: string;
+  pageMode?: PageMode;
+  pageLayout?: PageLayout;
+  onRender?: (blob: Blob) => void;
+}
+
+interface PdfPageAttributes {
+  size?: PageSize;
+  orientation?: PageOrientation;
+  wrap?: boolean;
+  style?: PdfStyle | PdfStyle[];
+  debug?: boolean;
+  dpi?: number;
+  id?: string;
+  bookmark?: string | { title: string; fit?: boolean };
+}
+
+interface PdfViewAttributes {
+  wrap?: boolean;
+  style?: PdfStyle | PdfStyle[];
+  debug?: boolean;
+  fixed?: boolean;
+  id?: string;
+  bookmark?: string | { title: string; fit?: boolean };
+}
+
+interface PdfTextAttributes {
+  wrap?: boolean;
+  style?: PdfStyle | PdfStyle[];
+  debug?: boolean;
+  fixed?: boolean;
+  hyphenationCallback?: (word: string) => string[];
+  id?: string;
+  bookmark?: string | { title: string; fit?: boolean };
+}
+
+interface PdfImageAttributes {
+  src?: ImageSource;
+  source?: ImageSource;
+  style?: PdfStyle | PdfStyle[];
+  debug?: boolean;
+  fixed?: boolean;
+  cache?: boolean;
+  bookmark?: string | { title: string; fit?: boolean };
+}
+
+interface PdfLinkAttributes {
+  src?: string;
+  wrap?: boolean;
+  style?: PdfStyle | PdfStyle[];
+  debug?: boolean;
+  fixed?: boolean;
+  bookmark?: string | { title: string; fit?: boolean };
+}
+
+// =============================================================================
+// Element Emission
+// =============================================================================
+
 /**
  * Given a tag name, returns an appropriate `Element` subtype.
  * NOTE: This will return a union for elements that exist both in HTML and SVG. Technically, this will be too permissive.
  */
 type WithShadowRoot = { shadowrootmode?: 'open' | 'closed' };
 
+// PDF element type mapping - returns branded PDF element types for PDF tag names
+type PdfElementForTagName<Name extends string> =
+  Name extends 'pdfDocument' ? PdfDocumentElement :
+  Name extends 'pdfPage' ? PdfPageElement :
+  Name extends 'pdfView' ? PdfViewElement :
+  Name extends 'pdfText' ? PdfTextElement :
+  Name extends 'pdfImage' ? PdfImageElement :
+  Name extends 'pdfLink' ? PdfLinkElement :
+  ElementForTagName<Name>;
+
 export declare function emitElement<Name extends string>(
   name: Name,
-): { element: ElementForTagName<Name> & WithShadowRoot };
+): { element: PdfElementForTagName<Name> & WithShadowRoot };
 
+// =============================================================================
+// Attribute Application
+// =============================================================================
+
+// Overloads for PDF elements (must come before the general fallback)
+export declare function applyAttributes(
+  element: PdfDocumentElement,
+  attrs: Partial<PdfDocumentAttributes>,
+): void;
+export declare function applyAttributes(
+  element: PdfPageElement,
+  attrs: Partial<PdfPageAttributes>,
+): void;
+export declare function applyAttributes(
+  element: PdfViewElement,
+  attrs: Partial<PdfViewAttributes>,
+): void;
+export declare function applyAttributes(
+  element: PdfTextElement,
+  attrs: Partial<PdfTextAttributes>,
+): void;
+export declare function applyAttributes(
+  element: PdfImageElement,
+  attrs: Partial<PdfImageAttributes>,
+): void;
+export declare function applyAttributes(
+  element: PdfLinkElement,
+  attrs: Partial<PdfLinkAttributes>,
+): void;
+// General fallback for all other elements
 export declare function applyAttributes(
   element: Element,
   attrs: Record<string, AttrValue> & WithShadowRoot,
 ): void;
+
+// =============================================================================
+// Global Type Augmentations
+// =============================================================================
+
+// Extend HTMLElementTagNameMap for PDF elements so they are recognized as valid tag names
+declare global {
+  interface HTMLElementTagNameMap {
+    'pdfDocument': PdfDocumentElement;
+    'pdfPage': PdfPageElement;
+    'pdfView': PdfViewElement;
+    'pdfText': PdfTextElement;
+    'pdfImage': PdfImageElement;
+    'pdfLink': PdfLinkElement;
+  }
+}

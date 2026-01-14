@@ -129,6 +129,116 @@ export class Row extends Component<RowArgs> {
 
 Explore <b>gNext</b> and elevate your web development experience!
 
+### Custom Renderers
+
+GXT supports multiple rendering targets beyond the standard DOM. Each renderer provides its own API while maintaining full reactivity.
+
+#### PDF Renderer
+
+Build PDF documents using a declarative component-based API inspired by [react-pdf](https://react-pdf.org/):
+
+```ts
+import {
+  PdfDocument,
+  PdfPage,
+  PdfView,
+  PdfText,
+  StyleSheet,
+  createPdfApi,
+} from "@/utils/renderers/pdf";
+
+// Create styles
+const styles = StyleSheet.create({
+  page: { padding: 30 },
+  title: { fontSize: 24, fontWeight: "bold", marginBottom: 10 },
+  text: { fontSize: 12, color: "#333", lineHeight: 1.6 },
+});
+
+// Build document programmatically
+const api = createPdfApi();
+
+const doc = new PdfDocument();
+doc.title = "My Document";
+doc.author = "GXT";
+
+const page = new PdfPage();
+page.size = "A4";
+page.style = styles.page;
+
+const view = new PdfView();
+
+const title = new PdfText();
+title.style = styles.title;
+title.appendChild(new PdfTextNode("Hello World"));
+
+const paragraph = new PdfText();
+paragraph.style = styles.text;
+paragraph.appendChild(new PdfTextNode("Generated with GXT PDF Renderer"));
+
+view.appendChild(title);
+view.appendChild(paragraph);
+page.appendChild(view);
+doc.appendChild(page);
+
+api.setDocument(doc);
+
+// Get JSON structure for PDF generation
+const structure = api.toJSON();
+```
+
+**Available PDF Elements:**
+
+- `PdfDocument` - Root container with metadata (title, author, subject, etc.)
+- `PdfPage` - Individual pages with size, orientation, and styling
+- `PdfView` - Layout container (like a div) with flexbox support
+- `PdfText` - Text content with typography styling
+- `PdfImage` - Image embedding (URL, buffer, or base64)
+- `PdfLink` - Hyperlinks
+- `PdfCanvas` - Custom drawing with paint function
+- `PdfNote` - Annotations
+
+**StyleSheet Utility:**
+
+```ts
+import { StyleSheet, PageSizes, parseUnit } from "@/utils/renderers/pdf";
+
+// Create named styles
+const styles = StyleSheet.create({
+  container: { padding: 20, flexDirection: "row" },
+  text: { fontSize: 12, color: "#333" },
+});
+
+// Flatten/compose styles
+const merged = StyleSheet.compose(styles.container, { margin: 10 });
+
+// Get page dimensions
+const a4 = PageSizes.A4; // { width: 595, height: 842 }
+
+// Parse CSS units to points
+parseUnit("1in"); // 72
+parseUnit("2.5cm"); // ~70.87
+parseUnit("50%", 200); // 100
+```
+
+**Supported Style Properties:**
+
+- Dimensions: width, height, minWidth, maxWidth, minHeight, maxHeight
+- Spacing: margin, padding (with directional variants)
+- Flexbox: flexDirection, justifyContent, alignItems, gap, etc.
+- Positioning: position, top, right, bottom, left, zIndex
+- Typography: fontSize, fontFamily, fontWeight, color, textAlign, lineHeight
+- Borders: borderWidth, borderColor, borderRadius
+- Background: backgroundColor, opacity
+
+#### Other Renderers
+
+- **Canvas Renderer** - Render to HTML Canvas with 2D primitives
+- **SVG Renderer** - Native SVG with reactive attributes
+- **MathML Renderer** - Mathematical notation
+- **Three.js/Tres Renderer** - 3D WebGL graphics
+
+See the [live demo](https://g-next.netlify.app/renderers) for interactive examples of all renderers.
+
 ### Notes
 
 - modifiers API:
@@ -290,7 +400,8 @@ The `followPromise` function:
 
 - Calls `start()` on the nearest suspense context when the promise begins
 - Calls `end()` when the promise resolves or rejects
-- Returns the original promise unchanged
+- Returns a promise that resolves to the same value
+- When you `await followPromise(...)`, `end()` is guaranteed to have been called
 
 ### Built-in Helpers
 

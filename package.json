@@ -109,6 +109,8 @@
     "@types/three": "^0.172.0",
     "content-tag": "2.0.1",
     "decorator-transforms": "2.0.0",
-    "three": "^0.172.0"
+    "jspdf": "^4.0.0",
+    "three": "^0.172.0",
+    "yoga-layout": "^3.2.1"
   }
 }
