@@ -52,7 +52,32 @@ if (isLibBuild) {
 }
 
 export default defineConfig(({ mode }) => ({
+  // Define process globals for browser compatibility (needed for @babel/types in runtime compilation)
+  define: !isLibBuild ? {
+    'process.platform': JSON.stringify('browser'),
+    'process.env.NODE_ENV': JSON.stringify(mode),
+    'process.env': JSON.stringify({ NODE_ENV: mode }),
+    // Define a minimal process object for dependencies that access process directly
+    'global.process': JSON.stringify({ platform: 'browser', env: { NODE_ENV: mode } }),
+  } : undefined,
   plugins: [
+    // Inject process shim for production build
+    !isLibBuild ? {
+      name: 'inject-process-shim',
+      enforce: 'pre' as const,
+      transform(code: string, id: string) {
+        // Only transform node_modules that might use process
+        if (id.includes('node_modules') && (code.includes('process.') || code.includes('process['))) {
+          // Don't transform if already has process definition
+          if (code.includes('var process =') || code.includes('const process =') || code.includes('let process =')) {
+            return null;
+          }
+          const processShim = `var process = typeof process !== 'undefined' ? process : { platform: 'browser', env: { NODE_ENV: '${mode}' }, cwd: function() { return '/'; } };\n`;
+          return { code: processShim + code, map: null };
+        }
+        return null;
+      }
+    } : null,
     ...plugins,
     {
       name: 'mock-problematic-deps',
