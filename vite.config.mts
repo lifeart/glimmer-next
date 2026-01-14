@@ -55,34 +55,77 @@ export default defineConfig(({ mode }) => ({
   plugins: [
     ...plugins,
     {
-      name: 'mock-yoga-layout',
+      name: 'mock-problematic-deps',
+      enforce: 'pre',
       resolveId(id) {
-        if (id === 'yoga-layout' || id.includes('yoga-wasm-base64-esm')) {
-          return id;
+        // Only match actual npm package imports, not local files like ./yoga-layout
+        if (id === 'yoga-layout' || id === 'yoga-layout/load' || id.startsWith('yoga-layout/')) {
+          return '\0virtual:yoga-layout';
+        }
+        if (id === 'rgbcolor') {
+          return '\0virtual:rgbcolor';
+        }
+        if (id === 'canvg') {
+          return '\0virtual:canvg';
         }
       },
       load(id) {
-        if (id === 'yoga-layout' || id.includes('yoga-wasm-base64-esm')) {
+        if (id === '\0virtual:yoga-layout') {
           return 'export default {}; export const loadYoga = () => Promise.resolve({});';
+        }
+        if (id === '\0virtual:rgbcolor') {
+          return 'export default class RGBColor { constructor() {} toRGB() { return "rgb(0,0,0)"; } toHex() { return "#000000"; } }';
+        }
+        if (id === '\0virtual:canvg') {
+          return 'export default { from: () => Promise.resolve({ render: () => {} }) }; export const Canvg = { from: () => Promise.resolve({ render: () => {} }) };';
         }
       }
     },
     {
-      name: 'fix-qunit-esm',
+      name: 'fix-esm-exports',
       enforce: 'pre',
       resolveId(id) {
         if (id === 'qunit') {
           return '\0virtual:qunit';
         }
+        if (id === '@lifeart/tiny-router') {
+          return '\0virtual:tiny-router';
+        }
+        if (id === 'backburner.js') {
+          return '\0virtual:backburner';
+        }
       },
       load(id) {
         if (id === '\0virtual:qunit') {
+          // QUnit is a UMD bundle that sets up global.QUnit
+          // Import it for side effects, then re-export from global
           return `
-            import * as QUnit from 'qunit/qunit/qunit.js';
-            const Q = QUnit.default || QUnit;
+            import 'qunit/qunit/qunit.js';
+            const Q = globalThis.QUnit;
             export const module = Q.module;
             export const test = Q.test;
+            export const skip = Q.skip;
+            export const only = Q.only;
+            export const todo = Q.todo;
+            export const assert = Q.assert;
+            export const hooks = Q.hooks;
+            export const done = Q.done;
+            export const testDone = Q.testDone;
             export default Q;
+          `;
+        }
+        if (id === '\0virtual:tiny-router') {
+          // Re-export the named exports directly
+          return `
+            export { Router, getPagePath, openPage, redirectPage } from '@lifeart/tiny-router/index.module.js';
+            import * as _pkg from '@lifeart/tiny-router/index.module.js';
+            export default _pkg;
+          `;
+        }
+        if (id === '\0virtual:backburner') {
+          // Use the ES6 version which has proper exports
+          return `
+            export { default, buildPlatform } from 'backburner.js/dist/es6/backburner.js';
           `;
         }
       }
