@@ -69,6 +69,7 @@ import {
   createTresContextState,
 } from './index';
 import type { TresContext, TresContextState } from './context';
+import type { TresObject, TresObject3D } from './types';
 
 // ============================================
 // Type Guards Tests (utils/is.ts)
@@ -1107,58 +1108,64 @@ describe('Event Handlers in userData.tres Namespace', () => {
   });
 
   test('onClick is stored in userData.tres namespace', () => {
-    const mesh = api.element('TresMesh', false, false, [[], [], []]) as Mesh;
+    const mesh = api.element('TresMesh', false, false, [[], [], []]) as TresObject;
+    const meshObj = mesh as TresObject3D;
     const clickHandler = () => 'clicked';
 
     api.prop(mesh, 'onClick', clickHandler);
 
-    expect(mesh.userData.tres.onClick).toBe(clickHandler);
-    expect((mesh as any).onClick).toBe(clickHandler); // Also on object for backwards compat
+    expect(meshObj.userData.tres.onClick).toBe(clickHandler);
+    expect((mesh as TresObject & { onClick?: () => string }).onClick).toBe(clickHandler); // Also on object for backwards compat
   });
 
   test('onPointerMove is stored in userData.tres namespace', () => {
-    const mesh = api.element('TresMesh', false, false, [[], [], []]) as Mesh;
+    const mesh = api.element('TresMesh', false, false, [[], [], []]) as TresObject;
+    const meshObj = mesh as TresObject3D;
     const moveHandler = () => 'moved';
 
     api.prop(mesh, 'onPointerMove', moveHandler);
 
-    expect(mesh.userData.tres.onPointerMove).toBe(moveHandler);
+    expect(meshObj.userData.tres.onPointerMove).toBe(moveHandler);
   });
 
   test('onPointerEnter is stored in userData.tres namespace', () => {
-    const mesh = api.element('TresMesh', false, false, [[], [], []]) as Mesh;
+    const mesh = api.element('TresMesh', false, false, [[], [], []]) as TresObject;
+    const meshObj = mesh as TresObject3D;
     const enterHandler = () => 'entered';
 
     api.prop(mesh, 'onPointerEnter', enterHandler);
 
-    expect(mesh.userData.tres.onPointerEnter).toBe(enterHandler);
+    expect(meshObj.userData.tres.onPointerEnter).toBe(enterHandler);
   });
 
   test('onPointerLeave is stored in userData.tres namespace', () => {
-    const mesh = api.element('TresMesh', false, false, [[], [], []]) as Mesh;
+    const mesh = api.element('TresMesh', false, false, [[], [], []]) as TresObject;
+    const meshObj = mesh as TresObject3D;
     const leaveHandler = () => 'left';
 
     api.prop(mesh, 'onPointerLeave', leaveHandler);
 
-    expect(mesh.userData.tres.onPointerLeave).toBe(leaveHandler);
+    expect(meshObj.userData.tres.onPointerLeave).toBe(leaveHandler);
   });
 
   test('blocks-pointer-events sets blockPointerEvents in userData.tres', () => {
-    const mesh = api.element('TresMesh', false, false, [[], [], []]) as Mesh;
+    const mesh = api.element('TresMesh', false, false, [[], [], []]) as TresObject;
+    const meshObj = mesh as TresObject3D;
 
     api.prop(mesh, 'blocks-pointer-events', true);
 
-    expect(mesh.userData.tres.blockPointerEvents).toBe(true);
+    expect(meshObj.userData.tres.blockPointerEvents).toBe(true);
   });
 
   test('blocks-pointer-events can be disabled', () => {
-    const mesh = api.element('TresMesh', false, false, [[], [], []]) as Mesh;
+    const mesh = api.element('TresMesh', false, false, [[], [], []]) as TresObject;
+    const meshObj = mesh as TresObject3D;
 
     api.prop(mesh, 'blocks-pointer-events', true);
-    expect(mesh.userData.tres.blockPointerEvents).toBe(true);
+    expect(meshObj.userData.tres.blockPointerEvents).toBe(true);
 
     api.prop(mesh, 'blocks-pointer-events', false);
-    expect(mesh.userData.tres.blockPointerEvents).toBe(false);
+    expect(meshObj.userData.tres.blockPointerEvents).toBe(false);
   });
 });
 
@@ -1223,25 +1230,27 @@ describe('Disposal Tracking', () => {
   });
 
   test('geometry is set to undefined when mesh is destroyed', () => {
-    const mesh = api.element('TresMesh', false, false, [[], [], []]) as Mesh;
-    mesh.geometry = new BoxGeometry(1, 1, 1);
+    const mesh = api.element('TresMesh', false, false, [[], [], []]) as TresObject;
+    const meshObj = mesh as TresObject3D;
+    meshObj.geometry = new BoxGeometry(1, 1, 1);
 
-    expect(mesh.geometry).toBeDefined();
+    expect(meshObj.geometry).toBeDefined();
 
     api.destroy(mesh);
 
-    expect(mesh.geometry).toBeUndefined();
+    expect(meshObj.geometry).toBeUndefined();
   });
 
   test('material is set to undefined when mesh is destroyed', () => {
-    const mesh = api.element('TresMesh', false, false, [[], [], []]) as Mesh;
-    mesh.material = new MeshBasicMaterial();
+    const mesh = api.element('TresMesh', false, false, [[], [], []]) as TresObject;
+    const meshObj = mesh as TresObject3D;
+    meshObj.material = new MeshBasicMaterial();
 
-    expect(mesh.material).toBeDefined();
+    expect(meshObj.material).toBeDefined();
 
     api.destroy(mesh);
 
-    expect(mesh.material).toBeUndefined();
+    expect(meshObj.material).toBeUndefined();
   });
 
   test('geometryViaProp flag is set when geometry passed via prop', () => {
@@ -1250,7 +1259,7 @@ describe('Disposal Tracking', () => {
       [],
       [['geometry', geometry]],
       [],
-    ]) as Mesh;
+    ]) as TresObject3D;
 
     // Geometry was passed via prop, so geometryViaProp should be true
     expect(mesh.userData.tres.geometryViaProp).toBe(true);
@@ -1264,7 +1273,7 @@ describe('Disposal Tracking', () => {
       [],
       [['material', material]],
       [],
-    ]) as Mesh;
+    ]) as TresObject3D;
 
     // Material was passed via prop, so materialViaProp should be true
     expect(mesh.userData.tres.materialViaProp).toBe(true);
@@ -1273,35 +1282,38 @@ describe('Disposal Tracking', () => {
   });
 
   test('geometryViaProp flag prevents geometry from being cleared', () => {
-    const mesh = api.element('TresMesh', false, false, [[], [], []]) as Mesh;
-    mesh.geometry = new BoxGeometry(1, 1, 1);
+    const mesh = api.element('TresMesh', false, false, [[], [], []]) as TresObject;
+    const meshObj = mesh as TresObject3D;
+    meshObj.geometry = new BoxGeometry(1, 1, 1);
 
     // Manually set the flag to simulate prop-passed geometry
-    mesh.userData.tres.geometryViaProp = true;
+    meshObj.userData.tres.geometryViaProp = true;
 
     api.destroy(mesh);
 
     // Geometry should NOT be undefined because geometryViaProp was true
-    expect(mesh.geometry).toBeDefined();
+    expect(meshObj.geometry).toBeDefined();
   });
 
   test('materialViaProp flag prevents material from being cleared', () => {
-    const mesh = api.element('TresMesh', false, false, [[], [], []]) as Mesh;
-    mesh.material = new MeshBasicMaterial();
+    const mesh = api.element('TresMesh', false, false, [[], [], []]) as TresObject;
+    const meshObj = mesh as TresObject3D;
+    meshObj.material = new MeshBasicMaterial();
 
     // Manually set the flag to simulate prop-passed material
-    mesh.userData.tres.materialViaProp = true;
+    meshObj.userData.tres.materialViaProp = true;
 
     api.destroy(mesh);
 
     // Material should NOT be undefined because materialViaProp was true
-    expect(mesh.material).toBeDefined();
+    expect(meshObj.material).toBeDefined();
   });
 
   test('destroying same object twice does not throw', () => {
-    const mesh = api.element('TresMesh', false, false, [[], [], []]) as Mesh;
-    mesh.geometry = new BoxGeometry(1, 1, 1);
-    mesh.material = new MeshBasicMaterial();
+    const mesh = api.element('TresMesh', false, false, [[], [], []]) as TresObject;
+    const meshObj = mesh as TresObject3D;
+    meshObj.geometry = new BoxGeometry(1, 1, 1);
+    meshObj.material = new MeshBasicMaterial();
 
     // First destroy
     api.destroy(mesh);
@@ -1311,28 +1323,32 @@ describe('Disposal Tracking', () => {
   });
 
   test('mesh is removed from parent when destroyed', () => {
-    const group = api.element('TresGroup', false, false, [[], [], []]) as Group;
-    const childMesh = api.element('TresMesh', false, false, [[], [], []]) as Mesh;
-    group.add(childMesh);
+    const group = api.element('TresGroup', false, false, [[], [], []]) as TresObject;
+    const childMesh = api.element('TresMesh', false, false, [[], [], []]) as TresObject;
+    const groupObj = group as unknown as Object3D;
+    const childObj = childMesh as unknown as Object3D;
+    groupObj.add(childObj);
 
-    expect(group.children).toContain(childMesh);
+    expect(groupObj.children).toContain(childObj);
 
     api.destroy(childMesh);
 
-    expect(group.children).not.toContain(childMesh);
+    expect(groupObj.children).not.toContain(childObj);
   });
 
   test('child geometry is cleared when parent is destroyed', () => {
-    const group = api.element('TresGroup', false, false, [[], [], []]) as Group;
-    const childMesh = api.element('TresMesh', false, false, [[], [], []]) as Mesh;
-    childMesh.geometry = new BoxGeometry(1, 1, 1);
-    group.add(childMesh);
+    const group = api.element('TresGroup', false, false, [[], [], []]) as TresObject;
+    const childMesh = api.element('TresMesh', false, false, [[], [], []]) as TresObject;
+    const groupObj = group as unknown as Object3D;
+    const childMeshObj = childMesh as TresObject3D;
+    childMeshObj.geometry = new BoxGeometry(1, 1, 1);
+    groupObj.add(childMeshObj);
 
-    expect(childMesh.geometry).toBeDefined();
+    expect(childMeshObj.geometry).toBeDefined();
 
     api.destroy(group);
 
-    expect(childMesh.geometry).toBeUndefined();
+    expect(childMeshObj.geometry).toBeUndefined();
   });
 });
 
