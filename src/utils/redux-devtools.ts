@@ -1,106 +1,138 @@
 // inspired by https://www.npmjs.com/package/freezer-redux-devtools?activeTab=code
-var ActionTypes = {
-	INIT: '@@INIT',
-	PERFORM_ACTION: 'PERFORM_ACTION',
-	TOGGLE_ACTION: 'TOGGLE_ACTION'
-};
+
+export interface DevToolsConfig {
+  name?: string;
+  maxAge?: number;
+  serialize?: boolean | { replacer?: (key: string, value: unknown) => unknown };
+  actionsDenylist?: string[];
+  actionsAllowlist?: string[];
+  features?: {
+    pause?: boolean;
+    lock?: boolean;
+    persist?: boolean;
+    export?: boolean | 'custom';
+    import?: boolean | 'custom';
+    jump?: boolean;
+    skip?: boolean;
+    reorder?: boolean;
+    dispatch?: boolean;
+    test?: boolean;
+  };
+  trace?: boolean;
+  traceLimit?: number;
+}
+
+declare global {
+  interface Window {
+    __REDUX_DEVTOOLS_EXTENSION__?: (config?: DevToolsConfig) => (createStore: any) => any;
+  }
+}
+
+const ActionTypes = {
+  INIT: '@@INIT',
+  PERFORM_ACTION: 'PERFORM_ACTION',
+  TOGGLE_ACTION: 'TOGGLE_ACTION',
+} as const;
 
 type Listener = () => void;
+
+export interface FreezerState {
+  get(): Record<string, unknown>;
+  set(state: any): void;
+  skipDispatch: number;
+  trigger(eventName: string, ...args: unknown[]): void;
+  on(eventName: string, callback: (this: FreezerState, reactionName: string, ...args: unknown[]) => void): void;
+}
 
 /**
  * Redux middleware to make freezer and devtools
  * talk to each other.
  * @param {Freezer} State Freezer's app state.
  */
-export function FreezerMiddleware( State ){
-	return function( next ){
-		return function StoreEnhancer( someReducer, someState ){
-			var commitedState = State.get(),
-				lastAction = 0,
-				/**
-				 * Freezer reducer will trigger events on any
-				 * devtool action to synchronize freezer's and
-				 * devtool's states.
-				 *
-				 * @param  {Object} state  Current devtool state.
-				 * @param  {Object} action Action being dispatched.
-				 * @return {Object}        Freezer state after the action.
-				 */
-				reducer = function( state, action ){
-					if( action.type == ActionTypes.INIT ){
-						State.set( state || commitedState );
-					}
-					else if( lastAction != ActionTypes.PERFORM_ACTION ) {
-						// Flag that we are dispatching to not
-						// to dispatch the same action twice
-						State.skipDispatch = 1;
-						State.trigger.apply( State, [ action.type ].concat( action.arguments || [] ) );
-					}
-					// The only valid state is freezer's one.
-					return State.get();
-				},
-				store = next( reducer ),
-				liftedStore = store.liftedStore,
-				dtStore = store.devToolsStore || store.liftedStore,
+export function FreezerMiddleware(State: FreezerState) {
+  return function (next: any) {
+    return function StoreEnhancer(_someReducer: any, _someState: any) {
+      const commitedState = State.get();
+      let lastAction: string | number = 0;
 
-				toolsDispatcher = dtStore.dispatch
-			;
+      /**
+       * Freezer reducer will trigger events on any
+       * devtool action to synchronize freezer's and
+       * devtool's states.
+       */
+      const reducer = function (state: any, action: { type: string; arguments?: unknown[]; id?: number }) {
+        if (action.type === ActionTypes.INIT) {
+          State.set(state || commitedState);
+        } else if (lastAction !== ActionTypes.PERFORM_ACTION) {
+          // Flag that we are dispatching to not
+          // to dispatch the same action twice
+          State.skipDispatch = 1;
+          State.trigger(action.type, ...(action.arguments || []));
+        }
+        // The only valid state is freezer's one.
+        return State.get();
+      };
 
-			// Override devTools store's dispatch, to set commitedState
-			// on Commit action.
-			dtStore.dispatch = function( action ){
-				lastAction = action.type;
+      const store = next(reducer);
+      const liftedStore = store.liftedStore;
+      const dtStore = store.devToolsStore || store.liftedStore;
 
-				// If we are using redux-devtools we need to reset the state
-				// to the last valid one manually
-				if( liftedStore && lastAction == ActionTypes.TOGGLE_ACTION ){
-					var states = dtStore.getState().computedStates,
-						nextValue = states[ action.id - 1].state
-					;
+      // Only set up devtools integration if dtStore is available
+      if (dtStore) {
+        const toolsDispatcher = dtStore.dispatch;
 
-					State.set( nextValue );
-				}
+        // Override devTools store's dispatch, to set commitedState
+        // on Commit action.
+        dtStore.dispatch = function (action: { type: string; id?: number }) {
+          lastAction = action.type;
 
-				toolsDispatcher.apply( dtStore, arguments );
+          // If we are using redux-devtools we need to reset the state
+          // to the last valid one manually
+          if (liftedStore && lastAction === ActionTypes.TOGGLE_ACTION) {
+            const states = dtStore.getState().computedStates;
+            const nextValue = states[action.id! - 1].state;
+            State.set(nextValue);
+          }
 
-				return action;
-			};
+          toolsDispatcher.call(dtStore, action);
+          return action;
+        };
+      }
 
-			// Dispatch any freezer "fluxy" event to let the devTools
-			// know about the update.
-			State.on('afterAll', function( reactionName ){
-				if( reactionName == 'update')
-					return;
+      // Dispatch any freezer "fluxy" event to let the devTools
+      // know about the update.
+      State.on('afterAll', function (this: FreezerState, reactionName: string, ...restArgs: unknown[]) {
+        if (reactionName === 'update') {
+          return;
+        }
 
-				// We don't dispatch if the flag is true
-				if( this.skipDispatch )
-					this.skipDispatch = 0;
-				else {
-					var args = [].slice.call( arguments, 1 );
-					store.dispatch({ type: reactionName, args: args });
-				}
-			});
+        // We don't dispatch if the flag is true
+        if (this.skipDispatch) {
+          this.skipDispatch = 0;
+        } else {
+          store.dispatch({ type: reactionName, args: restArgs });
+        }
+      });
 
-			return store;
-		};
-	};
+      return store;
+    };
+  };
 }
 
 /**
  * Binds freezer store to the chrome's redux-devtools extension.
  * @param {Freezer} State Freezer's app state
+ * @param {DevToolsConfig} config Optional devtools configuration
  */
-export function supportChromeExtension( State ){
-    var devtools = window.__REDUX_DEVTOOLS_EXTENSION__
-  ? window.__REDUX_DEVTOOLS_EXTENSION__()
-  : (f) => f;
-	
-	return compose(
-		FreezerMiddleware( State ),
-		devtools
-	)(createStore)( function( state ){
-		return state;
-	});
+export function supportChromeExtension(State: FreezerState, config?: DevToolsConfig) {
+  const devtools = window.__REDUX_DEVTOOLS_EXTENSION__
+    ? window.__REDUX_DEVTOOLS_EXTENSION__(config)
+    : (f: any) => f;
+
+  return compose(
+    FreezerMiddleware(State),
+    devtools
+  )(createStore)((state: any) => state);
 }
 
 
@@ -108,19 +140,17 @@ export function supportChromeExtension( State ){
  * Creates a valid redux store. Copied directly from redux.
  * https://github.com/rackt/redux
  */
-function createStore(reducer: any, initialState: any) {
-
-
+function createStore(reducer: any, initialState?: any) {
   if (typeof reducer !== 'function') {
     throw new Error('Expected the reducer to be a function.');
   }
 
-  var currentReducer = reducer;
-  var currentState = initialState;
-  var listeners: Listener[] = [];
-  var isDispatching = false;
-  var ActionTypes = {
-	 INIT: '@@redux/INIT'
+  let currentReducer = reducer;
+  let currentState = initialState;
+  const listeners: Listener[] = [];
+  let isDispatching = false;
+  const ReduxActionTypes = {
+    INIT: '@@redux/INIT',
   };
 
   function getState() {
@@ -129,7 +159,7 @@ function createStore(reducer: any, initialState: any) {
 
   function subscribe(listener: Listener) {
     listeners.push(listener);
-    var isSubscribed = true;
+    let isSubscribed = true;
 
     return function unsubscribe() {
       if (!isSubscribed) {
@@ -137,14 +167,14 @@ function createStore(reducer: any, initialState: any) {
       }
 
       isSubscribed = false;
-      var index = listeners.indexOf(listener);
+      const index = listeners.indexOf(listener);
       listeners.splice(index, 1);
     };
   }
 
-  function dispatch(action: { type: string | undefined }) {
+  function dispatch(action: { type: string }) {
     if (typeof action.type === 'undefined') {
-      throw new Error('Actions may not have an undefined "type" property. ' + 'Have you misspelled a constant?');
+      throw new Error('Actions may not have an undefined "type" property. Have you misspelled a constant?');
     }
 
     if (isDispatching) {
@@ -158,27 +188,25 @@ function createStore(reducer: any, initialState: any) {
       isDispatching = false;
     }
 
-    listeners.slice().forEach(function (listener) {
-      return listener();
-    });
+    listeners.slice().forEach((listener) => listener());
     return action;
   }
 
   function replaceReducer(nextReducer: any) {
     currentReducer = nextReducer;
-    dispatch({ type: ActionTypes.INIT });
+    dispatch({ type: ReduxActionTypes.INIT });
   }
 
   // When a store is created, an "INIT" action is dispatched so that every
   // reducer returns their initial state. This effectively populates
   // the initial state tree.
-  dispatch({ type: ActionTypes.INIT });
+  dispatch({ type: ReduxActionTypes.INIT });
 
   return {
-    dispatch: dispatch,
-    subscribe: subscribe,
-    getState: getState,
-    replaceReducer: replaceReducer
+    dispatch,
+    subscribe,
+    getState,
+    replaceReducer,
   };
 }
 
@@ -187,14 +215,9 @@ function createStore(reducer: any, initialState: any) {
  * Copied directly from redux.
  * https://github.com/rackt/redux
  */
-function compose() {
-  for (var _len = arguments.length, funcs = Array(_len), _key = 0; _key < _len; _key++) {
-    funcs[_key] = arguments[_key];
-  }
-
+function compose(...funcs: Array<(arg: any) => any>) {
   return function (arg: any) {
-    return funcs.reduceRight(function (composed, f) {
-      return f(composed);
-    }, arg);
+    return funcs.reduceRight((composed, f) => f(composed), arg);
   };
 }
+

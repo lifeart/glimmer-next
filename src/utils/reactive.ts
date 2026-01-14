@@ -4,7 +4,7 @@
   We explicitly update DOM only when it's needed and only if tags are changed.
 */
 import { scheduleRevalidate } from '@/utils/runtime';
-import { isFn, isTag, isTagLike, debugContext, ALIVE_CELLS } from '@/utils/shared';
+import { isFn, isTag, isTagLike, debugContext } from '@/utils/shared';
 import { supportChromeExtension } from './redux-devtools';
 
 export const asyncOpcodes = new WeakSet<tagOp>();
@@ -20,6 +20,8 @@ export const relatedTags: Map<number, Set<MergedCell>> = new Map();
 
 export const DEBUG_MERGED_CELLS = new Set<MergedCell>();
 export const DEBUG_CELLS = new Set<Cell>();
+// Map for quick cell lookup by debug name (used for time-travel debugging)
+export const cellsByName = new Map<string, Cell>();
 var currentTracker: Set<Cell> | null = null;
 let _isRendering = false;
 export const cellsMap = new WeakMap<
@@ -53,38 +55,91 @@ function keysFor(obj: object): Map<string | number | symbol, Cell<unknown>> {
   return map!;
 }
 
-const result = supportChromeExtension({
-  get() {
-    const cells: Record<string, unknown> = {};
-    const allCells: Set<Cell> = new Set();
-    Array.from(ALIVE_CELLS).forEach((_cell) => {
-      const cell = _cell as MergedCell;
-      const nestedCells = Array.from(cell.relatedCells ?? []);
-      nestedCells.forEach((cell) => {
-        allCells.add(cell);
-      });
-    });
-    allCells.forEach((cell) => {
-      cells[cell._debugName!] = cell._value;
-    });
-    return cells;
-  },
-  skipDispatch: 0,
-  set() {
-    console.log('set', ...arguments);
-  },
-  on(timeLine: string, fn: () => any) {
-    console.log('on', timeLine, fn);
-    setTimeout(() => {
-      // debugger;
-      fn.call(this, 'updates', {})
-    
-    }, 2000);
-  },
-  trigger() {
-    console.log('trigger', ...arguments);
+// Redux DevTools integration - only initialized in dev mode in the browser
+type DevToolsAction = { type: string; payload?: unknown };
+const noopStore = { dispatch: (_action: DevToolsAction) => {} };
+
+// Flag to prevent dispatch during time-travel state restoration
+let isRestoringState = false;
+
+const result = (() => {
+  if (!IS_DEV_MODE || import.meta.env.SSR) {
+    return noopStore;
   }
-});
+
+  // Defer devtools initialization to avoid issues during module loading
+  if (typeof window === 'undefined' || !window.__REDUX_DEVTOOLS_EXTENSION__) {
+    return noopStore;
+  }
+
+  return supportChromeExtension({
+    get() {
+      const state: Record<string, unknown> = {};
+
+      // Collect all base Cell values from DEBUG_CELLS
+      DEBUG_CELLS.forEach((cell) => {
+        if (cell._debugName) {
+          state[cell._debugName] = cell._value;
+        }
+      });
+
+      return state;
+    },
+    skipDispatch: 0,
+    set(state: Record<string, unknown>) {
+      // Time-travel debugging: restore cell states from devtools
+      if (!state || typeof state !== 'object') {
+        return;
+      }
+
+      isRestoringState = true;
+      try {
+        for (const [name, value] of Object.entries(state)) {
+          const cell = cellsByName.get(name);
+          if (cell) {
+            // Directly set the value without triggering devtools dispatch
+            cell._value = value as any;
+            tagsToRevalidate.add(cell);
+          }
+        }
+        // Schedule DOM updates for restored state
+        scheduleRevalidate();
+      } finally {
+        isRestoringState = false;
+      }
+    },
+    on(_eventName: string, _callback: () => void) {
+      // Event subscription - handled by FreezerMiddleware
+    },
+    trigger(_eventName: string, ..._args: unknown[]) {
+      // Trigger events - handled by FreezerMiddleware
+    },
+  }, {
+    // Custom DevTools panel configuration
+    name: 'GXT Reactive State',
+    features: {
+      pause: true,
+      lock: false,
+      persist: false,
+      export: true,
+      import: true,
+      jump: true,      // Enable time-travel
+      skip: true,      // Enable skipping actions
+      reorder: false,
+      dispatch: true,
+      test: false,
+    },
+    maxAge: 50,        // Keep last 50 actions
+    trace: false,      // Disable stack traces for performance
+  });
+})();
+
+/**
+ * Check if we're currently restoring state from devtools (time-travel)
+ */
+export function isDevToolsRestoring(): boolean {
+  return isRestoringState;
+}
 
 export function tracked(
   klass: any,
@@ -157,10 +212,12 @@ export class Cell<T extends unknown = unknown> {
     if (IS_DEV_MODE) {
       this._debugName = `${debugContext(debugName)}:${COUNTER++}`;
       DEBUG_CELLS.add(this);
+      cellsByName.set(this._debugName, this);
+      result.dispatch({
+        type: 'CELL_CREATED',
+        payload: { name: this._debugName, value },
+      });
     }
-    result.dispatch({
-      type: 'CELL_CREATED',
-    });
   }
   get value() {
     if (currentTracker !== null) {
@@ -175,9 +232,26 @@ export class Cell<T extends unknown = unknown> {
     this._value = value;
     tagsToRevalidate.add(this);
     scheduleRevalidate();
-    result.dispatch({
-      type: 'CELL_UPDATED',
-    });
+    // Skip dispatch during time-travel restoration
+    if (IS_DEV_MODE && !isRestoringState) {
+      result.dispatch({
+        type: 'CELL_UPDATED',
+        payload: { name: this._debugName, value },
+      });
+    }
+  }
+  /**
+   * Destroy this cell and clean up devtools tracking
+   */
+  destroy() {
+    if (IS_DEV_MODE && this._debugName) {
+      DEBUG_CELLS.delete(this);
+      cellsByName.delete(this._debugName);
+      result.dispatch({
+        type: 'CELL_DESTROYED',
+        payload: { name: this._debugName },
+      });
+    }
   }
 }
 
@@ -295,6 +369,10 @@ export class MergedCell {
     }
     if (IS_DEV_MODE) {
       DEBUG_MERGED_CELLS.delete(this);
+      result.dispatch({
+        type: 'FORMULA_DESTROYED',
+        payload: { name: this._debugName },
+      });
     }
   }
   get value() {
@@ -461,7 +539,3 @@ export function getTracker() {
 export function setTracker(tracker: Set<Cell> | null) {
   currentTracker = tracker;
 }
-
-
-
-console.log('result', result);
