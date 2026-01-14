@@ -1,7 +1,7 @@
 import { type Plugin } from 'vite';
 import { Preprocessor } from 'content-tag';
 import { transform } from './test';
-// import { MAIN_IMPORT } from './symbols';
+import { MAIN_IMPORT } from './symbols';
 import { type Flags, defaultFlags } from './flags.ts';
 import { HMR, fixExportsForHMR, shouldHotReloadFile } from './hmr.ts';
 
@@ -88,9 +88,9 @@ export function compiler(mode: string, options: Options = {}): Plugin {
           );
         }
       }
-      // if (!code.includes(MAIN_IMPORT)) {
-      //   return;
-      // }
+      if (!code.includes(MAIN_IMPORT)) {
+        return;
+      }
       let result: string | undefined = undefined;
       if (scriptFileRegex.test(file)) {
         const source = code;
