@@ -1,7 +1,7 @@
 import { EmberFunctionalModifiers } from '../../ember-compat/ember-modifier';
 import { modifierManagers } from '../../ember-compat/ember__modifier';
 import { runDestructors } from '../component';
-import { Destructors } from '../destroyable';
+import { Destructors } from '../glimmer/destroyable';
 import { formula } from '../reactive';
 import { isFn } from '../shared';
 import { opcodeFor } from '../vm';
@@ -112,7 +112,7 @@ export function modifierManager(
       );
     });
     return () => {
-      destructors.forEach((fn) => fn());
+      destructors.forEach((fn: () => void) => fn());
       console.log('destroing class-based modifier');
       if ('willDestroy' in instance) {
         instance.willDestroy();
@@ -130,8 +130,7 @@ export function modifierManager(
           enumerable: true,
           get() {
             if (typeof args[key] === 'function') {
-              // @ts-expect-error
-              return args[key]();
+              return (args[key] as () => unknown)();
             } else {
               return args[key];
             }

@@ -54,8 +54,6 @@ import { CONSTANTS } from '../../plugins/symbols';
 import { initDOM, provideContext, ROOT_CONTEXT } from './context';
 import { SVGProvider, HTMLProvider, MathMLProvider } from './provider';
 import { IfCondition, type IfFunction } from './control-flow/if';
-import { modifierManagers } from '../ember-compat/ember__modifier';
-import { EmberFunctionalModifiers } from '../ember-compat/ember-modifier';
 import { EmberFunctionalHelpers } from '../ember-compat/ember__component__helper';
 import {
   canCarryModifier,
@@ -172,7 +170,7 @@ export const $_MANAGERS = {
       props: unknown[],
       // @ts-expect-error unused
 
-      args: () => Record<string, unknown>,
+      args: Record<string, unknown> | (() => Record<string, unknown>),
     ) {
       return;
     },
@@ -867,7 +865,7 @@ function component(
         comp.debugName || comp.name || comp.constructor.name
       }`
     : '';
-  let originalLabel = label;
+  void label; // used in dev mode for error messages
   if (TRY_CATCH_ERROR_HANDLING) {
     try {
       if (IS_DEV_MODE) {
@@ -886,7 +884,7 @@ function component(
         };
         label = `<${label} ${JSON.stringify(args, getCircularReplacer)} />`;
       }
-      const fw = args[$PROPS_SYMBOL] as unknown as FwType;
+      const fw = (args as Record<symbol, unknown>)[$PROPS_SYMBOL] as unknown as FwType;
       setParentContext(ctx);
       return _component(comp, args, fw, ctx);
     } catch (e) {
@@ -932,7 +930,7 @@ function component(
       }
     }
   } else {
-    const fw = args[$PROPS_SYMBOL] as unknown as FwType;
+    const fw = (args as Record<symbol, unknown>)[$PROPS_SYMBOL] as unknown as FwType;
     try {
       setParentContext(ctx);
       return _component(comp, args, fw, ctx);
@@ -1019,6 +1017,7 @@ function _component(
         parent: ctx,
         instance: instance,
         args,
+        tags: tagsFromRange(startTagId),
       });
     }
   } else {
@@ -1277,10 +1276,8 @@ export function $_args(
 ) {
   if (IS_GLIMMER_COMPAT_MODE) {
     if (IS_DEV_MODE) {
-      const newArgs: Record<string, () => unknown> = {
-        // @ts-expect-error
+      const newArgs: Record<string | symbol, unknown> = {
         [$SLOTS_SYMBOL]: slots ?? {},
-        // @ts-expect-error
         [$PROPS_SYMBOL]: props ?? {},
       };
       Object.keys(args).forEach((key) => {
@@ -1288,8 +1285,7 @@ export function $_args(
           Object.defineProperty(newArgs, key, {
             get() {
               if (isFn(args[key])) {
-                // @ts-expect-error function signature
-                return args[key]();
+                return (args[key] as () => unknown)();
               }
               return args[key];
             },
@@ -1412,9 +1408,6 @@ export const $_maybeModifier = (
   }
   if (needManagerForModifier(modifier)) {
     return modifierManager(modifier, element, props, hashArgs);
-  }
-  if (canCarryModifier(modifier)) {
-    return carryModifier(modifier, element, props, hashArgs);
   }
   return modifier(element, ...props);
 };

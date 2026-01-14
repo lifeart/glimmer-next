@@ -2,4 +2,4 @@ export {
   createStorage,
   getValue,
   setValue,
-} from './../utils/storage-primitives';
+} from './../utils/glimmer/storage-primitives';

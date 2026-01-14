@@ -4,7 +4,8 @@ import { format } from 'prettier/standalone';
 import parserBabel from 'prettier/plugins/babel';
 import estree from 'prettier/plugins/estree';
 import { SYMBOLS } from '../../plugins/symbols';
-import { TEMPLATE_META } from './ember__component';
+// Unused import - keeping for future use
+// import { TEMPLATE_META } from './ember__component';
 
 Object.keys(fns).forEach((key) => {
   if (key.startsWith('$')) {
@@ -24,7 +25,7 @@ globalThis.compiledTemplate = new Map();
 
 const emptyScope = () => ({});
 
-export function precompileTemplate(
+export async function precompileTemplate(
   tpl: string,
   args: {
     strictMode: boolean;
@@ -58,9 +59,13 @@ export function precompileTemplate(
       REACTIVE_MODIFIERS: true,
       WITH_HELPER_MANAGER: true,
       WITH_MODIFIER_MANAGER: true,
+      WITH_EMBER_INTEGRATION: true,
+      WITH_CONTEXT_API: true,
+      ASYNC_COMPILE_TRANSFORMS: false,
     },
   );
-  let final = transformResult.split('export ').pop() ?? '';
+  const resultStr = typeof transformResult === 'string' ? transformResult : await transformResult;
+  let final = resultStr.split('export ').pop() ?? '';
 
   // @ts-expect-error
   globalThis.compiledTemplate.set(scopeId, final);

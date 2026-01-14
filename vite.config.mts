@@ -54,6 +54,39 @@ if (isLibBuild) {
 export default defineConfig(({ mode }) => ({
   plugins: [
     ...plugins,
+    {
+      name: 'mock-yoga-layout',
+      resolveId(id) {
+        if (id === 'yoga-layout' || id.includes('yoga-wasm-base64-esm')) {
+          return id;
+        }
+      },
+      load(id) {
+        if (id === 'yoga-layout' || id.includes('yoga-wasm-base64-esm')) {
+          return 'export default {}; export const loadYoga = () => Promise.resolve({});';
+        }
+      }
+    },
+    {
+      name: 'fix-qunit-esm',
+      enforce: 'pre',
+      resolveId(id) {
+        if (id === 'qunit') {
+          return '\0virtual:qunit';
+        }
+      },
+      load(id) {
+        if (id === '\0virtual:qunit') {
+          return `
+            import * as QUnit from 'qunit/qunit/qunit.js';
+            const Q = QUnit.default || QUnit;
+            export const module = Q.module;
+            export const test = Q.test;
+            export default Q;
+          `;
+        }
+      }
+    },
     isLibBuild
       ? null
       : babel({
@@ -91,12 +124,16 @@ export default defineConfig(({ mode }) => ({
     ],
   },
   optimizeDeps: {
+    exclude: ['yoga-layout', '@react-pdf/layout', '@react-pdf/render', 'react-pdf'],
     esbuildOptions: {
       plugins: [
         // nodeModulesPolyfillPlugin(),
         NodeGlobalsPolyfillPlugin({ buffer: true }),
       ],
     },
+  },
+  ssr: {
+    noExternal: ['yoga-layout'],
   },
   build: {
     sourcemap: withSourcemaps ? "inline" : undefined,
@@ -153,7 +190,7 @@ export default defineConfig(({ mode }) => ({
             "express",
             "vite",
           ]
-        : ["happy-dom", "express", "vite"],
+        : ["happy-dom", "express", "vite", "yoga-layout"],
     },
     terserOptions:
       mode === "production"

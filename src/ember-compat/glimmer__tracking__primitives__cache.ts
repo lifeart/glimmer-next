@@ -1,1 +1,1 @@
-export { createCache, getValue, isConst } from './../utils/caching-primitives';
+export { createCache, getValue, isConst } from './../utils/glimmer/caching-primitives';

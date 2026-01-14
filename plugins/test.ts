@@ -17,8 +17,8 @@ import { processTemplate, type ResolvedHBS } from './babel';
 import { convert } from './converter';
 // @ts-expect-error
 import tsPreset from '@babel/preset-typescript';
-import dT from './decorator-transforms/index';
-// console.table(dT);
+import _dT from './decorator-transforms/index';
+// console.table(_dT);
 
 import { SYMBOLS } from './symbols';
 import type { Flags } from './flags';

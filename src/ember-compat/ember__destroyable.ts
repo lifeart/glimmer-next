@@ -3,4 +3,4 @@ export {
   isDestroyed,
   registerDestructor,
   associateDestroyableChild,
-} from './../utils/destroyable';
+} from './../utils/glimmer/destroyable';
