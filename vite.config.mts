@@ -68,6 +68,13 @@ export default defineConfig(({ mode }) => ({
         if (id === 'canvg') {
           return '\0virtual:canvg';
         }
+        // Mock ember-power-select dependencies for ember-eui
+        if (id.startsWith('ember-power-select')) {
+          return '\0virtual:ember-power-select';
+        }
+        if (id.startsWith('ember-basic-dropdown')) {
+          return '\0virtual:ember-basic-dropdown';
+        }
       },
       load(id) {
         if (id === '\0virtual:yoga-layout') {
@@ -78,6 +85,12 @@ export default defineConfig(({ mode }) => ({
         }
         if (id === '\0virtual:canvg') {
           return 'export default { from: () => Promise.resolve({ render: () => {} }) }; export const Canvg = { from: () => Promise.resolve({ render: () => {} }) };';
+        }
+        if (id === '\0virtual:ember-power-select') {
+          return 'export default {}; export const PowerSelect = () => null; export const PowerSelectMultiple = () => null;';
+        }
+        if (id === '\0virtual:ember-basic-dropdown') {
+          return 'export default {}; export const BasicDropdown = () => null;';
         }
       }
     },
