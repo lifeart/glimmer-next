@@ -7,15 +7,44 @@ import type { Cell, AnyCell } from './reactive';
 import { type BasicListComponent } from './control-flow/list';
 import { registerDestructor } from './glimmer/destroyable';
 import type { Root } from '.';
+import { config } from '@/utils/config';
 
 export const isTag = Symbol('isTag');
 export const RENDERING_CONTEXT_PROPERTY = Symbol('rendering-context');
 export const RENDERED_NODES_PROPERTY = Symbol('nodes');
 export const COMPONENT_ID_PROPERTY = Symbol('id');
+export const ADDED_TO_TREE_FLAG = Symbol('addedToTree');
 
 let componentIdCounter = 1;
+// Adaptive ID recycling pool
+const availableIds: number[] = [];
+let currentIdPoolMax = config.idPool.initial;
+let idHighWaterMark = 0;
+
 export function cId() {
-  return componentIdCounter++;
+  if (availableIds.length > 0) {
+    return availableIds.pop()!;
+  }
+  // Track high water mark for adaptive growth
+  const newId = componentIdCounter++;
+  idHighWaterMark = Math.max(idHighWaterMark, componentIdCounter - availableIds.length);
+  return newId;
+}
+
+export function releaseId(id: number) {
+  // Adaptive growth: if we're hitting capacity and below max, grow
+  if (availableIds.length >= currentIdPoolMax) {
+    if (idHighWaterMark > currentIdPoolMax && currentIdPoolMax < config.idPool.max) {
+      currentIdPoolMax = Math.min(
+        Math.ceil(currentIdPoolMax * config.idPool.growthFactor),
+        config.idPool.max,
+      );
+    } else {
+      // At capacity, discard ID
+      return;
+    }
+  }
+  availableIds.push(id);
 }
 
 export const $template = 'template' as const;
@@ -117,7 +146,6 @@ export function setBounds(component: ComponentReturnType) {
     BOUNDS.delete(ctx);
   });
 }
-export const SEEN_TREE_NODES = new WeakSet();
 export const TREE: Map<number, Component<any>> = new Map();
 export const CHILD: Map<number, Array<number> | undefined> = new Map();
 export const PARENT: Map<number, number> = new Map();
@@ -132,7 +160,9 @@ export function addToTree(
       throw new Error('Unable to crate recursive tree');
     }
   }
-  if (SEEN_TREE_NODES.has(node)) {
+  // Use component flag instead of WeakSet for faster lookup
+  // @ts-expect-error - dynamic property
+  if (node[ADDED_TO_TREE_FLAG]) {
     if (IS_DEV_MODE) {
       // console.log('node is already added to tree in:', node._debugName, '| and now in |', debugName);
     }
@@ -158,7 +188,8 @@ export function addToTree(
     }
     PARENT.set(ID, PARENT_ID);
   }
-  SEEN_TREE_NODES.add(node);
+  // @ts-expect-error - dynamic property
+  node[ADDED_TO_TREE_FLAG] = true;
   // REF.add(ID);
   // if (node.toString() === '[object Object]') {
   //   debugger;
@@ -190,9 +221,8 @@ export function addToTree(
   // @todo - case 42
   registerDestructor(node, () => {
     // debugger;
-    if (IS_DEV_MODE) {
-      SEEN_TREE_NODES.delete(node);
-    }
+    // @ts-expect-error - dynamic property
+    node[ADDED_TO_TREE_FLAG] = false;
     // console.log('deleting', ID);
     // REF.delete(ID);
     CHILD.delete(ID);
@@ -200,6 +230,8 @@ export function addToTree(
     if (WITH_CONTEXT_API) {
       PARENT.delete(ID);
     }
+    // Recycle the ID for reuse
+    releaseId(ID);
   });
 }
 

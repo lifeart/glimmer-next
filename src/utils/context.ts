@@ -61,6 +61,10 @@ export function getContext<T>(
   ctx: Component<any> | Root,
   key: symbol,
 ): T | null {
+  // Fast path for RENDERING_CONTEXT - most common lookup
+  if (key === RENDERING_CONTEXT && fastRenderingContext !== null) {
+    return fastRenderingContext as T;
+  }
   // console.log('getContext', key);
   let current: Component<any> | Root | undefined = ctx;
   let context: Map<symbol, any> | undefined;

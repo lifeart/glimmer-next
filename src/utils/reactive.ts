@@ -5,6 +5,7 @@
 */
 import { scheduleRevalidate } from '@/utils/runtime';
 import { isFn, isTag, isTagLike, debugContext } from '@/utils/shared';
+import { AdaptivePool, config } from '@/utils/config';
 
 export const asyncOpcodes = new WeakSet<tagOp>();
 // List of DOM operations for each tag
@@ -16,6 +17,21 @@ export const opsForTag: Map<
 export const tagsToRevalidate: Set<Cell> = new Set();
 // List of derived tags for each cell
 export const relatedTags: Map<number, Set<MergedCell>> = new Map();
+
+// Adaptive pool for ops arrays with automatic growth/shrink
+const opsPool = new AdaptivePool<Array<tagOp>>(
+  config.opsArrayPool,
+  () => [],
+  (arr) => { arr.length = 0; },
+);
+
+function getOpArray(): Array<tagOp> {
+  return opsPool.acquire();
+}
+
+export function releaseOpArray(arr: Array<tagOp>) {
+  opsPool.release(arr);
+}
 
 export const DEBUG_MERGED_CELLS = new Set<MergedCell>();
 export const DEBUG_CELLS = new Set<Cell>();
@@ -139,33 +155,28 @@ export class Cell<T extends unknown = unknown> {
   }
 }
 
-export class LazyCell<T extends unknown = unknown> extends Cell<() => T> {
-  __value!: T;
-  constructor(v: () => T, debugName?: string) {
-    // @ts-expect-error
-    super(null, debugName);
-    let isResolved = false;
-    Object.defineProperty(this, '_value', {
-      get() {
-        if (!isResolved) {
-          let val: unknown = undefined;
-          try {
-            val = v();
-            isResolved = true;
-          } catch (e) {
-            throw e;
-          }
-          this.__value = val;
-        }
-        return this.__value;
-      },
-      set(v) {
-        if (!isResolved) {
-          isResolved = true;
-        }
-        this.__value = v;
-      },
-    });
+export class LazyCell<T extends unknown = unknown> extends Cell<T> {
+  private __isResolved = false;
+  private __lazyValue!: T;
+  private __fn: () => T;
+
+  constructor(fn: () => T, debugName?: string) {
+    // @ts-expect-error - we initialize lazily
+    super(undefined, debugName);
+    this.__fn = fn;
+  }
+
+  override get _value(): T {
+    if (!this.__isResolved) {
+      this.__lazyValue = this.__fn();
+      this.__isResolved = true;
+    }
+    return this.__lazyValue;
+  }
+
+  override set _value(v: T) {
+    this.__lazyValue = v;
+    this.__isResolved = true;
   }
 }
 export function listDependentCells(cells: Array<AnyCell>, cell: MergedCell) {
@@ -179,7 +190,7 @@ export function listDependentCells(cells: Array<AnyCell>, cell: MergedCell) {
 export function opsFor(cell: AnyCell) {
   let ops = opsForTag.get(cell.id);
   if (ops === undefined) {
-    ops = [];
+    ops = getOpArray();
     opsForTag.set(cell.id, ops);
   }
   return ops;

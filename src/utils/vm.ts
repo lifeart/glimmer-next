@@ -8,6 +8,7 @@ import {
   formula,
   opsFor,
   inNewTrackingFrame,
+  releaseOpArray,
 } from './reactive';
 import { isFn } from './shared';
 
@@ -103,6 +104,7 @@ export function opcodeFor(tag: AnyCell, op: tagOp) {
     }
     if (ops.length === 0) {
       opsForTag.delete(tag.id);
+      releaseOpArray(ops); // Return to pool for reuse
       if ('destroy' in tag) {
         tag.destroy();
       }
