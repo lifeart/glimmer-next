@@ -8,6 +8,7 @@ import {
   formula,
   opsFor,
   inNewTrackingFrame,
+  tagsToRevalidate,
 } from './reactive';
 import { isFn } from './shared';
 
@@ -34,7 +35,22 @@ export function effect(cb: () => void): () => void {
   const tag = formula(() => {
     runEffectDestructor(destructor);
     destructor = undefined;
-    return sourceTag.value;
+    if (import.meta.env.DEV) {
+      const value = sourceTag.value;
+      try {
+        return value;
+      } finally {
+        if (import.meta.env.DEV) {
+          for (const tag of tagsToRevalidate) {
+            if (sourceTag.relatedCells?.has(tag)) {
+              throw new Error(`effect mutating its source: ${tag._debugName} ${JSON.stringify(tag._value)}`)
+            }
+          }    
+        }       
+      }
+    } else {
+      return sourceTag.value;
+    }   
   }, 'effect');
   const destroyOpcode = opcodeFor(tag, (value: unknown) => {
     if (IS_DEV_MODE) {
