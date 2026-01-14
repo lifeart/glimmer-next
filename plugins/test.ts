@@ -15,6 +15,10 @@ import {
 } from './utils';
 import { processTemplate, type ResolvedHBS } from './babel';
 import { convert } from './converter';
+// @ts-expect-error
+import tsPreset from '@babel/preset-typescript';
+import _dT from './decorator-transforms/index';
+// console.table(_dT);
 
 import { SYMBOLS } from './symbols';
 import type { Flags } from './flags';
@@ -222,22 +226,27 @@ export function transform(
   const programResults: string[] = [];
   const isAsync = flags.ASYNC_COMPILE_TRANSFORMS;
 
+  // Check if running in browser context
+  const isBrowser = typeof window !== 'undefined';
+
   const plugins: PluginItem[] = [processTemplate(hbsToProcess, mode)];
-  if (!isLibBuild) {
+  // Skip decorator-transforms in browser context (can't load plugins dynamically)
+  if (!isLibBuild && !isBrowser) {
     plugins.push('module:decorator-transforms');
   }
   const replacedFileName = fileName
     .replace('.gts', '.ts')
     .replace('.gjs', '.js');
+
+  // Use direct preset import in browser (string-based resolution doesn't work)
+  const presets = isBrowser
+    ? [[tsPreset, { allExtensions: true, onlyRemoveTypeImports: true }]]
+    : [['@babel/preset-typescript', { allExtensions: true, onlyRemoveTypeImports: true }]];
+
   const babelConfig = {
     plugins,
     filename: replacedFileName,
-    presets: [
-      [
-        '@babel/preset-typescript',
-        { allExtensions: true, onlyRemoveTypeImports: true },
-      ],
-    ],
+    presets,
   };
 
   if (isAsync) {

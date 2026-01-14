@@ -7,6 +7,19 @@ import { Renderers } from './Renderers.gts';
 import { Tests } from './Tests.gts';
 import { Header } from '@/components/Header.gts';
 
+// Lazy load Ember page to avoid SSR issues with ember-eui
+const EmberLoader = <template>
+  <div class='p-8 text-center text-slate-400'>
+    Loading ember-eui components...
+  </div>
+</template>;
+let EmberComponent: typeof EmberLoader | null = null;
+if (!import.meta.env.SSR) {
+  import('./Ember.gts').then((m) => {
+    EmberComponent = m.Ember;
+  });
+}
+
 // another router example, with animation
 export class Router extends Component {
   isLocked = false;
@@ -66,6 +79,12 @@ export class Router extends Component {
       text: 'Tests',
       state: cell(false, 'tests active'),
       Component: Tests,
+    },
+    {
+      name: 'ember',
+      text: 'Ember',
+      state: cell(false, 'ember active'),
+      Component: EmberComponent ?? EmberLoader,
     },
   ];
   modifier = (element: HTMLDivElement): any => {

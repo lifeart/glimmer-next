@@ -24,12 +24,23 @@ export function createRouter() {
     pageOne: '/pageOne',
     pageTwo: '/pageTwo',
     renderers: '/renderers',
+    ember: '/ember',
     isPolarisReady: '/is-polaris-ready',
     todomvc: '/todomvc',
     'todomvc.all': '/todomvc/all',
     'todomvc.active': '/todomvc/active',
     'todomvc.completed': '/todomvc/completed',
   }) as RouterType;
+
+  router.addResolver('ember', async () => {
+    const { Ember } = await import(
+      // @ts-ignore import
+      '@/components/pages/Ember.gts'
+    );
+    return {
+      component: Ember,
+    };
+  });
 
   router.addResolver('isPolarisReady', async () => {
     // preload css   <link rel="preload" href="style.css" as="style" />

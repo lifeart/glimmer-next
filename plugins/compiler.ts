@@ -50,6 +50,7 @@ export function compiler(mode: string, options: Options = {}): Plugin {
       } else {
         defineValues = {};
       }
+      defineValues['process.env.BABEL_TYPES_8_BREAKING'] = false;
 
       return {
         define: defineValues,
@@ -93,6 +94,9 @@ export function compiler(mode: string, options: Options = {}): Plugin {
       let result: string | undefined = undefined;
       if (scriptFileRegex.test(file)) {
         const source = code;
+        // if (code.includes('precompileTemplate')) {
+        //   console.log(code);
+        // }
         const result = transform(
           source,
           file,

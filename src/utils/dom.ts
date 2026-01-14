@@ -54,6 +54,14 @@ import { CONSTANTS } from '../../plugins/symbols';
 import { initDOM, provideContext, ROOT_CONTEXT } from './context';
 import { SVGProvider, HTMLProvider, MathMLProvider } from './provider';
 import { IfCondition, type IfFunction } from './control-flow/if';
+import { EmberFunctionalHelpers } from '../ember-compat/ember__component__helper';
+import {
+  canCarryModifier,
+  carryModifier,
+  modifierManager,
+  needManagerForModifier,
+} from './managers/modifier';
+import { canCarryHelper, carryHelper, helperManager, needManagerForHelper } from './managers/helper';
 
 type RenderableType = Node | ComponentReturnType | string | number;
 type ShadowRootMode = 'open' | 'closed' | null;
@@ -162,7 +170,7 @@ export const $_MANAGERS = {
       props: unknown[],
       // @ts-expect-error unused
 
-      args: () => Record<string, unknown>,
+      args: Record<string, unknown> | (() => Record<string, unknown>),
     ) {
       return;
     },
@@ -200,55 +208,23 @@ export function $_componentHelper(params: any, hash: any) {
 }
 export function $_modifierHelper(params: any, hash: any) {
   const modifierFn = params.shift();
-  // @ts-expect-error undefined
-  if (EmberFunctionalModifiers.has(modifierFn)) {
-    function wrappedModifier(node: any, _params: any, _hash: any) {
-      console.log('callingWrapperModifier', {
-        params,
-        _params,
-        hash,
-        _hash,
-      });
-      return $_maybeModifier(modifierFn, node, [...params, ..._params], {
-        ...hash,
-        ..._hash,
-      });
-    }
-    // @ts-expect-error undefined
-    EmberFunctionalModifiers.add(wrappedModifier);
-    return wrappedModifier;
+  if (canCarryModifier(modifierFn)) {
+    return carryModifier(modifierFn, params, hash, $_maybeModifier);
   } else {
     throw new Error('Unable to use modifier helper with non-ember modifiers');
   }
 }
 export function $_helperHelper(params: any, hash: any) {
   const helperFn = params.shift();
-  console.log('helper-helper', params, hash);
-  // @ts-expect-error undefined
-  if (EmberFunctionalHelpers.has(helperFn)) {
-    function wrappedHelper(_params: any, _hash: any) {
-      console.log('callingWrapperHelper', {
-        params,
-        _params,
-        hash,
-        _hash,
-      });
-      return $_maybeHelper(helperFn, [...params, ..._params], {
-        ...hash,
-        ..._hash,
-      });
-    }
-    // @ts-expect-error undefined
-    EmberFunctionalHelpers.add(wrappedHelper);
-    return wrappedHelper;
-  } else {
-    if (WITH_EMBER_INTEGRATION) {
-      if ($_MANAGERS.helper.canHandle(helperFn)) {
-        return $_MANAGERS.helper.handle(helperFn, params, hash);
-      }
-    }
-    throw new Error('Unable to use helper with non-ember helpers');
+  if (canCarryHelper(helperFn)) {
+    return carryHelper(helperFn, params, hash, $_maybeHelper);
   }
+  if (WITH_EMBER_INTEGRATION) {
+    if ($_MANAGERS.helper.canHandle(helperFn)) {
+      return $_MANAGERS.helper.handle(helperFn, params, hash);
+    }
+  }
+  throw new Error('Unable to use helper with non-ember helpers');
 }
 export function createRoot() {
   const root = new Root();
@@ -393,6 +369,9 @@ export function resolveRenderable(
   debugName = 'resolveRenderable',
 ): RenderableType | MergedCell | Cell {
   const f = formula(() => deepFnValue(child), debugName);
+  if (EmberFunctionalHelpers.has(f)) {
+    debugger;
+  }
   let componentProps: RenderableType = '';
   checkOpcode(f, (value) => {
     componentProps = value as unknown as RenderableType;
@@ -833,19 +812,11 @@ export const $_maybeHelper = (
     } else {
       return value;
     }
-    // @ts-expect-error
-  } else if (EmberFunctionalHelpers.has(value)) {
-    return (...args: any[]) => {
-      return value(args, hash);
-    };
-  } else if (value.helperType === 'ember') {
-    const helper = new value();
-    return (...args: any[]) => {
-      return helper.compute.call(helper, args, hash);
-    };
+  } else if (needManagerForHelper(value)) {
+    return helperManager(value, args, hash);
   }
 
-  return value;
+  return value(...args);
 };
 
 // Component context stack - tracks parent component hierarchy
@@ -874,11 +845,9 @@ export const setParentContext = (value: Root | Component<any> | null) => {
 };
 
 export const getParentContext = (): Component<any> | Root | undefined => {
-  if (IS_DEV_MODE) {
-    if (!TREE.get(parentContextStack[parentContextIndex]!)) {
-      debugger;
-      throw new Error('unable to get parent context before set');
-    }
+  // Return undefined if no parent context is set (e.g., for dynamically compiled components)
+  if (parentContextIndex < 0) {
+    return undefined;
   }
   return TREE.get(parentContextStack[parentContextIndex]!);
 };
@@ -894,6 +863,7 @@ function component(
         comp.debugName || comp.name || comp.constructor.name
       }`
     : '';
+  void label; // used in dev mode for error messages
   if (TRY_CATCH_ERROR_HANDLING) {
     try {
       if (IS_DEV_MODE) {
@@ -912,8 +882,7 @@ function component(
         };
         label = `<${label} ${JSON.stringify(args, getCircularReplacer)} />`;
       }
-      // @ts-expect-error uniqSymbol as index
-      const fw = args[$PROPS_SYMBOL] as unknown as FwType;
+      const fw = (args as Record<symbol, unknown>)[$PROPS_SYMBOL] as unknown as FwType;
       setParentContext(ctx);
       return _component(comp, args, fw, ctx);
     } catch (e) {
@@ -928,7 +897,9 @@ function component(
         let ErrorOverlayClass = customElements.get('vite-error-overlay');
         let errorOverlay!: HTMLElement;
         // @ts-expect-error message may not exit
-        e.message = `${label}\n${e.message}`;
+        const msg = e.message;
+        // @ts-expect-error message may not exit
+        e.message = `${label}\n${msg}`;
         if (!ErrorOverlayClass) {
           errorOverlay = document.createElement('pre');
           // @ts-expect-error stack may not exit
@@ -957,8 +928,7 @@ function component(
       }
     }
   } else {
-    // @ts-expect-error uniqSymbol as index
-    const fw = args[$PROPS_SYMBOL] as unknown as FwType;
+    const fw = (args as Record<symbol, unknown>)[$PROPS_SYMBOL] as unknown as FwType;
     try {
       setParentContext(ctx);
       return _component(comp, args, fw, ctx);
@@ -1005,6 +975,12 @@ function _component(
   if (isFn(instance)) {
     instance = new instance(args, fw);
   }
+  // Support willDestroy for Glimmer components
+  if ('willDestroy' in instance) {
+    registerDestructor(ctx, () => {
+      instance.willDestroy();
+    });
+  }
   // todo - fix typings here
   if ($template in instance) {
     addToTree(ctx, instance, 'from $template');
@@ -1032,12 +1008,15 @@ function _component(
     return result;
   } else if (instance) {
     // for now we adding only components with context
-    // debugger;
     addToTree(ctx, instance, 'from !$template');
-    // addToTree(ctx, instance);
 
     if (IS_DEV_MODE) {
-      setBounds(instance);
+      COMPONENTS_HMR.get(comp)?.add({
+        parent: ctx,
+        instance: instance,
+        args,
+        tags: tagsFromRange(startTagId),
+      });
     }
   } else {
     if (IS_DEV_MODE) {
@@ -1262,13 +1241,33 @@ export function $_GET_ARGS(ctx: Component<any>, args: IArguments) {
   ctx[RENDERED_NODES_PROPERTY] = ctx[RENDERED_NODES_PROPERTY] ?? [];
   ctx[COMPONENT_ID_PROPERTY] = ctx[COMPONENT_ID_PROPERTY] ?? cId();
   if (!SEEN_TREE_NODES.has(ctx)) {
-    addToTree(getParentContext()!, ctx);
+    const parent = getParentContext();
+    // Parent may be undefined for dynamically compiled components (e.g., ember-eui)
+    // In this case, we'll add to tree later when the component is properly rendered
+    if (parent) {
+      addToTree(parent, ctx);
+    }
   }
 }
 export function $_GET_SLOTS(ctx: any, args: any) {
+  if (ctx === undefined) {
+    // inside let value
+    /*
+    
+      let SButtonElement_4k0gzo = function(args) {
+        const $fw = $_GET_FW(this, arguments);
+        const $slots = $_GET_SLOTS(this, arguments);
+      }
+
+    */
+    return {};
+  }
   return (args[0] || {})[$SLOTS_SYMBOL] || ctx[$args]?.[$SLOTS_SYMBOL] || {};
 }
 export function $_GET_FW(ctx: any, args: any) {
+  if (ctx === undefined) {
+    return $_edp;
+  }
   return (
     (args[0] || {})[$PROPS_SYMBOL] || ctx[$args]?.[$PROPS_SYMBOL] || undefined
   );
@@ -1280,7 +1279,7 @@ export function $_args(
 ) {
   if (IS_GLIMMER_COMPAT_MODE) {
     if (IS_DEV_MODE) {
-      const newArgs: Record<string, () => unknown> = {
+      const newArgs: Record<string | symbol, unknown> = {
         [$SLOTS_SYMBOL]: slots ?? {},
         [$PROPS_SYMBOL]: props ?? {},
       };
@@ -1288,10 +1287,10 @@ export function $_args(
         try {
           Object.defineProperty(newArgs, key, {
             get() {
-              if (!isFn(args[key])) {
-                return args[key];
+              if (isFn(args[key])) {
+                return (args[key] as () => unknown)();
               }
-              return (args[key] as () => unknown)();
+              return args[key];
             },
             enumerable: true,
           });
@@ -1398,67 +1397,22 @@ export function $_dc(
 export const $_component = (component: any) => {
   return component;
 };
+
 export const $_maybeModifier = (
   modifier: any,
   element: HTMLElement,
   props: any[],
-  hashArgs: () => Record<string, unknown>,
+  hashArgs: Record<string, unknown>,
 ) => {
   if (WITH_EMBER_INTEGRATION) {
     if ($_MANAGERS.modifier.canHandle(modifier)) {
       return $_MANAGERS.modifier.handle(modifier, element, props, hashArgs);
     }
   }
-  if ('emberModifier' in modifier) {
-    const instance = new modifier();
-    instance.modify = instance.modify.bind(instance);
-    const destructors: Destructors = [];
-    return () => {
-      console.log('running class-based  modifier');
-      requestAnimationFrame(() => {
-        const f = formula(() => {
-          instance.modify(element, props, hashArgs());
-        }, 'class-based modifier');
-        destructors.push(
-          opcodeFor(f, () => {
-            console.log('opcode executed for modifier');
-          }),
-        );
-      });
-      return () => {
-        destructors.forEach((fn) => fn());
-        console.log('destroing class-based modifier');
-        if ('willDestroy' in instance) {
-          instance.willDestroy();
-        }
-        runDestructors(instance);
-      };
-    };
-  } else {
-    // console.log(modifier);
-    // @ts-expect-error
-    if (EmberFunctionalModifiers.has(modifier)) {
-      return (element: HTMLElement) => {
-        console.log('ember-functional-modifier', props, hashArgs());
-        const args = hashArgs();
-        const newArgs = {};
-        Object.keys(args).forEach((key) => {
-          Object.defineProperty(newArgs, key, {
-            enumerable: true,
-            get() {
-              if (typeof args[key] === 'function') {
-                return (args[key] as () => unknown)();
-              } else {
-                return args[key];
-              }
-            },
-          });
-        });
-        return modifier(element, props, newArgs);
-      };
-    }
-    return modifier;
+  if (needManagerForModifier(modifier)) {
+    return modifierManager(modifier, element, props, hashArgs);
   }
+  return modifier(element, ...props);
 };
 export const $_helper = (helper: any) => {
   console.log('helper', helper);
