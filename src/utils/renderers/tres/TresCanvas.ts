@@ -216,6 +216,9 @@ export function TresCanvas(this: Component<TresCanvasProps>) {
         if (!contextState.renderer.value) return;
         animationFrameId = requestAnimationFrame(animate);
 
+        // Skip rendering if paused
+        if (!contextState.isRunning.value) return;
+
         const delta = (time - lastTime) / 1000;
         lastTime = time;
 
@@ -231,7 +234,8 @@ export function TresCanvas(this: Component<TresCanvasProps>) {
               FPS: ${currentFps}<br>
               Triangles: ${renderInfo.render.triangles}<br>
               Calls: ${renderInfo.render.calls}<br>
-              Objects: ${scene.children.length}
+              Objects: ${scene.children.length}<br>
+              ${contextState.isRunning.value ? '' : '<span style="color:orange">PAUSED</span>'}
             `;
           }
         }
@@ -296,10 +300,15 @@ export function TresCanvas(this: Component<TresCanvasProps>) {
     for (const intersect of intersects) {
       let current: any = intersect.object;
       while (current) {
-        if (current.userData?.tres__blockPointerEvents) {
+        // Check for blocking in both new namespace and legacy
+        if (current.userData?.tres?.blockPointerEvents || current.userData?.tres__blockPointerEvents) {
           break;
         }
-        if (current.onPointerMove || current.onPointerEnter || current.onPointerLeave) {
+        // Check for handlers in both new namespace and legacy
+        const tresData = current.userData?.tres;
+        const hasHandler = (tresData?.onPointerMove || tresData?.onPointerEnter || tresData?.onPointerLeave) ||
+          (current.onPointerMove || current.onPointerEnter || current.onPointerLeave);
+        if (hasHandler) {
           hitObject = current;
           break;
         }
@@ -312,7 +321,8 @@ export function TresCanvas(this: Component<TresCanvasProps>) {
     if (hitObject !== currentHovered) {
       // Pointer leave the old object
       if (currentHovered) {
-        const leaveHandler = (currentHovered as any).onPointerLeave;
+        const leaveHandler = (currentHovered as any).userData?.tres?.onPointerLeave ||
+          (currentHovered as any).onPointerLeave;
         if (leaveHandler) {
           leaveHandler({
             object: currentHovered,
@@ -323,7 +333,8 @@ export function TresCanvas(this: Component<TresCanvasProps>) {
 
       // Pointer enter the new object
       if (hitObject) {
-        const enterHandler = (hitObject as any).onPointerEnter;
+        const enterHandler = (hitObject as any).userData?.tres?.onPointerEnter ||
+          (hitObject as any).onPointerEnter;
         if (enterHandler) {
           enterHandler({
             object: hitObject,
@@ -338,7 +349,8 @@ export function TresCanvas(this: Component<TresCanvasProps>) {
 
     // Call onPointerMove on the hovered object
     if (hitObject) {
-      const moveHandler = (hitObject as any).onPointerMove;
+      const moveHandler = (hitObject as any).userData?.tres?.onPointerMove ||
+        (hitObject as any).onPointerMove;
       if (moveHandler) {
         moveHandler({
           object: hitObject,
@@ -370,12 +382,14 @@ export function TresCanvas(this: Component<TresCanvasProps>) {
       // Traverse up to find the object with onClick handler
       let current: any = object;
       while (current) {
-        // Check for blocking
-        if (current.userData?.tres__blockPointerEvents) {
+        // Check for blocking in both namespaces
+        if (current.userData?.tres?.blockPointerEvents || current.userData?.tres__blockPointerEvents) {
           break;
         }
-        // Check for onClick handler (on object directly or in userData)
-        const clickHandler = current.onClick || current.userData?.onClick;
+        // Check for onClick handler in both namespaces
+        const clickHandler = current.userData?.tres?.onClick ||
+          current.onClick ||
+          current.userData?.onClick;
         if (clickHandler) {
           clickHandler({
             object: current,
@@ -389,6 +403,9 @@ export function TresCanvas(this: Component<TresCanvasProps>) {
     }
   };
 
+  // ResizeObserver for proper container resize detection
+  let resizeObserver: ResizeObserver | null = null;
+
   // Cleanup function
   const cleanup = () => {
     if (animationFrameId !== null) {
@@ -401,8 +418,11 @@ export function TresCanvas(this: Component<TresCanvasProps>) {
       statsElement.remove();
       statsElement = null;
     }
+    if (resizeObserver) {
+      resizeObserver.disconnect();
+      resizeObserver = null;
+    }
     if (typeof window !== 'undefined') {
-      window.removeEventListener('resize', handleResize);
       canvasNode.removeEventListener('pointermove', handlePointerMove);
       canvasNode.removeEventListener('click', handleClick);
     }
@@ -415,7 +435,18 @@ export function TresCanvas(this: Component<TresCanvasProps>) {
   if (typeof window !== 'undefined') {
     requestAnimationFrame(() => {
       setupRenderer();
-      window.addEventListener('resize', handleResize);
+
+      // Use ResizeObserver for proper container resize detection
+      // Falls back to window resize if ResizeObserver is not available
+      if (typeof ResizeObserver !== 'undefined') {
+        resizeObserver = new ResizeObserver(() => {
+          handleResize();
+        });
+        resizeObserver.observe(canvasNode);
+      } else {
+        window.addEventListener('resize', handleResize);
+      }
+
       canvasNode.addEventListener('pointermove', handlePointerMove);
       canvasNode.addEventListener('click', handleClick);
     });

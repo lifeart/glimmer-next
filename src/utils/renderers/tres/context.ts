@@ -20,6 +20,9 @@ export interface TresContextState {
 
   // Event handlers registry
   interactiveObjects: Set<Object3D>;
+
+  // Render loop control
+  isRunning: Cell<boolean>;
 }
 
 export interface TresContext {
@@ -47,6 +50,15 @@ export interface TresContext {
   /** Unregister an object from pointer events */
   unregisterInteractiveObject(object: Object3D): void;
 
+  /** Pause the render loop */
+  pause(): void;
+
+  /** Resume the render loop */
+  resume(): void;
+
+  /** Check if the render loop is running */
+  isRunning(): boolean;
+
   /** Internal state (for advanced use) */
   state: TresContextState;
 }
@@ -65,6 +77,7 @@ export function createTresContextState(scene: Scene): TresContextState {
     onBeforeRender: new Set(),
     onAfterRender: new Set(),
     interactiveObjects: new Set(),
+    isRunning: cell<boolean>(true),
   };
 }
 
@@ -103,6 +116,18 @@ export function createTresContext(state: TresContextState): TresContext {
 
     unregisterInteractiveObject(object) {
       state.interactiveObjects.delete(object);
+    },
+
+    pause() {
+      state.isRunning.update(false);
+    },
+
+    resume() {
+      state.isRunning.update(true);
+    },
+
+    isRunning() {
+      return state.isRunning.value;
     },
 
     state,

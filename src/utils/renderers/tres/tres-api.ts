@@ -7,8 +7,6 @@ import type { TresContext } from './context';
 import { catalogue } from './catalogue';
 import { isFn } from '@/utils/shared';
 
-let scene: TresScene | null = null;
-
 const logError = (msg: string) => {
   console.error('[TresRenderer]', msg);
 };
@@ -19,6 +17,23 @@ const supportedPointerEvents = [
   'onPointerEnter',
   'onPointerLeave',
 ];
+
+// WeakSet to track disposed objects and prevent double-disposal
+const disposedObjects = new WeakSet<Object3D>();
+
+/**
+ * Namespace for Tres-specific userData properties
+ */
+export interface TresUserData {
+  onClick?: (event: any) => void;
+  onPointerMove?: (event: any) => void;
+  onPointerEnter?: (event: any) => void;
+  onPointerLeave?: (event: any) => void;
+  materialViaProp?: boolean;
+  geometryViaProp?: boolean;
+  name?: string;
+  blockPointerEvents?: boolean;
+}
 
 // Placeholder class for comments and fragments in the Three.js scene
 export class TresPlaceholder extends Object3D {
@@ -59,6 +74,7 @@ type Props = [any[], [string, any][], any[]];
 
 export class TresBrowserDOMApi {
   private _context: TresContext | null = null;
+  private _scene: TresScene | null = null;
 
   toString() {
     return 'tres:dom-api';
@@ -70,6 +86,7 @@ export class TresBrowserDOMApi {
    */
   setContext(context: TresContext): void {
     this._context = context;
+    this._scene = context.scene as TresScene;
   }
 
   /**
@@ -77,6 +94,22 @@ export class TresBrowserDOMApi {
    */
   getContext(): TresContext | null {
     return this._context;
+  }
+
+  /**
+   * Get the scene for this API instance
+   */
+  get scene(): TresScene | null {
+    return this._scene ?? (this._context?.scene as TresScene) ?? null;
+  }
+
+  /**
+   * Set the scene directly (used when scene is first parent in insert)
+   */
+  private setScene(scene: TresScene): void {
+    if (!this._scene) {
+      this._scene = scene;
+    }
   }
 
   isNode(node: unknown): node is TresObject | TresPlaceholder {
@@ -179,22 +212,30 @@ export class TresBrowserDOMApi {
       }
     }
 
+    // Initialize tres namespace in userData
+    instance.userData = {
+      ...instance.userData,
+      tres: {
+        name,
+        materialViaProp: false,
+        geometryViaProp: false,
+      } as TresUserData,
+      // Keep legacy properties for backwards compatibility
+      tres__name: name,
+    };
+
     // Determine whether the material was passed via prop to
     // prevent its disposal when node is removed later in its lifecycle
     if (instance.isObject3D) {
       if (props?.material?.isMaterial) {
+        (instance.userData.tres as TresUserData).materialViaProp = true;
         (instance as TresObject3D).userData.tres__materialViaProp = true;
       }
       if (props?.geometry?.isBufferGeometry) {
+        (instance.userData.tres as TresUserData).geometryViaProp = true;
         (instance as TresObject3D).userData.tres__geometryViaProp = true;
       }
     }
-
-    // Store the tag name for later use in re-instancing
-    instance.userData = {
-      ...instance.userData,
-      tres__name: name,
-    };
 
     return instance;
   }
@@ -206,10 +247,11 @@ export class TresBrowserDOMApi {
   ): void {
     if (!child) return;
 
+    // Track scene when first inserted
     if (parent && (parent as TresScene).isScene) {
-      scene = parent as TresScene;
+      this.setScene(parent as TresScene);
     }
-    const parentObject = parent || scene;
+    const parentObject = parent || this.scene;
     if (!parentObject) return;
 
     // Handle fragment insertion
@@ -222,17 +264,32 @@ export class TresBrowserDOMApi {
       return;
     }
 
+    const currentScene = this.scene;
+
     if ((child as TresObject)?.isObject3D) {
       const childObj = child as TresObject;
+
+      // Register camera
       if ((childObj as unknown as Camera)?.isCamera) {
-        if (scene?.userData.tres__registerCamera) {
-          scene.userData.tres__registerCamera(childObj as unknown as Camera);
+        if (currentScene?.userData.tres__registerCamera) {
+          currentScene.userData.tres__registerCamera(childObj as unknown as Camera);
         }
       }
 
-      if (supportedPointerEvents.some((eventName) => (childObj as any)[eventName])) {
-        if (scene?.userData.tres__registerAtPointerEventHandler) {
-          scene.userData.tres__registerAtPointerEventHandler(childObj as Object3D);
+      // Check for event handlers in userData.tres namespace
+      const tresData = childObj.userData?.tres as TresUserData | undefined;
+      const hasEventHandlers = tresData && supportedPointerEvents.some(
+        (eventName) => tresData[eventName as keyof TresUserData]
+      );
+
+      // Also check legacy direct property access for backwards compatibility
+      const hasLegacyHandlers = supportedPointerEvents.some(
+        (eventName) => (childObj as any)[eventName]
+      );
+
+      if (hasEventHandlers || hasLegacyHandlers) {
+        if (currentScene?.userData.tres__registerAtPointerEventHandler) {
+          currentScene.userData.tres__registerAtPointerEventHandler(childObj as Object3D);
         }
       }
     }
@@ -252,25 +309,40 @@ export class TresBrowserDOMApi {
   destroy(node: TresObject | TresPlaceholder | null): void {
     if (!node) return;
 
+    // Check if already disposed to prevent double-disposal
+    if ((node as TresObject).isObject3D && disposedObjects.has(node as Object3D)) {
+      return;
+    }
+
     if ((node as TresObject).isObject3D) {
       const object3D = node as Object3D;
+      const currentScene = this.scene;
 
       const disposeMaterialsAndGeometries = (obj: Object3D) => {
+        // Skip if already disposed
+        if (disposedObjects.has(obj)) return;
+
         const tresObj = obj as TresObject3D;
-        if (!obj.userData.tres__materialViaProp) {
+        const tresData = obj.userData?.tres as TresUserData | undefined;
+
+        // Check both new namespace and legacy properties
+        if (!tresData?.materialViaProp && !obj.userData.tres__materialViaProp) {
           tresObj.material?.dispose?.();
           tresObj.material = undefined;
         }
-        if (!obj.userData.tres__geometryViaProp) {
+        if (!tresData?.geometryViaProp && !obj.userData.tres__geometryViaProp) {
           tresObj.geometry?.dispose?.();
           tresObj.geometry = undefined;
         }
+
+        // Mark as disposed
+        disposedObjects.add(obj);
       };
 
-      const deregisterCamera = scene?.userData.tres__deregisterCamera;
-      const deregisterAtPointerEventHandler = scene?.userData.tres__deregisterAtPointerEventHandler;
+      const deregisterCamera = currentScene?.userData.tres__deregisterCamera;
+      const deregisterAtPointerEventHandler = currentScene?.userData.tres__deregisterAtPointerEventHandler;
       const deregisterBlockingObjectAtPointerEventHandler =
-        scene?.userData.tres__deregisterBlockingObjectAtPointerEventHandler;
+        currentScene?.userData.tres__deregisterBlockingObjectAtPointerEventHandler;
 
       node.removeFromParent?.();
       object3D.traverse((child: Object3D) => {
@@ -281,10 +353,17 @@ export class TresBrowserDOMApi {
         if (deregisterBlockingObjectAtPointerEventHandler) {
           deregisterBlockingObjectAtPointerEventHandler(child);
         }
-        if (
-          deregisterAtPointerEventHandler &&
-          supportedPointerEvents.some((eventName) => (child as any)[eventName])
-        ) {
+
+        // Check both new namespace and legacy for event handlers
+        const childTresData = child.userData?.tres as TresUserData | undefined;
+        const hasEventHandlers = childTresData && supportedPointerEvents.some(
+          (eventName) => childTresData[eventName as keyof TresUserData]
+        );
+        const hasLegacyHandlers = supportedPointerEvents.some(
+          (eventName) => (child as any)[eventName]
+        );
+
+        if (deregisterAtPointerEventHandler && (hasEventHandlers || hasLegacyHandlers)) {
           deregisterAtPointerEventHandler(child);
         }
       });
@@ -307,13 +386,32 @@ export class TresBrowserDOMApi {
 
     let root: any = node;
     let key = prop;
+    const currentScene = this.scene;
 
+    // Handle pointer event blocking
     if (node.isObject3D && key === 'blocks-pointer-events') {
-      if (nextValue || nextValue === '') {
-        scene?.userData.tres__registerBlockingObjectAtPointerEventHandler?.(node as Object3D);
-      } else {
-        scene?.userData.tres__deregisterBlockingObjectAtPointerEventHandler?.(node as Object3D);
+      // Initialize tres namespace if needed
+      if (!node.userData.tres) {
+        node.userData.tres = {};
       }
+      (node.userData.tres as TresUserData).blockPointerEvents = !!(nextValue || nextValue === '');
+
+      if (nextValue || nextValue === '') {
+        currentScene?.userData.tres__registerBlockingObjectAtPointerEventHandler?.(node as Object3D);
+      } else {
+        currentScene?.userData.tres__deregisterBlockingObjectAtPointerEventHandler?.(node as Object3D);
+      }
+      return;
+    }
+
+    // Store event handlers in userData.tres namespace
+    if (supportedPointerEvents.includes(prop)) {
+      if (!node.userData.tres) {
+        node.userData.tres = {};
+      }
+      (node.userData.tres as TresUserData)[prop as keyof TresUserData] = nextValue;
+      // Also set on object directly for backwards compatibility
+      (node as any)[prop] = nextValue;
       return;
     }
 
