@@ -66,4 +66,41 @@ module('Integration | Interal | style', function () {
       color: 'rgb(0, 0, 255)',
     });
   });
+
+  test('works with reactive object style attribute', async function (assert) {
+    const fontSize = cell(12);
+    const color = cell('red');
+    const getStyle = () => `font-size: ${fontSize.value}px; color: ${color.value}`;
+    await render(
+      <template>
+        <div style={{getStyle}}>styled text</div>
+      </template>,
+    );
+    assert.dom('div').hasStyle({
+      'font-size': '12px',
+      color: 'rgb(255, 0, 0)',
+    });
+    fontSize.update(24);
+    color.update('blue');
+    await rerender();
+    assert.dom('div').hasStyle({
+      'font-size': '24px',
+      color: 'rgb(0, 0, 255)',
+    });
+  });
+
+  test('works with reactive data attribute objects', async function (assert) {
+    const value = cell('initial');
+    const getValue = () => value.value;
+    await render(
+      <template>
+        <div data-test-value={{getValue}}>test</div>
+      </template>,
+    );
+    assert.dom('[data-test-value="initial"]').exists();
+    value.update('updated');
+    await rerender();
+    assert.dom('[data-test-value="updated"]').exists();
+    assert.dom('[data-test-value="initial"]').doesNotExist();
+  });
 });

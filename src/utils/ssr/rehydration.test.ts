@@ -919,21 +919,30 @@ describe('Suspense Rehydration Integration', () => {
 
       const child = createComponent(root);
 
-      // Simulate multiple lazy components loading during rehydration
-      const promise1 = new Promise((resolve) => setTimeout(resolve, 10));
-      const promise2 = new Promise((resolve) => setTimeout(resolve, 20));
+      // Use controlled promises for deterministic behavior
+      let resolve1!: () => void;
+      let resolve2!: () => void;
+      const promise1 = new Promise<void>((r) => {
+        resolve1 = r;
+      });
+      const promise2 = new Promise<void>((r) => {
+        resolve2 = r;
+      });
 
-      followPromise(child, promise1);
-      followPromise(child, promise2);
+      // followPromise returns the .finally() chain, so awaiting it
+      // guarantees end() has been called
+      const tracked1 = followPromise(child, promise1);
+      const tracked2 = followPromise(child, promise2);
 
       expect(pendingCount).toBe(2);
 
-      await promise1;
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      // Resolve and await - end() is guaranteed to have run
+      resolve1();
+      await tracked1;
       expect(pendingCount).toBe(1);
 
-      await promise2;
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      resolve2();
+      await tracked2;
       expect(pendingCount).toBe(0);
     });
   });

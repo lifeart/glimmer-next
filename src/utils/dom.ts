@@ -255,6 +255,40 @@ export function createRoot() {
   return root;
 }
 
+/**
+ * Resolve a value for attribute/property binding, preserving reactivity for object values.
+ * This handles the case where resolveRenderable would lose reactivity for object values
+ * (like style objects) by treating them as "component-like".
+ *
+ * @param value - The value to resolve (could be a function, cell, or plain value)
+ * @param debugName - Debug name for the formula if created
+ * @returns An object with the resolved value or formula and a flag indicating if it's reactive
+ */
+function resolveBindingValue(
+  value: unknown,
+  debugName: string
+): { result: unknown; isReactive: boolean } {
+  // For functions, create a formula to track reactive dependencies
+  // This ensures object values (like styles) remain reactive
+  if (isFn(value)) {
+    const f = formula(() => deepFnValue(value as Function), debugName);
+    // Check if the formula is constant (no reactive dependencies)
+    if (f.isConst) {
+      const constValue = f.value;
+      f.destroy();
+      return { result: constValue, isReactive: false };
+    }
+    return { result: f, isReactive: true };
+  }
+
+  // For non-function values, use the standard resolution
+  const result = $_TO_VALUE(value);
+  if (isTagLike(result)) {
+    return { result, isReactive: true };
+  }
+  return { result, isReactive: false };
+}
+
 function $prop(
   api: DOMApi,
   element: Node,
@@ -262,25 +296,27 @@ function $prop(
   value: unknown,
   destructors: DestructorFn[],
 ) {
-  const result = $_TO_VALUE(value);
+  const { result, isReactive } = resolveBindingValue(value, `${key}-prop`);
+
   if (isEmpty(result)) {
     return;
   }
-  if (isPrimitive(result)) {
+
+  if (isReactive) {
+    let prevPropValue: any = undefined;
+    destructors.push(
+      opcodeFor(result as AnyCell, (resolvedValue) => {
+        if (resolvedValue === prevPropValue) {
+          return;
+        }
+        prevPropValue = api.prop(element, key, resolvedValue);
+      }),
+    );
+  } else {
     if (isRehydrationScheduled()) {
       return;
     }
     api.prop(element, key, result);
-  } else {
-    let prevPropValue: any = undefined;
-    destructors.push(
-      opcodeFor(result as AnyCell, (value) => {
-        if (value === prevPropValue) {
-          return;
-        }
-        prevPropValue = api.prop(element, key, value);
-      }),
-    );
   }
 }
 
@@ -331,19 +367,24 @@ function $attr(
   value: unknown,
   destructors: Destructors,
 ) {
-  const result = $_TO_VALUE(value);
+  const { result, isReactive } = resolveBindingValue(value, `${key}-attr`);
+
   if (isEmpty(result)) {
     return;
   }
-  if (isPrimitive(result)) {
-    api.attr(element, key, result as string);
-  } else {
+
+  if (isReactive) {
     destructors.push(
-      opcodeFor(result as AnyCell, (value) => {
-        // @ts-expect-error type casting
-        api.attr(element, key, value);
+      opcodeFor(result as AnyCell, (resolvedValue) => {
+        if (!isEmpty(resolvedValue)) {
+          // @ts-expect-error type casting
+          api.attr(element, key, resolvedValue);
+        }
       }),
     );
+  } else {
+    // @ts-expect-error type casting
+    api.attr(element, key, result);
   }
 }
 

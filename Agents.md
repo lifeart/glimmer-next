@@ -595,6 +595,7 @@ export class DataFetcher extends Component {
 
   async loadData() {
     // Track this promise in nearest Suspense boundary
+    // When await completes, suspense end() has been called
     this.data = await followPromise(
       this,
       fetch("/api/data").then((r) => r.json())
@@ -1212,7 +1213,7 @@ export class ClientOnlyComponent extends Component {
 |--------|-------------|
 | `Suspense` | Async boundary component |
 | `lazy(factory)` | Create lazy-loaded component |
-| `followPromise(ctx, promise)` | Track async operation |
+| `followPromise(ctx, promise)` | Track async operation; returns promise that guarantees `end()` called on await |
 | `SUSPENSE_CONTEXT` | Context symbol for suspense |
 
 ### Test Exports (`@lifeart/gxt/test-utils`)

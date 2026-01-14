@@ -49,7 +49,7 @@ describe('Suspense API exports', () => {
       window.close();
     });
 
-    test('followPromise returns the same promise', () => {
+    test('followPromise returns a promise that resolves to the same value', async () => {
       const child = new Component({});
       child[RENDERED_NODES_PROPERTY] = [];
       addToTree(root, child);
@@ -57,7 +57,10 @@ describe('Suspense API exports', () => {
       const promise = Promise.resolve('test');
       const result = followPromise(child, promise);
 
-      expect(result).toBe(promise);
+      // Returns the .finally() chain, not the same promise object,
+      // but resolves to the same value
+      expect(result).not.toBe(promise);
+      expect(await result).toBe('test');
     });
 
     test('followPromise handles missing suspense context gracefully', () => {
@@ -106,25 +109,22 @@ describe('Suspense API exports', () => {
       };
       provideContext(child, SUSPENSE_CONTEXT, mockSuspense);
 
-      // Create a deferred rejection to avoid unhandled rejection detection
+      // Create a deferred rejection
       let rejectFn: (error: Error) => void;
       const promise = new Promise<never>((_, reject) => {
         rejectFn = reject;
       });
 
-      // Attach catch handler before calling followPromise to ensure rejection is always handled
-      const handledPromise = promise.catch(() => {});
-
-      followPromise(child, promise);
+      // followPromise now returns the .finally() chain
+      const tracked = followPromise(child, promise);
       expect(mockSuspense.start).toHaveBeenCalled();
 
-      // Now reject the promise after we've set up handling
+      // Reject the promise
       rejectFn!(new Error('test error'));
 
-      await handledPromise;
-
-      // Wait for microtask
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      // Await the tracked promise, catching the rejection
+      // end() is guaranteed to have been called when this resolves
+      await tracked.catch(() => {});
 
       expect(mockSuspense.end).toHaveBeenCalled();
     });
@@ -215,22 +215,31 @@ describe('Suspense context protocol', () => {
     };
     provideContext(child, SUSPENSE_CONTEXT, mockSuspense);
 
-    // Simulate multiple async operations
-    const promise1 = new Promise((resolve) => setTimeout(resolve, 10));
-    const promise2 = new Promise((resolve) => setTimeout(resolve, 20));
+    // Use controlled promises for deterministic behavior
+    let resolve1!: () => void;
+    let resolve2!: () => void;
+    const promise1 = new Promise<void>((r) => {
+      resolve1 = r;
+    });
+    const promise2 = new Promise<void>((r) => {
+      resolve2 = r;
+    });
 
-    followPromise(child, promise1);
-    followPromise(child, promise2);
+    // followPromise returns the .finally() chain, so awaiting it
+    // guarantees end() has been called
+    const tracked1 = followPromise(child, promise1);
+    const tracked2 = followPromise(child, promise2);
 
     expect(mockSuspense.start).toHaveBeenCalledTimes(2);
     expect(pendingCount).toBe(2);
 
-    await promise1;
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    // Resolve and await - end() is guaranteed to have run
+    resolve1();
+    await tracked1;
     expect(pendingCount).toBe(1);
 
-    await promise2;
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    resolve2();
+    await tracked2;
     expect(pendingCount).toBe(0);
   });
 
