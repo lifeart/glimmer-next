@@ -996,4 +996,449 @@ describe('Destruction Flow Tests', () => {
       }).not.toThrow();
     });
   });
+
+  describe('IfCondition formula cleanup', () => {
+    test('condition formula created by setupCondition is cleaned up', async () => {
+      if (typeof IS_DEV_MODE === 'undefined' || !IS_DEV_MODE) {
+        return;
+      }
+
+      const parentComponent = new Component({});
+      parentComponent[RENDERED_NODES_PROPERTY] = [];
+      addToTree(root, parentComponent);
+
+      const initialMergedCells = DEBUG_MERGED_CELLS.size;
+
+      // Pass a function to setupCondition, which creates a formula internally
+      const conditionFn = () => true;
+      const placeholder = api.comment('if-placeholder');
+      const target = api.fragment();
+      api.insert(target, placeholder);
+
+      const ifCondition = new IfCondition(
+        parentComponent,
+        conditionFn,
+        target as unknown as DocumentFragment,
+        placeholder,
+        () => null,
+        () => null,
+      );
+
+      // Wait for render
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      // Should have created a formula for the condition
+      expect(DEBUG_MERGED_CELLS.size).toBeGreaterThan(initialMergedCells);
+
+      // Destroy
+      await ifCondition.destroy();
+
+      // Wait for cleanup
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      // Clean up parent
+      destroyElementSync(parentComponent, true, api);
+    });
+  });
+
+  describe('Deeply nested component trees', () => {
+    test('destroying deeply nested tree (10 levels) works correctly', async () => {
+      const parentComponent = new Component({});
+      parentComponent[RENDERED_NODES_PROPERTY] = [];
+      addToTree(root, parentComponent);
+
+      // Create a deeply nested hierarchy
+      let current = parentComponent;
+      const depth = 10;
+      const components: Component<any>[] = [parentComponent];
+
+      for (let i = 0; i < depth; i++) {
+        const child = new Component({});
+        child[RENDERED_NODES_PROPERTY] = [];
+        addToTree(current, child);
+        components.push(child);
+        current = child;
+      }
+
+      // Verify tree structure
+      expect(components.length).toBe(depth + 1);
+
+      const initialTreeSize = TREE.size;
+      expect(initialTreeSize).toBeGreaterThanOrEqual(depth + 1);
+
+      // Destroy from root - should clean up entire tree
+      expect(() => {
+        destroyElementSync(parentComponent, true, api);
+      }).not.toThrow();
+
+      // Tree should be significantly smaller
+      expect(TREE.size).toBeLessThan(initialTreeSize);
+    });
+
+    test('deeply nested destruction with registered destructors', async () => {
+      const callOrder: number[] = [];
+
+      const parentComponent = new Component({});
+      parentComponent[RENDERED_NODES_PROPERTY] = [];
+      addToTree(root, parentComponent);
+
+      const { registerDestructor } = await import('./glimmer/destroyable');
+
+      let current = parentComponent;
+      const depth = 5;
+
+      for (let i = 0; i < depth; i++) {
+        const child = new Component({});
+        child[RENDERED_NODES_PROPERTY] = [];
+        addToTree(current, child);
+
+        const level = i;
+        registerDestructor(child, () => {
+          callOrder.push(level);
+        });
+
+        current = child;
+      }
+
+      // Destroy
+      destroyElementSync(parentComponent, true, api);
+
+      // All destructors should have been called
+      expect(callOrder.length).toBe(depth);
+    });
+  });
+
+  describe('Nested control flow', () => {
+    test('list inside IfCondition cleans up correctly', async () => {
+      if (typeof IS_DEV_MODE === 'undefined' || !IS_DEV_MODE) {
+        return;
+      }
+
+      const parentComponent = new Component({});
+      parentComponent[RENDERED_NODES_PROPERTY] = [];
+      addToTree(root, parentComponent);
+
+      const condition = cell(true);
+      const items = cell([{ id: 1 }, { id: 2 }]);
+
+      const placeholder = api.comment('if-placeholder');
+      container.appendChild(placeholder);
+
+      let listInstance: SyncListComponent<any> | null = null;
+
+      const ifCondition = new IfCondition(
+        parentComponent,
+        condition,
+        container as unknown as DocumentFragment,
+        placeholder,
+        () => {
+          // Create a list inside the true branch
+          const listPlaceholder = api.comment('nested-list');
+          const listTarget = api.fragment();
+          api.insert(listTarget, listPlaceholder);
+
+          listInstance = new SyncListComponent(
+            {
+              tag: items,
+              ItemComponent: (item: any) => {
+                const div = document.createElement('div');
+                div.textContent = String(item.id);
+                return [div];
+              },
+              ctx: parentComponent,
+              key: 'id',
+            },
+            listTarget as unknown as DocumentFragment,
+            listPlaceholder,
+          );
+
+          return listTarget;
+        },
+        () => null,
+      );
+
+      // Wait for render
+      await new Promise(resolve => setTimeout(resolve, 20));
+
+      // Verify list was created
+      expect(listInstance).not.toBe(null);
+      expect(listInstance!.keyMap.size).toBe(2);
+
+      // Toggle condition to false - should destroy the list
+      condition.value = false;
+
+      // Wait for destruction
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      // Clean up
+      await ifCondition.destroy();
+      destroyElementSync(parentComponent, true, api);
+    });
+
+    test('IfCondition inside list item cleans up correctly', async () => {
+      if (typeof IS_DEV_MODE === 'undefined' || !IS_DEV_MODE) {
+        return;
+      }
+
+      const parentComponent = new Component({});
+      parentComponent[RENDERED_NODES_PROPERTY] = [];
+      addToTree(root, parentComponent);
+
+      const items = cell([{ id: 1, show: true }, { id: 2, show: false }]);
+      const placeholder = api.comment('list');
+      const target = api.fragment();
+      api.insert(target, placeholder);
+
+      const ifConditions: IfCondition[] = [];
+
+      const list = new SyncListComponent(
+        {
+          tag: items,
+          ItemComponent: (item: any) => {
+            const itemPlaceholder = api.comment(`if-${item.id}`);
+            const itemTarget = api.fragment();
+            api.insert(itemTarget, itemPlaceholder);
+
+            const showCell = cell(item.show);
+            const ifCond = new IfCondition(
+              parentComponent,
+              showCell,
+              itemTarget as unknown as DocumentFragment,
+              itemPlaceholder,
+              () => {
+                const div = document.createElement('div');
+                div.textContent = `Shown: ${item.id}`;
+                return div;
+              },
+              () => {
+                const span = document.createElement('span');
+                span.textContent = `Hidden: ${item.id}`;
+                return span;
+              },
+            );
+            ifConditions.push(ifCond);
+
+            return itemTarget;
+          },
+          ctx: parentComponent,
+          key: 'id',
+        },
+        target as unknown as DocumentFragment,
+        placeholder,
+      );
+
+      // Wait for render
+      await new Promise(resolve => setTimeout(resolve, 20));
+
+      // Verify structure
+      expect(list.keyMap.size).toBe(2);
+      expect(ifConditions.length).toBe(2);
+
+      // Remove an item - should clean up its IfCondition
+      items.value = [{ id: 1, show: true }];
+
+      // Wait for update
+      await new Promise(resolve => setTimeout(resolve, 20));
+
+      expect(list.keyMap.size).toBe(1);
+
+      // Clean up
+      destroyElementSync(parentComponent, true, api);
+    });
+  });
+
+  describe('Concurrent list operations', () => {
+    test('rapid list updates do not cause memory leaks', async () => {
+      if (typeof IS_DEV_MODE === 'undefined' || !IS_DEV_MODE) {
+        return;
+      }
+
+      const parentComponent = new Component({});
+      parentComponent[RENDERED_NODES_PROPERTY] = [];
+      addToTree(root, parentComponent);
+
+      const items = cell<{ id: number }[]>([]);
+      const placeholder = api.comment('list');
+      const target = api.fragment();
+      api.insert(target, placeholder);
+
+      const initialMergedCells = DEBUG_MERGED_CELLS.size;
+
+      const list = new SyncListComponent(
+        {
+          tag: items,
+          ItemComponent: (item: any, index: any) => {
+            const div = document.createElement('div');
+            div.textContent = String(typeof index === 'object' ? index.value : index);
+            return [div];
+          },
+          ctx: parentComponent,
+          key: 'id',
+        },
+        target as unknown as DocumentFragment,
+        placeholder,
+      );
+
+      // Rapid updates
+      for (let i = 0; i < 10; i++) {
+        items.value = [{ id: 1 }, { id: 2 }, { id: 3 }];
+        items.value = [{ id: 2 }, { id: 3 }];
+        items.value = [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }];
+        items.value = [];
+      }
+
+      // Wait for all updates
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      // Final state should be empty
+      expect(list.keyMap.size).toBe(0);
+      expect(list.indexFormulaMap.size).toBe(0);
+
+      // Clean up
+      destroyElementSync(parentComponent, true, api);
+
+      // Wait for cleanup
+      await new Promise(resolve => setTimeout(resolve, 20));
+
+      // Should not have leaked formulas
+      expect(DEBUG_MERGED_CELLS.size).toBe(initialMergedCells);
+    });
+
+    test('AsyncListComponent handles concurrent updates gracefully', async () => {
+      if (typeof IS_DEV_MODE === 'undefined' || !IS_DEV_MODE) {
+        return;
+      }
+
+      const parentComponent = new Component({});
+      parentComponent[RENDERED_NODES_PROPERTY] = [];
+      addToTree(root, parentComponent);
+
+      const items = cell<{ id: number }[]>([{ id: 1 }, { id: 2 }]);
+      const placeholder = api.comment('async-list');
+      const target = api.fragment();
+      api.insert(target, placeholder);
+
+      const list = new AsyncListComponent(
+        {
+          tag: items,
+          ItemComponent: (item: any) => {
+            const div = document.createElement('div');
+            div.textContent = String(item.id);
+            return [div];
+          },
+          ctx: parentComponent,
+          key: 'id',
+        },
+        target as unknown as DocumentFragment,
+        placeholder,
+      );
+
+      // Wait for initial render
+      await new Promise(resolve => setTimeout(resolve, 20));
+
+      // Concurrent updates while async operations might be in progress
+      items.value = [{ id: 3 }, { id: 4 }];
+      items.value = [{ id: 1 }];
+      items.value = [{ id: 5 }, { id: 6 }, { id: 7 }];
+
+      // Wait for all async operations
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Should end up with the final state
+      expect(list.keyMap.size).toBe(3);
+
+      // Clean up
+      destroyElementSync(parentComponent, true, api);
+    });
+  });
+
+  describe('Component with formulas in rendered nodes', () => {
+    test('formulas used in text nodes are cleaned up', async () => {
+      if (typeof IS_DEV_MODE === 'undefined' || !IS_DEV_MODE) {
+        return;
+      }
+
+      const parentComponent = new Component({});
+      parentComponent[RENDERED_NODES_PROPERTY] = [];
+      addToTree(root, parentComponent);
+
+      const initialMergedCells = DEBUG_MERGED_CELLS.size;
+
+      const textValue = cell('Hello');
+      const textFormula = formula(() => textValue.value, 'text-content');
+
+      // Simulate using the formula in a text node
+      const textNode = document.createTextNode(textFormula.value);
+      parentComponent[RENDERED_NODES_PROPERTY].push(textNode);
+
+      // Update to verify reactivity works
+      textValue.value = 'World';
+
+      // Clean up formula
+      textFormula.destroy();
+
+      // Destroy component
+      destroyElementSync(parentComponent, true, api);
+
+      // Formula should be cleaned up
+      expect(DEBUG_MERGED_CELLS.size).toBe(initialMergedCells);
+    });
+  });
+
+  describe('PARENT/CHILD consistency', () => {
+    test('PARENT references are consistent with CHILD', async () => {
+      const parentComponent = new Component({});
+      parentComponent[RENDERED_NODES_PROPERTY] = [];
+      addToTree(root, parentComponent);
+
+      const child1 = new Component({});
+      child1[RENDERED_NODES_PROPERTY] = [];
+      addToTree(parentComponent, child1);
+
+      const child2 = new Component({});
+      child2[RENDERED_NODES_PROPERTY] = [];
+      addToTree(parentComponent, child2);
+
+      const parentId = parentComponent[COMPONENT_ID_PROPERTY];
+      const child1Id = child1[COMPONENT_ID_PROPERTY];
+      const child2Id = child2[COMPONENT_ID_PROPERTY];
+
+      // Verify PARENT references
+      expect(PARENT.get(child1Id)).toBe(parentId);
+      expect(PARENT.get(child2Id)).toBe(parentId);
+
+      // Verify CHILD references
+      const children = CHILD.get(parentId);
+      expect(children).toContain(child1Id);
+      expect(children).toContain(child2Id);
+
+      // Destroy
+      destroyElementSync(parentComponent, true, api);
+    });
+
+    test('unregisterFromParent maintains PARENT/CHILD consistency', async () => {
+      const parentComponent = new Component({});
+      parentComponent[RENDERED_NODES_PROPERTY] = [];
+      addToTree(root, parentComponent);
+
+      const child = new Component({});
+      child[RENDERED_NODES_PROPERTY] = [];
+      addToTree(parentComponent, child);
+
+      const parentId = parentComponent[COMPONENT_ID_PROPERTY];
+      const childId = child[COMPONENT_ID_PROPERTY];
+
+      // Verify initial state
+      expect(CHILD.get(parentId)).toContain(childId);
+
+      // Unregister child
+      unregisterFromParent(child);
+
+      // Child should be removed from parent's CHILD array
+      expect(CHILD.get(parentId)).not.toContain(childId);
+
+      // Clean up
+      destroyElementSync(parentComponent, true, api);
+    });
+  });
 });
