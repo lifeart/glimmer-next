@@ -1061,7 +1061,6 @@ function createSlot(
   name: string,
   ctx: any,
 ) {
-  // @todo - figure out destructors for slot (shoud work, bu need to be tested)
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.push(`:${name}`);
   }
@@ -1073,16 +1072,29 @@ function createSlot(
   };
   // @ts-expect-error slot return type
   addToTree(ctx, slotContext);
-  // @TODO: params to reactive cells (or getters)
+  // Track formulas created for slot params so we can destroy them
+  const formulasToDestroy: MergedCell[] = [];
   const paramsArray = params().map((_, i) => {
     const v = formula(() => params()[i], `slot:param:${i}`);
     const value = v.value;
     if (v.isConst || typeof value === 'object') {
+      // Const formulas don't need tracking, destroy immediately
+      v.destroy();
       return value;
     } else {
+      // Track non-const formulas for cleanup
+      formulasToDestroy.push(v);
       return v;
     }
   });
+  // Register destructor to clean up slot param formulas
+  if (formulasToDestroy.length > 0) {
+    registerDestructor(slotContext, () => {
+      for (const f of formulasToDestroy) {
+        f.destroy();
+      }
+    });
+  }
   const elements = value ? value(...[slotContext, ...paramsArray]) : [];
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.pop();
