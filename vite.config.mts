@@ -180,7 +180,8 @@ export default defineConfig(({ mode }) => ({
     ],
   },
   optimizeDeps: {
-    exclude: ['yoga-layout', '@react-pdf/layout', '@react-pdf/render', 'react-pdf'],
+    // Exclude ember-eui from pre-bundling so it uses live @lifeart/gxt source
+    exclude: ['yoga-layout', '@react-pdf/layout', '@react-pdf/render', 'react-pdf', '@ember-eui/core'],
     esbuildOptions: {
       plugins: [
         // nodeModulesPolyfillPlugin(),

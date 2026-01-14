@@ -64,7 +64,7 @@ export class Ember extends Component {
 
       <EuiFlexGroup @gutterSize='s' @wrap={{true}}>
         <EuiFlexItem @grow={{false}}>
-          <EuiBadge>Default</EuiBadge>
+          <EuiBadge @color='default'>Default</EuiBadge>
         </EuiFlexItem>
         <EuiFlexItem @grow={{false}}>
           <EuiBadge @color='success'>Success</EuiBadge>
@@ -76,7 +76,7 @@ export class Ember extends Component {
           <EuiBadge @color='danger'>Danger</EuiBadge>
         </EuiFlexItem>
         <EuiFlexItem @grow={{false}}>
-          <EuiBadge @color='#6366f1'>Custom Color</EuiBadge>
+          <EuiBadge @color='primary'>Primary</EuiBadge>
         </EuiFlexItem>
       </EuiFlexGroup>
 

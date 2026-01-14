@@ -3,9 +3,12 @@ import { TEMPLATE_ONLY } from './ember__component__template-only';
 export const TEMPLATE_META = new Map();
 export function setComponentTemplate(tpl: any, cmp: any) {
   if (cmp.TEMPLATE_ONLY === TEMPLATE_ONLY) {
-    // console.log(cmp);
+    // For template-only components, wrap in a Component class
+    // so that the component lifecycle is properly set up
     TEMPLATE_META.set(tpl, cmp);
-    return tpl;
+    return class TemplateOnlyComponent extends Component {
+      [$template] = tpl.bind(this);
+    };
   } else {
     return class extends cmp {
       [$template] = tpl.bind(this);

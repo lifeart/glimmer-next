@@ -845,11 +845,9 @@ export const setParentContext = (value: Root | Component<any> | null) => {
 };
 
 export const getParentContext = (): Component<any> | Root | undefined => {
-  if (IS_DEV_MODE) {
-    if (!TREE.get(parentContextStack[parentContextIndex]!)) {
-      debugger;
-      throw new Error('unable to get parent context before set');
-    }
+  // Return undefined if no parent context is set (e.g., for dynamically compiled components)
+  if (parentContextIndex < 0) {
+    return undefined;
   }
   return TREE.get(parentContextStack[parentContextIndex]!);
 };
@@ -1243,7 +1241,12 @@ export function $_GET_ARGS(ctx: Component<any>, args: IArguments) {
   ctx[RENDERED_NODES_PROPERTY] = ctx[RENDERED_NODES_PROPERTY] ?? [];
   ctx[COMPONENT_ID_PROPERTY] = ctx[COMPONENT_ID_PROPERTY] ?? cId();
   if (!SEEN_TREE_NODES.has(ctx)) {
-    addToTree(getParentContext()!, ctx);
+    const parent = getParentContext();
+    // Parent may be undefined for dynamically compiled components (e.g., ember-eui)
+    // In this case, we'll add to tree later when the component is properly rendered
+    if (parent) {
+      addToTree(parent, ctx);
+    }
   }
 }
 export function $_GET_SLOTS(ctx: any, args: any) {

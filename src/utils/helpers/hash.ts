@@ -1,4 +1,8 @@
 export function $__hash(obj: Record<string, unknown>) {
+  // Handle undefined/null gracefully (can happen with ember-eui components)
+  if (obj == null) {
+    return {};
+  }
   const newObj = {};
   Object.keys(obj).forEach((key) => {
     Object.defineProperty(newObj, key, {

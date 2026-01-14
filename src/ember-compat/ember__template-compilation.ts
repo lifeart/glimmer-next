@@ -25,7 +25,7 @@ globalThis.compiledTemplate = new Map();
 
 const emptyScope = () => ({});
 
-export async function precompileTemplate(
+export function precompileTemplate(
   tpl: string,
   args: {
     strictMode: boolean;
@@ -50,7 +50,7 @@ export async function precompileTemplate(
     }`,
     'name.js',
     'development',
-    false,
+    true, // isLibBuild=true to skip decorator-transforms (not available in browser)
     {
       IS_GLIMMER_COMPAT_MODE: true,
       RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES: false,
@@ -64,7 +64,8 @@ export async function precompileTemplate(
       ASYNC_COMPILE_TRANSFORMS: false,
     },
   );
-  const resultStr = typeof transformResult === 'string' ? transformResult : await transformResult;
+  // With ASYNC_COMPILE_TRANSFORMS: false, transform returns a string synchronously
+  const resultStr = transformResult as string;
   let final = resultStr.split('export ').pop() ?? '';
 
   // @ts-expect-error
