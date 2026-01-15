@@ -1,8 +1,7 @@
 import { test, expect } from '@playwright/test';
 
-// Coverage disabled for this test due to Chromium crash
-// import { captureCoverage } from './../utils/index.ts';
-// captureCoverage(test);
+import { captureCoverage } from './../utils/index.ts';
+captureCoverage(test);
 
 test.describe('Benchmark page', () => {
   // Run this test serially to avoid conflicts with other tests accessing the benchmark page
