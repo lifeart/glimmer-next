@@ -33,7 +33,10 @@
     "ci:nyc:merge": "nyc merge ./coverage-artifacts ./merged-coverage/coverage.json",
     "ci:nyc:report": "nyc report --reporter=html --reporter=lcov --temp-dir ./merged-coverage",
     "nyc:merge:playwright": "nyc merge .nyc_output ./coverage/playwright-final.json && rm -rf .nyc_output",
+    "nyc:merge:vitest": "cp ./coverage/vitest/coverage-final.json ./coverage/vitest-final.json",
+    "nyc:merge:all": "nyc merge ./coverage ./coverage/merged-final.json",
     "nyc:report": "nyc report --reporter=html --reporter=lcov --temp-dir ./coverage",
+    "test:coverage": "vitest run --coverage",
     "test:playwright": "playwright test"
   },
   "files": [
