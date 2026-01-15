@@ -8,7 +8,6 @@ import {
   TREE,
   CHILD,
   addToTree,
-  COMPONENT_ID_PROPERTY,
 } from './shared';
 import { cleanupFastContext, provideContext, RENDERING_CONTEXT } from './context';
 import { Root, $_slot, $SLOTS_SYMBOL } from './dom';
@@ -60,7 +59,7 @@ describe('Slot Component', () => {
       // Create slots object with a default slot
       const slots = {
         [$SLOTS_SYMBOL]: true,
-        default: (ctx: any, param: any) => {
+        default: (_ctx: any, param: any) => {
           const div = document.createElement('div');
           // Use the param reactively
           div.textContent = String(typeof param === 'object' && 'value' in param ? param.value : param);
@@ -69,7 +68,7 @@ describe('Slot Component', () => {
       };
 
       // Call $_slot which internally calls createSlot
-      const slotResult = $_slot('default', () => [paramValue], slots, parentComponent);
+      $_slot('default', () => [paramValue], slots, parentComponent);
 
       // Wait for rendering
       await new Promise(resolve => setTimeout(resolve, 10));
@@ -104,7 +103,7 @@ describe('Slot Component', () => {
       // Create slots object with const param (primitive value)
       const slots = {
         [$SLOTS_SYMBOL]: true,
-        default: (ctx: any, param: any) => {
+        default: (_ctx: any, param: any) => {
           const div = document.createElement('div');
           div.textContent = String(param);
           return [div];
@@ -116,10 +115,6 @@ describe('Slot Component', () => {
 
       // Wait for rendering
       await new Promise(resolve => setTimeout(resolve, 10));
-
-      // Const formula should be destroyed immediately after value extraction
-      // So merged cells count should not increase significantly
-      const afterCreateCount = DEBUG_MERGED_CELLS.size;
 
       // Destroy parent
       destroyElementSync(parentComponent, true, api);
@@ -147,7 +142,7 @@ describe('Slot Component', () => {
 
         const slots = {
           [$SLOTS_SYMBOL]: true,
-          default: (ctx: any, param: any) => {
+          default: (_ctx: any, param: any) => {
             const div = document.createElement('div');
             div.textContent = String(typeof param === 'object' && 'value' in param ? param.value : param);
             return [div];
@@ -188,7 +183,7 @@ describe('Slot Component', () => {
 
       const slots = {
         [$SLOTS_SYMBOL]: true,
-        default: (ctx: any, p1: any, p2: any, p3: any) => {
+        default: (_ctx: any, p1: any, p2: any, p3: any) => {
           const div = document.createElement('div');
           const getValue = (p: any) => typeof p === 'object' && 'value' in p ? p.value : p;
           div.textContent = `${getValue(p1)}-${getValue(p2)}-${getValue(p3)}`;
@@ -222,7 +217,7 @@ describe('Slot Component', () => {
 
       const slots = {
         [$SLOTS_SYMBOL]: true,
-        default: (ctx: any) => {
+        default: (_ctx: any) => {
           const div = document.createElement('div');
           div.textContent = 'slot content';
           return [div];
@@ -261,10 +256,10 @@ describe('Slot Component', () => {
       const result = $_slot('mySlot', () => [], slots, parentComponent);
 
       // Result should be a comment placeholder (nodeType 8 is Comment)
-      expect(result.nodeType).toBe(8);
+      expect((result as unknown as Node).nodeType).toBe(8);
 
       // Now define the slot
-      slots.mySlot = (ctx: any) => {
+      slots.mySlot = (_ctx: any) => {
         const div = document.createElement('div');
         div.textContent = 'deferred content';
         return [div];
