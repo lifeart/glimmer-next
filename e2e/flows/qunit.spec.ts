@@ -1,8 +1,8 @@
 import { test, expect } from '@playwright/test';
 
-// import { captureCoverage } from './../utils/index.ts';
+import { captureCoverage } from './../utils/index.ts';
 
-// captureCoverage(test); // Disabled temporarily to debug test failures
+captureCoverage(test);
 
 type QUnitTestResults = {
   failed: number;

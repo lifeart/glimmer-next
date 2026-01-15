@@ -1,8 +1,7 @@
 import { test, expect } from '@playwright/test';
 
-// Coverage disabled for this test due to Chromium crash with canvas + navigation
-// import { captureCoverage } from './../utils/index.ts';
-// captureCoverage(test);
+import { captureCoverage } from './../utils/index.ts';
+captureCoverage(test);
 
 test('page-one', async ({ page }) => {
   await page.goto('/pageOne');

@@ -1,8 +1,7 @@
 import { test, expect } from '@playwright/test';
 
-// Coverage disabled for this test due to potential Chromium crash with canvas
-// import { captureCoverage } from './../utils/index.ts';
-// captureCoverage(test);
+import { captureCoverage } from './../utils/index.ts';
+captureCoverage(test);
 
 test('renderers', async ({ page }) => {
   await page.goto('/renderers');
