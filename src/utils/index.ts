@@ -28,3 +28,4 @@ export {
   SUSPENSE_CONTEXT,
   type SuspenseContext,
 } from '@/utils/suspense-utils';
+export { configureGXT, type GXTConfig, type GXTConfigInput, type PoolConfig } from '@/utils/config';

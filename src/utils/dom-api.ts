@@ -103,10 +103,9 @@ export class HTMLBrowserDOMApi implements DOMApi {
     child: HTMLElement | Node,
     anchor?: HTMLElement | Node | null,
   ) {
-    try {
+    // Guard check is cheaper than try-catch and handles edge cases
+    if (parent !== null) {
       parent.insertBefore(child, anchor || null);
-    } catch(e) {
-      debugger;
     }
   }
 }

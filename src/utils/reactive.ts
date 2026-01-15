@@ -5,8 +5,16 @@
 */
 import { scheduleRevalidate } from '@/utils/runtime';
 import { isFn, isTag, isTagLike, debugContext } from '@/utils/shared';
+import { AdaptivePool, config } from '@/utils/config';
 
 export const asyncOpcodes = new WeakSet<tagOp>();
+// Fast path: skip WeakSet checks when no async opcodes have ever been registered
+let hasAnyAsyncOpcodes = false;
+
+export function markOpcodeAsync(op: tagOp) {
+  asyncOpcodes.add(op);
+  hasAnyAsyncOpcodes = true;
+}
 // List of DOM operations for each tag
 export const opsForTag: Map<
   number,
@@ -16,6 +24,21 @@ export const opsForTag: Map<
 export const tagsToRevalidate: Set<Cell> = new Set();
 // List of derived tags for each cell
 export const relatedTags: Map<number, Set<MergedCell>> = new Map();
+
+// Adaptive pool for ops arrays with automatic growth/shrink
+const opsPool = new AdaptivePool<Array<tagOp>>(
+  config.opsArrayPool,
+  () => [],
+  (arr) => { arr.length = 0; },
+);
+
+function getOpArray(): Array<tagOp> {
+  return opsPool.acquire();
+}
+
+export function releaseOpArray(arr: Array<tagOp>) {
+  opsPool.release(arr);
+}
 
 export const DEBUG_MERGED_CELLS = new Set<MergedCell>();
 export const DEBUG_CELLS = new Set<Cell>();
@@ -108,7 +131,7 @@ function tracker() {
 }
 // "data" cell, it's value can be updated, and it's used to create derived cells
 export class Cell<T extends unknown = unknown> {
-  _value!: T;
+  private __value!: T;
   id = tagId++;
   declare toHTML: () => string;
   [Symbol.toPrimitive]() {
@@ -117,11 +140,18 @@ export class Cell<T extends unknown = unknown> {
   _debugName?: string | undefined;
   [isTag] = true;
   constructor(value: T, debugName?: string) {
-    this._value = value;
+    this.__value = value;
     if (IS_DEV_MODE) {
       this._debugName = debugContext(debugName);
       DEBUG_CELLS.add(this);
     }
+  }
+  // Use accessor so LazyCell can override
+  get _value(): T {
+    return this.__value;
+  }
+  set _value(v: T) {
+    this.__value = v;
   }
   get value() {
     if (currentTracker !== null) {
@@ -139,33 +169,28 @@ export class Cell<T extends unknown = unknown> {
   }
 }
 
-export class LazyCell<T extends unknown = unknown> extends Cell<() => T> {
-  __value!: T;
-  constructor(v: () => T, debugName?: string) {
-    // @ts-expect-error
-    super(null, debugName);
-    let isResolved = false;
-    Object.defineProperty(this, '_value', {
-      get() {
-        if (!isResolved) {
-          let val: unknown = undefined;
-          try {
-            val = v();
-            isResolved = true;
-          } catch (e) {
-            throw e;
-          }
-          this.__value = val;
-        }
-        return this.__value;
-      },
-      set(v) {
-        if (!isResolved) {
-          isResolved = true;
-        }
-        this.__value = v;
-      },
-    });
+export class LazyCell<T extends unknown = unknown> extends Cell<T> {
+  private __isResolved = false;
+  private __lazyValue!: T;
+  private __fn: () => T;
+
+  constructor(fn: () => T, debugName?: string) {
+    // @ts-expect-error - we initialize lazily
+    super(undefined, debugName);
+    this.__fn = fn;
+  }
+
+  override get _value(): T {
+    if (!this.__isResolved) {
+      this.__lazyValue = this.__fn();
+      this.__isResolved = true;
+    }
+    return this.__lazyValue;
+  }
+
+  override set _value(v: T) {
+    this.__lazyValue = v;
+    this.__isResolved = true;
   }
 }
 export function listDependentCells(cells: Array<AnyCell>, cell: MergedCell) {
@@ -179,7 +204,7 @@ export function listDependentCells(cells: Array<AnyCell>, cell: MergedCell) {
 export function opsFor(cell: AnyCell) {
   let ops = opsForTag.get(cell.id);
   if (ops === undefined) {
-    ops = [];
+    ops = getOpArray();
     opsForTag.set(cell.id, ops);
   }
   return ops;
@@ -285,15 +310,49 @@ export type tagOp = (...values: unknown[]) => Promise<void> | void;
 export async function executeTag(tag: Cell | MergedCell) {
   let opcode: null | tagOp = null;
   const ops = opsFor(tag);
+  const value = tag.value;
+
+  // Fast path: when no async opcodes exist, skip all WeakSet lookups
+  if (!hasAnyAsyncOpcodes) {
+    if (TRY_CATCH_ERROR_HANDLING) {
+      try {
+        for (let i = 0; i < ops.length; i++) {
+          opcode = ops[i];
+          opcode(value);
+        }
+      } catch (e: any) {
+        if (IS_DEV_MODE) {
+          console.error({
+            message: 'Error executing tag',
+            error: e,
+            tag,
+            opcode: opcode?.toString(),
+          });
+        }
+        if (opcode) {
+          const index = ops.indexOf(opcode);
+          if (index > -1) {
+            ops.splice(index, 1);
+          }
+        }
+      }
+    } else {
+      for (let i = 0; i < ops.length; i++) {
+        ops[i](value);
+      }
+    }
+    return;
+  }
+
+  // Slow path: check async status for each opcode
   if (TRY_CATCH_ERROR_HANDLING) {
     try {
-      const value = tag.value;
-      for (const op of ops) {
-        opcode = op;
-        if (asyncOpcodes.has(op)) {
-          await op(value);
+      for (let i = 0; i < ops.length; i++) {
+        opcode = ops[i];
+        if (asyncOpcodes.has(opcode)) {
+          await opcode(value);
         } else {
-          op(value);
+          opcode(value);
         }
       }
     } catch (e: any) {
@@ -306,20 +365,19 @@ export async function executeTag(tag: Cell | MergedCell) {
         });
       }
       if (opcode) {
-        let index = ops.indexOf(opcode);
+        const index = ops.indexOf(opcode);
         if (index > -1) {
           ops.splice(index, 1);
         }
       }
     }
   } else {
-    const value = tag.value;
-    for (const op of ops) {
-      opcode = op;
-      if (asyncOpcodes.has(op)) {
-        await op(value);
+    for (let i = 0; i < ops.length; i++) {
+      opcode = ops[i];
+      if (asyncOpcodes.has(opcode)) {
+        await opcode(value);
       } else {
-        op(value);
+        opcode(value);
       }
     }
   }

@@ -304,7 +304,6 @@ export class BasicListComponent<T extends { id: number }> {
       ? this.getTargetNode(amountOfExistingKeys)
       : bottomMarker;
     let seenKeys = 0;
-    const appendedIndexes = new Set<number>();
     let isAppendOnly = isFirstRender;
     // @ts-expect-error this
     setParentContext(this);
@@ -321,9 +320,6 @@ export class BasicListComponent<T extends { id: number }> {
       const key = keyForItem(item, index);
       const maybeRow = keyMap.get(key);
       if (!maybeRow) {
-        if (!isAppendOnly) {
-          appendedIndexes.add(index);
-        }
         let idx: number | MergedCell = index;
         if (IS_DEV_MODE) {
           // @todo - add `hasIndex` argument to compiler to tree-shake this
@@ -359,16 +355,11 @@ export class BasicListComponent<T extends { id: number }> {
           renderElement(api, this, api.parent(targetNode)!, row, targetNode);
         } else {
           rowsToMove.push([row, index]);
-          for (let [mapKey, value] of indexMap) {
-            if (value >= index) {
-              indexMap.set(mapKey, index + 1);
-            }
-          }
         }
       } else {
         seenKeys++;
         const expectedIndex = indexMap.get(key)!;
-        if (expectedIndex !== index && !appendedIndexes.has(expectedIndex)) {
+        if (expectedIndex !== index) {
           indexMap.set(key, index);
           rowsToMove.push([maybeRow, index]);
         }

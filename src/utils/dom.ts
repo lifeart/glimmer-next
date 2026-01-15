@@ -46,7 +46,7 @@ import {
   CHILD,
   TREE,
   PARENT,
-  SEEN_TREE_NODES,
+  ADDED_TO_TREE_FLAG,
 } from './shared';
 import { isRehydrationScheduled } from './ssr/rehydration';
 import { createHotReload } from './hmr';
@@ -895,13 +895,23 @@ if (IS_DEV_MODE) {
   }
 }
 
+// Split into push/pop for hot path performance - avoids null check on every call
+export const pushParentContext = (value: Root | Component<any>) => {
+  parentContextIndex++;
+  parentContextStack.push(value[COMPONENT_ID_PROPERTY]!);
+};
+
+export const popParentContext = () => {
+  parentContextIndex--;
+  parentContextStack.pop();
+};
+
+// Keep for backward compatibility
 export const setParentContext = (value: Root | Component<any> | null) => {
   if (value === null) {
-    parentContextIndex--;
-    parentContextStack.pop();
+    popParentContext();
   } else {
-    parentContextIndex++;
-    parentContextStack.push(value[COMPONENT_ID_PROPERTY]!);
+    pushParentContext(value);
   }
 };
 
@@ -1305,7 +1315,8 @@ export function $_GET_ARGS(ctx: Component<any>, args: IArguments) {
   ctx[$args] = ctx[$args] || args[0] || {};
   ctx[RENDERED_NODES_PROPERTY] = ctx[RENDERED_NODES_PROPERTY] ?? [];
   ctx[COMPONENT_ID_PROPERTY] = ctx[COMPONENT_ID_PROPERTY] ?? cId();
-  if (!SEEN_TREE_NODES.has(ctx)) {
+  // @ts-expect-error - dynamic property
+  if (!ctx[ADDED_TO_TREE_FLAG]) {
     addToTree(getParentContext()!, ctx);
   }
 }

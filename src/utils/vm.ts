@@ -2,12 +2,13 @@ import {
   opsForTag,
   type AnyCell,
   type tagOp,
-  asyncOpcodes,
+  markOpcodeAsync,
   setIsRendering,
   isRendering,
   formula,
   opsFor,
   inNewTrackingFrame,
+  releaseOpArray,
 } from './reactive';
 import { isFn } from './shared';
 
@@ -74,7 +75,7 @@ const executeOpcode = (tag: AnyCell, op: tagOp) => {
   const value = op(tag.value) as unknown as void | Promise<void>;
   if (value !== undefined) {
     // console.info(`Adding Async Updating Opcode for ${tag._debugName}`);
-    asyncOpcodes.add(op);
+    markOpcodeAsync(op);
   }
 };
 
@@ -103,6 +104,7 @@ export function opcodeFor(tag: AnyCell, op: tagOp) {
     }
     if (ops.length === 0) {
       opsForTag.delete(tag.id);
+      releaseOpArray(ops); // Return to pool for reuse
       if ('destroy' in tag) {
         tag.destroy();
       }
