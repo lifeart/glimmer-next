@@ -523,8 +523,6 @@ describe('If Component Destruction', () => {
     const placeholder = document.createComment('if');
     container.appendChild(placeholder);
 
-    let mergedCellId: number | null = null;
-
     const ifInstance = new IfCondition(
       parentComponent,
       condition,
@@ -533,7 +531,6 @@ describe('If Component Destruction', () => {
       (ctx) => {
         // True branch: create a formula that depends on baseCell
         const derivedCell = formula(() => baseCell.value * 2, 'test-derived');
-        mergedCellId = derivedCell.id;
 
         const div = document.createElement('div');
         const destructor = opcodeFor(derivedCell, (value) => {

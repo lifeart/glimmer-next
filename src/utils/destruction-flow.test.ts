@@ -11,8 +11,8 @@ import {
   COMPONENT_ID_PROPERTY,
 } from './shared';
 import { cleanupFastContext, provideContext, RENDERING_CONTEXT } from './context';
-import { Root, $_if, $_each, $_eachSync, $_tag, $_edp, $_fin, $_GET_ARGS, $_dc, $_args } from './dom';
-import { cell, formula, DEBUG_MERGED_CELLS, MergedCell } from './reactive';
+import { Root } from './dom';
+import { cell, formula, DEBUG_MERGED_CELLS } from './reactive';
 import { IfCondition } from './control-flow/if';
 import { SyncListComponent, AsyncListComponent } from './control-flow/list';
 
@@ -246,8 +246,6 @@ describe('Destruction Flow Tests', () => {
       const target = api.fragment();
       api.insert(target, placeholder);
 
-      const initialTreeSize = TREE.size;
-
       const list = new SyncListComponent(
         {
           tag: items,
@@ -295,12 +293,10 @@ describe('Destruction Flow Tests', () => {
       const target = api.fragment();
       api.insert(target, placeholder);
 
-      const initialMergedCells = DEBUG_MERGED_CELLS.size;
-
       const list = new SyncListComponent(
         {
           tag: items,
-          ItemComponent: (item: any, index: any) => {
+          ItemComponent: (_item: any, index: any) => {
             const div = document.createElement('div');
             // Use index reactively to create formulas
             div.textContent = String(typeof index === 'object' ? index.value : index);
@@ -350,7 +346,7 @@ describe('Destruction Flow Tests', () => {
       const list = new SyncListComponent(
         {
           tag: items,
-          ItemComponent: (item: any, index: any) => {
+          ItemComponent: (_item: any, index: any) => {
             const div = document.createElement('div');
             div.textContent = String(typeof index === 'object' ? index.value : index);
             return [div];
@@ -423,7 +419,7 @@ describe('Destruction Flow Tests', () => {
         const testFormula = formula(() => reactiveValue.value, `cycle-${i}`);
 
         // Simulate usage
-        const _ = testFormula.value;
+        void testFormula.value;
 
         // Clean up
         testFormula.destroy();
@@ -453,7 +449,7 @@ describe('Destruction Flow Tests', () => {
       // Simulate a modifier that has reactive dependencies
       const modifierFn = () => {
         modifierRunCount++;
-        const _ = reactiveValue.value; // Access reactive value
+        void reactiveValue.value; // Access reactive value
         return () => {
           modifierCleanupCalled = true;
         };
@@ -594,7 +590,7 @@ describe('Destruction Flow Tests', () => {
       const list = new AsyncListComponent(
         {
           tag: items,
-          ItemComponent: (item: any, index: any) => {
+          ItemComponent: (_item: any, index: any) => {
             const div = document.createElement('div');
             div.textContent = String(typeof index === 'object' ? index.value : index);
             return [div];
@@ -642,7 +638,7 @@ describe('Destruction Flow Tests', () => {
       const list = new AsyncListComponent(
         {
           tag: items,
-          ItemComponent: (item: any, index: any) => {
+          ItemComponent: (_item: any, index: any) => {
             const div = document.createElement('div');
             div.textContent = String(typeof index === 'object' ? index.value : index);
             return [div];
@@ -1267,7 +1263,7 @@ describe('Destruction Flow Tests', () => {
       const list = new SyncListComponent(
         {
           tag: items,
-          ItemComponent: (item: any, index: any) => {
+          ItemComponent: (_item: any, index: any) => {
             const div = document.createElement('div');
             div.textContent = String(typeof index === 'object' ? index.value : index);
             return [div];
