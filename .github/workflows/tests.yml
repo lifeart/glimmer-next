@@ -24,5 +24,12 @@ jobs:
       - name: Install Glint env deps
         run: cd glint-environment-gxt && pnpm install && cd ..
 
-      - name: RUN
-        run: pnpm run test
+      - name: Run tests with coverage
+        run: pnpm run test --coverage
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vitest-coverage
+          path: ./coverage/vitest/coverage-final.json
+          retention-days: 1

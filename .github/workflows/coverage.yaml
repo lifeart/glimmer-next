@@ -30,6 +30,17 @@ jobs:
           intervalSeconds: 30
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
+      - name: Wait for Vitest tests
+        continue-on-error: false
+        uses: fountainhead/action-wait-for-check@v1.2.0
+        id: wait-for-vitest-tests
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          checkName: Vitest
+          timeoutSeconds: 600
+          intervalSeconds: 30
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
       - name: Download Playwright test coverage artifacts
         uses: dawidd6/action-download-artifact@v7
         with:
@@ -38,6 +49,16 @@ jobs:
           workflow: playwright.yaml
           workflow_conclusion: success
           name: playwright-coverage
+          pr: ${{github.event.pull_request.number}}
+
+      - name: Download Vitest coverage artifacts
+        uses: dawidd6/action-download-artifact@v7
+        with:
+          github_token: ${{secrets.GITHUB_TOKEN}}
+          path: ./artifacts
+          workflow: tests.yml
+          workflow_conclusion: success
+          name: vitest-coverage
           pr: ${{github.event.pull_request.number}}
 
       - name: Fix paths inside coverage reports
