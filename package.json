@@ -110,6 +110,7 @@
     "@babel/preset-typescript": "^7.23.3",
     "@glimmer/syntax": "^0.87.1",
     "@types/three": "^0.172.0",
+    "@vitest/coverage-v8": "^4.0.17",
     "content-tag": "2.0.1",
     "decorator-transforms": "2.0.0",
     "jspdf": "^4.0.0",
