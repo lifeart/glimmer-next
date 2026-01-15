@@ -188,80 +188,67 @@ describe('Performance Optimizations', () => {
     });
   });
 
-  describe('List IndexMap Optimization', () => {
-    // List optimization tests are covered in list.test.ts
-    // Here we just verify the optimization doesn't break Map operations
+  describe('List IndexMap Operations', () => {
+    // List operations tests - verifying Map operations work correctly
 
-    it('Map operations work correctly with deferred updates', () => {
-      // This tests the pattern used in list.ts where we defer index updates
+    it('Map tracks item indices correctly', () => {
       const indexMap = new Map<string, number>();
-      const appendedIndexes = new Set<number>();
 
       // Initial items
       indexMap.set('a', 0);
       indexMap.set('b', 1);
       indexMap.set('c', 2);
 
-      // Simulate inserting 'x' at index 0 without updating all other indices
-      indexMap.set('x', 0);
-      appendedIndexes.add(0);
-
-      // The optimization: instead of updating all indices >= 0,
-      // we just track which indices were appended
-      // This makes the check O(1) instead of O(N)
-      expect(appendedIndexes.has(0)).toBe(true);
-      expect(indexMap.get('x')).toBe(0);
-
-      // Existing items still have their original indices
-      // but we can detect they need adjustment via appendedIndexes
       expect(indexMap.get('a')).toBe(0);
-      expect(appendedIndexes.has(indexMap.get('a')!)).toBe(true);
+      expect(indexMap.get('b')).toBe(1);
+      expect(indexMap.get('c')).toBe(2);
+
+      // Update indices when items move
+      indexMap.set('a', 2);
+      indexMap.set('b', 0);
+      indexMap.set('c', 1);
+
+      expect(indexMap.get('a')).toBe(2);
+      expect(indexMap.get('b')).toBe(0);
+      expect(indexMap.get('c')).toBe(1);
     });
 
-    it('appendedIndexes tracks multiple insertions correctly', () => {
-      const appendedIndexes = new Set<number>();
-
-      // Simulate multiple insertions
-      appendedIndexes.add(0);
-      appendedIndexes.add(2);
-      appendedIndexes.add(4);
-
-      // Can check if an index was an insertion point
-      expect(appendedIndexes.has(0)).toBe(true);
-      expect(appendedIndexes.has(1)).toBe(false);
-      expect(appendedIndexes.has(2)).toBe(true);
-      expect(appendedIndexes.has(3)).toBe(false);
-      expect(appendedIndexes.has(4)).toBe(true);
-    });
-
-    it('deferred update pattern avoids O(N²) complexity', () => {
-      // Demonstrate the O(N²) avoidance
-      const N = 1000;
+    it('Map handles item additions correctly', () => {
       const indexMap = new Map<string, number>();
-      const appendedIndexes = new Set<number>();
 
-      // Setup: N items
-      for (let i = 0; i < N; i++) {
+      // Add items one by one
+      indexMap.set('item-0', 0);
+      indexMap.set('item-1', 1);
+      indexMap.set('item-2', 2);
+
+      expect(indexMap.size).toBe(3);
+
+      // Add more items
+      indexMap.set('item-3', 3);
+      indexMap.set('item-4', 4);
+
+      expect(indexMap.size).toBe(5);
+      expect(indexMap.get('item-4')).toBe(4);
+    });
+
+    it('Map handles item removals correctly', () => {
+      const indexMap = new Map<string, number>();
+
+      // Initial items
+      for (let i = 0; i < 5; i++) {
         indexMap.set(`item-${i}`, i);
       }
 
-      // Old approach would do this for each insertion:
-      // for (const [key, value] of indexMap) {
-      //   if (value >= insertIndex) indexMap.set(key, value + 1);
-      // }
-      // This is O(N) per insertion = O(N²) for N insertions
+      expect(indexMap.size).toBe(5);
 
-      // New approach: just track insertions
-      const startTime = performance.now();
-      for (let i = 0; i < 100; i++) {
-        // Simulate 100 insertions - with old approach this would be O(100 * N)
-        appendedIndexes.add(i * 10);
-      }
-      const endTime = performance.now();
+      // Remove items
+      indexMap.delete('item-2');
+      indexMap.delete('item-4');
 
-      // Should be nearly instant (< 10ms for 100 set operations)
-      expect(endTime - startTime).toBeLessThan(10);
-      expect(appendedIndexes.size).toBe(100);
+      expect(indexMap.size).toBe(3);
+      expect(indexMap.has('item-2')).toBe(false);
+      expect(indexMap.has('item-4')).toBe(false);
+      expect(indexMap.has('item-0')).toBe(true);
     });
   });
 });
