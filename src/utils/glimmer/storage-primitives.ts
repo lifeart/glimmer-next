@@ -1,4 +1,4 @@
-import { cell, type Cell } from '@lifeart/gxt';
+import { cell, type Cell } from '../reactive';
 import { isFn } from '../shared';
 interface Storage<T> {
   cell: Cell<T>;
