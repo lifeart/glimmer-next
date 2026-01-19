@@ -33,7 +33,8 @@ import {
   RENDERING_CONTEXT,
   cleanupFastContext,
 } from './context';
-import { createRoot, MergedCell } from '.';
+import { createRoot } from './dom';
+import type { MergedCell } from './reactive';
 import { opcodeFor } from './vm';
 import { getFirstNode } from './control-flow/list';
 

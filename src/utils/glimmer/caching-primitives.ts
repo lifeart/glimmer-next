@@ -1,4 +1,4 @@
-import { type Cell, formula } from '@lifeart/gxt';
+import { type Cell, formula } from '../reactive';
 import { opcodeFor, evaluateOpcode } from '../vm';
 
 interface Cache {

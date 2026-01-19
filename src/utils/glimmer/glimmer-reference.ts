@@ -1,4 +1,4 @@
-import { cell, type Cell, cellFor, formula } from '@lifeart/gxt';
+import { cell, type Cell, cellFor, formula } from '../reactive';
 
 export function createComputeRef(fn: () => unknown) {
   return formula(fn, 'ComputeRef');
