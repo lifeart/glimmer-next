@@ -1,8 +1,12 @@
 import { module, test } from 'qunit';
-import { render, rerender, click, findAll } from '@/tests/utils';
-import { cell, Component } from '@lifeart/gxt';
-import { formula, type Cell } from '@/utils/reactive';
-import { step } from '../utils';
+import {
+  render,
+  rerender,
+  click,
+  findAll,
+  step,
+} from '@lifeart/gxt/test-utils';
+import { cell, Component, formula, type Cell } from '@lifeart/gxt';
 
 module('Integration | InternalComponent | each', function (hooks) {
   type User = { name: Cell<string> };
@@ -1241,7 +1245,7 @@ module('Integration | InternalComponent | each', function (hooks) {
     await render(
       <template>
         <div data-test-container>
-          {{#each items key="id" as |item|}}
+          {{#each items key='id' as |item|}}
             <div data-test-name data-id={{item.id}}>{{item.name}}</div>
             <span data-test-value data-id={{item.id}}>{{item.value}}</span>
           {{/each}}
@@ -1279,7 +1283,7 @@ module('Integration | InternalComponent | each', function (hooks) {
     await render(
       <template>
         <div data-test-container>
-          {{#each items key="id" as |item|}}
+          {{#each items key='id' as |item|}}
             <div data-test-name data-id={{item.id}}>{{item.name}}</div>
             <span data-test-value data-id={{item.id}}>{{item.value}}</span>
           {{/each}}
@@ -1287,14 +1291,20 @@ module('Integration | InternalComponent | each', function (hooks) {
       </template>,
     );
 
-    assert.dom('[data-test-name]').exists({ count: 3 }, 'Initially 3 name divs');
+    assert
+      .dom('[data-test-name]')
+      .exists({ count: 3 }, 'Initially 3 name divs');
 
     // Remove middle item
     items.update([i1, i3]);
     await rerender();
 
-    assert.dom('[data-test-name]').exists({ count: 2 }, 'After removal: 2 name divs');
-    assert.dom('[data-test-value]').exists({ count: 2 }, 'After removal: 2 value spans');
+    assert
+      .dom('[data-test-name]')
+      .exists({ count: 2 }, 'After removal: 2 name divs');
+    assert
+      .dom('[data-test-value]')
+      .exists({ count: 2 }, 'After removal: 2 value spans');
 
     const allNodes = findAll('[data-test-container] > *');
     assert.equal(allNodes.length, 4, '4 total child nodes after removal');
@@ -1314,7 +1324,7 @@ module('Integration | InternalComponent | each', function (hooks) {
     await render(
       <template>
         <div data-test-container>
-          {{#each items key="id" as |item|}}
+          {{#each items key='id' as |item|}}
             <div data-test-name data-id={{item.id}}>{{item.name}}</div>
             <span data-test-value data-id={{item.id}}>{{item.value}}</span>
           {{/each}}
@@ -1322,13 +1332,17 @@ module('Integration | InternalComponent | each', function (hooks) {
       </template>,
     );
 
-    assert.dom('[data-test-name]').exists({ count: 2 }, 'Initially 2 name divs');
+    assert
+      .dom('[data-test-name]')
+      .exists({ count: 2 }, 'Initially 2 name divs');
 
     // Add item in the middle
     items.update([i1, i2, i3]);
     await rerender();
 
-    assert.dom('[data-test-name]').exists({ count: 3 }, 'After addition: 3 name divs');
+    assert
+      .dom('[data-test-name]')
+      .exists({ count: 3 }, 'After addition: 3 name divs');
 
     const allNodes = findAll('[data-test-container] > *');
     assert.equal(allNodes.length, 6, '6 total child nodes after addition');
@@ -1350,7 +1364,7 @@ module('Integration | InternalComponent | each', function (hooks) {
     await render(
       <template>
         <div data-test-container>
-          {{#each items key="id" as |item|}}
+          {{#each items key='id' as |item|}}
             <div data-test-name data-id={{item.id}}>{{item.name}}</div>
             <span data-test-value data-id={{item.id}}>{{item.value}}</span>
           {{/each}}
@@ -1382,7 +1396,7 @@ module('Integration | InternalComponent | each', function (hooks) {
     await render(
       <template>
         <div data-test-container>
-          {{#each items key="id" as |item|}}
+          {{#each items key='id' as |item|}}
             <span data-test-icon data-id={{item.id}}>*</span>
             <strong data-test-title data-id={{item.id}}>{{item.title}}</strong>
             <em data-test-subtitle data-id={{item.id}}>{{item.subtitle}}</em>
@@ -1414,8 +1428,11 @@ module('Integration | InternalComponent | each', function (hooks) {
     await render(
       <template>
         <div data-test-container>
-          {{#each items key="id" as |item|}}
-            {{item.prefix}}<code data-test-code data-id={{item.id}}>{{item.code}}</code>
+          {{#each items key='id' as |item|}}
+            {{item.prefix}}<code
+              data-test-code
+              data-id={{item.id}}
+            >{{item.code}}</code>
           {{/each}}
         </div>
       </template>,
@@ -1427,14 +1444,21 @@ module('Integration | InternalComponent | each', function (hooks) {
 
   test('each item with mixed single and multiple roots', async function (assert) {
     const singleRootItem = { id: 1, type: 'single' as const, text: 'Single' };
-    const multiRootItem = { id: 2, type: 'multi' as const, text1: 'Multi1', text2: 'Multi2' };
+    const multiRootItem = {
+      id: 2,
+      type: 'multi' as const,
+      text1: 'Multi1',
+      text2: 'Multi2',
+    };
     const items = cell([singleRootItem, multiRootItem]);
 
     const eq = (a: string, b: string) => a === b;
 
-    class ItemComponent extends Component<{ Args: { item: typeof singleRootItem | typeof multiRootItem } }> {
+    class ItemComponent extends Component<{
+      Args: { item: typeof singleRootItem | typeof multiRootItem };
+    }> {
       <template>
-        {{#if (eq @item.type "single")}}
+        {{#if (eq @item.type 'single')}}
           <div data-test-single>{{@item.text}}</div>
         {{else}}
           <div data-test-multi-1>{{@item.text1}}</div>
@@ -1446,7 +1470,7 @@ module('Integration | InternalComponent | each', function (hooks) {
     await render(
       <template>
         <div data-test-container>
-          {{#each items key="id" as |item|}}
+          {{#each items key='id' as |item|}}
             <ItemComponent @item={{item}} />
           {{/each}}
         </div>
@@ -1467,7 +1491,7 @@ module('Integration | InternalComponent | each', function (hooks) {
     await render(
       <template>
         <div data-test-container>
-          {{#each categories key="id" as |cat|}}
+          {{#each categories key='id' as |cat|}}
             <h2 data-test-category-name data-id={{cat.id}}>{{cat.name}}</h2>
             <ul data-test-category-list data-id={{cat.id}}>
               {{#each cat.items as |item|}}
@@ -1484,7 +1508,11 @@ module('Integration | InternalComponent | each', function (hooks) {
     assert.dom('[data-test-item]').exists({ count: 3 });
 
     const allNodes = findAll('[data-test-container] > *');
-    assert.equal(allNodes.length, 4, '4 top-level nodes (2 categories * 2 roots)');
+    assert.equal(
+      allNodes.length,
+      4,
+      '4 top-level nodes (2 categories * 2 roots)',
+    );
     assert.equal(allNodes[0].tagName, 'H2');
     assert.equal(allNodes[1].tagName, 'UL');
     assert.equal(allNodes[2].tagName, 'H2');
@@ -1493,13 +1521,19 @@ module('Integration | InternalComponent | each', function (hooks) {
 
   test('nested each - inner items have multiple roots', async function (assert) {
     const rows = cell([
-      { id: 1, cols: [{ label: 'A', value: '1' }, { label: 'B', value: '2' }] },
+      {
+        id: 1,
+        cols: [
+          { label: 'A', value: '1' },
+          { label: 'B', value: '2' },
+        ],
+      },
     ]);
 
     await render(
       <template>
         <div data-test-container>
-          {{#each rows key="id" as |row|}}
+          {{#each rows key='id' as |row|}}
             <div data-test-row data-id={{row.id}}>
               {{#each row.cols as |col|}}
                 <span data-test-label>{{col.label}}</span>
@@ -1525,7 +1559,9 @@ module('Integration | InternalComponent | each', function (hooks) {
       { id: 2, content: 'Content 2' },
     ]);
 
-    class MarkedItem extends Component<{ Args: { item: { id: number; content: string } } }> {
+    class MarkedItem extends Component<{
+      Args: { item: { id: number; content: string } };
+    }> {
       <template>
         <div data-test-start data-id={{@item.id}}>[start]</div>
         <div data-test-content data-id={{@item.id}}>{{@item.content}}</div>
@@ -1536,7 +1572,7 @@ module('Integration | InternalComponent | each', function (hooks) {
     await render(
       <template>
         <div data-test-container>
-          {{#each items key="id" as |item|}}
+          {{#each items key='id' as |item|}}
             <MarkedItem @item={{item}} />
           {{/each}}
         </div>
@@ -1557,7 +1593,7 @@ module('Integration | InternalComponent | each', function (hooks) {
     await render(
       <template>
         <div data-test-container>
-          {{#each items key="id" as |item|}}
+          {{#each items key='id' as |_item|}}
             <span data-test-node>1</span>
             <span data-test-node>2</span>
             <span data-test-node>3</span>
@@ -1579,12 +1615,12 @@ module('Integration | InternalComponent | each', function (hooks) {
   test('each - empty list then populate with multi-root items', async function (assert) {
     const i1 = { id: 1, a: 'A1', b: 'B1' };
     const i2 = { id: 2, a: 'A2', b: 'B2' };
-    const items = cell<typeof i1[]>([]);
+    const items = cell<(typeof i1)[]>([]);
 
     await render(
       <template>
         <div data-test-container>
-          {{#each items key="id" as |item|}}
+          {{#each items key='id' as |item|}}
             <div data-test-a data-id={{item.id}}>{{item.a}}</div>
             <div data-test-b data-id={{item.id}}>{{item.b}}</div>
           {{/each}}
@@ -1612,7 +1648,7 @@ module('Integration | InternalComponent | each', function (hooks) {
     await render(
       <template>
         <div data-test-container>
-          {{#each items key="id" as |item|}}
+          {{#each items key='id' as |item|}}
             <div data-test-a data-id={{item.id}}>{{item.a}}</div>
             <div data-test-b data-id={{item.id}}>{{item.b}}</div>
           {{/each}}
@@ -1641,7 +1677,7 @@ module('Integration | InternalComponent | each', function (hooks) {
     await render(
       <template>
         <div data-test-container>
-          {{#each items key="id" as |item|}}
+          {{#each items key='id' as |item|}}
             <div data-test-a data-id={{item.id}}>{{item.a}}</div>
             <span data-test-b data-id={{item.id}}>{{item.b}}</span>
           {{/each}}
@@ -1675,7 +1711,7 @@ module('Integration | InternalComponent | each', function (hooks) {
     await render(
       <template>
         <div data-test-container>
-          {{#each items key="id" as |item|}}
+          {{#each items key='id' as |item|}}
             <div data-test-a data-id={{item.id}}>{{item.a}}</div>
             <span data-test-b data-id={{item.id}}>{{item.b}}</span>
           {{/each}}
@@ -1706,7 +1742,7 @@ module('Integration | InternalComponent | each', function (hooks) {
     await render(
       <template>
         <div data-test-container>
-          {{#each items key="id" as |item|}}
+          {{#each items key='id' as |item|}}
             <span data-test-first>{{item.x}}</span>
             <span data-test-second>-{{item.x}}</span>
           {{/each}}
@@ -1737,7 +1773,7 @@ module('Integration | InternalComponent | each', function (hooks) {
     await render(
       <template>
         <div data-test-container>
-          {{#each items key="id" as |item|}}
+          {{#each items key='id' as |item|}}
             <em data-test-item>{{item.v}}</em>
             <strong data-test-item>!</strong>
           {{/each}}
@@ -1765,7 +1801,7 @@ module('Integration | InternalComponent | each', function (hooks) {
     await render(
       <template>
         <div data-test-container>
-          {{#each items key="id" as |item|}}
+          {{#each items key='id' as |item|}}
             <div data-test-v>{{item.v}}</div>
             <div data-test-v>{{item.v}}2</div>
           {{/each}}
@@ -1803,7 +1839,7 @@ module('Integration | InternalComponent | each', function (hooks) {
     await render(
       <template>
         <div data-test-container>
-          {{#each items key="id" as |item|}}
+          {{#each items key='id' as |item|}}
             <p data-test-p>{{item.v}}</p>
             <hr data-test-hr />
           {{/each}}
@@ -1834,7 +1870,7 @@ module('Integration | InternalComponent | each', function (hooks) {
     await render(
       <template>
         <div data-test-container>
-          {{#each items key="id" as |item|}}
+          {{#each items key='id' as |item|}}
             <span data-test-n>{{item.v}}</span>
             <span data-test-n>+</span>
           {{/each}}
@@ -1848,9 +1884,13 @@ module('Integration | InternalComponent | each', function (hooks) {
     items.update([i3, i2, i1]);
     await rerender();
 
-    const nodes = findAll('[data-test-container] > span[data-test-n]:not([data-test-n="+"])');
+    const nodes = findAll(
+      '[data-test-container] > span[data-test-n]:not([data-test-n="+"])',
+    );
     // Filter to get only value spans
-    const valueNodes = Array.from(findAll('[data-test-n]')).filter(n => n.textContent !== '+');
+    const valueNodes = Array.from(findAll('[data-test-n]')).filter(
+      (n) => n.textContent !== '+',
+    );
     assert.equal(valueNodes.length, 3);
     assert.equal(valueNodes[0].textContent, '3');
     assert.equal(valueNodes[1].textContent, '2');
@@ -1870,7 +1910,7 @@ module('Integration | InternalComponent | each', function (hooks) {
     await render(
       <template>
         <div data-test-container>
-          {{#each items key="id" as |item|}}
+          {{#each items key='id' as |item|}}
             <div data-test-wrapper data-id={{item.id}}>
               <MultiRootChild />
             </div>
@@ -1898,7 +1938,7 @@ module('Integration | InternalComponent | each', function (hooks) {
     await render(
       <template>
         <div data-test-container>
-          {{#each items key="id" as |item|}}
+          {{#each items key='id' as |item|}}
             <Wrapper>
               <span data-test-content>{{item.text}}</span>
             </Wrapper>
@@ -1919,7 +1959,7 @@ module('Integration | InternalComponent | each', function (hooks) {
     await render(
       <template>
         <div data-test-container>
-          {{#each items key="id" as |item|}}
+          {{#each items key='id' as |item|}}
             <div data-test-main>{{item.v}}</div>
             {{#if showExtra}}
               <div data-test-extra>extra</div>
@@ -1952,7 +1992,7 @@ module('Integration | InternalComponent | each', function (hooks) {
     await render(
       <template>
         <div data-test-container>
-          {{#each items key="id" as |item|}}
+          {{#each items key='id' as |item|}}
             <div data-test-div data-id={{item.id}}>{{item.v}}</div>
             <span data-test-span data-id={{item.id}}>{{item.v}}</span>
           {{/each}}
@@ -1973,8 +2013,16 @@ module('Integration | InternalComponent | each', function (hooks) {
     // Verify same DOM elements were moved (not recreated)
     const movedDiv = document.querySelector('[data-test-div][data-id="1"]');
     const movedSpan = document.querySelector('[data-test-span][data-id="1"]');
-    assert.equal(movedDiv?.getAttribute('data-marked'), 'yes', 'div was moved, not recreated');
-    assert.equal(movedSpan?.getAttribute('data-marked'), 'yes', 'span was moved, not recreated');
+    assert.equal(
+      movedDiv?.getAttribute('data-marked'),
+      'yes',
+      'div was moved, not recreated',
+    );
+    assert.equal(
+      movedSpan?.getAttribute('data-marked'),
+      'yes',
+      'span was moved, not recreated',
+    );
   });
 
   test('each - insert at beginning with multiple roots', async function (assert) {
@@ -1986,7 +2034,7 @@ module('Integration | InternalComponent | each', function (hooks) {
     await render(
       <template>
         <div data-test-container>
-          {{#each items key="id" as |item|}}
+          {{#each items key='id' as |item|}}
             <b data-test-b>{{item.v}}</b>
             <i data-test-i>{{item.v}}</i>
           {{/each}}
@@ -2014,7 +2062,7 @@ module('Integration | InternalComponent | each', function (hooks) {
     await render(
       <template>
         <div data-test-container>
-          {{#each items key="id" as |item|}}
+          {{#each items key='id' as |item|}}
             <b data-test-b>{{item.v}}</b>
             <i data-test-i>{{item.v}}</i>
           {{/each}}
@@ -2040,7 +2088,7 @@ module('Integration | InternalComponent | each', function (hooks) {
     await render(
       <template>
         <div data-test-container>
-          {{#each items key="id" as |item|}}
+          {{#each items key='id' as |item|}}
             <u data-test-u>{{item.v}}</u>
             <s data-test-s>{{item.v}}</s>
           {{/each}}
@@ -2067,7 +2115,7 @@ module('Integration | InternalComponent | each', function (hooks) {
     await render(
       <template>
         <div data-test-container>
-          {{#each items key="id" as |item|}}
+          {{#each items key='id' as |item|}}
             <u data-test-u>{{item.v}}</u>
             <s data-test-s>{{item.v}}</s>
           {{/each}}
@@ -2094,7 +2142,7 @@ module('Integration | InternalComponent | each', function (hooks) {
     await render(
       <template>
         <div data-test-container>
-          {{#each items key="id" as |item|}}
+          {{#each items key='id' as |item|}}
             <div data-test-d>{{item.v}}</div>
             <div data-test-d>{{item.v}}!</div>
           {{/each}}
@@ -2130,7 +2178,7 @@ module('Integration | InternalComponent | each', function (hooks) {
     await render(
       <template>
         <div data-test-container>
-          {{#each items key="id" as |item|}}
+          {{#each items key='id' as |item|}}
             <header data-test-header>{{item.v}}</header>
             <main data-test-main>content</main>
             <footer data-test-footer>end</footer>
@@ -2156,7 +2204,7 @@ module('Integration | InternalComponent | each', function (hooks) {
     await render(
       <template>
         <div data-test-container>
-          {{#each items key="id" as |item|}}
+          {{#each items key='id' as |item|}}
             <span data-test-a>{{item.v}}</span>
             <span data-test-b>.</span>
           {{/each}}

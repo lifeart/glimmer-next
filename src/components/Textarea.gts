@@ -6,6 +6,9 @@ const timeInterval = setInterval(() => {
   time.value = Date.now();
 }, 1000);
 
+// Keep timer running - intentionally unused reference
+void timeInterval;
+
 const current = formula(() => {
   return new Date(time.value).toLocaleTimeString();
 });

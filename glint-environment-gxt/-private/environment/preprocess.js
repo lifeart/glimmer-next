@@ -78,11 +78,9 @@ function byteToCharIndex(str, byteOffset) {
     return buf.slice(0, byteOffset).toString().length;
 }
 const BufferMap = new Map();
-// @ts-expect-error buffer type
 function getBuffer(str) {
     let buf = BufferMap.get(str);
     if (!buf) {
-        // @ts-expect-error buffer type
         buf = Buffer.from(str);
         BufferMap.set(str, buf);
     }

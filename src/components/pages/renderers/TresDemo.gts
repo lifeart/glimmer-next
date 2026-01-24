@@ -1,4 +1,4 @@
-import { Suspense, lazy } from '@/utils/suspense';
+import { Suspense, lazy } from '@/core/suspense';
 
 const TresScene = lazy(() => import('./TresScene.gts').then(m => ({ default: m.TresScene })));
 

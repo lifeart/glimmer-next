@@ -1,4 +1,4 @@
-import { type Plugin } from 'vite';
+import { type Plugin, type TransformResult as ViteTransformResult } from 'vite';
 import { Preprocessor } from 'content-tag';
 import { transform } from './test';
 import { MAIN_IMPORT } from './symbols';
@@ -6,12 +6,15 @@ import { type Flags, defaultFlags } from './flags.ts';
 import { HMR, fixExportsForHMR, shouldHotReloadFile } from './hmr.ts';
 
 export { stripGXTDebug } from './babel.ts';
+export type { TransformResult } from './test';
+
+// Helper to cast our TransformResult to Vite's expected type
+// The types are compatible at runtime but TS is strict about sourcesContent nullability
+function toViteResult(result: ReturnType<typeof transform>): ViteTransformResult | undefined {
+  return result as ViteTransformResult | undefined;
+}
 
 const p = new Preprocessor();
-
-function fixContentTagOutput(code: string): string {
-  return code.split('static{').join('$static() {');
-}
 
 const extensionsToResolve = [
   '.mjs',
@@ -60,49 +63,51 @@ export function compiler(mode: string, options: Options = {}): Plugin {
     },
     transform(code: string, file: string) {
       if (templateFileRegex.test(file)) {
-        const intermediate = fixContentTagOutput(
-          p.process(code, {
-            filename: file,
-          }),
-        );
+        const result = p.process(code, {
+          filename: file,
+        });
+        const intermediate = result.code;
 
         if (mode === 'development') {
           const shouldHotReload = options.disableHMR
             ? false
             : shouldHotReloadFile(file, code);
-          return transform(
+          return toViteResult(transform(
             fixExportsForHMR(intermediate) + (shouldHotReload ? HMR : ''),
             file,
             mode as 'development' | 'production',
             isLibBuild,
             flags,
-          );
+            code, // Pass original source for source maps
+          ));
         } else {
-          return transform(
+          return toViteResult(transform(
             intermediate,
             file,
             mode as 'development' | 'production',
             isLibBuild,
             flags,
-          );
+            code, // Pass original source for source maps
+          ));
         }
       }
-      if (!code.includes(MAIN_IMPORT)) {
+      // Check if file contains @lifeart/gxt import or uses hbs tagged templates
+      const hasMainImport = code.includes(MAIN_IMPORT);
+      const hasHbsTemplate = /hbs\s*`/.test(code);
+      if (!hasMainImport && !hasHbsTemplate) {
         return;
       }
-      let result: string | undefined = undefined;
       if (scriptFileRegex.test(file)) {
-        const source = code;
-        const result = transform(
-          source,
+        return toViteResult(transform(
+          code,
           file,
           mode as 'development' | 'production',
           false,
           flags,
-        );
-        return result;
+          code, // Pass original source for source maps (same as input for .ts/.js)
+        ));
       }
-      return result;
+      return;
     },
   };
 }

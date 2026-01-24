@@ -1,7 +1,7 @@
 import { module, test } from 'qunit';
 import { rehydrate, renderTarget, ssr, find, rerender } from '@lifeart/gxt/test-utils';
-import { cell } from '@/utils/reactive';
-import { NS_SVG, NS_MATHML, NS_HTML } from '@/utils/namespaces';
+import { cell } from '@lifeart/gxt';
+import { NS_SVG, NS_MATHML, NS_HTML } from '@/core/namespaces';
 
 function qs(str: string) {
   return renderTarget().querySelector(str);

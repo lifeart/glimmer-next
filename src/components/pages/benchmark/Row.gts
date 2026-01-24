@@ -1,6 +1,7 @@
 import { RemoveIcon } from './RemoveIcon.gts';
-import type { Item } from '@/utils/data';
-import { type Cell, Component, cellFor, formula } from '@lifeart/gxt';
+import type { Item } from '@/core/benchmark/data';
+import { Component } from '@lifeart/gxt';
+import { type Cell, cellFor, formula } from '@lifeart/gxt';
 
 type RowArgs = {
   Args: {

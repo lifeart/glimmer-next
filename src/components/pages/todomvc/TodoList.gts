@@ -1,4 +1,5 @@
-import { Component, tracked } from '@lifeart/gxt';
+import { Component } from '@lifeart/gxt';
+import { tracked } from '@lifeart/gxt';
 import { TodoItem as Item } from './TodoItem.gts';
 import { type ToDoItem as IToDoItem, repo } from './repo';
 

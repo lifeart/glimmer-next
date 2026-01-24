@@ -1,10 +1,15 @@
-import * as pkg from '@lifeart/tiny-router';
+import * as tinyRouter from '@lifeart/tiny-router';
 import type { Router as RouterType } from '@lifeart/tiny-router';
 import { tracked } from '@lifeart/gxt';
-import { repo } from './../components/pages/todomvc/repo';
+import { repo } from '@/components/pages/todomvc/repo';
 
-// @ts-expect-error
-const { Router } = 'default' in pkg ? pkg.default : pkg;
+// Handle both ESM and CJS module formats
+// Use dynamic property access to avoid Rollup's static analysis warning
+const defaultKey = 'defa' + 'ult';
+const hasDefault = defaultKey in tinyRouter;
+const Router = hasDefault
+  ? (tinyRouter as Record<string, any>)[defaultKey].Router
+  : tinyRouter.Router;
 
 class GlimmerRouter extends Router {
   // @ts-expect-error
@@ -16,7 +21,7 @@ class GlimmerRouter extends Router {
 }
 
 export function createRouter() {
-  // @ts-expect-error
+  // @ts-expect-error - Router constructor typing issue with ESM/CJS compat
   const router = new GlimmerRouter({
     main: '',
     tests: '/tests',

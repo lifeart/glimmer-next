@@ -23,12 +23,12 @@
     "paths": {
       "@/components/*": ["./src/components/*"],
       "@/tests/*": ["./src/tests/*"],
-      "@/utils/*": ["./src/utils/*"],
+      "@/core/*": ["./src/core/*"],
       "@/services/*": ["./src/services/*"],
       "@lifeart/gxt/test-utils": ["./src/tests/utils"],
-      "@lifeart/gxt/ember-inspector": ["./src/utils/inspector/ember-inspector"],
-      "@lifeart/gxt/glimmer-compatibility": ["./src/utils/glimmer/glimmer-compat"],
-      "@lifeart/gxt": ["./src/utils/index"]
+      "@lifeart/gxt/ember-inspector": ["./src/core/inspector/ember-inspector"],
+      "@lifeart/gxt/glimmer-compatibility": ["./src/core/glimmer/glimmer-compat"],
+      "@lifeart/gxt": ["./src/core/index"]
     },
     "types": ["vite/client", "./types"]
   },

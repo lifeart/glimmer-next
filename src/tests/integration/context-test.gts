@@ -2,7 +2,7 @@ import 'decorator-transforms/globals';
 import { module, test } from 'qunit';
 import { render, click, rerender, getRoot } from '@lifeart/gxt/test-utils';
 import { Component, tracked } from '@lifeart/gxt';
-import { provideContext, context, getContext } from '@/utils/context';
+import { provideContext, context, getContext } from '@/core/context';
 
 const ThemeContext = Symbol('ThemeContext');
 const INTL = Symbol('INTL');

@@ -1,7 +1,8 @@
 import { module, test } from 'qunit';
 import { find, render, rerender } from '@lifeart/gxt/test-utils';
-import { Component, renderComponent, cell } from '@lifeart/gxt';
-import { ROOT_CONTEXT, getContext } from '@/utils/context';
+import { Component, cell } from '@lifeart/gxt';
+import { renderComponent } from '@/core/dom';
+import { ROOT_CONTEXT, getContext } from '@/core/context';
 
 module('Integration | multiroot', function () {
   test('could render one component to different places', async function (assert) {

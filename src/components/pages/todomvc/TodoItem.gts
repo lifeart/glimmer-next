@@ -1,4 +1,5 @@
-import { tracked, Component, cellFor } from '@lifeart/gxt';
+import { Component } from '@lifeart/gxt';
+import { tracked, cellFor } from '@lifeart/gxt';
 import { repo, type ToDoItem } from './repo';
 
 function isBlank(el: string) {

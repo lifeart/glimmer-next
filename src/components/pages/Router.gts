@@ -1,5 +1,6 @@
-import { Component, cell, registerDestructor } from '@lifeart/gxt';
-import { Button } from './../Button.gts';
+import { Component, registerDestructor } from '@lifeart/gxt';
+import { cell } from '@lifeart/gxt';
+import { Button } from '@/components/Button.gts';
 import { PageOne } from './PageOne.gts';
 import { PageTwo } from './PageTwo.gts';
 import { Benchmark } from './Benchmark.gts';
@@ -137,10 +138,16 @@ export class Router extends Component {
 
     </Header>
     <style>
-      .route-container {background-color: #0f172a; min-height:100vh; width:100vw;}
+      .route-container {
+        background-color: #0f172a;
+        min-height: 100vh;
+        width: 100vw;
+      }
       .page {
         box-shadow: -10px 0 30px rgba(0, 0, 0, 0.3);
-        transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+        transition:
+          opacity 0.5s ease-out,
+          transform 0.5s ease-out;
         opacity: 1;
         min-height: 100vh;
         width: 100vw;

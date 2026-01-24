@@ -1,4 +1,4 @@
-import { cell, type Cell } from '@/utils/reactive';
+import { cell, type Cell } from '@lifeart/gxt';
 import {
   PdfViewer,
   createPdfApi,
@@ -10,7 +10,7 @@ import {
   PdfTextNode,
   PdfLink,
   PdfImage,
-} from '@/utils/renderers/pdf';
+} from '@/core/renderers/pdf';
 
 function updateCell<T extends string | number>(
   el: Cell<T>,

@@ -1,14 +1,14 @@
 import 'glint-environment-gxt';
 import 'decorator-transforms/globals';
 
-import { createBenchmark } from '@/utils/benchmark/benchmark';
+import { createBenchmark } from '@/core/benchmark/benchmark';
 import { router } from '@/services/router';
 import {
   enforcePaintEvent,
   ButtonSelectors,
   emitDomClickEvent,
   waitForIdle,
-} from '@/utils/benchmark/compat';
+} from '@/core/benchmark/compat';
 
 // @ts-check
 // https://codepen.io/lifeart/pen/abMzEZm?editors=0110

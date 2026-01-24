@@ -1,11 +1,12 @@
-import { runDestructors, Component, tracked } from '@lifeart/gxt';
+import { runDestructors, Component } from '@lifeart/gxt';
+import { tracked } from '@lifeart/gxt';
 import { PageOne } from './pages/PageOne.gts';
 import { PageTwo } from './pages/PageTwo.gts';
 import { PageThree } from './pages/PageThree.gts';
 import { Benchmark } from './pages/Benchmark.gts';
 import { Renderers } from './pages/Renderers.gts';
 import { NestedRouter } from './pages/NestedRouter.gts';
-import { router } from './../services/router';
+import { router } from '@/services/router';
 
 let version = 0;
 export class Application extends Component {

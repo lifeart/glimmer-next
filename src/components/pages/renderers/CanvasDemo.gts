@@ -1,5 +1,5 @@
 import { cell, formula, type Cell } from '@lifeart/gxt';
-import { CanvasRenderer } from '@/utils/renderers/canvas';
+import { CanvasRenderer } from '@/core/renderers/canvas';
 
 function updateCell(
   el: Cell<any>,

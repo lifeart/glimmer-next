@@ -1,6 +1,7 @@
 import { module, test } from 'qunit';
 import { render, rerender, find } from '@lifeart/gxt/test-utils';
 import { cell, Component } from '@lifeart/gxt';
+import type { ComponentLike } from '@glint/template';
 
 module('Integration | InternalComponent | slots', function () {
   test('slot params may be reactive with getter', async function (assert) {
@@ -330,7 +331,7 @@ module('Integration | InternalComponent | slots', function () {
   });
   test('component with default slot, hidden by default does not show error if toggled slot is not used', async function (assert) {
     const showBlock = cell(false);
-    const Sample = <template>
+    const Sample: ComponentLike<{ Blocks: { default: [] } }> = <template>
       {{#if showBlock}}
         <div data-test-visible data-test-has-block={{has-block}}>{{yield}}</div>
       {{else}}
@@ -361,7 +362,7 @@ module('Integration | InternalComponent | slots', function () {
   });
   test('has-block helper', async function (assert) {
     const showBlock = cell(false);
-    const Sample = <template>
+    const Sample: ComponentLike<{ Blocks: { default: [] } }> = <template>
       <div data-test-has-block={{has-block}}>{{yield}}</div>
     </template>;
     await render(
@@ -380,7 +381,7 @@ module('Integration | InternalComponent | slots', function () {
   });
   test('has-block helper with custom block name', async function (assert) {
     const showBlock = cell(false);
-    const Sample = <template>
+    const Sample: ComponentLike<{ Blocks: { main: [] } }> = <template>
       <div data-test-has-block={{has-block 'main'}}>{{yield to='main'}}</div>
     </template>;
     await render(
@@ -399,7 +400,7 @@ module('Integration | InternalComponent | slots', function () {
   });
   test('has-block helper with unknown block name', async function (assert) {
     const showBlock = cell(false);
-    const Sample = <template>
+    const Sample: ComponentLike<{ Blocks: { main: [] } }> = <template>
       <div data-test-has-block={{has-block 'boo'}}>{{yield to='main'}}</div>
     </template>;
     await render(

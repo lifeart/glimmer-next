@@ -53,6 +53,7 @@ function gxtEnvironment(options) {
             'eq',
             'not',
             'or',
+            'and',
             'element',
             ...Object.keys(additionalGlobalSpecialForms),
             ...additionalGlobals,

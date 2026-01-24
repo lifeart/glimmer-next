@@ -1,10 +1,23 @@
 import { Component } from '@lifeart/gxt';
 
-function filtered(issues, qps) {
+interface Issue {
+  isPending: boolean;
+  text: string;
+  href: string;
+}
+
+interface QueryParams {
+  hideDone?: boolean;
+  without?: string;
+  with?: string;
+  displayAsList?: boolean;
+}
+
+function filtered(issues: Issue[], qps: QueryParams): Issue[] {
   let result = issues;
 
   if (qps.hideDone) {
-    result = result.filter((issue) => issue.isPending);
+    result = result.filter((issue: Issue) => issue.isPending);
   }
 
   if (qps.without) {

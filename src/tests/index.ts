@@ -5,7 +5,7 @@ import 'qunit-theme-ember/qunit.css';
 import * as QUnit from 'qunit';
 import { setup } from 'qunit-dom';
 import { cleanupRender, getDocument} from '@/tests/utils';
-import { DEBUG_MERGED_CELLS, DEBUG_CELLS } from '@/utils/reactive';
+import { DEBUG_MERGED_CELLS, DEBUG_CELLS } from '@/core/reactive';
 
 // Expose QUnit to window for Playwright test hooks
 (window as any).QUnit = QUnit;

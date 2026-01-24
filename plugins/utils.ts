@@ -3,11 +3,148 @@ import type { ASTv1 } from '@glimmer/syntax';
 import { SYMBOLS } from './symbols';
 import { JS_GLOBALS, ELEMENT_TAG_NAMES } from './constants';
 import type { Flags } from './flags';
-import type { ComplexJSType } from './converter';
+import type { ComplexJSType, SourceRange, MappingTreeNode, MappingSource } from './compiler-old';
+import { MappingTree } from './compiler-old';
 
 let flags!: Flags;
 let bindings: Set<string> = new Set();
 const warnedBindings = new Set<string>();
+
+/**
+ * Serialization context for tracking source positions during code generation.
+ * This enables granular source maps that map individual expressions back to
+ * their original positions in the template.
+ */
+export class SerializationContext {
+  private output: string = '';
+  private mappingStack: MappingTree[] = [];
+  private rootMapping: MappingTree;
+
+  constructor(originalSourceLength: number = 0) {
+    // Create root mapping that covers the entire template
+    this.rootMapping = new MappingTree(
+      'Template',
+      { start: 0, end: originalSourceLength },
+      { start: 0, end: 0 }, // Will be updated as we emit
+    );
+    this.mappingStack.push(this.rootMapping);
+  }
+
+  /**
+   * Current position tracker (can be set externally when output is built externally)
+   */
+  private currentPosition: number = 0;
+
+  /**
+   * Get the current position in the output
+   */
+  get position(): number {
+    return this.currentPosition;
+  }
+
+  /**
+   * Set the current position (for external output tracking)
+   */
+  set position(pos: number) {
+    this.currentPosition = pos;
+  }
+
+  /**
+   * Emit text without source mapping
+   */
+  emit(text: string): void {
+    this.output += text;
+    this.currentPosition += text.length;
+  }
+
+  /**
+   * Advance position without emitting (when output is built externally)
+   */
+  advancePosition(length: number): void {
+    this.currentPosition += length;
+  }
+
+  /**
+   * Emit text with source mapping
+   */
+  emitMapped(text: string, originalRange: SourceRange | undefined, nodeType: MappingSource = 'Synthetic'): void {
+    if (originalRange && originalRange.start !== originalRange.end) {
+      const startPos = this.position;
+      this.output += text;
+      const endPos = this.position;
+
+      // Create a mapping for this text
+      const currentParent = this.mappingStack[this.mappingStack.length - 1];
+      currentParent.createChild(
+        nodeType,
+        originalRange,
+        { start: startPos, end: endPos },
+      );
+    } else {
+      this.output += text;
+    }
+  }
+
+  /**
+   * Start a new mapping scope (e.g., for a block or element)
+   */
+  pushScope(originalRange: SourceRange | undefined, nodeType: MappingSource): void {
+    const startPos = this.position;
+    const parent = this.mappingStack[this.mappingStack.length - 1];
+    const range = originalRange || { start: 0, end: 0 };
+    const child = parent.createChild(
+      nodeType,
+      range,
+      { start: startPos, end: startPos }, // End will be updated in popScope
+    );
+    this.mappingStack.push(child);
+  }
+
+  /**
+   * End the current mapping scope
+   */
+  popScope(): void {
+    if (this.mappingStack.length > 1) {
+      const current = this.mappingStack.pop()!;
+      current.transformedRange.end = this.position;
+    }
+  }
+
+  /**
+   * Get the generated code
+   */
+  getCode(): string {
+    return this.output;
+  }
+
+  /**
+   * Get the mapping tree for source map generation
+   */
+  getMappingTree(): MappingTreeNode {
+    // Update root mapping's transformed range
+    this.rootMapping.transformedRange.end = this.position;
+    return this.rootMapping;
+  }
+}
+
+/**
+ * Global serialization context for tracking (optional - only used when source maps are needed)
+ */
+let serializationContext: SerializationContext | null = null;
+
+/**
+ * Set the serialization context for tracking source positions
+ */
+export function setSerializationContext(ctx: SerializationContext | null): void {
+  serializationContext = ctx;
+}
+
+/**
+ * Get the current serialization context
+ */
+export function getSerializationContext(): SerializationContext | null {
+  return serializationContext;
+}
 
 export function setBindings(b: Set<string>) {
   bindings = b;
@@ -54,17 +191,21 @@ export type HBSControlExpression = {
   inverse: Array<HBSNode | HBSControlExpression | string> | null;
   key: string | null;
   isSync: boolean;
+  /** Original source range (optional, added by converter-v2) */
+  loc?: SourceRange;
 };
 
 export type HBSNode = {
   tag: string;
-  attributes: [string, null | undefined | string | number | boolean][];
-  properties: [string, null | undefined | string | number | boolean][];
+  attributes: [string, unknown, SourceRange?][];
+  properties: [string, unknown, SourceRange?][];
   selfClosing: boolean;
   hasStableChild: boolean;
   blockParams: string[];
-  events: [string, string][];
+  events: [string, string, SourceRange?][];
   children: (string | HBSNode | HBSControlExpression)[];
+  /** Original source range (optional, added by converter-v2) */
+  loc?: SourceRange;
 };
 
 let ctxIndex = 0;
@@ -191,6 +332,7 @@ export function toOptionalChaining<
 export function serializePath(
   p: string | boolean,
   wrap = flags.IS_GLIMMER_COMPAT_MODE,
+  sourceRange?: SourceRange,
 ): string {
   if (typeof p !== 'string') {
     // @ts-expect-error
@@ -202,13 +344,23 @@ export function serializePath(
   }
   const isFunction =
     p.startsWith('$:(') || p.startsWith('$:...(') || p.startsWith('$:function');
+
+  let result: string;
   if (wrap === false) {
-    return resolvePath(p);
+    result = resolvePath(p);
+  } else if (isFunction) {
+    result = resolvePath(p);
+  } else {
+    result = `() => ${resolvePath(p)}`;
   }
-  if (isFunction) {
-    return resolvePath(p);
+
+  // Track source mapping if context is available
+  const ctx = serializationContext;
+  if (ctx && sourceRange) {
+    ctx.emitMapped('', sourceRange, 'PathExpression');
   }
-  return `() => ${resolvePath(p)}`;
+
+  return result;
 }
 
 export function resolvedChildren(els: ASTv1.Node[]) {
@@ -241,6 +393,7 @@ export function serializeChildren(
     .map((child) => {
       if (typeof child === 'string') {
         if (isPath(child)) {
+          // For string paths, we don't have source range info at this level
           return serializePath(child);
         }
         return escapeString(child);
@@ -268,6 +421,9 @@ function toPropName(name: string) {
   return isSafeKey(result) ? result : JSON.stringify(result);
 }
 
+// Type for attribute/property tuples - [key, value, optionalRange?]
+type AttrTuple = [string, unknown, SourceRange?] | [string, unknown];
+
 export function serializeAttribute(
   key: string,
   value: null | undefined | string | number | boolean,
@@ -288,21 +444,24 @@ export function serializeAttribute(
 }
 
 function serializeProp(
-  attr: [string, string | undefined | null | number | boolean],
+  attr: AttrTuple,
 ): string {
-  if (attr[1] === null) {
+  const value = attr[1];
+  if (value === null) {
     return `${toPropName(attr[0])}: null`;
-  } else if (typeof attr[1] === 'boolean') {
-    return `${toPropName(attr[0])}: ${attr[1]}`;
-  } else if (typeof attr[1] === 'number') {
-    return `${toPropName(attr[0])}: ${attr[1]}`;
-  } else if (typeof attr[1] === 'undefined') {
+  } else if (typeof value === 'boolean') {
+    return `${toPropName(attr[0])}: ${value}`;
+  } else if (typeof value === 'number') {
+    return `${toPropName(attr[0])}: ${value}`;
+  } else if (typeof value === 'undefined') {
     return `${toPropName(attr[0])}: undefined`;
   }
-  const isScopeValue = isPath(attr[1]);
+  // At this point, value should be a string
+  const strValue = value as string;
+  const isScopeValue = isPath(strValue);
   const key = toPropName(attr[0]);
   return `${key}: ${
-    isScopeValue ? serializePath(attr[1]) : escapeString(attr[1])
+    isScopeValue ? serializePath(strValue) : escapeString(strValue)
   }`;
 }
 
@@ -320,20 +479,20 @@ function toComponent(ref: string, args: string, ctx: string) {
 }
 
 export function toObject(
-  args: [string, string | number | boolean | null | undefined][],
+  args: AttrTuple[],
 ) {
   return `{${args.map((attr) => serializeProp(attr)).join(', ')}}`;
 }
 function toArray(
-  args: [string, string | number | boolean | null | undefined][],
+  args: AttrTuple[],
 ) {
   return `[${args
-    .map((attr) => serializeAttribute(attr[0], attr[1]))
+    .map((attr) => serializeAttribute(attr[0] as string, attr[1] as string | number | boolean | null | undefined))
     .join(', ')}]`;
 }
 
 function toArgs(
-  args: [string, string | number | boolean | null | undefined][],
+  args: AttrTuple[],
   slots: string,
   props: string,
 ) {
@@ -396,10 +555,37 @@ export function serializeNode(
     return null;
   }
 
+  const ctx = serializationContext;
+
+  // Track node scope if we have source location info
+  const nodeObj = typeof node === 'object' && node !== null ? node : null;
+  const hasLoc = nodeObj && 'loc' in nodeObj && nodeObj.loc;
+  if (ctx && hasLoc && nodeObj) {
+    // Use appropriate MappingSource type based on node kind
+    const nodeType: MappingSource = 'isControl' in nodeObj ? 'BlockStatement' : 'ElementNode';
+    ctx.pushScope((nodeObj as { loc: SourceRange }).loc, nodeType);
+  }
+
+  // Helper to pop scope, advance position, and return result
+  const done = <T extends string | null | undefined>(result: T): T => {
+    if (ctx) {
+      // Advance position based on the length of the serialized output
+      if (typeof result === 'string') {
+        ctx.advancePosition(result.length);
+      }
+      if (hasLoc) {
+        ctx.popScope();
+      }
+    }
+    return result;
+  };
+
   if (typeof node === 'object' && 'isControl' in node) {
     // control node (each)
     const key = `@${node.type}`;
-    const arrayName = node.condition;
+    // Wrap condition in getter for reactivity (serializePath adds () => wrapper in compat mode)
+    const condition = node.condition;
+    const arrayName = typeof condition === 'string' && isPath(condition) ? serializePath(condition) : condition;
     const paramNames = node.blockParams;
     const childs = (node.children || []).filter((el) => el !== null);
     const isSync = node.isSync;
@@ -413,16 +599,16 @@ export function serializeNode(
 
     const newCtxName = nextCtxName();
     if (key === '@yield') {
-      return `$:${SYMBOLS.SLOT}(${escapeString(
+      return done(`$:${SYMBOLS.SLOT}(${escapeString(
         eachKey as string,
-      )}, () => [${paramNames.join(',')}], $slots, ${ctxName})`;
+      )}, () => [${paramNames.join(',')}], $slots, ${ctxName})`);
     } else if (key === '@in-element') {
-      return `$:${
+      return done(`$:${
         SYMBOLS.$_inElement
       }(${arrayName}, $:(${newCtxName}) => [${serializeChildren(
         childs as unknown as [string | HBSNode | HBSControlExpression],
         newCtxName,
-      )}], ${ctxName})`;
+      )}], ${ctxName})`);
     } else if (key === '@each') {
       if (paramNames.length === 0) {
         paramNames.push('$noop');
@@ -452,14 +638,14 @@ export function serializeNode(
           const length = childText.length;
           childText = childText.slice(1, length - 1);
         }
-        return `${FN_NAME}(${arrayName}, (${FN_FN_ARGS}) => ${childText}, ${EACH_KEY}, ${ctxName})`;
+        return done(`${FN_NAME}(${arrayName}, (${FN_FN_ARGS}) => ${childText}, ${EACH_KEY}, ${ctxName})`);
       } else {
         const extraContextName = nextCtxName();
         let childText = toChildArray(childs, extraContextName)
           .split(paramBounds)
           .filter(Boolean)
           .join(`${indexParamName}.value`);
-        return `${FN_NAME}(${arrayName}, (${FN_FN_ARGS}) => ${SYMBOLS.$_ucw}((${extraContextName}) => ${childText}, ${newCtxName}), ${EACH_KEY}, ${ctxName})`;
+        return done(`${FN_NAME}(${arrayName}, (${FN_FN_ARGS}) => ${SYMBOLS.$_ucw}((${extraContextName}) => ${childText}, ${newCtxName}), ${EACH_KEY}, ${ctxName})`);
       }
     } else if (key === '@if') {
       let hasStableTrueChild = hasStableChildsForControlNode(childs);
@@ -490,7 +676,7 @@ export function serializeNode(
           extraContextName,
         )}, ${newCtxName})`;
       }
-      return `${SYMBOLS.IF}(${arrayName}, ${trueBranch}, ${falseBranch}, ${ctxName})`;
+      return done(`${SYMBOLS.IF}(${arrayName}, ${trueBranch}, ${falseBranch}, ${ctxName})`);
     }
   } else if (
     typeof node === 'object' &&
@@ -534,7 +720,7 @@ export function serializeNode(
 
     if (node.selfClosing) {
       // @todo - we could pass `hasStableChild` ans hasBlock / hasBlockParams to the DOM helper
-      return toComponent(node.tag, toArgs(args, '{}', secondArg), ctxName);
+      return done(toComponent(node.tag, toArgs(args, '{}', secondArg), ctxName));
     } else {
       const slots: HBSNode[] = node.children.filter((child) => {
         if (typeof child === 'string') {
@@ -563,7 +749,7 @@ export function serializeNode(
       const slotsObj = `{${serializedSlots.join(',')}}`;
       // @todo - we could pass `hasStableChild` ans hasBlock / hasBlockParams to the DOM helper
       // including `has-block` helper
-      return toComponent(node.tag, toArgs(args, slotsObj, secondArg), ctxName);
+      return done(toComponent(node.tag, toArgs(args, slotsObj, secondArg), ctxName));
     }
   } else if (typeof node === 'object' && node.tag) {
     const hasSplatAttrs = node.attributes.find((attr) => {
@@ -578,19 +764,20 @@ export function serializeNode(
     if (tagProps === '[[],[],[]]') {
       tagProps = SYMBOLS.EMPTY_DOM_PROPS;
     }
-    return `${SYMBOLS.TAG}('${node.tag}', ${tagProps}, [${serializeChildren(
+    return done(`${SYMBOLS.TAG}('${node.tag}', ${tagProps}, [${serializeChildren(
       node.children,
       ctxName,
-    )}], ${ctxName})`;
+    )}], ${ctxName})`);
   } else {
     if (typeof node === 'string' || typeof node === 'number') {
       if (typeof node === 'number') {
         node = String(node);
       }
       if (isPath(node)) {
-        return serializePath(node);
+        // For strings/numbers, hasLoc is false, so done() is a no-op
+        return done(serializePath(node));
       } else {
-        return escapeString(node);
+        return done(escapeString(node));
       }
     }
     throw new Error('Unknown node type: ' + JSON.stringify(node, null, 2));

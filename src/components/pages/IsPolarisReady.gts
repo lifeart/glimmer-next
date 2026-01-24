@@ -1,7 +1,7 @@
 // SOURCE: https://github.com/NullVoxPopuli/is-polaris-ready-yet/
 import data from './is-polaris-ready/services/issue-data.json';
 import { Component } from '@lifeart/gxt';
-import { getDocument } from '@/utils/context';
+import { getDocument } from '@/core/context';
 
 // import { Filters } from './is-polaris-ready/filters';
 import { Header } from './is-polaris-ready/Header.gts';
