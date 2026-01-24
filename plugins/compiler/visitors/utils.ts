@@ -359,7 +359,7 @@ export function toOptionalChaining(str: string): string {
  * Resolve a path expression, handling this/args/bindings.
  */
 export function resolvePath(ctx: CompilerContext, pathStr: string): string {
-  // Handle @args - uses this[$args].argName format
+  // Handle @args - uses $a.argName format (alias for this[$args])
   if (pathStr.startsWith('@')) {
     const argPath = pathStr.slice(1); // e.g., "aria-label" or "foo.bar.baz"
     const segments = argPath.split('.');
@@ -370,12 +370,12 @@ export function resolvePath(ctx: CompilerContext, pathStr: string): string {
     let resolved: string;
     if (needsBracket) {
       // First segment needs brackets, rest use dot notation
-      resolved = `this[${SYMBOLS.ARGS_PROPERTY}]["${firstSegment}"]`;
+      resolved = `${SYMBOLS.ARGS_ALIAS}["${firstSegment}"]`;
       if (segments.length > 1) {
         resolved += '.' + segments.slice(1).join('.');
       }
     } else {
-      resolved = `this[${SYMBOLS.ARGS_PROPERTY}].${argPath}`;
+      resolved = `${SYMBOLS.ARGS_ALIAS}.${argPath}`;
     }
     return toOptionalChaining(resolved);
   }

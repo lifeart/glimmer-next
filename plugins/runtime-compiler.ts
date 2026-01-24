@@ -265,9 +265,11 @@ export function compileTemplate(
 
     // Create function that returns the compiled template array
     // We wrap it in a function that has access to both GXT symbols and scope values
+    const needsArgsAlias = result.code.includes('$a.');
     const fnBody = `
       "use strict";
       return function() {
+        ${needsArgsAlias ? 'const $a = this[$args];' : ''}
         return ${result.code};
       };
     `;

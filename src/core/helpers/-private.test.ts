@@ -1,4 +1,4 @@
-import { describe, test, expect, vi } from 'vitest';
+import { describe, test, expect } from 'vitest';
 import { isTag, isGetter, unwrap } from './-private';
 import { cell } from '@/core/reactive';
 import { createCallTracker, createRegularFunction } from '@/core/__test-utils__';
@@ -88,10 +88,10 @@ describe('isGetter()', () => {
       expect(isGetter(boundFn)).toBe(true);
     });
 
-    test('vi.fn() mock (has prototype)', () => {
-      // vi.fn() creates functions with prototypes
-      const mockFn = vi.fn(() => 42);
-      expect(isGetter(mockFn)).toBe(false);
+    test('regular function with prototype', () => {
+      // Regular functions (with prototypes) should NOT be treated as getters
+      const regularFn = createRegularFunction(() => 42);
+      expect(isGetter(regularFn)).toBe(false);
     });
   });
 

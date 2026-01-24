@@ -560,6 +560,8 @@ export class SyncListComponent<
       parent.lastChild === bottomMarker &&
       parent.firstChild === topMarker
     ) {
+      // Pre-clear CHILD so item destructors skip O(n) indexOf removal
+      CHILD.set(this[COMPONENT_ID_PROPERTY], new Set());
       for (const value of keyMap.values()) {
         destroyElementSync(value as ComponentLike, true, this.api);
       }
@@ -617,6 +619,10 @@ export class SyncListComponent<
           if (this.fastCleanup()) {
             amountOfKeys = 0;
             keysToRemove.length = 0;
+          } else {
+            // fastCleanup failed but removing all items — pre-clear CHILD
+            // to avoid O(n²) indexOf in each item's destructor
+            CHILD.set(this[COMPONENT_ID_PROPERTY], new Set());
           }
         }
         removedCount = keysToRemove.length;
@@ -692,6 +698,8 @@ export class AsyncListComponent<
       parent.lastChild === bottomMarker &&
       parent.firstChild === topMarker
     ) {
+      // Pre-clear CHILD so item destructors skip O(n) indexOf removal
+      CHILD.set(this[COMPONENT_ID_PROPERTY], new Set());
       const promises = new Array(keyMap.size);
       let i = 0;
       for (const value of keyMap.values()) {
@@ -755,6 +763,10 @@ export class AsyncListComponent<
           if (await this.fastCleanup()) {
             amountOfKeys = 0;
             keysToRemove.length = 0;
+          } else {
+            // fastCleanup failed but removing all items — pre-clear CHILD
+            // to avoid O(n²) indexOf in each item's destructor
+            CHILD.set(this[COMPONENT_ID_PROPERTY], new Set());
           }
         }
         removedCount = keysToRemove.length;

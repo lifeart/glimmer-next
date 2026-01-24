@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import { Preprocessor } from 'content-tag';
-import { transform, type TransformResult } from './test';
+import { transform, findRootsArrayOffset, type TransformResult } from './test';
 import { defaultFlags } from './flags';
 import { fixExportsForHMR, HMR } from './hmr';
 
@@ -953,5 +953,322 @@ import MyComp from './MyComp';
         expect(result.map.names).toContain('MyComp');
       }
     });
+  });
+});
+
+describe('findRootsArrayOffset', () => {
+  test('finds offset of [ in simple wrapper without preamble', () => {
+    const wrapper = `function () {
+      const roots = [1, 2, 3];
+      return roots;
+    }`;
+    const offset = findRootsArrayOffset(wrapper);
+    expect(offset).toBeGreaterThan(0);
+    expect(wrapper[offset]).toBe('[');
+  });
+
+  test('finds offset of [ when $a alias preamble precedes roots', () => {
+    const wrapper = `function () {
+      const $a = this[$args];
+      const roots = [1, 2, 3];
+      return roots;
+    }`;
+    const offset = findRootsArrayOffset(wrapper);
+    expect(offset).toBeGreaterThan(0);
+    expect(wrapper[offset]).toBe('[');
+    // Must NOT match the [ in this[$args]
+    expect(wrapper.slice(offset, offset + 9)).toBe('[1, 2, 3]');
+  });
+
+  test('finds offset with multiple preamble declarations ($fw, $slots, $a)', () => {
+    const wrapper = `function () {
+      const $fw = $_GET_FW(this, arguments);
+      $_GET_ARGS(this, arguments);
+      const $a = this[$args];
+      const $slots = $_GET_SLOTS(this, arguments);
+      const roots = ["hello"];
+      return roots;
+    }`;
+    const offset = findRootsArrayOffset(wrapper);
+    expect(offset).toBeGreaterThan(0);
+    expect(wrapper[offset]).toBe('[');
+    expect(wrapper.slice(offset, offset + 7)).toBe('["hello');
+  });
+
+  test('returns -1 when no const roots declaration exists', () => {
+    const wrapper = `function () {
+      const $a = this[$args];
+      return [];
+    }`;
+    expect(findRootsArrayOffset(wrapper)).toBe(-1);
+  });
+
+  test('works with arrow function wrapper', () => {
+    const wrapper = `() => {
+      const $slots = $_GET_SLOTS(this, arguments);
+      const roots = [/*items*/];
+      return roots;
+    }`;
+    const offset = findRootsArrayOffset(wrapper);
+    expect(offset).toBeGreaterThan(0);
+    expect(wrapper[offset]).toBe('[');
+  });
+
+  test('works with IIFE wrapper', () => {
+    const wrapper = `(() => {
+      $_GET_ARGS(this, arguments);
+      const $a = this[$args];
+      const $slots = $_GET_SLOTS(this, arguments);
+      const roots = [42];
+      return roots;
+    })()`;
+    const offset = findRootsArrayOffset(wrapper);
+    expect(offset).toBeGreaterThan(0);
+    expect(wrapper[offset]).toBe('[');
+  });
+});
+
+describe('Sourcemap offset accuracy with $a alias', () => {
+  test('single component with @args: sourcemap positions point to correct source', () => {
+    const source = `
+import { Component } from '@lifeart/gxt';
+
+export class Greeter extends Component {
+  <template>
+    <div>{{@name}}</div>
+  </template>
+}
+`;
+    const preprocessed = preprocess(source, 'greeter.gts');
+    const result = transform(
+      preprocessed,
+      'greeter.gts',
+      'development',
+      false,
+      syncFlags,
+      source,
+    ) as TransformResult;
+
+    // The generated code must use $a alias
+    expect(result.code).toContain('$a.');
+
+    expect(result.map).toBeDefined();
+    const map = result.map!;
+
+    // @name should map to $a.name in generated code
+    expect(
+      hasNamedMapping(map, source, result.code, 'name', 'name', 'name')
+    ).toBe(true);
+    expect(
+      hasNamedMapping(map, source, result.code, '$a', '@name', '$a')
+    ).toBe(true);
+  });
+
+  test('multiple components in one file with @args: all get correct sourcemaps', () => {
+    const source = `
+import { Component } from '@lifeart/gxt';
+
+export class First extends Component {
+  <template>
+    <span>{{@alpha}}</span>
+  </template>
+}
+
+export class Second extends Component {
+  <template>
+    <span>{{@beta}}</span>
+  </template>
+}
+`;
+    const preprocessed = preprocess(source, 'multi.gts');
+    const result = transform(
+      preprocessed,
+      'multi.gts',
+      'development',
+      false,
+      syncFlags,
+      source,
+    ) as TransformResult;
+
+    expect(result.code).toContain('$a.');
+    expect(result.map).toBeDefined();
+    const map = result.map!;
+
+    // Both @alpha and @beta should have correct named mappings
+    expect(
+      hasNamedMapping(map, source, result.code, 'alpha', 'alpha', 'alpha')
+    ).toBe(true);
+    expect(
+      hasNamedMapping(map, source, result.code, 'beta', 'beta', 'beta')
+    ).toBe(true);
+
+    // Both should have $a mappings pointing to the correct @ source positions
+    const segments = parseMappings(map.mappings);
+    const aliasIndex = map.names.indexOf('$a');
+    expect(aliasIndex).toBeGreaterThanOrEqual(0);
+
+    const aliasSegments = segments.filter(s => s.nameIndex === aliasIndex);
+    // At least 2 $a references (one per template)
+    expect(aliasSegments.length).toBeGreaterThanOrEqual(2);
+
+    for (const seg of aliasSegments) {
+      const srcOffset = lineColumnToOffset(source, seg.sourceLine, seg.sourceColumn);
+      expect(source[srcOffset]).toBe('@');
+
+      const genOffset = lineColumnToOffset(result.code, seg.generatedLine, seg.generatedColumn);
+      expect(result.code.slice(genOffset, genOffset + 2)).toBe('$a');
+    }
+  });
+
+  test('mixed: template with @args and template without @args in same file', () => {
+    const source = `
+import { Component } from '@lifeart/gxt';
+
+export class WithArgs extends Component {
+  <template>
+    <div>{{@title}}</div>
+  </template>
+}
+
+export class WithoutArgs extends Component {
+  name = 'test';
+  <template>
+    <div>{{this.name}}</div>
+  </template>
+}
+`;
+    const preprocessed = preprocess(source, 'mixed.gts');
+    const result = transform(
+      preprocessed,
+      'mixed.gts',
+      'development',
+      false,
+      syncFlags,
+      source,
+    ) as TransformResult;
+
+    expect(result.map).toBeDefined();
+    const map = result.map!;
+
+    // @title from the first template should map correctly
+    expect(
+      hasNamedMapping(map, source, result.code, 'title', 'title', 'title')
+    ).toBe(true);
+
+    // this.name from the second template should also map correctly
+    expect(
+      hasNamedMapping(map, source, result.code, 'name', 'name', 'name')
+    ).toBe(true);
+
+    // All segments should have valid generated and source offsets
+    const segments = parseMappings(map.mappings);
+    for (const seg of segments) {
+      const genOffset = lineColumnToOffset(result.code, seg.generatedLine, seg.generatedColumn);
+      expect(genOffset).toBeLessThanOrEqual(result.code.length);
+
+      const srcOffset = lineColumnToOffset(source, seg.sourceLine, seg.sourceColumn);
+      expect(srcOffset).toBeLessThanOrEqual(source.length);
+    }
+  });
+
+  test('component with @args + $fw + $slots: all preambles before roots', () => {
+    const source = `
+import { Component } from '@lifeart/gxt';
+import { MyChild } from './child';
+
+export class Complex extends Component {
+  <template>
+    <MyChild @value={{@input}} as |result|>
+      <span>{{result}}</span>
+    </MyChild>
+  </template>
+}
+`;
+    const preprocessed = preprocess(source, 'complex.gts');
+    const result = transform(
+      preprocessed,
+      'complex.gts',
+      'development',
+      false,
+      syncFlags,
+      source,
+    ) as TransformResult;
+
+    expect(result.map).toBeDefined();
+    const map = result.map!;
+
+    // All segments should have valid positions
+    const segments = parseMappings(map.mappings);
+    for (const seg of segments) {
+      const genOffset = lineColumnToOffset(result.code, seg.generatedLine, seg.generatedColumn);
+      expect(genOffset).toBeLessThanOrEqual(result.code.length);
+
+      const srcOffset = lineColumnToOffset(source, seg.sourceLine, seg.sourceColumn);
+      expect(srcOffset).toBeLessThanOrEqual(source.length);
+    }
+
+    // @input should map to $a.input
+    expect(
+      hasNamedMapping(map, source, result.code, 'input', 'input', 'input')
+    ).toBe(true);
+  });
+
+  test('three components in one file: all sourcemap positions are valid', () => {
+    const source = `
+import { Component } from '@lifeart/gxt';
+
+export class A extends Component {
+  <template>
+    <div>{{@x}}</div>
+  </template>
+}
+
+export class B extends Component {
+  <template>
+    <span>{{@y}}</span>
+  </template>
+}
+
+export class C extends Component {
+  <template>
+    <p>{{@z}}</p>
+  </template>
+}
+`;
+    const preprocessed = preprocess(source, 'abc.gts');
+    const result = transform(
+      preprocessed,
+      'abc.gts',
+      'development',
+      false,
+      syncFlags,
+      source,
+    ) as TransformResult;
+
+    expect(result.map).toBeDefined();
+    const map = result.map!;
+
+    // Each arg property name should be in the sourcemap
+    for (const name of ['x', 'y', 'z']) {
+      expect(
+        hasNamedMapping(map, source, result.code, name, name, name)
+      ).toBe(true);
+    }
+
+    // All $a references should point back to @ in source
+    const segments = parseMappings(map.mappings);
+    const aliasIndex = map.names.indexOf('$a');
+    expect(aliasIndex).toBeGreaterThanOrEqual(0);
+
+    const aliasSegments = segments.filter(s => s.nameIndex === aliasIndex);
+    expect(aliasSegments.length).toBeGreaterThanOrEqual(3);
+
+    for (const seg of aliasSegments) {
+      const srcOffset = lineColumnToOffset(source, seg.sourceLine, seg.sourceColumn);
+      expect(source[srcOffset]).toBe('@');
+
+      const genOffset = lineColumnToOffset(result.code, seg.generatedLine, seg.generatedColumn);
+      expect(result.code.slice(genOffset, genOffset + 2)).toBe('$a');
+    }
   });
 });

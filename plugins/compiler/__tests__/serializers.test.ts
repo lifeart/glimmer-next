@@ -1442,8 +1442,8 @@ describe('WITH_HELPER_MANAGER serialization behavior', () => {
       'this'
     );
     expect(result).toContain(SYMBOLS.MAYBE_HELPER);
-    // Should resolve @myHelper to this[$args].myHelper
-    expect(result).toContain('$args');
+    // Should resolve @myHelper to $a.myHelper
+    expect(result).toContain('$a.');
     expect(result).toContain('myHelper');
     // Should NOT have scope key
     expect(result).not.toContain(SYMBOLS.SCOPE_KEY);

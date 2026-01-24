@@ -25,7 +25,7 @@ export const TREE: Map<number, ComponentLike> = new Map();
 /**
  * Maps component IDs to arrays of child component IDs
  */
-export const CHILD: Map<number, Array<number> | undefined> = new Map();
+export const CHILD: Map<number, Set<number> | undefined> = new Map();
 
 /**
  * Maps component IDs to parent component IDs (for context API)
@@ -105,10 +105,10 @@ export function addToTree(
   const PARENT_ID = ctx[COMPONENT_ID_PROPERTY];
   let ch = CHILD.get(PARENT_ID);
   if (ch === undefined) {
-    ch = [ID];
+    ch = new Set([ID]);
     CHILD.set(PARENT_ID, ch);
   } else {
-    ch.push(ID);
+    ch.add(ID);
   }
   TREE.set(ID, node);
   if (WITH_CONTEXT_API) {
@@ -155,10 +155,7 @@ export function addToTree(
         if (parentId !== undefined) {
           const siblings = CHILD.get(parentId);
           if (siblings) {
-            const index = siblings.indexOf(ID);
-            if (index !== -1) {
-              siblings.splice(index, 1);
-            }
+            siblings.delete(ID);
           }
         }
         PARENT.delete(ID);

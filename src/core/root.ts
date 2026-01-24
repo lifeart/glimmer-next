@@ -39,7 +39,7 @@ export class Root {
     this.document = document;
     provideContext(this, ROOT_CONTEXT, this);
     const id = this[COMPONENT_ID_PROPERTY];
-    CHILD.set(id, []);
+    CHILD.set(id, new Set());
     TREE.set(id, this as any);
     if (WITH_CONTEXT_API) {
       // @ts-expect-error - null parent for root

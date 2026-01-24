@@ -483,9 +483,9 @@ module('Integration | Rehydration', function () {
   test('it rehydrates multiple SVG icons in a row', async function (assert) {
     const Sample = <template>
       <div class='icons'>
-        <svg id='icon1' class='h-6 w-6'><path d='M1' /></svg>
-        <svg id='icon2' class='h-6 w-6'><path d='M2' /></svg>
-        <svg id='icon3' class='h-6 w-6'><path d='M3' /></svg>
+        <svg id='icon1' class='h-6 w-6'><path d='M1 0' /></svg>
+        <svg id='icon2' class='h-6 w-6'><path d='M2 0' /></svg>
+        <svg id='icon3' class='h-6 w-6'><path d='M3 0' /></svg>
       </div>
     </template>;
     await ssr(Sample);
@@ -520,9 +520,9 @@ module('Integration | Rehydration', function () {
   });
   test('it rehydrates SVG inside each loop', async function (assert) {
     const icons = [
-      { id: 'loop-icon-1', path: 'M1' },
-      { id: 'loop-icon-2', path: 'M2' },
-      { id: 'loop-icon-3', path: 'M3' },
+      { id: 'loop-icon-1', path: 'M1 0' },
+      { id: 'loop-icon-2', path: 'M2 0' },
+      { id: 'loop-icon-3', path: 'M3 0' },
     ];
     const Sample = <template>
       <div class='icon-list'>

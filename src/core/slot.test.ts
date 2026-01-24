@@ -1,43 +1,19 @@
 import { expect, test, describe, beforeEach, afterEach } from 'vitest';
-import { Window } from 'happy-dom';
 import { destroyElementSync, Component } from './component';
-import { HTMLBrowserDOMApi, DOMApi } from './dom-api';
 import {
   RENDERED_NODES_PROPERTY,
-  PARENT,
   TREE,
-  CHILD,
   addToTree,
 } from './shared';
-import { cleanupFastContext, provideContext, RENDERING_CONTEXT } from './context';
-import { Root, $_slot, $SLOTS_SYMBOL } from './dom';
+import { $_slot, $SLOTS_SYMBOL } from './dom';
 import { cell, DEBUG_MERGED_CELLS } from './reactive';
+import { createDOMFixture, type DOMFixture } from './__test-utils__';
 
 describe('Slot Component', () => {
-  let window: Window;
-  let document: Document;
-  let api: DOMApi;
-  let root: Root;
-  let container: HTMLElement;
+  let fixture: DOMFixture;
 
-  beforeEach(() => {
-    window = new Window();
-    document = window.document as unknown as Document;
-    api = new HTMLBrowserDOMApi(document);
-    cleanupFastContext();
-    root = new Root(document);
-    provideContext(root, RENDERING_CONTEXT, api);
-    container = document.createElement('div');
-    document.body.appendChild(container);
-  });
-
-  afterEach(() => {
-    cleanupFastContext();
-    TREE.clear();
-    PARENT.clear();
-    CHILD.clear();
-    window.close();
-  });
+  beforeEach(() => { fixture = createDOMFixture(); });
+  afterEach(() => { fixture.cleanup(); });
 
   describe('Slot Param Formula Cleanup', () => {
     test('slot param formulas are destroyed when parent is destroyed', async () => {
@@ -48,7 +24,7 @@ describe('Slot Component', () => {
 
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       // Create a reactive cell for slot param
       const paramValue = cell(42);
@@ -60,7 +36,7 @@ describe('Slot Component', () => {
       const slots = {
         [$SLOTS_SYMBOL]: true,
         default: (_ctx: any, param: any) => {
-          const div = document.createElement('div');
+          const div = fixture.document.createElement('div');
           // Use the param reactively
           div.textContent = String(typeof param === 'object' && 'value' in param ? param.value : param);
           return [div];
@@ -78,7 +54,7 @@ describe('Slot Component', () => {
       expect(afterCreateCount).toBeGreaterThanOrEqual(initialMergedCellsCount);
 
       // Destroy the parent component (which should clean up slot and its formulas)
-      destroyElementSync(parentComponent, true, api);
+      destroyElementSync(parentComponent, true, fixture.api);
 
       // Wait for cleanup
       await new Promise(resolve => setTimeout(resolve, 10));
@@ -95,7 +71,7 @@ describe('Slot Component', () => {
 
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       // Track initial merged cells count
       const initialMergedCellsCount = DEBUG_MERGED_CELLS.size;
@@ -104,7 +80,7 @@ describe('Slot Component', () => {
       const slots = {
         [$SLOTS_SYMBOL]: true,
         default: (_ctx: any, param: any) => {
-          const div = document.createElement('div');
+          const div = fixture.document.createElement('div');
           div.textContent = String(param);
           return [div];
         },
@@ -117,7 +93,7 @@ describe('Slot Component', () => {
       await new Promise(resolve => setTimeout(resolve, 10));
 
       // Destroy parent
-      destroyElementSync(parentComponent, true, api);
+      destroyElementSync(parentComponent, true, fixture.api);
 
       // Should return to initial
       expect(DEBUG_MERGED_CELLS.size).toBe(initialMergedCellsCount);
@@ -136,14 +112,14 @@ describe('Slot Component', () => {
       for (let cycle = 0; cycle < 5; cycle++) {
         const parentComponent = new Component({});
         parentComponent[RENDERED_NODES_PROPERTY] = [];
-        addToTree(root, parentComponent);
+        addToTree(fixture.root, parentComponent);
 
         const paramValue = cell(cycle);
 
         const slots = {
           [$SLOTS_SYMBOL]: true,
           default: (_ctx: any, param: any) => {
-            const div = document.createElement('div');
+            const div = fixture.document.createElement('div');
             div.textContent = String(typeof param === 'object' && 'value' in param ? param.value : param);
             return [div];
           },
@@ -154,7 +130,7 @@ describe('Slot Component', () => {
         await new Promise(resolve => setTimeout(resolve, 10));
 
         // Destroy
-        destroyElementSync(parentComponent, true, api);
+        destroyElementSync(parentComponent, true, fixture.api);
       }
 
       // Wait for all cleanup
@@ -173,7 +149,7 @@ describe('Slot Component', () => {
 
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       const param1 = cell('first');
       const param2 = cell('second');
@@ -184,7 +160,7 @@ describe('Slot Component', () => {
       const slots = {
         [$SLOTS_SYMBOL]: true,
         default: (_ctx: any, p1: any, p2: any, p3: any) => {
-          const div = document.createElement('div');
+          const div = fixture.document.createElement('div');
           const getValue = (p: any) => typeof p === 'object' && 'value' in p ? p.value : p;
           div.textContent = `${getValue(p1)}-${getValue(p2)}-${getValue(p3)}`;
           return [div];
@@ -200,7 +176,7 @@ describe('Slot Component', () => {
       expect(afterCreateCount).toBeGreaterThan(initialMergedCellsCount);
 
       // Destroy parent
-      destroyElementSync(parentComponent, true, api);
+      destroyElementSync(parentComponent, true, fixture.api);
 
       await new Promise(resolve => setTimeout(resolve, 10));
 
@@ -211,14 +187,14 @@ describe('Slot Component', () => {
     test('slot context is added to and removed from tree', async () => {
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       const initialTreeSize = TREE.size;
 
       const slots = {
         [$SLOTS_SYMBOL]: true,
         default: (_ctx: any) => {
-          const div = document.createElement('div');
+          const div = fixture.document.createElement('div');
           div.textContent = 'slot content';
           return [div];
         },
@@ -232,7 +208,7 @@ describe('Slot Component', () => {
       expect(TREE.size).toBeGreaterThanOrEqual(initialTreeSize);
 
       // Destroy parent
-      destroyElementSync(parentComponent, true, api);
+      destroyElementSync(parentComponent, true, fixture.api);
 
       await new Promise(resolve => setTimeout(resolve, 10));
 
@@ -245,7 +221,7 @@ describe('Slot Component', () => {
     test('deferred slot renders when value is set', async () => {
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       // Create empty slots object (slot not yet defined)
       const slots: Record<string | symbol, any> = {
@@ -260,7 +236,7 @@ describe('Slot Component', () => {
 
       // Now define the slot
       slots.mySlot = (_ctx: any) => {
-        const div = document.createElement('div');
+        const div = fixture.document.createElement('div');
         div.textContent = 'deferred content';
         return [div];
       };
@@ -269,7 +245,7 @@ describe('Slot Component', () => {
       await new Promise(resolve => setTimeout(resolve, 10));
 
       // Cleanup
-      destroyElementSync(parentComponent, true, api);
+      destroyElementSync(parentComponent, true, fixture.api);
     });
   });
 });

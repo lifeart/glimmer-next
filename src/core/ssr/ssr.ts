@@ -2,6 +2,7 @@ import { type Component } from '@/core/component-class';
 import { renderComponent } from '@/core/dom';
 import { runDestructors } from '@/core/destroy';
 import { createRoot, resetNodeCounter, Root } from '@/core/dom';
+import { takeRenderingControl } from '@/core/runtime';
 
 type EnvironmentParams = {
   url: string;
@@ -45,8 +46,8 @@ export async function render(
 
   resetNodeCounter();
   renderComponent(component, {
-    args, 
-    element: rootNode as unknown as HTMLElement, 
+    args,
+    element: rootNode as unknown as HTMLElement,
     owner: root,
   });
   resetNodeCounter();
@@ -57,7 +58,16 @@ export async function render(
     .map((n) => s.serializeToString(n))
     .join('');
 
-  await Promise.all(runDestructors(root));
+  // Suppress reactive updates during destruction to prevent
+  // scheduleRevalidate() from queuing syncDomAsync() microtasks
+  // that can starve the event loop via infinite Set iteration
+  // when cell updates are triggered during destructor execution.
+  const releaseControl = takeRenderingControl();
+  try {
+    await Promise.all(runDestructors(root));
+  } finally {
+    releaseControl();
+  }
   // Cancel any pending async operations before closing
   win.happyDOM.cancelAsync();
   win.close();

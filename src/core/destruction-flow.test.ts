@@ -1,7 +1,5 @@
 import { expect, test, describe, beforeEach, afterEach } from 'vitest';
-import { Window } from 'happy-dom';
 import { destroyElementSync, Component, unregisterFromParent } from './component';
-import { HTMLBrowserDOMApi, DOMApi } from './dom-api';
 import {
   RENDERED_NODES_PROPERTY,
   PARENT,
@@ -13,43 +11,22 @@ import {
   releaseId,
 } from './shared';
 import { destroy } from './glimmer/destroyable';
-import { cleanupFastContext, provideContext, RENDERING_CONTEXT } from './context';
-import { Root } from './dom';
 import { cell, formula, DEBUG_MERGED_CELLS } from './reactive';
 import { IfCondition } from './control-flow/if';
 import { SyncListComponent, AsyncListComponent } from './control-flow/list';
+import { createDOMFixture, type DOMFixture } from './__test-utils__';
 
 describe('Destruction Flow Tests', () => {
-  let window: Window;
-  let document: Document;
-  let api: DOMApi;
-  let root: Root;
-  let container: HTMLElement;
+  let fixture: DOMFixture;
 
-  beforeEach(() => {
-    window = new Window();
-    document = window.document as unknown as Document;
-    api = new HTMLBrowserDOMApi(document);
-    cleanupFastContext();
-    root = new Root(document);
-    provideContext(root, RENDERING_CONTEXT, api);
-    container = document.createElement('div');
-    document.body.appendChild(container);
-  });
-
-  afterEach(() => {
-    cleanupFastContext();
-    TREE.clear();
-    PARENT.clear();
-    CHILD.clear();
-    window.close();
-  });
+  beforeEach(() => { fixture = createDOMFixture(); });
+  afterEach(() => { fixture.cleanup(); });
 
   describe('Tree Mutation During Destruction', () => {
     test('destroying component with many children does not throw', async () => {
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       // Create multiple child components
       const children: Component<any>[] = [];
@@ -62,18 +39,18 @@ describe('Destruction Flow Tests', () => {
 
       const parentId = parentComponent[COMPONENT_ID_PROPERTY];
       const childIds = CHILD.get(parentId);
-      expect(childIds?.length).toBe(10);
+      expect(childIds?.size).toBe(10);
 
-      // Should not throw even if CHILD array is mutated during iteration
+      // Should not throw even if CHILD set is mutated during iteration
       expect(() => {
-        destroyElementSync(parentComponent, true, api);
+        destroyElementSync(parentComponent, true, fixture.api);
       }).not.toThrow();
     });
 
     test('nested component destruction works correctly', async () => {
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       // Create nested hierarchy: parent -> child -> grandchild
       const child = new Component({});
@@ -87,7 +64,7 @@ describe('Destruction Flow Tests', () => {
       const initialTreeSize = TREE.size;
       expect(initialTreeSize).toBeGreaterThanOrEqual(3);
 
-      destroyElementSync(parentComponent, true, api);
+      destroyElementSync(parentComponent, true, fixture.api);
 
       // After destruction, tree should be smaller
       // Note: Root is still in tree
@@ -99,21 +76,21 @@ describe('Destruction Flow Tests', () => {
     test('continues destruction even with null components in array', () => {
       const validComponent = new Component({});
       validComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, validComponent);
+      addToTree(fixture.root, validComponent);
 
       // Should handle array with potential edge cases
       expect(() => {
-        destroyElementSync([validComponent], true, api);
+        destroyElementSync([validComponent], true, fixture.api);
       }).not.toThrow();
     });
 
     test('handles component without RENDERED_NODES_PROPERTY', () => {
-      const node = document.createElement('div');
-      container.appendChild(node);
+      const node = fixture.document.createElement('div');
+      fixture.container.appendChild(node);
 
       // Should handle plain DOM nodes
       expect(() => {
-        destroyElementSync(node, false, api);
+        destroyElementSync(node, false, fixture.api);
       }).not.toThrow();
     });
   });
@@ -142,11 +119,11 @@ describe('Destruction Flow Tests', () => {
     test('handles array of components', () => {
       const component1 = new Component({});
       component1[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, component1);
+      addToTree(fixture.root, component1);
 
       const component2 = new Component({});
       component2[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, component2);
+      addToTree(fixture.root, component2);
 
       expect(() => {
         unregisterFromParent([component1, component2]);
@@ -158,12 +135,12 @@ describe('Destruction Flow Tests', () => {
     test('IfCondition cleans up TREE/PARENT/CHILD on destroy', async () => {
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       const condition = cell(true);
-      const placeholder = api.comment('test');
-      const target = api.fragment();
-      api.insert(target, placeholder);
+      const placeholder = fixture.api.comment('test');
+      const target = fixture.api.fragment();
+      fixture.api.insert(target, placeholder);
 
       const ifCondition = new IfCondition(
         parentComponent,
@@ -191,12 +168,12 @@ describe('Destruction Flow Tests', () => {
     test('rapid condition toggling does not cause race conditions', async () => {
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       const condition = cell(true);
-      const placeholder = api.comment('test');
-      const target = api.fragment();
-      api.insert(target, placeholder);
+      const placeholder = fixture.api.comment('test');
+      const target = fixture.api.fragment();
+      fixture.api.insert(target, placeholder);
 
       let renderCount = 0;
       const ifCondition = new IfCondition(
@@ -242,18 +219,18 @@ describe('Destruction Flow Tests', () => {
 
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       const items = cell([{ id: 1 }, { id: 2 }, { id: 3 }]);
-      const placeholder = api.comment('list');
-      const target = api.fragment();
-      api.insert(target, placeholder);
+      const placeholder = fixture.api.comment('list');
+      const target = fixture.api.fragment();
+      fixture.api.insert(target, placeholder);
 
       const list = new SyncListComponent(
         {
           tag: items,
           ItemComponent: (item: any) => {
-            const div = document.createElement('div');
+            const div = fixture.document.createElement('div');
             div.textContent = String(item.id);
             return [div];
           },
@@ -273,7 +250,7 @@ describe('Destruction Flow Tests', () => {
       await new Promise(resolve => setTimeout(resolve, 10));
 
       // Destroy parent (which should clean up list)
-      destroyElementSync(parentComponent, true, api);
+      destroyElementSync(parentComponent, true, fixture.api);
 
       // Wait for cleanup
       await new Promise(resolve => setTimeout(resolve, 10));
@@ -289,18 +266,18 @@ describe('Destruction Flow Tests', () => {
 
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       const items = cell([{ id: 1 }, { id: 2 }, { id: 3 }]);
-      const placeholder = api.comment('list');
-      const target = api.fragment();
-      api.insert(target, placeholder);
+      const placeholder = fixture.api.comment('list');
+      const target = fixture.api.fragment();
+      fixture.api.insert(target, placeholder);
 
       const list = new SyncListComponent(
         {
           tag: items,
           ItemComponent: (_item: any, index: any) => {
-            const div = document.createElement('div');
+            const div = fixture.document.createElement('div');
             // Use index reactively to create formulas
             div.textContent = String(typeof index === 'object' ? index.value : index);
             return [div];
@@ -329,7 +306,7 @@ describe('Destruction Flow Tests', () => {
       expect(list.indexFormulaMap?.has('2')).toBe(false);
 
       // Clean up
-      destroyElementSync(parentComponent, true, api);
+      destroyElementSync(parentComponent, true, fixture.api);
     });
 
     test('list clear cleans up all index formulas', async () => {
@@ -339,18 +316,18 @@ describe('Destruction Flow Tests', () => {
 
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       const items = cell([{ id: 1 }, { id: 2 }, { id: 3 }]);
-      const placeholder = api.comment('list');
-      const target = api.fragment();
-      api.insert(target, placeholder);
+      const placeholder = fixture.api.comment('list');
+      const target = fixture.api.fragment();
+      fixture.api.insert(target, placeholder);
 
       const list = new SyncListComponent(
         {
           tag: items,
           ItemComponent: (_item: any, index: any) => {
-            const div = document.createElement('div');
+            const div = fixture.document.createElement('div');
             div.textContent = String(typeof index === 'object' ? index.value : index);
             return [div];
           },
@@ -376,7 +353,7 @@ describe('Destruction Flow Tests', () => {
       expect(list.indexFormulaMap?.size).toBe(0);
 
       // Clean up
-      destroyElementSync(parentComponent, true, api);
+      destroyElementSync(parentComponent, true, fixture.api);
     });
   });
 
@@ -388,7 +365,7 @@ describe('Destruction Flow Tests', () => {
 
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       const initialMergedCells = DEBUG_MERGED_CELLS.size;
 
@@ -416,7 +393,7 @@ describe('Destruction Flow Tests', () => {
       for (let i = 0; i < 5; i++) {
         const parentComponent = new Component({});
         parentComponent[RENDERED_NODES_PROPERTY] = [];
-        addToTree(root, parentComponent);
+        addToTree(fixture.root, parentComponent);
 
         const reactiveValue = cell(i);
         const testFormula = formula(() => reactiveValue.value, `cycle-${i}`);
@@ -426,7 +403,7 @@ describe('Destruction Flow Tests', () => {
 
         // Clean up
         testFormula.destroy();
-        destroyElementSync(parentComponent, true, api);
+        destroyElementSync(parentComponent, true, fixture.api);
       }
 
       // Wait for all cleanup
@@ -442,7 +419,7 @@ describe('Destruction Flow Tests', () => {
     test('modifier with reactive dependencies cleans up correctly', async () => {
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       let modifierCleanupCalled = false;
       let modifierRunCount = 0;
@@ -470,7 +447,7 @@ describe('Destruction Flow Tests', () => {
       expect(modifierCleanupCalled).toBe(true);
 
       // Clean up component
-      destroyElementSync(parentComponent, true, api);
+      destroyElementSync(parentComponent, true, fixture.api);
     });
   });
 
@@ -536,18 +513,18 @@ describe('Destruction Flow Tests', () => {
 
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       const items = cell([{ id: 1 }, { id: 2 }, { id: 3 }]);
-      const placeholder = api.comment('async-list');
-      const target = api.fragment();
-      api.insert(target, placeholder);
+      const placeholder = fixture.api.comment('async-list');
+      const target = fixture.api.fragment();
+      fixture.api.insert(target, placeholder);
 
       const list = new AsyncListComponent(
         {
           tag: items,
           ItemComponent: (item: any) => {
-            const div = document.createElement('div');
+            const div = fixture.document.createElement('div');
             div.textContent = String(item.id);
             return [div];
           },
@@ -567,7 +544,7 @@ describe('Destruction Flow Tests', () => {
       await new Promise(resolve => setTimeout(resolve, 10));
 
       // Destroy parent (which should clean up list)
-      destroyElementSync(parentComponent, true, api);
+      destroyElementSync(parentComponent, true, fixture.api);
 
       // Wait for cleanup
       await new Promise(resolve => setTimeout(resolve, 10));
@@ -583,18 +560,18 @@ describe('Destruction Flow Tests', () => {
 
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       const items = cell([{ id: 1 }, { id: 2 }, { id: 3 }]);
-      const placeholder = api.comment('async-list');
-      const target = api.fragment();
-      api.insert(target, placeholder);
+      const placeholder = fixture.api.comment('async-list');
+      const target = fixture.api.fragment();
+      fixture.api.insert(target, placeholder);
 
       const list = new AsyncListComponent(
         {
           tag: items,
           ItemComponent: (_item: any, index: any) => {
-            const div = document.createElement('div');
+            const div = fixture.document.createElement('div');
             div.textContent = String(typeof index === 'object' ? index.value : index);
             return [div];
           },
@@ -621,7 +598,7 @@ describe('Destruction Flow Tests', () => {
       expect(list.indexFormulaMap?.size).toBe(2);
 
       // Clean up
-      destroyElementSync(parentComponent, true, api);
+      destroyElementSync(parentComponent, true, fixture.api);
     });
 
     test('AsyncListComponent fastCleanup cleans up all formulas', async () => {
@@ -631,18 +608,18 @@ describe('Destruction Flow Tests', () => {
 
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       const items = cell([{ id: 1 }, { id: 2 }, { id: 3 }]);
-      const placeholder = api.comment('async-list');
-      const target = api.fragment();
-      api.insert(target, placeholder);
+      const placeholder = fixture.api.comment('async-list');
+      const target = fixture.api.fragment();
+      fixture.api.insert(target, placeholder);
 
       const list = new AsyncListComponent(
         {
           tag: items,
           ItemComponent: (_item: any, index: any) => {
-            const div = document.createElement('div');
+            const div = fixture.document.createElement('div');
             div.textContent = String(typeof index === 'object' ? index.value : index);
             return [div];
           },
@@ -668,7 +645,7 @@ describe('Destruction Flow Tests', () => {
       expect(list.indexFormulaMap?.size).toBe(0);
 
       // Clean up
-      destroyElementSync(parentComponent, true, api);
+      destroyElementSync(parentComponent, true, fixture.api);
     });
   });
 
@@ -676,11 +653,11 @@ describe('Destruction Flow Tests', () => {
     test('IfCondition properly renders and destroys DOM nodes', async () => {
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       const condition = cell(true);
-      const placeholder = api.comment('if-placeholder');
-      container.appendChild(placeholder);
+      const placeholder = fixture.api.comment('if-placeholder');
+      fixture.container.appendChild(placeholder);
 
       let trueBranchRenderCount = 0;
       let falseBranchRenderCount = 0;
@@ -688,18 +665,18 @@ describe('Destruction Flow Tests', () => {
       const ifCondition = new IfCondition(
         parentComponent,
         condition,
-        container as unknown as DocumentFragment,
+        fixture.container as unknown as DocumentFragment,
         placeholder,
         () => {
           trueBranchRenderCount++;
-          const div = document.createElement('div');
+          const div = fixture.document.createElement('div');
           div.className = 'true-branch';
           div.textContent = 'True';
           return div;
         },
         () => {
           falseBranchRenderCount++;
-          const div = document.createElement('div');
+          const div = fixture.document.createElement('div');
           div.className = 'false-branch';
           div.textContent = 'False';
           return div;
@@ -735,27 +712,27 @@ describe('Destruction Flow Tests', () => {
     test('IfCondition handles destroyPromise correctly during rapid toggles', async () => {
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       const condition = cell(true);
-      const placeholder = api.comment('if-placeholder');
-      container.appendChild(placeholder);
+      const placeholder = fixture.api.comment('if-placeholder');
+      fixture.container.appendChild(placeholder);
 
       let renderCount = 0;
 
       const ifCondition = new IfCondition(
         parentComponent,
         condition,
-        container as unknown as DocumentFragment,
+        fixture.container as unknown as DocumentFragment,
         placeholder,
         () => {
           renderCount++;
-          const div = document.createElement('div');
+          const div = fixture.document.createElement('div');
           return div;
         },
         () => {
           renderCount++;
-          const span = document.createElement('span');
+          const span = fixture.document.createElement('span');
           return span;
         },
       );
@@ -792,18 +769,18 @@ describe('Destruction Flow Tests', () => {
 
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       const items = cell([{ id: 1 }, { id: 2 }, { id: 3 }]);
-      const placeholder = api.comment('list');
-      const target = api.fragment();
-      api.insert(target, placeholder);
+      const placeholder = fixture.api.comment('list');
+      const target = fixture.api.fragment();
+      fixture.api.insert(target, placeholder);
 
       const list = new SyncListComponent(
         {
           tag: items,
           ItemComponent: (item: any) => {
-            const div = document.createElement('div');
+            const div = fixture.document.createElement('div');
             div.textContent = String(item.id);
             return [div];
           },
@@ -836,7 +813,7 @@ describe('Destruction Flow Tests', () => {
       expect(list.keyMap.has('4')).toBe(true);
 
       // Clean up
-      destroyElementSync(parentComponent, true, api);
+      destroyElementSync(parentComponent, true, fixture.api);
     });
 
     test('reordering list items does not orphan TREE entries', async () => {
@@ -846,18 +823,18 @@ describe('Destruction Flow Tests', () => {
 
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       const items = cell([{ id: 1 }, { id: 2 }, { id: 3 }]);
-      const placeholder = api.comment('list');
-      const target = api.fragment();
-      api.insert(target, placeholder);
+      const placeholder = fixture.api.comment('list');
+      const target = fixture.api.fragment();
+      fixture.api.insert(target, placeholder);
 
       const list = new SyncListComponent(
         {
           tag: items,
           ItemComponent: (item: any) => {
-            const div = document.createElement('div');
+            const div = fixture.document.createElement('div');
             div.textContent = String(item.id);
             return [div];
           },
@@ -886,7 +863,7 @@ describe('Destruction Flow Tests', () => {
       expect(list.keyMap.size).toBe(3);
 
       // Clean up
-      destroyElementSync(parentComponent, true, api);
+      destroyElementSync(parentComponent, true, fixture.api);
     });
   });
 
@@ -894,7 +871,7 @@ describe('Destruction Flow Tests', () => {
     test('registerDestructor destructors are called on component destroy', async () => {
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       let destructor1Called = false;
       let destructor2Called = false;
@@ -910,7 +887,7 @@ describe('Destruction Flow Tests', () => {
       });
 
       // Destroy
-      destroyElementSync(parentComponent, true, api);
+      destroyElementSync(parentComponent, true, fixture.api);
 
       // Both destructors should be called
       expect(destructor1Called).toBe(true);
@@ -922,7 +899,7 @@ describe('Destruction Flow Tests', () => {
 
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       const childComponent = new Component({});
       childComponent[RENDERED_NODES_PROPERTY] = [];
@@ -939,7 +916,7 @@ describe('Destruction Flow Tests', () => {
       });
 
       // Destroy parent (should destroy child first in tree traversal)
-      destroyElementSync(parentComponent, true, api);
+      destroyElementSync(parentComponent, true, fixture.api);
 
       // Parent destructor should be called before traversing to children
       // Based on the implementation, parent is destroyed first, then children
@@ -952,27 +929,27 @@ describe('Destruction Flow Tests', () => {
     test('destroying already destroyed component does not crash', async () => {
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       // First destroy
-      destroyElementSync(parentComponent, true, api);
+      destroyElementSync(parentComponent, true, fixture.api);
 
       // Second destroy should not crash
       expect(() => {
-        destroyElementSync(parentComponent, true, api);
+        destroyElementSync(parentComponent, true, fixture.api);
       }).not.toThrow();
     });
 
     test('destroying empty array does not crash', () => {
       expect(() => {
-        destroyElementSync([], true, api);
+        destroyElementSync([], true, fixture.api);
       }).not.toThrow();
     });
 
     test('CHILD array mutation during destruction is handled', async () => {
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       // Create children that will be destroyed
       const children: Component<any>[] = [];
@@ -987,11 +964,11 @@ describe('Destruction Flow Tests', () => {
       const childArray = CHILD.get(parentId);
 
       // Verify we have children
-      expect(childArray?.length).toBe(5);
+      expect(childArray?.size).toBe(5);
 
-      // Destroy should handle iteration over array that may be mutated
+      // Destroy should handle iteration over set that may be mutated
       expect(() => {
-        destroyElementSync(parentComponent, true, api);
+        destroyElementSync(parentComponent, true, fixture.api);
       }).not.toThrow();
     });
   });
@@ -1004,15 +981,15 @@ describe('Destruction Flow Tests', () => {
 
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       const initialMergedCells = DEBUG_MERGED_CELLS.size;
 
       // Pass a function to setupCondition, which creates a formula internally
       const conditionFn = () => true;
-      const placeholder = api.comment('if-placeholder');
-      const target = api.fragment();
-      api.insert(target, placeholder);
+      const placeholder = fixture.api.comment('if-placeholder');
+      const target = fixture.api.fragment();
+      fixture.api.insert(target, placeholder);
 
       const ifCondition = new IfCondition(
         parentComponent,
@@ -1036,7 +1013,7 @@ describe('Destruction Flow Tests', () => {
       await new Promise(resolve => setTimeout(resolve, 10));
 
       // Clean up parent
-      destroyElementSync(parentComponent, true, api);
+      destroyElementSync(parentComponent, true, fixture.api);
     });
   });
 
@@ -1044,7 +1021,7 @@ describe('Destruction Flow Tests', () => {
     test('destroying deeply nested tree (10 levels) works correctly', async () => {
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       // Create a deeply nested hierarchy
       let current = parentComponent;
@@ -1067,7 +1044,7 @@ describe('Destruction Flow Tests', () => {
 
       // Destroy from root - should clean up entire tree
       expect(() => {
-        destroyElementSync(parentComponent, true, api);
+        destroyElementSync(parentComponent, true, fixture.api);
       }).not.toThrow();
 
       // Tree should be significantly smaller
@@ -1079,7 +1056,7 @@ describe('Destruction Flow Tests', () => {
 
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       const { registerDestructor } = await import('./glimmer/destroyable');
 
@@ -1100,7 +1077,7 @@ describe('Destruction Flow Tests', () => {
       }
 
       // Destroy
-      destroyElementSync(parentComponent, true, api);
+      destroyElementSync(parentComponent, true, fixture.api);
 
       // All destructors should have been called
       expect(callOrder.length).toBe(depth);
@@ -1115,32 +1092,32 @@ describe('Destruction Flow Tests', () => {
 
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       const condition = cell(true);
       const items = cell([{ id: 1 }, { id: 2 }]);
 
-      const placeholder = api.comment('if-placeholder');
-      container.appendChild(placeholder);
+      const placeholder = fixture.api.comment('if-placeholder');
+      fixture.container.appendChild(placeholder);
 
       let listInstance: SyncListComponent<any> | null = null;
 
       const ifCondition = new IfCondition(
         parentComponent,
         condition,
-        container as unknown as DocumentFragment,
+        fixture.container as unknown as DocumentFragment,
         placeholder,
         () => {
           // Create a list inside the true branch
-          const listPlaceholder = api.comment('nested-list');
-          const listTarget = api.fragment();
-          api.insert(listTarget, listPlaceholder);
+          const listPlaceholder = fixture.api.comment('nested-list');
+          const listTarget = fixture.api.fragment();
+          fixture.api.insert(listTarget, listPlaceholder);
 
           listInstance = new SyncListComponent(
             {
               tag: items,
               ItemComponent: (item: any) => {
-                const div = document.createElement('div');
+                const div = fixture.document.createElement('div');
                 div.textContent = String(item.id);
                 return [div];
               },
@@ -1171,7 +1148,7 @@ describe('Destruction Flow Tests', () => {
 
       // Clean up
       await ifCondition.destroy();
-      destroyElementSync(parentComponent, true, api);
+      destroyElementSync(parentComponent, true, fixture.api);
     });
 
     test('IfCondition inside list item cleans up correctly', async () => {
@@ -1181,12 +1158,12 @@ describe('Destruction Flow Tests', () => {
 
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       const items = cell([{ id: 1, show: true }, { id: 2, show: false }]);
-      const placeholder = api.comment('list');
-      const target = api.fragment();
-      api.insert(target, placeholder);
+      const placeholder = fixture.api.comment('list');
+      const target = fixture.api.fragment();
+      fixture.api.insert(target, placeholder);
 
       const ifConditions: IfCondition[] = [];
 
@@ -1194,9 +1171,9 @@ describe('Destruction Flow Tests', () => {
         {
           tag: items,
           ItemComponent: (item: any) => {
-            const itemPlaceholder = api.comment(`if-${item.id}`);
-            const itemTarget = api.fragment();
-            api.insert(itemTarget, itemPlaceholder);
+            const itemPlaceholder = fixture.api.comment(`if-${item.id}`);
+            const itemTarget = fixture.api.fragment();
+            fixture.api.insert(itemTarget, itemPlaceholder);
 
             const showCell = cell(item.show);
             const ifCond = new IfCondition(
@@ -1205,12 +1182,12 @@ describe('Destruction Flow Tests', () => {
               itemTarget as unknown as DocumentFragment,
               itemPlaceholder,
               () => {
-                const div = document.createElement('div');
+                const div = fixture.document.createElement('div');
                 div.textContent = `Shown: ${item.id}`;
                 return div;
               },
               () => {
-                const span = document.createElement('span');
+                const span = fixture.document.createElement('span');
                 span.textContent = `Hidden: ${item.id}`;
                 return span;
               },
@@ -1242,7 +1219,7 @@ describe('Destruction Flow Tests', () => {
       expect(list.keyMap.size).toBe(1);
 
       // Clean up
-      destroyElementSync(parentComponent, true, api);
+      destroyElementSync(parentComponent, true, fixture.api);
     });
   });
 
@@ -1254,12 +1231,12 @@ describe('Destruction Flow Tests', () => {
 
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       const items = cell<{ id: number }[]>([]);
-      const placeholder = api.comment('list');
-      const target = api.fragment();
-      api.insert(target, placeholder);
+      const placeholder = fixture.api.comment('list');
+      const target = fixture.api.fragment();
+      fixture.api.insert(target, placeholder);
 
       const initialMergedCells = DEBUG_MERGED_CELLS.size;
 
@@ -1267,7 +1244,7 @@ describe('Destruction Flow Tests', () => {
         {
           tag: items,
           ItemComponent: (_item: any, index: any) => {
-            const div = document.createElement('div');
+            const div = fixture.document.createElement('div');
             div.textContent = String(typeof index === 'object' ? index.value : index);
             return [div];
           },
@@ -1294,7 +1271,7 @@ describe('Destruction Flow Tests', () => {
       expect(list.indexFormulaMap?.size).toBe(0);
 
       // Clean up
-      destroyElementSync(parentComponent, true, api);
+      destroyElementSync(parentComponent, true, fixture.api);
 
       // Wait for cleanup
       await new Promise(resolve => setTimeout(resolve, 20));
@@ -1310,18 +1287,18 @@ describe('Destruction Flow Tests', () => {
 
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       const items = cell<{ id: number }[]>([{ id: 1 }, { id: 2 }]);
-      const placeholder = api.comment('async-list');
-      const target = api.fragment();
-      api.insert(target, placeholder);
+      const placeholder = fixture.api.comment('async-list');
+      const target = fixture.api.fragment();
+      fixture.api.insert(target, placeholder);
 
       const list = new AsyncListComponent(
         {
           tag: items,
           ItemComponent: (item: any) => {
-            const div = document.createElement('div');
+            const div = fixture.document.createElement('div');
             div.textContent = String(item.id);
             return [div];
           },
@@ -1347,7 +1324,7 @@ describe('Destruction Flow Tests', () => {
       expect(list.keyMap.size).toBe(3);
 
       // Clean up
-      destroyElementSync(parentComponent, true, api);
+      destroyElementSync(parentComponent, true, fixture.api);
     });
   });
 
@@ -1359,7 +1336,7 @@ describe('Destruction Flow Tests', () => {
 
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       const initialMergedCells = DEBUG_MERGED_CELLS.size;
 
@@ -1367,7 +1344,7 @@ describe('Destruction Flow Tests', () => {
       const textFormula = formula(() => textValue.value, 'text-content');
 
       // Simulate using the formula in a text node
-      const textNode = document.createTextNode(textFormula.value);
+      const textNode = fixture.document.createTextNode(textFormula.value);
       parentComponent[RENDERED_NODES_PROPERTY].push(textNode);
 
       // Update to verify reactivity works
@@ -1377,7 +1354,7 @@ describe('Destruction Flow Tests', () => {
       textFormula.destroy();
 
       // Destroy component
-      destroyElementSync(parentComponent, true, api);
+      destroyElementSync(parentComponent, true, fixture.api);
 
       // Formula should be cleaned up
       expect(DEBUG_MERGED_CELLS.size).toBe(initialMergedCells);
@@ -1388,7 +1365,7 @@ describe('Destruction Flow Tests', () => {
     test('PARENT references are consistent with CHILD', async () => {
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       const child1 = new Component({});
       child1[RENDERED_NODES_PROPERTY] = [];
@@ -1408,17 +1385,17 @@ describe('Destruction Flow Tests', () => {
 
       // Verify CHILD references
       const children = CHILD.get(parentId);
-      expect(children).toContain(child1Id);
-      expect(children).toContain(child2Id);
+      expect(children?.has(child1Id)).toBe(true);
+      expect(children?.has(child2Id)).toBe(true);
 
       // Destroy
-      destroyElementSync(parentComponent, true, api);
+      destroyElementSync(parentComponent, true, fixture.api);
     });
 
     test('unregisterFromParent maintains PARENT/CHILD consistency', async () => {
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       const child = new Component({});
       child[RENDERED_NODES_PROPERTY] = [];
@@ -1428,16 +1405,16 @@ describe('Destruction Flow Tests', () => {
       const childId = child[COMPONENT_ID_PROPERTY];
 
       // Verify initial state
-      expect(CHILD.get(parentId)).toContain(childId);
+      expect(CHILD.get(parentId)?.has(childId)).toBe(true);
 
       // Unregister child
       unregisterFromParent(child);
 
-      // Child should be removed from parent's CHILD array
-      expect(CHILD.get(parentId)).not.toContain(childId);
+      // Child should be removed from parent's CHILD set
+      expect(CHILD.get(parentId)?.has(childId)).toBe(false);
 
       // Clean up
-      destroyElementSync(parentComponent, true, api);
+      destroyElementSync(parentComponent, true, fixture.api);
     });
   });
 
@@ -1462,7 +1439,7 @@ describe('Destruction Flow Tests', () => {
       // Create component A and add to tree
       const componentA = new Component({});
       componentA[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, componentA);
+      addToTree(fixture.root, componentA);
 
       const idX = componentA[COMPONENT_ID_PROPERTY];
       expect(TREE.get(idX)).toBe(componentA);
@@ -1506,7 +1483,7 @@ describe('Destruction Flow Tests', () => {
     test('normal destruction correctly removes component from TREE', async () => {
       const component = new Component({});
       component[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, component);
+      addToTree(fixture.root, component);
 
       const id = component[COMPONENT_ID_PROPERTY];
 
@@ -1532,17 +1509,17 @@ describe('Destruction Flow Tests', () => {
       // Create parent for the IfConditions
       const parent = new Component({});
       parent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parent);
+      addToTree(fixture.root, parent);
 
       // Create placeholder
-      const placeholder = document.createComment('if-placeholder');
-      container.appendChild(placeholder);
+      const placeholder = fixture.document.createComment('if-placeholder');
+      fixture.container.appendChild(placeholder);
 
       // Create IfCondition A
       const ifConditionA = new IfCondition(
         parent,
         () => true,
-        container,
+        fixture.container,
         placeholder,
         () => null,
         () => null,
@@ -1584,15 +1561,15 @@ describe('Destruction Flow Tests', () => {
     test('IfCondition normal destruction cleans up when it owns ID', async () => {
       const parent = new Component({});
       parent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parent);
+      addToTree(fixture.root, parent);
 
-      const placeholder = document.createComment('if-placeholder');
-      container.appendChild(placeholder);
+      const placeholder = fixture.document.createComment('if-placeholder');
+      fixture.container.appendChild(placeholder);
 
       const ifCondition = new IfCondition(
         parent,
         () => true,
-        container,
+        fixture.container,
         placeholder,
         () => null,
         () => null,
@@ -1609,7 +1586,7 @@ describe('Destruction Flow Tests', () => {
       // Destroy via parent to test normal flow
       // Use async destruction since IfCondition.destroy() is async
       const { destroyElement } = await import('./component');
-      await destroyElement(parent, true, api);
+      await destroyElement(parent, true, fixture.api);
 
       // IfCondition should be removed from TREE after async destruction completes
       expect(TREE.has(id)).toBe(false);
@@ -1622,7 +1599,7 @@ describe('Destruction Flow Tests', () => {
       for (let i = 0; i < 5; i++) {
         const comp = new Component({});
         comp[RENDERED_NODES_PROPERTY] = [];
-        addToTree(root, comp);
+        addToTree(fixture.root, comp);
 
         const id = comp[COMPONENT_ID_PROPERTY];
         componentIds.push(id);
@@ -1646,7 +1623,7 @@ describe('Destruction Flow Tests', () => {
       for (let i = 0; i < 3; i++) {
         const comp = new Component({});
         comp[RENDERED_NODES_PROPERTY] = [];
-        addToTree(root, comp);
+        addToTree(fixture.root, comp);
         newComponents.push(comp);
 
         const id = comp[COMPONENT_ID_PROPERTY];
@@ -1656,7 +1633,7 @@ describe('Destruction Flow Tests', () => {
 
       // Clean up
       for (const comp of newComponents) {
-        destroyElementSync(comp, true, api);
+        destroyElementSync(comp, true, fixture.api);
       }
     });
 
@@ -1668,7 +1645,7 @@ describe('Destruction Flow Tests', () => {
       // @ts-expect-error - accessing symbol property
       expect(component[ADDED_TO_TREE_FLAG]).toBeUndefined();
 
-      addToTree(root, component);
+      addToTree(fixture.root, component);
 
       // After adding to tree
       // @ts-expect-error - accessing symbol property
@@ -1689,7 +1666,7 @@ describe('Destruction Flow Tests', () => {
     test('PARENT and CHILD maps are cleaned up with ownership check', async () => {
       const parent = new Component({});
       parent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parent);
+      addToTree(fixture.root, parent);
 
       const child = new Component({});
       child[RENDERED_NODES_PROPERTY] = [];
@@ -1700,7 +1677,7 @@ describe('Destruction Flow Tests', () => {
 
       // Verify PARENT/CHILD relationships
       expect(PARENT.get(childId)).toBe(parentId);
-      expect(CHILD.get(parentId)).toContain(childId);
+      expect(CHILD.get(parentId)?.has(childId)).toBe(true);
 
       // Destroy child
       const promises: Promise<void>[] = [];
@@ -1713,7 +1690,7 @@ describe('Destruction Flow Tests', () => {
       expect(PARENT.has(childId)).toBe(false);
 
       // Clean up parent
-      destroyElementSync(parent, true, api);
+      destroyElementSync(parent, true, fixture.api);
     });
   });
 });

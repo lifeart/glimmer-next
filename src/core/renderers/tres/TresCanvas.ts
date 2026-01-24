@@ -69,7 +69,7 @@ export function TresCanvas(this: Component<TresCanvasProps>) {
   const args = this.args as TresCanvasProps;
 
   // Create the canvas element
-  const canvasNode = $_tag('canvas', [[], [], []], [], this) as HTMLCanvasElement;
+  const canvasNode = $_tag('canvas', [[], [], []], this) as HTMLCanvasElement;
   canvasNode.setAttribute('data-tres', 'tresjs 0.0.1');
   canvasNode.style.display = 'block';
   canvasNode.style.width = args.width ?? '100%';

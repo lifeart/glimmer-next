@@ -11,8 +11,8 @@ describe('Modifier resolution edge cases', () => {
 
       console.log('Test 1 - @modifier code:', result.code);
 
-      // @modifier should resolve to this[$args].modifier
-      expect(result.code).toContain('$args');
+      // @modifier should resolve to $a.modifier
+      expect(result.code).toContain('$a.');
       expect(result.code).toContain('modifier');
       // Should NOT be treated as string since @-prefix is known
       expect(result.code).not.toContain('"@modifier"');
@@ -27,7 +27,7 @@ describe('Modifier resolution edge cases', () => {
       console.log('Test 1b - @my-modifier code:', result.code);
 
       // Hyphenated args should use bracket notation
-      expect(result.code).toContain('$args');
+      expect(result.code).toContain('$a');
       expect(result.code).toContain('my-modifier');
       // Should use bracket notation for hyphenated
       expect(result.code).toContain('["my-modifier"]');
@@ -41,7 +41,7 @@ describe('Modifier resolution edge cases', () => {
 
       console.log('Test 1c - @modifier with args code:', result.code);
 
-      expect(result.code).toContain('$args');
+      expect(result.code).toContain('$a');
       expect(result.code).toContain('modifier');
       expect(result.code).toContain('"arg1"');
     });

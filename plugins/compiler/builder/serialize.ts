@@ -448,14 +448,17 @@ function serializeArrowStreaming(node: JSArrowFunction, ctx: SerializeContext): 
   serializeParamListStreaming(node.params, ctx, wrapParams);
   emitter.emit(' => ');
 
+  // Disable PURE annotations inside arrow bodies (tree-shakers can't eliminate nested calls)
+  const bodyCtx = ctx.emitPure ? { ...ctx, emitPure: false } : ctx;
+
   if (node.expression) {
-    serializeNodeStreaming(node.body as JSExpression, ctx);
+    serializeNodeStreaming(node.body as JSExpression, bodyCtx);
   } else {
     emitter.emit('{ ');
     const stmts = node.body as JSStatement[];
     for (let i = 0; i < stmts.length; i++) {
       if (i > 0) emitter.emit(' ');
-      serializeNodeStreaming(stmts[i], ctx);
+      serializeNodeStreaming(stmts[i], bodyCtx);
     }
     emitter.emit(' }');
   }
@@ -473,28 +476,31 @@ function serializeFunctionStreaming(node: JSFunction, ctx: SerializeContext): vo
     emitter.pushScope(node.sourceRange, 'Synthetic');
   }
 
+  // Disable PURE annotations inside function bodies (tree-shakers can't eliminate nested calls)
+  const bodyCtx = ctx.emitPure ? { ...ctx, emitPure: false } : ctx;
+
   const useFormatted = node.formatted || (ctx.format && node.body.length > 1);
   const fnPrefix = `function${name ? ' ' + name : ''}`;
 
   if (useFormatted) {
-    ctx.indentLevel++;
-    const indent = getRelativeIndent(ctx);
+    bodyCtx.indentLevel++;
+    const indent = getRelativeIndent(bodyCtx);
     emitter.emit(fnPrefix);
-    serializeParamListStreaming(node.params, ctx, true);
-    emitter.emit('{' + getNewlineWithBase(ctx));
+    serializeParamListStreaming(node.params, bodyCtx, true);
+    emitter.emit('{' + getNewlineWithBase(bodyCtx));
     for (let i = 0; i < node.body.length; i++) {
       emitter.emit(indent);
-      serializeNodeStreaming(node.body[i], ctx);
-      emitter.emit(getNewlineWithBase(ctx));
+      serializeNodeStreaming(node.body[i], bodyCtx);
+      emitter.emit(getNewlineWithBase(bodyCtx));
     }
-    ctx.indentLevel--;
-    emitter.emit(getRelativeIndent(ctx) + '}');
+    bodyCtx.indentLevel--;
+    emitter.emit(getRelativeIndent(bodyCtx) + '}');
   } else {
     emitter.emit(fnPrefix);
-    serializeParamListStreaming(node.params, ctx, true);
+    serializeParamListStreaming(node.params, bodyCtx, true);
     emitter.emit('{');
     for (const stmt of node.body) {
-      serializeNodeStreaming(stmt, ctx);
+      serializeNodeStreaming(stmt, bodyCtx);
     }
     emitter.emit('}');
   }
@@ -936,13 +942,16 @@ function serializeArrow(node: JSArrowFunction, ctx: SerializeContext): string {
     ? paramName(node.params[0])
     : `(${formatParamList(node.params)})`;
 
+  // Disable PURE annotations inside arrow bodies (tree-shakers can't eliminate nested calls)
+  const bodyCtx = ctx.emitPure ? { ...ctx, emitPure: false } : ctx;
+
   let body: string;
   if (node.expression) {
-    body = serializeNode(node.body as JSExpression, ctx);
+    body = serializeNode(node.body as JSExpression, bodyCtx);
   } else {
     const stmts = (node.body as JSStatement[])
-      .map(stmt => serializeNode(stmt, ctx))
-      .join(getNewline(ctx));
+      .map(stmt => serializeNode(stmt, bodyCtx))
+      .join(getNewline(bodyCtx));
     body = `{ ${stmts} }`;
   }
 
@@ -954,27 +963,30 @@ function serializeFunction(node: JSFunction, ctx: SerializeContext): string {
   const name = node.name || '';
   const params = formatParamList(node.params);
 
+  // Disable PURE annotations inside function bodies (tree-shakers can't eliminate nested calls)
+  const bodyCtx = ctx.emitPure ? { ...ctx, emitPure: false } : ctx;
+
   // Check if we should use formatted output (multi-line with indentation)
   const useFormatted = node.formatted || (ctx.format && node.body.length > 1);
 
   if (useFormatted) {
     // Formatted: multi-line function with proper indentation
     // Use relative indent (not baseIndent + indent) because nl already includes baseIndent
-    ctx.indentLevel++;
-    const relIndent = ctx.indent.repeat(ctx.indentLevel);
-    const nl = '\n' + ctx.baseIndent;
+    bodyCtx.indentLevel++;
+    const relIndent = bodyCtx.indent.repeat(bodyCtx.indentLevel);
+    const nl = '\n' + bodyCtx.baseIndent;
     const stmts = node.body
-      .map(stmt => `${relIndent}${serializeNode(stmt, ctx)}`)
+      .map(stmt => `${relIndent}${serializeNode(stmt, bodyCtx)}`)
       .join(nl);
-    ctx.indentLevel--;
-    const closingRelIndent = ctx.indent.repeat(ctx.indentLevel);
+    bodyCtx.indentLevel--;
+    const closingRelIndent = bodyCtx.indent.repeat(bodyCtx.indentLevel);
     const code = `function${name ? ' ' + name : ''}(${params}){${nl}${stmts}${nl}${closingRelIndent}}`;
     return emit(code, ctx, node.sourceRange);
   }
 
   // Inline: single line
   const stmts = node.body
-    .map(stmt => serializeNode(stmt, ctx))
+    .map(stmt => serializeNode(stmt, bodyCtx))
     .join('');
 
   const code = `function${name ? ' ' + name : ''}(${params}){${stmts}}`;

@@ -7,24 +7,18 @@
  * - The tests verify that the runtime compiler produces working templates
  */
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
-import { Window } from 'happy-dom';
 import { Component } from './component';
-import { HTMLBrowserDOMApi, DOMApi } from './dom-api';
 import {
   RENDERED_NODES_PROPERTY,
-  PARENT,
-  TREE,
-  CHILD,
   addToTree,
   $template,
 } from './shared';
-import { cleanupFastContext, provideContext, RENDERING_CONTEXT } from './context';
 import {
-  Root,
   $_c,
   $_args,
   $_edp,
 } from './dom';
+import { createDOMFixture, type DOMFixture } from './__test-utils__';
 import { cell } from './reactive';
 import { renderElement } from './render-core';
 import {
@@ -39,11 +33,7 @@ import {
 // instead of relying on auto-setup on module import.
 
 describe('Runtime Compiler Integration', () => {
-  let window: Window;
-  let document: Document;
-  let api: DOMApi;
-  let root: Root;
-  let container: HTMLElement;
+  let fixture: DOMFixture;
 
   /**
    * Helper to render any component (class-based, template-only, or inline template string)
@@ -72,24 +62,17 @@ describe('Runtime Compiler Integration', () => {
 
     const parentComponent = new Component({});
     parentComponent[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, parentComponent);
+    addToTree(fixture.root, parentComponent);
 
     const args = $_args(componentArgs, false, $_edp as any);
     const instance = $_c(component as any, args, parentComponent);
-    renderElement(api, parentComponent, container, instance);
+    renderElement(fixture.api, parentComponent, fixture.container, instance);
 
     return instance;
   }
 
   beforeEach(() => {
-    window = new Window();
-    document = window.document as unknown as Document;
-    api = new HTMLBrowserDOMApi(document);
-    cleanupFastContext();
-    root = new Root(document);
-    provideContext(root, RENDERING_CONTEXT, api);
-    container = document.createElement('div');
-    document.body.appendChild(container);
+    fixture = createDOMFixture();
 
     // Explicitly setup global scope for runtime-compiled templates
     // This was previously auto-setup on module import, but is now lazy/explicit
@@ -103,11 +86,7 @@ describe('Runtime Compiler Integration', () => {
   });
 
   afterEach(() => {
-    cleanupFastContext();
-    TREE.clear();
-    PARENT.clear();
-    CHILD.clear();
-    window.close();
+    fixture.cleanup();
   });
 
   describe('compileTemplate API', () => {
@@ -132,8 +111,8 @@ describe('Runtime Compiler Integration', () => {
       });
 
       expect(result.errors).toHaveLength(0);
-      // The code should reference args
-      expect(result.code).toContain('$args');
+      // The code should reference args via alias
+      expect(result.code).toContain('$a.');
     });
   });
 
@@ -145,7 +124,7 @@ describe('Runtime Compiler Integration', () => {
 
       render(StaticComponent);
 
-      expect(container.textContent).toContain('Static Content');
+      expect(fixture.container.textContent).toContain('Static Content');
     });
 
     test('runtime-compiled component with this.property works', () => {
@@ -156,7 +135,7 @@ describe('Runtime Compiler Integration', () => {
 
       render(PropertyComponent);
 
-      expect(container.textContent).toContain('Name: TestUser');
+      expect(fixture.container.textContent).toContain('Name: TestUser');
     });
 
     test('runtime-compiled component with reactive cell property', async () => {
@@ -170,7 +149,7 @@ describe('Runtime Compiler Integration', () => {
 
       const instance = render(ReactivePropertyComponent);
 
-      expect(container.textContent).toContain('Count: 0');
+      expect(fixture.container.textContent).toContain('Count: 0');
 
       // Update the cell
       instance.countCell.update(42);
@@ -178,7 +157,7 @@ describe('Runtime Compiler Integration', () => {
       // Wait for reactivity to propagate
       await new Promise(resolve => setTimeout(resolve, 50));
 
-      expect(container.textContent).toContain('Count: 42');
+      expect(fixture.container.textContent).toContain('Count: 42');
     });
   });
 
@@ -189,8 +168,8 @@ describe('Runtime Compiler Integration', () => {
       });
 
       expect(compatResult.errors).toHaveLength(0);
-      // In compat mode, @name should be compiled with args reference
-      expect(compatResult.code).toContain('$args');
+      // In compat mode, @name should be compiled with args alias
+      expect(compatResult.code).toContain('$a.');
     });
 
     test('WITH_MODIFIER_MANAGER flag enables modifier support', () => {
@@ -275,11 +254,11 @@ describe('Runtime Compiler Integration', () => {
 
       render(NestedComponent);
 
-      const outer = container.querySelector('.outer');
+      const outer = fixture.container.querySelector('.outer');
       expect(outer).not.toBeNull();
       expect(outer?.tagName.toLowerCase()).toBe('div');
 
-      const inner = container.querySelector('.inner');
+      const inner = fixture.container.querySelector('.inner');
       expect(inner).not.toBeNull();
       expect(inner?.tagName.toLowerCase()).toBe('span');
       expect(inner?.textContent).toBe('Content');
@@ -294,7 +273,7 @@ describe('Runtime Compiler Integration', () => {
 
       render(InputComponent);
 
-      const input = container.querySelector('input') as HTMLInputElement;
+      const input = fixture.container.querySelector('input') as HTMLInputElement;
       expect(input).not.toBeNull();
       expect(input.type).toBe('text');
       expect(input.placeholder).toBe('Enter name');
@@ -315,10 +294,10 @@ describe('Runtime Compiler Integration', () => {
 
       render(ContentComponent);
 
-      const h1 = container.querySelector('h1');
+      const h1 = fixture.container.querySelector('h1');
       expect(h1?.textContent).toBe('Hello World');
 
-      const p = container.querySelector('p');
+      const p = fixture.container.querySelector('p');
       expect(p?.textContent).toBe('This is a test description');
     });
 
@@ -334,7 +313,7 @@ describe('Runtime Compiler Integration', () => {
 
       render(ConditionalComponent);
 
-      const visible = container.querySelector('.visible');
+      const visible = fixture.container.querySelector('.visible');
       expect(visible).not.toBeNull();
       expect(visible?.textContent).toBe('Visible Content');
     });
@@ -354,8 +333,8 @@ describe('Runtime Compiler Integration', () => {
       render(AuthComponent);
 
       // Should show else branch since isLoggedIn is false
-      expect(container.querySelector('.logged-in')).toBeNull();
-      expect(container.querySelector('.logged-out')?.textContent).toBe('Please log in');
+      expect(fixture.container.querySelector('.logged-in')).toBeNull();
+      expect(fixture.container.querySelector('.logged-out')?.textContent).toBe('Please log in');
     });
 
     test('renders list with {{#each}}', () => {
@@ -372,7 +351,7 @@ describe('Runtime Compiler Integration', () => {
 
       render(ListComponent);
 
-      const listItems = container.querySelectorAll('li');
+      const listItems = fixture.container.querySelectorAll('li');
       expect(listItems.length).toBe(3);
       expect(listItems[0].textContent).toBe('Apple');
       expect(listItems[1].textContent).toBe('Banana');
@@ -397,7 +376,7 @@ describe('Runtime Compiler Integration', () => {
 
       render(IndexedListComponent);
 
-      const listItems = container.querySelectorAll('li');
+      const listItems = fixture.container.querySelectorAll('li');
       expect(listItems.length).toBe(3);
       expect(listItems[0].textContent).toContain('0: First');
       expect(listItems[1].textContent).toContain('1: Second');
@@ -418,8 +397,8 @@ describe('Runtime Compiler Integration', () => {
 
       render(StatusComponent);
 
-      expect(container.querySelector('.active')?.textContent).toBe('Active');
-      expect(container.querySelector('.inactive')).toBeNull();
+      expect(fixture.container.querySelector('.active')?.textContent).toBe('Active');
+      expect(fixture.container.querySelector('.inactive')).toBeNull();
     });
 
     test('renders with built-in not helper', () => {
@@ -434,7 +413,7 @@ describe('Runtime Compiler Integration', () => {
 
       render(ButtonComponent);
 
-      const button = container.querySelector('button');
+      const button = fixture.container.querySelector('button');
       expect(button).not.toBeNull();
       expect(button?.textContent).toBe('Click me');
     });
@@ -450,9 +429,9 @@ describe('Runtime Compiler Integration', () => {
 
       render(MultiRootComponent);
 
-      expect(container.querySelector('header')?.textContent).toBe('Header');
-      expect(container.querySelector('main')?.textContent).toBe('Main Content');
-      expect(container.querySelector('footer')?.textContent).toBe('Footer');
+      expect(fixture.container.querySelector('header')?.textContent).toBe('Header');
+      expect(fixture.container.querySelector('main')?.textContent).toBe('Main Content');
+      expect(fixture.container.querySelector('footer')?.textContent).toBe('Footer');
     });
 
     test('renders dynamic class binding', () => {
@@ -465,7 +444,7 @@ describe('Runtime Compiler Integration', () => {
 
       render(DynamicClassComponent);
 
-      const div = container.querySelector('div');
+      const div = fixture.container.querySelector('div');
       expect(div?.className).toBe('highlight active');
     });
 
@@ -483,9 +462,9 @@ describe('Runtime Compiler Integration', () => {
 
       render(EmptyListComponent);
 
-      const ul = container.querySelector('ul');
+      const ul = fixture.container.querySelector('ul');
       expect(ul).not.toBeNull();
-      expect(container.querySelectorAll('li').length).toBe(0);
+      expect(fixture.container.querySelectorAll('li').length).toBe(0);
     });
 
     test('renders objects in list with property access', () => {
@@ -508,14 +487,14 @@ describe('Runtime Compiler Integration', () => {
 
       render(UserListComponent);
 
-      const userItems = container.querySelectorAll('.user');
+      const userItems = fixture.container.querySelectorAll('.user');
       expect(userItems.length).toBe(2);
 
-      const names = container.querySelectorAll('.name');
+      const names = fixture.container.querySelectorAll('.name');
       expect(names[0].textContent).toBe('Alice');
       expect(names[1].textContent).toBe('Bob');
 
-      const emails = container.querySelectorAll('.email');
+      const emails = fixture.container.querySelectorAll('.email');
       expect(emails[0].textContent).toBe('alice@example.com');
       expect(emails[1].textContent).toBe('bob@example.com');
     });
@@ -534,7 +513,7 @@ describe('Runtime Compiler Integration', () => {
 
       render(StaticGreeting);
 
-      const div = container.querySelector('.static');
+      const div = fixture.container.querySelector('.static');
       expect(div).not.toBeNull();
       expect(div?.textContent).toBe('Static Template-Only');
     });
@@ -544,7 +523,7 @@ describe('Runtime Compiler Integration', () => {
 
       render(NameGreeting, { name: 'World' });
 
-      const span = container.querySelector('.name');
+      const span = fixture.container.querySelector('.name');
       expect(span).not.toBeNull();
       expect(span?.textContent).toBe('Hello World!');
     });
@@ -563,10 +542,10 @@ describe('Runtime Compiler Integration', () => {
         email: 'john@example.com',
       });
 
-      const h2 = container.querySelector('.user-card h2');
+      const h2 = fixture.container.querySelector('.user-card h2');
       expect(h2?.textContent).toBe('John Doe');
 
-      const p = container.querySelector('.user-card p');
+      const p = fixture.container.querySelector('.user-card p');
       expect(p?.textContent).toBe('john@example.com');
     });
 
@@ -581,8 +560,8 @@ describe('Runtime Compiler Integration', () => {
 
       // Test with show=true
       render(ConditionalMessage, { show: true });
-      expect(container.querySelector('.visible')).not.toBeNull();
-      expect(container.querySelector('.hidden')).toBeNull();
+      expect(fixture.container.querySelector('.visible')).not.toBeNull();
+      expect(fixture.container.querySelector('.hidden')).toBeNull();
     });
 
     test('template-only component with conditional else branch', () => {
@@ -595,8 +574,8 @@ describe('Runtime Compiler Integration', () => {
       `);
 
       render(ConditionalMessage, { show: false });
-      expect(container.querySelector('.visible')).toBeNull();
-      expect(container.querySelector('.hidden')).not.toBeNull();
+      expect(fixture.container.querySelector('.visible')).toBeNull();
+      expect(fixture.container.querySelector('.hidden')).not.toBeNull();
     });
 
     test('template-only component with each loop over @args', () => {
@@ -610,7 +589,7 @@ describe('Runtime Compiler Integration', () => {
 
       render(ItemList, { items: ['One', 'Two', 'Three'] });
 
-      const listItems = container.querySelectorAll('.items li');
+      const listItems = fixture.container.querySelectorAll('.items li');
       expect(listItems.length).toBe(3);
       expect(listItems[0].textContent).toBe('One');
       expect(listItems[1].textContent).toBe('Two');
@@ -629,8 +608,8 @@ describe('Runtime Compiler Integration', () => {
         user: { name: 'Alice', age: 30 },
       });
 
-      expect(container.querySelector('.user-name')?.textContent).toBe('Alice');
-      expect(container.querySelector('.user-age')?.textContent).toBe('30');
+      expect(fixture.container.querySelector('.user-name')?.textContent).toBe('Alice');
+      expect(fixture.container.querySelector('.user-age')?.textContent).toBe('30');
     });
 
     test('template-only component with helper in @args context', () => {
@@ -643,7 +622,7 @@ describe('Runtime Compiler Integration', () => {
       `);
 
       render(StatusBadge, { status: 'active' });
-      expect(container.querySelector('.badge.active')?.textContent).toBe('Active');
+      expect(fixture.container.querySelector('.badge.active')?.textContent).toBe('Active');
     });
 
     test('template-only component with multiple root elements', () => {
@@ -654,8 +633,8 @@ describe('Runtime Compiler Integration', () => {
 
       render(MultiRoot, { first: 'A', second: 'B' });
 
-      expect(container.querySelector('.first')?.textContent).toBe('A');
-      expect(container.querySelector('.second')?.textContent).toBe('B');
+      expect(fixture.container.querySelector('.first')?.textContent).toBe('A');
+      expect(fixture.container.querySelector('.second')?.textContent).toBe('B');
     });
   });
 
@@ -663,13 +642,13 @@ describe('Runtime Compiler Integration', () => {
     test('render accepts a template string directly', () => {
       render('<div class="inline">Inline Template</div>');
 
-      expect(container.querySelector('.inline')?.textContent).toBe('Inline Template');
+      expect(fixture.container.querySelector('.inline')?.textContent).toBe('Inline Template');
     });
 
     test('render accepts a template string with @args', () => {
       render('<span class="greeting">Hello {{@name}}!</span>', { name: 'World' });
 
-      expect(container.querySelector('.greeting')?.textContent).toBe('Hello World!');
+      expect(fixture.container.querySelector('.greeting')?.textContent).toBe('Hello World!');
     });
 
     test('render accepts a template string with multiple @args', () => {
@@ -678,7 +657,7 @@ describe('Runtime Compiler Integration', () => {
         { firstName: 'John', lastName: 'Doe' }
       );
 
-      expect(container.querySelector('.user')?.textContent).toBe('John Doe');
+      expect(fixture.container.querySelector('.user')?.textContent).toBe('John Doe');
     });
 
     test('render accepts a template string with scope for child components', () => {
@@ -690,7 +669,7 @@ describe('Runtime Compiler Integration', () => {
         { scope: { Badge } }
       );
 
-      expect(container.querySelector('.badge')?.textContent).toBe('Hello');
+      expect(fixture.container.querySelector('.badge')?.textContent).toBe('Hello');
     });
 
     test('render accepts a template string with class-based child in scope', () => {
@@ -704,7 +683,7 @@ describe('Runtime Compiler Integration', () => {
         { scope: { Button } }
       );
 
-      expect(container.querySelector('.btn')?.textContent).toBe('Click Me');
+      expect(fixture.container.querySelector('.btn')?.textContent).toBe('Click Me');
     });
 
     test('render accepts a template string with conditional', () => {
@@ -713,8 +692,8 @@ describe('Runtime Compiler Integration', () => {
         { show: true }
       );
 
-      expect(container.querySelector('.visible')?.textContent).toBe('Shown');
-      expect(container.querySelector('.hidden')).toBeNull();
+      expect(fixture.container.querySelector('.visible')?.textContent).toBe('Shown');
+      expect(fixture.container.querySelector('.hidden')).toBeNull();
     });
 
     test('render accepts a template string with each loop', () => {
@@ -723,7 +702,7 @@ describe('Runtime Compiler Integration', () => {
         { items: ['A', 'B', 'C'] }
       );
 
-      const items = container.querySelectorAll('li');
+      const items = fixture.container.querySelectorAll('li');
       expect(items.length).toBe(3);
       expect(items[0].textContent).toBe('A');
     });
@@ -740,7 +719,7 @@ describe('Runtime Compiler Integration', () => {
         { scope: { Outer } }
       );
 
-      expect(container.querySelector('.inner')?.textContent).toBe('Nested!');
+      expect(fixture.container.querySelector('.inner')?.textContent).toBe('Nested!');
     });
   });
 
@@ -755,7 +734,7 @@ describe('Runtime Compiler Integration', () => {
         }
       });
 
-      expect(container.querySelector('.eval-test')?.textContent).toBe('Hello from eval!');
+      expect(fixture.container.querySelector('.eval-test')?.textContent).toBe('Hello from eval!');
     });
 
     test('eval resolves multiple bindings from outer scope', () => {
@@ -770,7 +749,7 @@ describe('Runtime Compiler Integration', () => {
         }
       });
 
-      expect(container.querySelector('.name')?.textContent).toBe('John Doe');
+      expect(fixture.container.querySelector('.name')?.textContent).toBe('John Doe');
     });
 
     test('eval works with template-only components', () => {
@@ -785,7 +764,7 @@ describe('Runtime Compiler Integration', () => {
 
       render(DynamicGreeting);
 
-      expect(container.querySelector('.dynamic')?.textContent).toBe('Dynamic message');
+      expect(fixture.container.querySelector('.dynamic')?.textContent).toBe('Dynamic message');
     });
 
     test('eval works with class-based components', () => {
@@ -803,7 +782,7 @@ describe('Runtime Compiler Integration', () => {
 
       render(EvalComponent);
 
-      expect(container.querySelector('.eval-class')?.textContent).toBe('External - Internal');
+      expect(fixture.container.querySelector('.eval-class')?.textContent).toBe('External - Internal');
     });
 
     test('scope takes precedence over eval', () => {
@@ -819,7 +798,7 @@ describe('Runtime Compiler Integration', () => {
 
       // scope is checked via bindings, eval is for truly unknown bindings
       // When name is in scope, it's compiled differently (not as unknown binding)
-      expect(container.querySelector('.precedence')?.textContent).toBe('from scope');
+      expect(fixture.container.querySelector('.precedence')?.textContent).toBe('from scope');
     });
 
     test('@args take precedence over eval', () => {
@@ -832,7 +811,7 @@ describe('Runtime Compiler Integration', () => {
         }
       });
 
-      expect(container.querySelector('.args-precedence')?.textContent).toBe('from args');
+      expect(fixture.container.querySelector('.args-precedence')?.textContent).toBe('from args');
     });
 
     test('this.property takes precedence over eval', () => {
@@ -850,7 +829,7 @@ describe('Runtime Compiler Integration', () => {
 
       render(PrecedenceComponent);
 
-      expect(container.querySelector('.this-precedence')?.textContent).toBe('from this');
+      expect(fixture.container.querySelector('.this-precedence')?.textContent).toBe('from this');
     });
 
     test('eval falls back gracefully when variable undefined', () => {
@@ -865,10 +844,10 @@ describe('Runtime Compiler Integration', () => {
       });
 
       // Should render empty or the literal string, not crash
-      const element = container.querySelector('.fallback');
+      const element = fixture.container.querySelector('.fallback');
       expect(element).not.toBeNull();
       // Undefined eval result should render as empty text
-      expect(container.querySelector('.fallback')?.textContent).toBe('');
+      expect(fixture.container.querySelector('.fallback')?.textContent).toBe('');
     });
 
     test('eval works for text interpolation inside conditional', () => {
@@ -888,7 +867,7 @@ describe('Runtime Compiler Integration', () => {
         }
       );
 
-      expect(container.querySelector('.shown')?.textContent).toBe('Conditional message');
+      expect(fixture.container.querySelector('.shown')?.textContent).toBe('Conditional message');
     });
 
     test('eval works for text interpolation inside each loop', () => {
@@ -905,7 +884,7 @@ describe('Runtime Compiler Integration', () => {
         }
       );
 
-      const listItems = container.querySelectorAll('li');
+      const listItems = fixture.container.querySelectorAll('li');
       expect(listItems.length).toBe(3);
       expect(listItems[0].textContent).toBe('Item: A');
     });
@@ -933,8 +912,8 @@ describe('Runtime Compiler Integration', () => {
         }
       );
 
-      expect(container.querySelector('.parent')?.textContent).toContain('Parent');
-      expect(container.querySelector('.child')?.textContent).toBe('Child');
+      expect(fixture.container.querySelector('.parent')?.textContent).toContain('Parent');
+      expect(fixture.container.querySelector('.child')?.textContent).toBe('Child');
     });
 
     test('eval function that throws is handled gracefully', () => {
@@ -945,9 +924,9 @@ describe('Runtime Compiler Integration', () => {
       });
 
       // Should not crash, element should exist
-      expect(container.querySelector('.error-test')).not.toBeNull();
+      expect(fixture.container.querySelector('.error-test')).not.toBeNull();
       // Eval throwing returns undefined, which should render as empty text
-      expect(container.querySelector('.error-test')?.textContent).toBe('');
+      expect(fixture.container.querySelector('.error-test')?.textContent).toBe('');
     });
 
     test('child component can have different eval than parent', () => {
@@ -975,8 +954,8 @@ describe('Runtime Compiler Integration', () => {
         }
       );
 
-      expect(container.querySelector('.parent-eval')?.textContent).toContain('Parent Scope');
-      expect(container.querySelector('.child-eval')?.textContent).toBe('Child Scope');
+      expect(fixture.container.querySelector('.parent-eval')?.textContent).toContain('Parent Scope');
+      expect(fixture.container.querySelector('.child-eval')?.textContent).toBe('Child Scope');
     });
 
     test('child component without eval does NOT inherit parent eval', () => {
@@ -999,9 +978,9 @@ describe('Runtime Compiler Integration', () => {
         }
       );
 
-      expect(container.querySelector('.parent-with-eval')?.textContent).toContain('Parent Value');
+      expect(fixture.container.querySelector('.parent-with-eval')?.textContent).toContain('Parent Value');
       // Child should NOT have access to parentValue via eval
-      expect(container.querySelector('.child-no-eval')?.textContent).toBe('unknownVar');
+      expect(fixture.container.querySelector('.child-no-eval')?.textContent).toBe('unknownVar');
     });
 
     test('eval returning a function calls it with args', () => {
@@ -1013,7 +992,7 @@ describe('Runtime Compiler Integration', () => {
         })()
       });
 
-      expect(container.querySelector('.helper-eval')?.textContent).toBe('Doe, John');
+      expect(fixture.container.querySelector('.helper-eval')?.textContent).toBe('Doe, John');
     });
 
     test('eval returning null is used (not treated as undefined)', () => {
@@ -1025,7 +1004,7 @@ describe('Runtime Compiler Integration', () => {
         })()
       });
 
-      expect(container.querySelector('.null-eval')?.textContent).toBe('Value: ');
+      expect(fixture.container.querySelector('.null-eval')?.textContent).toBe('Value: ');
     });
 
     test('eval returning false is used (not treated as undefined)', () => {
@@ -1037,7 +1016,7 @@ describe('Runtime Compiler Integration', () => {
         })()
       });
 
-      expect(container.querySelector('.false-eval')?.textContent).toBe('Value: false');
+      expect(fixture.container.querySelector('.false-eval')?.textContent).toBe('Value: false');
     });
 
     test('eval returning 0 is used (not treated as undefined)', () => {
@@ -1049,7 +1028,7 @@ describe('Runtime Compiler Integration', () => {
         })()
       });
 
-      expect(container.querySelector('.zero-eval')?.textContent).toBe('Count: 0');
+      expect(fixture.container.querySelector('.zero-eval')?.textContent).toBe('Count: 0');
     });
 
     test('eval returning empty string is used (not treated as undefined)', () => {
@@ -1061,7 +1040,7 @@ describe('Runtime Compiler Integration', () => {
         })()
       });
 
-      expect(container.querySelector('.empty-eval')?.textContent).toBe('Name: []');
+      expect(fixture.container.querySelector('.empty-eval')?.textContent).toBe('Name: []');
     });
 
     test('eval returning an object is used', () => {
@@ -1073,7 +1052,7 @@ describe('Runtime Compiler Integration', () => {
         })()
       });
 
-      expect(container.querySelector('.object-eval')?.textContent).toBe('Alice (30)');
+      expect(fixture.container.querySelector('.object-eval')?.textContent).toBe('Alice (30)');
     });
 
     test('eval is not called for known bindings in scope', () => {
@@ -1088,7 +1067,7 @@ describe('Runtime Compiler Integration', () => {
         }
       });
 
-      expect(container.querySelector('.known-binding')?.textContent).toBe('from scope');
+      expect(fixture.container.querySelector('.known-binding')?.textContent).toBe('from scope');
       // eval should not be called because knownValue is in scope/bindings
       expect(evalCallCount).toBe(0);
     });
@@ -1108,7 +1087,7 @@ describe('Runtime Compiler Integration', () => {
         })()
       });
 
-      expect(container.querySelector('.reactive-eval')?.textContent).toBe('initial');
+      expect(fixture.container.querySelector('.reactive-eval')?.textContent).toBe('initial');
       // eval should have been called at least once
       expect(callCount).toBeGreaterThanOrEqual(1);
     });
@@ -1127,7 +1106,7 @@ describe('Runtime Compiler Integration', () => {
         })()
       });
 
-      expect(container.querySelector('.cell-eval')?.textContent).toBe('initial');
+      expect(fixture.container.querySelector('.cell-eval')?.textContent).toBe('initial');
 
       // Update the cell
       valueCell.update('updated');
@@ -1136,7 +1115,7 @@ describe('Runtime Compiler Integration', () => {
       await new Promise(resolve => setTimeout(resolve, 50));
 
       // Should reflect the new value
-      expect(container.querySelector('.cell-eval')?.textContent).toBe('updated');
+      expect(fixture.container.querySelector('.cell-eval')?.textContent).toBe('updated');
     });
 
     test('eval value used in {{#if}} condition (static true)', () => {
@@ -1152,8 +1131,8 @@ describe('Runtime Compiler Integration', () => {
         }
       );
 
-      expect(container.querySelector('.if-true')?.textContent).toBe('Shown');
-      expect(container.querySelector('.if-false')).toBeNull();
+      expect(fixture.container.querySelector('.if-true')?.textContent).toBe('Shown');
+      expect(fixture.container.querySelector('.if-false')).toBeNull();
     });
 
     test('eval value used in {{#if}} condition (static false)', () => {
@@ -1169,8 +1148,8 @@ describe('Runtime Compiler Integration', () => {
         }
       );
 
-      expect(container.querySelector('.if-true')).toBeNull();
-      expect(container.querySelector('.if-false')?.textContent).toBe('Hidden');
+      expect(fixture.container.querySelector('.if-true')).toBeNull();
+      expect(fixture.container.querySelector('.if-false')?.textContent).toBe('Hidden');
     });
 
     test('eval value in {{#if}} updates reactively with cell', async () => {
@@ -1189,7 +1168,7 @@ describe('Runtime Compiler Integration', () => {
       );
 
       // Initially hidden
-      expect(container.querySelector('.reactive-if')).toBeNull();
+      expect(fixture.container.querySelector('.reactive-if')).toBeNull();
 
       // Update cell to true
       showCell.update(true);
@@ -1198,7 +1177,7 @@ describe('Runtime Compiler Integration', () => {
       await new Promise(resolve => setTimeout(resolve, 50));
 
       // Should now be visible
-      expect(container.querySelector('.reactive-if')?.textContent).toBe('Now visible!');
+      expect(fixture.container.querySelector('.reactive-if')?.textContent).toBe('Now visible!');
     });
 
     test('eval value used in {{#each}} loop', () => {
@@ -1214,7 +1193,7 @@ describe('Runtime Compiler Integration', () => {
         }
       );
 
-      const items = container.querySelectorAll('.eval-item');
+      const items = fixture.container.querySelectorAll('.eval-item');
       expect(items.length).toBe(3);
       expect(items[0].textContent).toBe('X');
       expect(items[1].textContent).toBe('Y');
@@ -1240,7 +1219,7 @@ describe('Runtime Compiler Integration', () => {
         }
       );
 
-      const items = container.querySelectorAll('.nested-item');
+      const items = fixture.container.querySelectorAll('.nested-item');
       expect(items.length).toBe(2);
       expect(items[0].textContent).toBe('Item: A');
       expect(items[1].textContent).toBe('Item: B');
@@ -1267,7 +1246,7 @@ describe('Runtime Compiler Integration', () => {
       );
 
       // Initially hidden
-      expect(container.querySelector('.deferred-content')).toBeNull();
+      expect(fixture.container.querySelector('.deferred-content')).toBeNull();
 
       // Toggle to true
       showCell.update(true);
@@ -1276,7 +1255,7 @@ describe('Runtime Compiler Integration', () => {
       await new Promise(resolve => setTimeout(resolve, 50));
 
       // Should now show with eval-resolved message
-      const content = container.querySelector('.deferred-content');
+      const content = fixture.container.querySelector('.deferred-content');
       expect(content).not.toBeNull();
       expect(content?.textContent).toBe('Deferred eval message!');
     });
@@ -1302,7 +1281,7 @@ describe('Runtime Compiler Integration', () => {
       );
 
       // Initially empty
-      expect(container.querySelectorAll('.deferred-item').length).toBe(0);
+      expect(fixture.container.querySelectorAll('.deferred-item').length).toBe(0);
 
       // Add items
       itemsCell.update(['First', 'Second']);
@@ -1311,7 +1290,7 @@ describe('Runtime Compiler Integration', () => {
       await new Promise(resolve => setTimeout(resolve, 50));
 
       // Should now show with eval-resolved prefix
-      const items = container.querySelectorAll('.deferred-item');
+      const items = fixture.container.querySelectorAll('.deferred-item');
       expect(items.length).toBe(2);
       expect(items[0].textContent).toBe('Added: First');
       expect(items[1].textContent).toBe('Added: Second');
@@ -1334,7 +1313,7 @@ describe('Runtime Compiler Integration', () => {
       );
 
       // Initial item rendered
-      let items = container.querySelectorAll('.append-item');
+      let items = fixture.container.querySelectorAll('.append-item');
       expect(items.length).toBe(1);
       expect(items[0].textContent).toBe('Item: Initial');
 
@@ -1345,7 +1324,7 @@ describe('Runtime Compiler Integration', () => {
       await new Promise(resolve => setTimeout(resolve, 50));
 
       // All items should have eval-resolved label
-      items = container.querySelectorAll('.append-item');
+      items = fixture.container.querySelectorAll('.append-item');
       expect(items.length).toBe(3);
       expect(items[0].textContent).toBe('Item: Initial');
       expect(items[1].textContent).toBe('Item: Appended1');
@@ -1381,16 +1360,16 @@ describe('Runtime Compiler Integration', () => {
       );
 
       // Initially nothing rendered
-      expect(container.querySelector('.outer')).toBeNull();
-      expect(container.querySelectorAll('.nested-item').length).toBe(0);
+      expect(fixture.container.querySelector('.outer')).toBeNull();
+      expect(fixture.container.querySelectorAll('.nested-item').length).toBe(0);
 
       // Show outer if block
       showOuterCell.update(true);
       await new Promise(resolve => setTimeout(resolve, 50));
 
       // Outer visible but no items yet
-      expect(container.querySelector('.outer')).not.toBeNull();
-      expect(container.querySelectorAll('.nested-item').length).toBe(0);
+      expect(fixture.container.querySelector('.outer')).not.toBeNull();
+      expect(fixture.container.querySelectorAll('.nested-item').length).toBe(0);
 
       // Add items (some active, some not)
       itemsCell.update([
@@ -1401,7 +1380,7 @@ describe('Runtime Compiler Integration', () => {
       await new Promise(resolve => setTimeout(resolve, 50));
 
       // Only active items should show with eval-resolved prefix
-      const nestedItems = container.querySelectorAll('.nested-item');
+      const nestedItems = fixture.container.querySelectorAll('.nested-item');
       expect(nestedItems.length).toBe(2);
       expect(nestedItems[0].textContent).toBe('Active: First');
       expect(nestedItems[1].textContent).toBe('Active: Third');
@@ -1414,7 +1393,7 @@ describe('Runtime Compiler Integration', () => {
       render(NoEvalTemplate, {});
 
       // unknownBinding should render as-is since there's no eval to resolve it
-      expect(container.querySelector('.no-eval-binding')?.textContent).toBe('unknownBinding');
+      expect(fixture.container.querySelector('.no-eval-binding')?.textContent).toBe('unknownBinding');
     });
 
     test('unknown helper with named args works without eval', () => {
@@ -1424,7 +1403,7 @@ describe('Runtime Compiler Integration', () => {
       render(NoEvalHelperTemplate, {});
 
       // Should not crash and return the helper name
-      expect(container.querySelector('.no-eval-helper')?.textContent).toBe('unknownHelper');
+      expect(fixture.container.querySelector('.no-eval-helper')?.textContent).toBe('unknownHelper');
     });
 
     test('multiple unknown bindings work without eval', () => {
@@ -1432,7 +1411,7 @@ describe('Runtime Compiler Integration', () => {
       const MultipleUnknown = template('<div class="multi-unknown">{{first}} - {{second}} - {{third}}</div>');
       render(MultipleUnknown, {});
 
-      expect(container.querySelector('.multi-unknown')?.textContent).toBe('first - second - third');
+      expect(fixture.container.querySelector('.multi-unknown')?.textContent).toBe('first - second - third');
     });
 
     test('eval returning undefined renders differently from no eval', () => {
@@ -1442,14 +1421,14 @@ describe('Runtime Compiler Integration', () => {
           return function() { return eval(arguments[0]); };
         })()
       });
-      expect(container.querySelector('.eval-undef')?.textContent).toBe('');
+      expect(fixture.container.querySelector('.eval-undef')?.textContent).toBe('');
 
-      container.innerHTML = '';
+      fixture.container.innerHTML = '';
 
       // When no eval is provided -> renders binding name as-is
       const NoEvalTpl = template('<span class="no-eval">{{missingVar}}</span>');
       render(NoEvalTpl, {});
-      expect(container.querySelector('.no-eval')?.textContent).toBe('missingVar');
+      expect(fixture.container.querySelector('.no-eval')?.textContent).toBe('missingVar');
     });
   });
 
@@ -1466,10 +1445,10 @@ describe('Runtime Compiler Integration', () => {
 
       render(Card, { title: 'Hello Badge' });
 
-      const card = container.querySelector('.card');
+      const card = fixture.container.querySelector('.card');
       expect(card).not.toBeNull();
 
-      const badge = container.querySelector('.badge');
+      const badge = fixture.container.querySelector('.badge');
       expect(badge).not.toBeNull();
       expect(badge?.textContent).toBe('Hello Badge');
     });
@@ -1488,10 +1467,10 @@ describe('Runtime Compiler Integration', () => {
 
       render(ButtonWrapper, { label: 'Click Me' });
 
-      const wrapper = container.querySelector('.wrapper');
+      const wrapper = fixture.container.querySelector('.wrapper');
       expect(wrapper).not.toBeNull();
 
-      const button = container.querySelector('.btn');
+      const button = fixture.container.querySelector('.btn');
       expect(button).not.toBeNull();
       expect(button?.textContent).toBe('Click Me');
     });
@@ -1512,10 +1491,10 @@ describe('Runtime Compiler Integration', () => {
 
       render(IconButton);
 
-      const button = container.querySelector('.icon-btn');
+      const button = fixture.container.querySelector('.icon-btn');
       expect(button).not.toBeNull();
 
-      const icon = container.querySelector('.icon');
+      const icon = fixture.container.querySelector('.icon');
       expect(icon).not.toBeNull();
       expect(icon?.textContent).toBe('star');
       expect(button?.textContent).toContain('Favorite');
@@ -1541,9 +1520,9 @@ describe('Runtime Compiler Integration', () => {
 
       render(FormField, { label: 'Username' });
 
-      expect(container.querySelector('.field')).not.toBeNull();
-      expect(container.querySelector('.label')).not.toBeNull();
-      expect(container.querySelector('.text')?.textContent).toBe('Username');
+      expect(fixture.container.querySelector('.field')).not.toBeNull();
+      expect(fixture.container.querySelector('.label')).not.toBeNull();
+      expect(fixture.container.querySelector('.text')?.textContent).toBe('Username');
     });
 
     test('three-level nesting: class-based -> template-only -> template-only', () => {
@@ -1571,13 +1550,13 @@ describe('Runtime Compiler Integration', () => {
 
       render(BulletList);
 
-      const list = container.querySelector('.list');
+      const list = fixture.container.querySelector('.list');
       expect(list).not.toBeNull();
 
-      const items = container.querySelectorAll('.item');
+      const items = fixture.container.querySelectorAll('.item');
       expect(items.length).toBe(3);
 
-      const dots = container.querySelectorAll('.dot');
+      const dots = fixture.container.querySelectorAll('.dot');
       expect(dots.length).toBe(3);
 
       expect(items[0].textContent).toContain('First');
@@ -1610,9 +1589,9 @@ describe('Runtime Compiler Integration', () => {
         year: '2024',
       });
 
-      expect(container.querySelector('.header')?.textContent).toBe('My Page');
-      expect(container.querySelector('.content')?.textContent).toBe('Content here');
-      expect(container.querySelector('.footer')?.textContent).toBe('2024');
+      expect(fixture.container.querySelector('.header')?.textContent).toBe('My Page');
+      expect(fixture.container.querySelector('.content')?.textContent).toBe('Content here');
+      expect(fixture.container.querySelector('.footer')?.textContent).toBe('2024');
     });
 
     test('class-based with multiple template-only children', () => {
@@ -1640,9 +1619,9 @@ describe('Runtime Compiler Integration', () => {
 
       render(UserProfile);
 
-      expect(container.querySelector('.avatar')?.getAttribute('alt')).toBe('Alice');
-      expect(container.querySelector('.name')?.textContent).toBe('Alice');
-      expect(container.querySelector('.status.online')?.textContent).toBe('Online');
+      expect(fixture.container.querySelector('.avatar')?.getAttribute('alt')).toBe('Alice');
+      expect(fixture.container.querySelector('.name')?.textContent).toBe('Alice');
+      expect(fixture.container.querySelector('.status.online')?.textContent).toBe('Online');
     });
 
     test('template-only passing @args down multiple levels', () => {
@@ -1660,9 +1639,9 @@ describe('Runtime Compiler Integration', () => {
 
       render(Outer, { input: 'Passed Through' });
 
-      expect(container.querySelector('.outer')).not.toBeNull();
-      expect(container.querySelector('.middle')).not.toBeNull();
-      expect(container.querySelector('.inner')?.textContent).toBe('Passed Through');
+      expect(fixture.container.querySelector('.outer')).not.toBeNull();
+      expect(fixture.container.querySelector('.middle')).not.toBeNull();
+      expect(fixture.container.querySelector('.inner')?.textContent).toBe('Passed Through');
     });
 
     test('mixed nesting with conditional rendering', () => {
@@ -1687,8 +1666,8 @@ describe('Runtime Compiler Integration', () => {
 
       // Test success case
       render(StatusWrapper, { success: true, msg: 'All good!' });
-      expect(container.querySelector('.success')?.textContent).toBe('All good!');
-      expect(container.querySelector('.error')).toBeNull();
+      expect(fixture.container.querySelector('.success')?.textContent).toBe('All good!');
+      expect(fixture.container.querySelector('.error')).toBeNull();
     });
 
     test('mixed nesting with each loop', () => {
@@ -1718,8 +1697,8 @@ describe('Runtime Compiler Integration', () => {
         labels: ['tech', 'news', 'featured'],
       });
 
-      expect(container.querySelector('h1')?.textContent).toBe('My Article');
-      const tags = container.querySelectorAll('.tag');
+      expect(fixture.container.querySelector('h1')?.textContent).toBe('My Article');
+      const tags = fixture.container.querySelectorAll('.tag');
       expect(tags.length).toBe(3);
       expect(tags[0].textContent).toBe('tech');
       expect(tags[1].textContent).toBe('news');

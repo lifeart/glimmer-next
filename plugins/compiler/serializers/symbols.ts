@@ -44,6 +44,9 @@ export const SYMBOLS = {
   // Args property accessor (for this[$args].argName)
   ARGS_PROPERTY: '$args',
 
+  // Short alias for this[$args] in compiled output
+  ARGS_ALIAS: '$a',
+
   // Built-in helpers
   COMPONENT_HELPER: '$_componentHelper',
   MODIFIER_HELPER: '$_modifierHelper',

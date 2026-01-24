@@ -123,17 +123,14 @@ export function unregisterFromParent(
     if (parentId === undefined) {
       return;
     }
-    const arr = CHILD.get(parentId);
-    if (arr !== undefined) {
-      const index = arr.indexOf(id);
+    const childSet = CHILD.get(parentId);
+    if (childSet !== undefined) {
       if (IS_DEV_MODE) {
-        if (index === -1) {
+        if (!childSet.has(id)) {
           console.warn('TODO: hmr negative index');
         }
       }
-      if (index !== -1) {
-        arr.splice(index, 1);
-      }
+      childSet.delete(id);
     }
   }
 }
@@ -191,10 +188,8 @@ function runDestructorsSync(
       destroyNodes(api, currentNode![RENDERED_NODES_PROPERTY]);
     }
     if (nodesToRemove) {
-      // Slice to prevent mutation during iteration
-      const nodesToRemoveCopy = nodesToRemove.slice();
-      for (const node of nodesToRemoveCopy) {
-        const instance = TREE.get(node);
+      for (const childId of nodesToRemove) {
+        const instance = TREE.get(childId);
         // Skip if instance doesn't exist or destruction has already started
         if (instance && !isDestructionStarted(instance)) {
           stack.push(instance);
@@ -217,10 +212,8 @@ export function runDestructors(
   const childComponents = CHILD.get(target[COMPONENT_ID_PROPERTY]);
   destroy(target, promises);
   if (childComponents) {
-    // Slice to prevent mutation during iteration
-    const childComponentsCopy = childComponents.slice();
-    const len = childComponentsCopy.length;
-    for (let i = 0; i < len; i++) {
+    const childComponentsCopy = Array.from(childComponents);
+    for (let i = 0; i < childComponentsCopy.length; i++) {
       const instance = TREE.get(childComponentsCopy[i]);
       // Skip if instance doesn't exist or destruction has already started
       if (instance && !isDestructionStarted(instance)) {

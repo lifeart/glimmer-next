@@ -70,12 +70,12 @@ describe('compile()', () => {
 
     test('compiles @arg path expression', () => {
       const result = compile('{{@anyValue}}');
-      expect(result.code).toContain('this[$args].anyValue');
+      expect(result.code).toContain('$a.anyValue');
     });
 
     test('compiles nested @arg path expression', () => {
       const result = compile('{{@user.name}}');
-      expect(result.code).toContain('this[$args].user?.name');
+      expect(result.code).toContain('$a.user?.name');
     });
 
     test('compiles literal values', () => {
@@ -340,11 +340,10 @@ describe('compile()', () => {
     });
 
     test('compiles on modifier with @arg handler', () => {
-      // When @onClick is passed as an arg, it should resolve to this[$args].onClick
+      // When @onClick is passed as an arg, it should resolve to $a.onClick
       const result = compile('<button {{on "click" @onClick}}>Click</button>');
       expect(result.code).toContain('"click"');
-      expect(result.code).toContain(SYMBOLS.ARGS_PROPERTY);
-      expect(result.code).toContain('onClick');
+      expect(result.code).toContain('$a.onClick');
     });
 
     test('compiles custom modifier', () => {
@@ -1960,7 +1959,7 @@ describe('Optional chaining for paths', () => {
 
   test('@args path with optional chaining', () => {
     const result = compile('{{@foo.bar.baz}}');
-    expect(result.code).toContain('[$args].foo?.bar?.baz');
+    expect(result.code).toContain('$a.foo?.bar?.baz');
   });
 
   test('each condition with nested path uses optional chaining', () => {
@@ -2543,18 +2542,17 @@ describe('Helper reactivity in attributes', () => {
   });
 
   // Regression tests: ensure literals are NOT wrapped, only paths
-  // Note: PURE annotations (/*#__PURE__*/) are added to helper calls for tree-shaking
+  // Note: PURE annotations are only on root-level calls; nested calls inside arrow/function
+  // bodies do NOT get PURE annotations (tree-shakers can't eliminate them anyway)
   test('if helper: literals are NOT wrapped in getters', () => {
     const result = compile(`<div class={{if this.show "visible" "hidden"}}></div>`);
     // Path should be wrapped
     expect(result.code).toContain('() => this.show');
     // String literals should NOT be wrapped - they appear directly as arguments
-    // Should be: /*#__PURE__*/$__if(() => this.show, "visible", "hidden")
-    // NOT: $__if(() => this.show, () => "visible", () => "hidden")
     expect(result.code).not.toContain('() => "visible"');
     expect(result.code).not.toContain('() => "hidden"');
-    // Verify the exact pattern (with optional PURE annotation)
-    expect(result.code).toMatch(/\/\*#__PURE__\*\/\$__if\(\(\) => this\.show, "visible", "hidden"\)/);
+    // Verify the pattern (no PURE annotation inside arrow body)
+    expect(result.code).toMatch(/\$__if\(\(\) => this\.show, "visible", "hidden"\)/);
   });
 
   test('if helper: number literals are NOT wrapped', () => {
@@ -2563,7 +2561,7 @@ describe('Helper reactivity in attributes', () => {
     expect(result.code).toContain('() => this.visible');
     expect(result.code).not.toContain('() => 1');
     expect(result.code).not.toContain('() => 0');
-    expect(result.code).toMatch(/\/\*#__PURE__\*\/\$__if\(\(\) => this\.visible, 1, 0\)/);
+    expect(result.code).toMatch(/\$__if\(\(\) => this\.visible, 1, 0\)/);
   });
 
   test('if helper: boolean literals are NOT wrapped', () => {
@@ -2571,7 +2569,7 @@ describe('Helper reactivity in attributes', () => {
     expect(result.code).toContain('() => this.loading');
     expect(result.code).not.toContain('() => true');
     expect(result.code).not.toContain('() => false');
-    expect(result.code).toMatch(/\/\*#__PURE__\*\/\$__if\(\(\) => this\.loading, true, false\)/);
+    expect(result.code).toMatch(/\$__if\(\(\) => this\.loading, true, false\)/);
   });
 
   test('eq helper: literal second arg is NOT wrapped', () => {
@@ -2579,42 +2577,42 @@ describe('Helper reactivity in attributes', () => {
     // First arg (path) wrapped, second arg (string) not wrapped
     expect(result.code).toContain('() => this.status');
     expect(result.code).not.toContain('() => "hidden"');
-    expect(result.code).toMatch(/\/\*#__PURE__\*\/\$__eq\(\(\) => this\.status, "hidden"\)/);
+    expect(result.code).toMatch(/\$__eq\(\(\) => this\.status, "hidden"\)/);
   });
 
   test('and helper: all path args wrapped, no double wrapping', () => {
     const result = compile(`<div class={{if (and this.a this.b) "yes" "no"}}></div>`);
-    // Both paths in and() should be wrapped (with PURE annotation)
-    expect(result.code).toMatch(/\/\*#__PURE__\*\/\$__and\(\(\) => this\.a, \(\) => this\.b\)/);
+    // Both paths in and() should be wrapped (no PURE annotation inside arrow body)
+    expect(result.code).toMatch(/\$__and\(\(\) => this\.a, \(\) => this\.b\)/);
     // No double wrapping like () => () => this.a
     expect(result.code).not.toContain('() => () =>');
   });
 
   test('or helper: all path args wrapped, no double wrapping', () => {
     const result = compile(`<div class={{if (or this.x this.y) "yes" "no"}}></div>`);
-    expect(result.code).toMatch(/\/\*#__PURE__\*\/\$__or\(\(\) => this\.x, \(\) => this\.y\)/);
+    expect(result.code).toMatch(/\$__or\(\(\) => this\.x, \(\) => this\.y\)/);
     expect(result.code).not.toContain('() => () =>');
   });
 
   test('not helper: path arg wrapped, no double wrapping', () => {
     const result = compile(`<div hidden={{not this.visible}}></div>`);
-    expect(result.code).toMatch(/\/\*#__PURE__\*\/\$__not\(\(\) => this\.visible\)/);
+    expect(result.code).toMatch(/\$__not\(\(\) => this\.visible\)/);
     expect(result.code).not.toContain('() => () =>');
   });
 
   test('nested helpers: inner helper result is wrapped for outer helper', () => {
     // When and() returns a value, it needs to be wrapped for if()
     const result = compile(`<div class={{if (and this.a this.b) "yes" "no"}}></div>`);
-    // The and() helper result should be wrapped for the if() condition (with PURE annotation)
-    expect(result.code).toMatch(/\/\*#__PURE__\*\/\$__if\(\(\) => \/\*#__PURE__\*\/\$__and/);
+    // The and() helper result should be wrapped for the if() condition (no PURE inside arrow)
+    expect(result.code).toMatch(/\$__if\(\(\) => \$__and/);
   });
 
   test('deeply nested helpers maintain correct wrapping', () => {
     const result = compile(`<div class={{if (or (and this.a this.b) this.c) "yes" "no"}}></div>`);
-    // Inner and() has wrapped paths (with PURE annotation)
-    expect(result.code).toMatch(/\/\*#__PURE__\*\/\$__and\(\(\) => this\.a, \(\) => this\.b\)/);
-    // or() wraps the and() result and this.c (with PURE annotation)
-    expect(result.code).toMatch(/\/\*#__PURE__\*\/\$__or\(\(\) => \/\*#__PURE__\*\/\$__and.*\(\) => this\.c\)/);
+    // Inner and() has wrapped paths (no PURE inside arrow body)
+    expect(result.code).toMatch(/\$__and\(\(\) => this\.a, \(\) => this\.b\)/);
+    // or() wraps the and() result and this.c (no PURE inside arrow body)
+    expect(result.code).toMatch(/\$__or\(\(\) => \$__and.*\(\) => this\.c\)/);
     // No double wrapping
     expect(result.code).not.toContain('() => () =>');
   });
@@ -2690,23 +2688,23 @@ describe('SubExpression wrap parameter', () => {
   test('regular helper in if condition is wrapped', () => {
     const result = compile('{{#if (eq 1 1)}}equal{{/if}}');
     // The eq helper result should be wrapped in a getter for reactivity
-    // Note: PURE annotation may be present between () => and $__eq
-    expect(result.code).toMatch(/\(\)\s*=>\s*\/\*#__PURE__\*\/\$__eq/);
+    // No PURE annotation inside arrow body
+    expect(result.code).toMatch(/\(\)\s*=>\s*\$__eq/);
   });
 
   test('or helper in condition is wrapped', () => {
     const result = compile('{{#if (or this.a this.b)}}yes{{/if}}');
-    expect(result.code).toMatch(/\(\)\s*=>\s*\/\*#__PURE__\*\/\$__or/);
+    expect(result.code).toMatch(/\(\)\s*=>\s*\$__or/);
   });
 
   test('and helper in condition is wrapped', () => {
     const result = compile('{{#if (and this.a this.b)}}yes{{/if}}');
-    expect(result.code).toMatch(/\(\)\s*=>\s*\/\*#__PURE__\*\/\$__and/);
+    expect(result.code).toMatch(/\(\)\s*=>\s*\$__and/);
   });
 
   test('not helper in condition is wrapped', () => {
     const result = compile('{{#if (not this.hidden)}}visible{{/if}}');
-    expect(result.code).toMatch(/\(\)\s*=>\s*\/\*#__PURE__\*\/\$__not/);
+    expect(result.code).toMatch(/\(\)\s*=>\s*\$__not/);
   });
 });
 
@@ -3136,46 +3134,42 @@ describe('PURE Annotations', () => {
     expect(result.code).toContain('/*#__PURE__*/$_dc');
   });
 
-  test('generates PURE annotation for $__if helper', () => {
-    const result = compile('{{if true "yes" "no"}}');
-    expect(result.code).toContain('/*#__PURE__*/$__if');
+  test('helpers inside getters do NOT get PURE annotation (nested in arrow body)', () => {
+    // Standalone mustache helpers are wrapped in getters: () => $__if(...)
+    // PURE annotations are skipped inside arrow/function bodies since tree-shakers
+    // can't eliminate them there
+    expect(compile('{{if true "yes" "no"}}').code).toContain('$__if');
+    expect(compile('{{if true "yes" "no"}}').code).not.toContain('/*#__PURE__*/$__if');
+
+    expect(compile('{{eq 1 2}}').code).toContain('$__eq');
+    expect(compile('{{eq 1 2}}').code).not.toContain('/*#__PURE__*/$__eq');
+
+    expect(compile('{{and true false}}').code).toContain('$__and');
+    expect(compile('{{and true false}}').code).not.toContain('/*#__PURE__*/$__and');
+
+    expect(compile('{{or true false}}').code).toContain('$__or');
+    expect(compile('{{or true false}}').code).not.toContain('/*#__PURE__*/$__or');
+
+    expect(compile('{{not true}}').code).toContain('$__not');
+    expect(compile('{{not true}}').code).not.toContain('/*#__PURE__*/$__not');
+
+    expect(compile('{{array 1 2 3}}').code).toContain('$__array');
+    expect(compile('{{array 1 2 3}}').code).not.toContain('/*#__PURE__*/$__array');
+
+    // hash is at root level (not inside getter), so it DOES get PURE
+    expect(compile('{{hash a=1}}').code).toContain('/*#__PURE__*/$__hash');
   });
 
-  test('generates PURE annotation for $__eq helper', () => {
-    const result = compile('{{eq 1 2}}');
-    expect(result.code).toContain('/*#__PURE__*/$__eq');
-  });
-
-  test('generates PURE annotation for $__and helper', () => {
-    const result = compile('{{and true false}}');
-    expect(result.code).toContain('/*#__PURE__*/$__and');
-  });
-
-  test('generates PURE annotation for $__or helper', () => {
-    const result = compile('{{or true false}}');
-    expect(result.code).toContain('/*#__PURE__*/$__or');
-  });
-
-  test('generates PURE annotation for $__not helper', () => {
-    const result = compile('{{not true}}');
-    expect(result.code).toContain('/*#__PURE__*/$__not');
-  });
-
-  test('generates PURE annotation for $__array helper', () => {
-    const result = compile('{{array 1 2 3}}');
-    expect(result.code).toContain('/*#__PURE__*/$__array');
-  });
-
-  test('generates PURE annotation for $__hash helper', () => {
-    const result = compile('{{hash a=1}}');
-    expect(result.code).toContain('/*#__PURE__*/$__hash');
-  });
-
-  test('generates PURE annotation for $__fn helper', () => {
+  test('helpers as @arg values do NOT get PURE annotation (inside getter)', () => {
     const result = compile('<Button @onClick={{fn this.handle}} />', {
       bindings: new Set(['Button']),
     });
-    expect(result.code).toContain('/*#__PURE__*/$__fn');
+    // $__fn is inside a getter (() => $__fn(...)), so no PURE annotation
+    expect(result.code).toContain('$__fn');
+    expect(result.code).not.toContain('/*#__PURE__*/$__fn');
+    // But root-level $_c and $_args should still get PURE
+    expect(result.code).toContain('/*#__PURE__*/$_c');
+    expect(result.code).toContain('/*#__PURE__*/$_args');
   });
 
   test('does NOT generate PURE annotation for unknown functions', () => {
@@ -3188,15 +3182,20 @@ describe('PURE Annotations', () => {
     expect(result.code).not.toContain('/*#__PURE__*/myHelper');
   });
 
-  test('nested PURE functions all get annotations', () => {
+  test('PURE annotations only on root-level calls, not nested in arrow bodies', () => {
     const result = compile('<MyComponent @show={{if (eq this.a this.b) true false}} />', {
       bindings: new Set(['MyComponent']),
     });
-    // Multiple PURE functions should all be annotated
+    // Root-level PURE functions should be annotated
     expect(result.code).toContain('/*#__PURE__*/$_c');
     expect(result.code).toContain('/*#__PURE__*/$_args');
-    expect(result.code).toContain('/*#__PURE__*/$__if');
-    expect(result.code).toContain('/*#__PURE__*/$__eq');
+    // Nested calls inside arrow/getter bodies should NOT have PURE annotations
+    // (tree-shakers can't eliminate them anyway)
+    expect(result.code).not.toContain('/*#__PURE__*/$__if');
+    expect(result.code).not.toContain('/*#__PURE__*/$__eq');
+    // But the helpers themselves should still be present
+    expect(result.code).toContain('$__if');
+    expect(result.code).toContain('$__eq');
   });
 });
 
@@ -3515,8 +3514,8 @@ describe('Regression: visitSimpleMustache unified behavior', () => {
     const result = compile(template);
 
     expect(result.errors).toHaveLength(0);
-    // Should resolve @arg to this[$args].myHelper
-    expect(result.code).toContain('$args');
+    // Should resolve @arg to $a.myHelper
+    expect(result.code).toContain('$a.');
     expect(result.code).toContain('myHelper');
   });
 
@@ -3700,8 +3699,8 @@ describe('Source map names in mapping tree', () => {
       expect(result.errors).toHaveLength(0);
 
       const names = collectNames(result.mappingTree);
-      // @args are resolved to this[$args].name
-      expect(names.some(n => n.includes('$args'))).toBe(true);
+      // @args are resolved via $a alias
+      expect(names.some(n => n === '$a' || n === 'name')).toBe(true);
     });
 
     test('@arg dotted path maps all segments', () => {
@@ -3709,7 +3708,7 @@ describe('Source map names in mapping tree', () => {
       expect(result.errors).toHaveLength(0);
 
       const names = collectNames(result.mappingTree);
-      expect(names.some(n => n.includes('$args'))).toBe(true);
+      expect(names.some(n => n === '$a' || n === 'user')).toBe(true);
       expect(names).toContain('user');
       expect(names).toContain('name');
     });
@@ -3745,7 +3744,7 @@ describe('Source map names in mapping tree', () => {
       const names = collectNames(result.mappingTree);
       // Known helper gets a name via runtimeRef callee
       expect(names).toContain('myHelper');
-      // The @arg should have a name (resolved to this[$args].value)
+      // The @arg should have a name (resolved to $a.value)
       expect(names).toContain('value');
     });
 
@@ -3758,8 +3757,8 @@ describe('Source map names in mapping tree', () => {
       const names = collectNames(result.mappingTree);
       // Known helper gets a name
       expect(names).toContain('myHelper');
-      // @args resolved to this[$args].first, this[$args].second
-      const argNames = names.filter(n => n.includes('$args'));
+      // @args resolved to $a.first, $a.second
+      const argNames = names.filter(n => n === '$a');
       expect(argNames.length).toBeGreaterThanOrEqual(2);
     });
 
@@ -3773,7 +3772,7 @@ describe('Source map names in mapping tree', () => {
       // Known helper gets a name
       expect(names).toContain('myHelper');
       // The @arg value should have a name
-      expect(names.some(n => n.includes('$args'))).toBe(true);
+      expect(names.some(n => n === '$a')).toBe(true);
     });
 
     test('unknown helper with @arg still has name for arg', () => {
@@ -3781,7 +3780,7 @@ describe('Source map names in mapping tree', () => {
       expect(result.errors).toHaveLength(0);
 
       const names = collectNames(result.mappingTree);
-      expect(names.some(n => n.includes('$args'))).toBe(true);
+      expect(names.some(n => n === '$a')).toBe(true);
     });
 
     test('this.method helper with @arg has names for both', () => {
@@ -3792,7 +3791,7 @@ describe('Source map names in mapping tree', () => {
       // this.method gets a name as a known callee
       expect(names).toContain('this.compute');
       // The @arg gets a name through buildPath
-      expect(names.some(n => n.includes('$args'))).toBe(true);
+      expect(names.some(n => n === '$a')).toBe(true);
     });
   });
 
@@ -3804,7 +3803,7 @@ describe('Source map names in mapping tree', () => {
       expect(result.errors).toHaveLength(0);
 
       const names = collectNames(result.mappingTree);
-      expect(names.some(n => n.includes('$args'))).toBe(true);
+      expect(names.some(n => n === '$a')).toBe(true);
     });
 
     test('modifier with multiple @args has names for all', () => {
@@ -3814,7 +3813,7 @@ describe('Source map names in mapping tree', () => {
       expect(result.errors).toHaveLength(0);
 
       const names = collectNames(result.mappingTree);
-      const argNames = names.filter(n => n.includes('$args'));
+      const argNames = names.filter(n => n === '$a');
       expect(argNames.length).toBeGreaterThanOrEqual(2);
     });
 
@@ -3825,7 +3824,7 @@ describe('Source map names in mapping tree', () => {
       expect(result.errors).toHaveLength(0);
 
       const names = collectNames(result.mappingTree);
-      expect(names.some(n => n.includes('$args'))).toBe(true);
+      expect(names.some(n => n === '$a')).toBe(true);
     });
 
     test('modifier with binding reference has name', () => {
@@ -3845,7 +3844,7 @@ describe('Source map names in mapping tree', () => {
       expect(result.errors).toHaveLength(0);
 
       const names = collectNames(result.mappingTree);
-      expect(names.some(n => n.includes('$args'))).toBe(true);
+      expect(names.some(n => n === '$a')).toBe(true);
     });
 
     test('dynamic attribute with binding has name', () => {
@@ -3922,7 +3921,7 @@ describe('Source map names in mapping tree', () => {
       expect(names).toContain('this');
       expect(names).toContain('name');
       // Helper arg path gets a name (helper function name itself does not)
-      expect(names.some(n => n.includes('$args'))).toBe(true);
+      expect(names.some(n => n === '$a')).toBe(true);
     });
 
     test('element with modifier and dynamic content has all names', () => {
@@ -3932,7 +3931,7 @@ describe('Source map names in mapping tree', () => {
       expect(result.errors).toHaveLength(0);
 
       const names = collectNames(result.mappingTree);
-      expect(names.some(n => n.includes('$args'))).toBe(true);
+      expect(names.some(n => n === '$a')).toBe(true);
       expect(names).toContain('this');
       expect(names).toContain('content');
     });
@@ -3982,7 +3981,7 @@ describe('Source map names in mapping tree', () => {
 
       const names = collectNames(result.mappingTree);
       expect(names.some(n => n.includes('onClick'))).toBe(true);
-      expect(result.code).toContain('($e, $n) => this[$args].onClick($e, $n)');
+      expect(result.code).toContain('($e, $n) => $a.onClick($e, $n)');
     });
 
     test('on click with binding has name', () => {
