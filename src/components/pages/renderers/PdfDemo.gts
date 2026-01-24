@@ -1,4 +1,4 @@
-import { Suspense, lazy } from '@/utils/suspense';
+import { Suspense, lazy } from '@/core/suspense';
 
 const PdfDemoContent = lazy(() => import('./PdfDemoContent.gts').then(m => ({ default: m.PdfDemoContent })));
 

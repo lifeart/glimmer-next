@@ -63,6 +63,7 @@ export default function gxtEnvironment(
       'eq',
       'not',
       'or',
+      'and',
       'element',
       ...Object.keys(additionalGlobalSpecialForms),
       ...additionalGlobals,

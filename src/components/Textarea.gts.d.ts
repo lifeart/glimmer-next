@@ -1,2 +1,2 @@
-import { ComponentReturnType } from '@/utils/component';
+import { ComponentReturnType } from '@lifeart/gxt';
 export default () => ComponentReturnType;

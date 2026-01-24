@@ -17,6 +17,7 @@
     "url": "https://github.com/lifeart/glimmer-next.git"
   },
   "scripts": {
+    "glint": "glint",
     "dev": "vite",
     "dev:ssr": "node server",
     "dev:playwright": "tsc && vite --port 5174 -- --with-sourcemaps",
@@ -37,7 +38,8 @@
     "nyc:merge:all": "nyc merge ./coverage ./coverage/merged-final.json",
     "nyc:report": "nyc report --reporter=html --reporter=lcov --temp-dir ./coverage",
     "test:coverage": "vitest run --coverage",
-    "test:playwright": "playwright test"
+    "test:playwright": "playwright test",
+    "test:qunit": "playwright test qunit.spec.ts --reporter=line"
   },
   "files": [
     "dist/src",
@@ -77,11 +79,11 @@
   "devDependencies": {
     "@glint/core": "^1.3.0",
     "@glint/template": "^1.3.0",
-    "@vitest/coverage-v8": "^1.1.1",
     "@lifeart/tiny-router": "^0.0.8",
     "@playwright/test": "^1.40.1",
     "@types/babel__core": "^7.20.5",
     "@types/qunit": "^2.19.9",
+    "@vitest/coverage-v8": "^1.1.1",
     "autoprefixer": "^10.4.16",
     "backburner.js": "^2.8.0",
     "express": "^4.18.2",
@@ -109,9 +111,9 @@
   "dependencies": {
     "@babel/core": "^7.23.6",
     "@babel/preset-typescript": "^7.23.3",
-    "@glimmer/syntax": "^0.87.1",
+    "@glimmer/syntax": "^0.95.0",
     "@types/three": "^0.172.0",
-    "content-tag": "2.0.1",
+    "content-tag": "4.1.0",
     "decorator-transforms": "2.0.0",
     "jspdf": "^4.0.0",
     "three": "^0.172.0",

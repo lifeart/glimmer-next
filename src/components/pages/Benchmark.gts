@@ -3,8 +3,9 @@ import {
   swapRows,
   updateData,
   type Item,
-} from '@/utils/benchmark/data';
-import { Component, tracked, cellFor, type Cell } from '@lifeart/gxt';
+} from '@/core/benchmark/data';
+import { Component } from '@lifeart/gxt';
+import { tracked, cellFor, type Cell } from '@lifeart/gxt';
 import { Header } from './benchmark/Header.gts';
 import { Row } from './benchmark/Row.gts';
 

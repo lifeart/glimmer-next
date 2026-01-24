@@ -1,15 +1,12 @@
-import {
-  type ComponentReturnType,
-  renderComponent,
-  Component,
-} from '@/utils/component';
-import { withRehydration } from '@/utils/ssr/rehydration';
-import { resetNodeCounter, createRoot, $_c } from '@/utils/dom';
-import { renderInBrowser } from '@/utils/ssr/ssr';
-import { runDestructors } from '@/utils/component';
-import { $_fin, Root } from '../utils';
-import { addToTree, PARENT, RENDERED_NODES_PROPERTY, TREE } from '@/utils/shared';
-import { cleanupFastContext } from '@/utils/context';
+import { type ComponentReturnType, Component } from '@/core/component-class';
+import { renderComponent, resetNodeCounter, createRoot, $_c, $_fin } from '@/core/dom';
+import { runDestructors } from '@/core/destroy';
+import { Root } from '@/core/root';
+import { withRehydration } from '@/core/ssr/rehydration';
+import { renderInBrowser } from '@/core/ssr/ssr';
+import { addToTree, PARENT, RENDERED_NODES_PROPERTY, TREE } from '@/core/shared';
+import { cleanupFastContext } from '@/core/context';
+import { setResolveRender } from '@/core/runtime';
 
 let ROOT: null | Root = null;
 
@@ -85,7 +82,6 @@ export function createTestComponent(component: ComponentReturnType, owner: Root)
     }
     // @ts-expect-error
     template(args: Record<string, unknown>) {
-      // @ts-expect-error
       addToTree(owner, this);
       return $_fin([$_c(component, {
         ...args,
@@ -122,9 +118,26 @@ export async function render(component: ComponentReturnType) {
 }
 
 export async function rerender(timeout = 16) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, timeout);
+  // First, wait for any pending microtask (DOM sync) to complete
+  await new Promise<void>((resolve) => {
+    // Set up a callback to be called when DOM sync completes
+    let resolved = false;
+    setResolveRender(() => {
+      if (!resolved) {
+        resolved = true;
+        resolve();
+      }
+    });
+    // Also set a timeout as a fallback in case no revalidation was scheduled
+    setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        resolve();
+      }
+    }, timeout);
   });
+  // Give a small additional delay for any final DOM operations
+  await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 export function find<T extends Element>(selector: string): T {

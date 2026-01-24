@@ -1,6 +1,6 @@
 import { module, test } from 'qunit';
 import { render, find } from '@lifeart/gxt/test-utils';
-import { NS_MATHML } from '@/utils/namespaces';
+import { NS_MATHML } from '@/core/namespaces';
 
 module('Integration | Interal | mathml', function () {
   test('it render math tags with proper namespace', async function (assert) {

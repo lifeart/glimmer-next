@@ -40,10 +40,10 @@ if (isLibBuild) {
       exclude: [
         "src/components/**/*",
         "src/index.ts",
-        "src/utils/benchmark.ts",
-        "src/utils/compat.ts",
-        "src/utils/data.ts",
-        "src/utils/measure-render.ts",
+        "src/core/benchmark.ts",
+        "src/core/compat.ts",
+        "src/core/data.ts",
+        "src/core/measure-render.ts",
       ],
     }),
   );
@@ -91,11 +91,12 @@ export default defineConfig(({ mode }) => ({
       provider: "v8",
       reporter: ["json"],
       reportsDirectory: "./coverage/vitest",
-      include: ["src/**/*.ts"],
+      include: ["src/**/*.ts", "plugins/**/*.ts"],
       exclude: [
         "src/components/**",
         "src/server.ts",
         "**/*.d.ts",
+        "plugins/**/*.test.ts",
       ],
     },
   },
@@ -104,24 +105,24 @@ export default defineConfig(({ mode }) => ({
     lib: isLibBuild
       ? {
           entry: [
-            path.join(currentPath, "src", "utils", "index.ts"),
+            path.join(currentPath, "src", "core", "index.ts"),
             path.join(currentPath, "plugins", "compiler.ts"),
             path.join(
               currentPath,
               "src",
-              "utils",
+              "core",
               "inspector",
               "ember-inspector.ts",
             ),
             path.join(
               currentPath,
               "src",
-              "utils",
+              "core",
               "glimmer",
               "glimmer-compat.ts",
             ),
             path.join(currentPath, "src", "tests", "utils.ts"),
-            path.join(currentPath, "src", "utils", "suspense.ts"),
+            path.join(currentPath, "src", "core", "suspense.ts"),
           ],
           name: "gxt",
           formats: ["es"],
@@ -179,20 +180,20 @@ export default defineConfig(({ mode }) => ({
   resolve: {
     alias: {
       "@/components": path.join(currentPath, "src", "components"),
-      "@/utils": path.join(currentPath, "src", "utils"),
+      "@/core": path.join(currentPath, "src", "core"),
       "@/services": path.join(currentPath, "src", "services"),
       "@/tests": path.join(currentPath, "src", "tests"),
       "@lifeart/gxt/ember-inspector": path.join(
         currentPath,
         "src",
-        "utils",
+        "core",
         "inspector",
         "ember-inspector.ts",
       ),
       "@lifeart/gxt/glimmer-compatibility": path.join(
         currentPath,
         "src",
-        "utils",
+        "core",
         "glimmer",
         "glimmer-compat.ts",
       ),
@@ -202,7 +203,7 @@ export default defineConfig(({ mode }) => ({
         "tests",
         "utils.ts",
       ),
-      "@lifeart/gxt": path.join(currentPath, "src", "utils", "index.ts"),
+      "@lifeart/gxt": path.join(currentPath, "src", "core", "index.ts"),
     },
   },
 }));

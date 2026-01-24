@@ -1,6 +1,16 @@
 import { Component } from '@lifeart/gxt';
 
-const DefaultRoute = <template>{{#if @hasChildren}}{{yield}}{{/if}}</template>;
+interface DefaultRouteArgs {
+  hasChildren?: boolean;
+}
+
+class DefaultRoute extends Component<{ Args: DefaultRouteArgs; Blocks: { default: [] } }> {
+  <template>
+    {{#if @hasChildren}}
+      {{yield}}
+    {{/if}}
+  </template>
+}
 
 type RouterArgs = {
   stack: { name: string; data: null | unknown }[];

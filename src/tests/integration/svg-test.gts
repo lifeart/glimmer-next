@@ -1,6 +1,6 @@
 import { module, test } from 'qunit';
 import { render, find } from '@lifeart/gxt/test-utils';
-import { NS_HTML, NS_SVG } from '@/utils/namespaces';
+import { NS_HTML, NS_SVG } from '@/core/namespaces';
 
 module('Integration | Interal | svg', function () {
   test('it render svg tag with proper namespace', async function (assert) {

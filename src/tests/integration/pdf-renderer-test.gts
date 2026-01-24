@@ -1,6 +1,6 @@
 import { module, test } from 'qunit';
 import { render, rerender } from '@lifeart/gxt/test-utils';
-import { cell } from '@/utils/reactive';
+import { cell } from '@lifeart/gxt';
 import {
   PdfDocument,
   PdfPage,
@@ -12,7 +12,7 @@ import {
   StyleSheet,
   PageSizes,
   createPdfApi,
-} from '@/utils/renderers/pdf';
+} from '@/core/renderers/pdf';
 
 module('Integration | PDF Renderer', function () {
   test('PdfDocument can be created with reactive title', async function (assert) {

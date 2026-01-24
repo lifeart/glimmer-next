@@ -1,5 +1,5 @@
 import { cell, type Cell, formula } from '@lifeart/gxt';
-import { TresCanvas } from '@/utils/renderers/tres/TresCanvas';
+import { TresCanvas } from '@/core/renderers/tres/TresCanvas';
 
 function updateCell(
   el: Cell<any>,
@@ -112,7 +112,7 @@ export function TresScene() {
 
   // Animation callback - will be registered via TresCanvas onReady
   // and automatically cleaned up when TresCanvas is destroyed
-  const onCanvasReady = (context: import('@/utils/renderers/tres/context').TresContext) => {
+  const onCanvasReady = (context: import('@/core/renderers/tres/context').TresContext) => {
     context.onBeforeRender(() => {
       if (isAnimating.value) {
         rotY.update(rotY.value + 0.01);

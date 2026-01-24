@@ -60,9 +60,8 @@ type EventTypeMap = {
   compositionend: CompositionEvent;
   compositionstart: CompositionEvent;
   compositionupdate: CompositionEvent;
-  // @ts-ignore unused directive
-  // @ts-expect-error unknown event type
-  contentvisibilityautostatechange: ContentVisibilityAutoStateChangeEvent;
+  // ContentVisibilityAutoStateChangeEvent may not exist in all TypeScript lib versions
+  contentvisibilityautostatechange: Event;
   copy: ClipboardEvent;
   cut: ClipboardEvent;
   paste: ClipboardEvent;

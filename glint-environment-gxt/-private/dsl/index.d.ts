@@ -73,7 +73,7 @@ import type {
   PageMode,
   PageLayout,
   ImageSource,
-} from '../../../src/utils/renderers/pdf/types';
+} from './pdf-types';
 
 // PDF element types - branded interfaces for unique type identification
 interface PdfDocumentElement extends HTMLElement { readonly __pdfType: 'document'; }
@@ -204,6 +204,11 @@ export declare function applyAttributes(
 export declare function applyAttributes(
   element: Element,
   attrs: Record<string, AttrValue> & WithShadowRoot,
+): void;
+
+export declare function applySplattributes(
+  element: Element,
+  attrs: unknown,
 ): void;
 
 // =============================================================================

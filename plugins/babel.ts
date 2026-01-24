@@ -7,6 +7,13 @@ export type ResolvedHBS = {
     hasThisAccess: boolean;
   };
   bindings: Set<string>;
+  /** CALLBACK to determine if a variable is in the lexical scope */
+  lexicalScope?: (name: string) => boolean;
+  /** Source location of the template in the original file (for source maps) */
+  loc?: {
+    start: { line: number; column: number; offset?: number };
+    end: { line: number; column: number; offset?: number };
+  };
 };
 
 function getScopeBindings(path: any, bindings: Set<string> = new Set()) {
@@ -26,6 +33,13 @@ export function processTemplate(
   return function babelPlugin(babel: { types: typeof Babel.types }) {
     const { types: t } = babel;
     type Context = Record<string, boolean | string | undefined | string[]>;
+    const getTemplateFunctionNames = (path: Babel.NodePath<any>) => {
+      const state = (path.state ??= {}) as { templateFunctionNames?: Set<string> };
+      if (!state.templateFunctionNames) {
+        state.templateFunctionNames = new Set<string>();
+      }
+      return state.templateFunctionNames;
+    };
     return {
       name: 'ast-transform', // not required
       visitor: {
@@ -134,29 +148,84 @@ export function processTemplate(
             );
           }
         },
+        // Handle static block pattern from content-tag preprocessor
+        // Converts: static { template(`...`, {...}) }
+        // To: [$template] = hbs`...`
+        StaticBlock(path: Babel.NodePath<Babel.types.StaticBlock>) {
+          // Check if the static block contains a single template() call or hbs``
+          const body = path.node.body;
+          if (body.length === 1 && body[0].type === 'ExpressionStatement') {
+            const expr = body[0].expression;
+            // Check for template() call
+            if (
+              expr.type === 'CallExpression' &&
+              expr.callee.type === 'Identifier' &&
+              expr.arguments[0]?.type === 'TemplateLiteral'
+            ) {
+              const templateFnNames = getTemplateFunctionNames(path);
+              const isTemplateCall = expr.callee.name === 'template'
+                || templateFnNames.has(expr.callee.name);
+              if (isTemplateCall) {
+                // Convert to [$template] = hbs`...` property
+                path.replaceWith(
+                  t.classProperty(
+                    t.identifier(SYMBOLS.$template),
+                    t.taggedTemplateExpression(
+                      t.identifier('hbs'),
+                      expr.arguments[0] as Babel.types.TemplateLiteral,
+                    ),
+                    null,
+                    null,
+                    true,
+                  ),
+                );
+              }
+            }
+            // Check for hbs`` (already transformed)
+            else if (expr.type === 'TaggedTemplateExpression' &&
+                     expr.tag.type === 'Identifier' &&
+                     expr.tag.name === 'hbs') {
+              path.replaceWith(
+                t.classProperty(
+                  t.memberExpression(t.thisExpression(), t.identifier(SYMBOLS.$template)),
+                  expr,
+                  null,
+                  null,
+                  false,
+                  true,
+                ),
+              );
+            }
+          }
+        },
         CallExpression(path: Babel.NodePath<Babel.types.CallExpression>) {
           if (path.node.callee && path.node.callee.type === 'Identifier') {
             if (path.node.callee.name === 'scope') {
               path.remove();
-            } else if (path.node.callee.name === 'template') {
-              path.replaceWith(
-                t.taggedTemplateExpression(
-                  t.identifier('hbs'),
-                  path.node.arguments[0] as Babel.types.TemplateLiteral,
-                ),
-              );
-            } else if (path.node.callee.name === 'formula') {
-              if (mode === 'production') {
-                // remove last argument if two arguments
-                if (path.node.arguments.length === 2) {
-                  path.node.arguments.pop();
+            } else {
+              const templateFnNames = getTemplateFunctionNames(path);
+              const isTemplateCall = path.node.callee.name === 'template'
+                || templateFnNames.has(path.node.callee.name);
+              if (isTemplateCall) {
+                path.replaceWith(
+                  t.taggedTemplateExpression(
+                    t.identifier('hbs'),
+                    path.node.arguments[0] as Babel.types.TemplateLiteral,
+                  ),
+                );
+              } else if (path.node.callee.name === 'formula') {
+                if (mode === 'production') {
+                  // remove last argument if two arguments
+                  if (path.node.arguments.length === 2) {
+                    path.node.arguments.pop();
+                  }
                 }
-              }
-            } else if (path.node.callee.name === 'getRenderTargets') {
-              if (mode === 'production') {
-                // remove last argument if two arguments
-                if (path.node.arguments.length === 2) {
-                  path.node.arguments.pop();
+              } else if (path.node.callee.name === 'getRenderTargets') {
+                if (mode === 'production') {
+                  // remove last argument if two arguments
+                  if (path.node.arguments.length === 2) {
+                    path.node.arguments.pop();
+                  }
                 }
               }
             }
@@ -164,14 +233,26 @@ export function processTemplate(
         },
         ImportDeclaration(path: Babel.NodePath<Babel.types.ImportDeclaration>) {
           if (path.node.source.value === '@ember/template-compiler') {
+            const templateFunctionNames = getTemplateFunctionNames(path);
+            templateFunctionNames.add('template');
             path.node.source.value = MAIN_IMPORT;
             path.node.specifiers.forEach((specifier: any) => {
-              specifier.local.name = 'hbs';
-              specifier.imported.name = 'hbs';
+              if (specifier.type === 'ImportSpecifier') {
+                const importedName = specifier.imported.type === 'Identifier' ? specifier.imported.name : undefined;
+                if (importedName === 'template') {
+                  templateFunctionNames.add(specifier.local.name);
+                }
+                specifier.local.name = 'hbs';
+                specifier.imported.name = 'hbs';
+              } else {
+                specifier.local.name = 'hbs';
+              }
             });
           }
         },
         Program(path: Babel.NodePath<Babel.types.Program>) {
+          const state = (path.state ??= {}) as { templateFunctionNames?: Set<string> };
+          state.templateFunctionNames = new Set<string>();
           const PUBLIC_API = Object.values(SYMBOLS);
           const IMPORTS = PUBLIC_API.map((name) => {
             return t.importSpecifier(t.identifier(name), t.identifier(name));
@@ -198,12 +279,28 @@ export function processTemplate(
             if (context.isInsideReturnStatement === true) {
               hasThisAccess = true;
             }
+            // Capture template content location for source maps
+            // The quasi.quasis[0] contains the actual template string content
+            const quasiLoc = path.node.quasi.quasis[0].loc;
             hbsToProcess.push({
               template,
               flags: {
                 hasThisAccess: hasThisAccess,
               },
               bindings: getScopeBindings(path),
+              lexicalScope: (name: string) => path.scope.hasBinding(name),
+              loc: quasiLoc ? {
+                start: {
+                  line: quasiLoc.start.line,
+                  column: quasiLoc.start.column,
+                  offset: path.node.quasi.quasis[0].start ?? (quasiLoc.start as any).offset,
+                },
+                end: {
+                  line: quasiLoc.end.line,
+                  column: quasiLoc.end.column,
+                  offset: path.node.quasi.quasis[0].end ?? (quasiLoc.end as any).offset,
+                },
+              } : undefined,
             });
             path.replaceWith(t.identifier('$placeholder'));
           }

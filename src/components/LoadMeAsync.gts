@@ -1,4 +1,5 @@
-import { Component, cell } from '@lifeart/gxt';
+import { Component } from '@lifeart/gxt';
+import { cell } from '@lifeart/gxt';
 
 const colors: Record<string, string> = {
   'User Profile': 'from-blue-500/20 to-cyan-500/20',
@@ -271,7 +272,7 @@ function ErrorDemoWidget() {
   </template>;
 }
 
-const widgets: Record<string, unknown> = {
+const widgets: Record<string, any> = {
   'User Profile': UserProfileWidget,
   'Dashboard': DashboardWidget,
   'Settings': SettingsWidget,

@@ -1,4 +1,5 @@
-import { cell, registerDestructor, hbs, scope } from '@lifeart/gxt';
+import { registerDestructor, hbs, scope } from '@lifeart/gxt';
+import { cell } from '@lifeart/gxt';
 
 function ifs(condition: number | string) {
   return new Date(condition).toLocaleTimeString();
