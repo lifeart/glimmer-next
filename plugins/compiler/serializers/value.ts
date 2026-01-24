@@ -632,8 +632,12 @@ function buildFnHelperArgs(
         args.push(buildValue(ctx, arg, ctxName));
       }
     } else {
-      // Other args get normal treatment (wrapped in getter in compat mode)
-      args.push(buildValue(ctx, arg, ctxName));
+      // Other args get normal treatment, but avoid memoized tags for paths
+      if (arg.kind === 'path') {
+        args.push(buildPathExpression(ctx, arg, true, false));
+      } else {
+        args.push(buildValue(ctx, arg, ctxName));
+      }
     }
   }
 

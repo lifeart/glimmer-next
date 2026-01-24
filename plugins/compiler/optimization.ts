@@ -145,14 +145,12 @@ export function collectMemoizedPaths(
 
     if (builtIn) {
       if (builtIn === SYMBOLS.FN) {
-        if (helper.positional.length > 0) {
-          visitValue(helper.positional[0], 'direct');
-        }
-        for (let i = 1; i < helper.positional.length; i++) {
-          visitValue(helper.positional[i], 'reactive');
+        // fn helper should not influence memoization (args are unwrapped at call time)
+        for (const arg of helper.positional) {
+          visitValue(arg, 'direct');
         }
         for (const val of helper.named.values()) {
-          visitValue(val, 'reactive');
+          visitValue(val, 'direct');
         }
         return;
       }

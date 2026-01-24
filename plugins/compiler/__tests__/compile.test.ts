@@ -2197,6 +2197,18 @@ describe('Template path memoization', () => {
     expect(result.code).not.toContain(SYMBOLS.TO_VALUE);
     expect(result.code).not.toContain('$_g');
   });
+
+  test('does not memoize fn helper args', () => {
+    const template = `
+{{this.name}}
+{{fn this.handle this.name}}
+{{this.name}}
+`;
+    const result = compile(template);
+    expect(result.code).toContain(SYMBOLS.FN);
+    expect(result.code).toContain('() => this.name');
+    expect(result.code).not.toMatch(new RegExp(`${SYMBOLS.FN}\\([^,]+,\\s*\\$_g\\d+`));
+  });
 });
 
 describe('Helper reactivity in attributes', () => {
