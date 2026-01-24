@@ -543,9 +543,10 @@ export function iife(
   params: readonly (string | JSIdentifier)[],
   body: JSStatement[],
   args: readonly JSExpression[] = [],
-  sourceRange?: SourceRange
+  sourceRange?: SourceRange,
+  thisArg?: JSExpression
 ): JSIife {
-  return { type: 'iife', params, body, args, sourceRange };
+  return { type: 'iife', params, body, args, sourceRange, thisArg };
 }
 
 /**

@@ -97,8 +97,16 @@ function buildLiteral(
 export function buildPathExpression(
   ctx: CompilerContext,
   value: PathValue,
-  wrapInGetter = ctx.flags.IS_GLIMMER_COMPAT_MODE
+  wrapInGetter = ctx.flags.IS_GLIMMER_COMPAT_MODE,
+  memoize = true
 ): JSExpression {
+  if (wrapInGetter && memoize && ctx.flags.IS_GLIMMER_COMPAT_MODE) {
+    const memo = ctx.memoizedPaths.get(value.expression);
+    if (memo) {
+      return B.id(memo.name, value.sourceRange, 'PathExpression', value.expression);
+    }
+  }
+
   const pathExpr = buildPathBase(ctx, value);
   if (wrapInGetter && ctx.flags.IS_GLIMMER_COMPAT_MODE) {
     return B.reactiveGetter(pathExpr, value.sourceRange);
