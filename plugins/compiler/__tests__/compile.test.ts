@@ -2176,6 +2176,41 @@ describe('GetterValue serialization', () => {
   });
 });
 
+describe('Template path memoization', () => {
+  test('memoizes repeated reactive paths in compat mode', () => {
+    const template = `
+{{#if this.name}}
+  {{this.name}}
+  {{format this.name}}
+{{/if}}
+`;
+    const result = compile(template);
+    const toValueToken = `${SYMBOLS.TO_VALUE}(() => this.name)`;
+    const toValueCount = result.code.split(toValueToken).length - 1;
+    expect(toValueCount).toBe(1);
+    const memoMatches = result.code.match(/\$_g\d+/g);
+    expect(memoMatches?.length ?? 0).toBeGreaterThan(1);
+  });
+
+  test('does not memoize when path is used once', () => {
+    const result = compile('{{this.name}}');
+    expect(result.code).not.toContain(SYMBOLS.TO_VALUE);
+    expect(result.code).not.toContain('$_g');
+  });
+
+  test('does not memoize fn helper args', () => {
+    const template = `
+{{this.name}}
+{{fn this.handle this.name}}
+{{this.name}}
+`;
+    const result = compile(template);
+    expect(result.code).toContain(SYMBOLS.FN);
+    expect(result.code).toContain('() => this.name');
+    expect(result.code).not.toMatch(new RegExp(`${SYMBOLS.FN}\\([^,]+,\\s*\\$_g\\d+`));
+  });
+});
+
 describe('Helper reactivity in attributes', () => {
   // These tests ensure helpers used in attributes/args are wrapped in getters
   // for proper reactivity. This prevents the bug where dynamic values like

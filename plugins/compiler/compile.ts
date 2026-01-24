@@ -9,7 +9,9 @@ import { preprocess, type ASTv1 } from '@glimmer/syntax';
 import type { CompileOptions, CompileResult, HBSChild, SourceMapV3, SourceMapOptions } from './types';
 import { createContext, initializeVisitors, setSerializeChildFunction, type CompilerContext } from './context';
 import { visit, visitChildren, setSourceForRanges } from './visitors';
-import { serialize, build, B, serializeJS } from './serializers';
+import { serialize, build, B, serializeJS, SYMBOLS } from './serializers';
+import { buildPathExpression } from './serializers/value';
+import { collectMemoizedPaths } from './optimization';
 import { generateSourceMap, appendInlineSourceMap } from './sourcemap';
 import { enrichError, lineColumnToOffset, determineErrorCode, type ParseError } from './errors';
 
@@ -63,6 +65,9 @@ export function compile(
 
     // Visit and convert the AST
     const children = visitAndFilter(ctx, ast.body);
+
+    // Collect memoizable reactive paths for tag reuse
+    ctx.memoizedPaths = collectMemoizedPaths(ctx, children);
 
     // Serialize to JavaScript
     const code = serializeTemplate(ctx, children);
@@ -281,8 +286,21 @@ function serializeTemplate(
     ? B.formattedArray(childExprs, true)
     : B.array(childExprs);
 
+  const memoized = ctx.memoizedPaths;
+  const rootExpr = memoized.size > 0
+    ? B.iife([], [
+      ...Array.from(memoized.values(), info =>
+        B.constDecl(
+          info.name,
+          B.call(SYMBOLS.TO_VALUE, [buildPathExpression(ctx, info.path, true, false)])
+        )
+      ),
+      B.ret(arrayExpr),
+    ], [], undefined, B.id('this'))
+    : arrayExpr;
+
   // Single-pass streaming serialization with emitter for per-token source mapping
-  serializeJS(arrayExpr, {
+  serializeJS(rootExpr, {
     emitter: ctx.emitter,
     streaming: true,
     format: fmt.options.enabled,

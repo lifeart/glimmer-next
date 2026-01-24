@@ -188,6 +188,7 @@ export interface JSIife extends JSNode {
   params: readonly JSParam[];
   body: JSStatement[];
   args: readonly JSExpression[];
+  thisArg?: JSExpression;
 }
 
 /**

@@ -709,14 +709,24 @@ function serializeIifeStreaming(node: JSIife, ctx: SerializeContext): void {
   for (const stmt of node.body) {
     serializeNodeStreaming(stmt, ctx);
   }
-  emitter.emit('})(');
+  emitter.emit('})');
 
-  for (let i = 0; i < node.args.length; i++) {
-    if (i > 0) emitter.emit(', ');
-    serializeNodeStreaming(node.args[i], ctx);
+  if (node.thisArg) {
+    emitter.emit('.call(');
+    serializeNodeStreaming(node.thisArg, ctx);
+    for (let i = 0; i < node.args.length; i++) {
+      emitter.emit(', ');
+      serializeNodeStreaming(node.args[i], ctx);
+    }
+    emitter.emit(')');
+  } else {
+    emitter.emit('(');
+    for (let i = 0; i < node.args.length; i++) {
+      if (i > 0) emitter.emit(', ');
+      serializeNodeStreaming(node.args[i], ctx);
+    }
+    emitter.emit(')');
   }
-
-  emitter.emit(')');
 
   if (node.sourceRange) {
     emitter.popScope();
@@ -1076,7 +1086,15 @@ function serializeIife(node: JSIife, ctx: SerializeContext): string {
   const params = formatParamList(node.params);
   const stmts = node.body.map(stmt => serializeNode(stmt, ctx)).join('');
   const args = node.args.map(arg => serializeNode(arg, ctx)).join(', ');
-  const code = `(function(${params}){${stmts}})(${args})`;
+
+  let code: string;
+  if (node.thisArg) {
+    const thisArg = serializeNode(node.thisArg, ctx);
+    const callArgs = args.length > 0 ? `${thisArg}, ${args}` : thisArg;
+    code = `(function(${params}){${stmts}}).call(${callArgs})`;
+  } else {
+    code = `(function(${params}){${stmts}})(${args})`;
+  }
   return emit(code, ctx, node.sourceRange);
 }
 

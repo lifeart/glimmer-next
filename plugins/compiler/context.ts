@@ -18,6 +18,7 @@ import type {
   HBSChild,
   HBSNode,
   HBSControlExpression,
+  PathValue,
 } from './types';
 import { createFlags, DEFAULT_FLAGS, DEFAULT_FORMAT_OPTIONS } from './types';
 import { ScopeTracker, createScopeTracker } from './tracking/scope-tracker';
@@ -218,6 +219,9 @@ export interface CompilerContext {
   /** Counter for generating unique let block variable names */
   letBlockCounter: number;
 
+  /** Memoized reactive path tags (this.* / @args) for template-level reuse */
+  memoizedPaths: Map<string, { name: string; path: PathValue }>;
+
   /** Set of already-processed nodes (prevents double processing) */
   readonly seenNodes: Set<ASTv1.Node>;
 
@@ -285,6 +289,7 @@ export function createContext(
     },
     contextCounter: 0,
     letBlockCounter: 0,
+    memoizedPaths: new Map(),
     seenNodes: new Set(),
     formatter,
     visitors: {
