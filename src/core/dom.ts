@@ -146,7 +146,6 @@ export function $_style(
   const prop = (isArrayArgs ? propOrArgs[0] : propOrArgs) as string;
   const rawValue = isArrayArgs ? propOrArgs[1] : value;
   const resolvedValue = isArrayArgs ? rawValue : $_unwrapHelperArg(rawValue);
-  // @ts-expect-error style may not exist on non-HTML elements
   element.style.setProperty(prop, resolvedValue as string);
 }
 
