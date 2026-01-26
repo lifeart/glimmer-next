@@ -348,8 +348,6 @@ function buildEvents(
       );
       const callArgs: JSExpression[] = [B.id('$n'), ...tailExprs];
       handlerExpr = B.arrow(['$n'], B.call(fnExpr, callArgs));
-    } else if (handler.kind === 'helper' && handler.name === INTERNAL_HELPERS.STYLE_SETTER) {
-      handlerExpr = buildStyleSetterExpr(ctx, handler as HelperValue, ctxName);
     } else if (handler.kind === 'helper' && eventName === EVENT_TYPE.ON_CREATED) {
       // Modifier handlers are stored as helper() values (kind === 'helper')
       // to preserve positional param source ranges. Build them as:
@@ -460,28 +458,6 @@ function buildModifierExpr(
   }
   const callExpr = B.call(modCallee, callArgs, mod.sourceRange);
   return B.arrow(['$n'], callExpr, mod.sourceRange);
-}
-
-/**
- * Build a style setter expression for style.* attributes.
- * Generates a bound function that sets style property on creation.
- */
-function buildStyleSetterExpr(
-  ctx: CompilerContext,
-  helperValue: HelperValue,
-  ctxName: string
-): JSExpression {
-  const [propValue, styleValue] = helperValue.positional;
-  const propertyName = propValue && propValue.kind === 'literal' && typeof propValue.value === 'string'
-    ? propValue.value
-    : '';
-  const valueExpr = styleValue ? buildValue(ctx, styleValue, ctxName) : B.nil();
-
-  return B.styleSetter(propertyName, valueExpr, {
-    TO_VALUE: SYMBOLS.TO_VALUE,
-    LOCAL_VALUE: SYMBOLS.LOCAL_VALUE,
-    LOCAL_NODE: SYMBOLS.LOCAL_NODE,
-  }, helperValue.sourceRange);
 }
 
 /**

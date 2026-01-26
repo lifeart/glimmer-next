@@ -641,11 +641,6 @@ export function serializeAttrValue(
   ctxName: string
 ): string {
   const serialized = serializeValue(ctx, value, ctxName);
-
-  // For paths, wrap in TO_VALUE for reactivity
-  if (value.kind === 'path' && serialized.includes('.')) {
-    return `${SYMBOLS.TO_VALUE}(${serialized})`;
-  }
-
+  // Runtime resolveBindingValue handles functions/tags for reactivity.
   return serialized;
 }

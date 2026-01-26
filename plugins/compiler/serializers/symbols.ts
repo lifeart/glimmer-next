@@ -34,6 +34,7 @@ export const SYMBOLS = {
   GET_ARGS: '$_GET_ARGS',
   GET_FW: '$_GET_FW',
   TO_VALUE: '$_TO_VALUE',
+  STYLE: '$_style',
 
   // Local variable names (used in generated code)
   LOCAL_FW: '$fw',       // Forwarded attributes/props variable
@@ -164,7 +165,6 @@ export const EVENT_TYPE = {
 export const INTERNAL_HELPERS = {
   ON_HANDLER: '$__on_handler',
   ON_CREATED_HANDLER: '$__on_created_handler',
-  STYLE_SETTER: '$__style_setter',
   ELEMENT_HELPER: '$__element_helper',
 } as const;
 

@@ -433,8 +433,6 @@ function buildValueToExpr(value: SerializedValue): JSExpression {
           return buildOnHandlerExpr(value);
         case INTERNAL_HELPERS.ON_CREATED_HANDLER:
           return buildOnCreatedHandlerExpr(value);
-        case INTERNAL_HELPERS.STYLE_SETTER:
-          return buildStyleSetterExpr(value);
         default:
           return B.raw(serializeHelperCall(value));
       }
@@ -489,19 +487,6 @@ function buildOnCreatedHandlerExpr(value: SerializedValue & { kind: 'helper' }):
   return B.arrow(['$n'], B.call(handlerExpr, callArgs), value.sourceRange);
 }
 
-function buildStyleSetterExpr(value: SerializedValue & { kind: 'helper' }): JSExpression {
-  const [propValue, styleValue] = value.positional;
-  const propertyName = propValue && propValue.kind === 'literal' && typeof propValue.value === 'string'
-    ? propValue.value
-    : '';
-  const valueExpr = styleValue ? buildValueToExpr(styleValue) : B.nil();
-  return B.styleSetter(propertyName, valueExpr, {
-    TO_VALUE: SYMBOLS.TO_VALUE,
-    LOCAL_VALUE: SYMBOLS.LOCAL_VALUE,
-    LOCAL_NODE: SYMBOLS.LOCAL_NODE,
-  }, value.sourceRange);
-}
-
 // Note: Built-in helper resolution uses getBuiltInHelperSymbol from serializers/symbols.ts (the single source of truth)
 
 /**
@@ -514,8 +499,7 @@ function serializeHelperCall(value: SerializedValue & { kind: 'helper' }): strin
   if (
     helperName === INTERNAL_HELPERS.ELEMENT_HELPER ||
     helperName === INTERNAL_HELPERS.ON_HANDLER ||
-    helperName === INTERNAL_HELPERS.ON_CREATED_HANDLER ||
-    helperName === INTERNAL_HELPERS.STYLE_SETTER
+    helperName === INTERNAL_HELPERS.ON_CREATED_HANDLER
   ) {
     return serializeJS(buildValueToExpr(value));
   }

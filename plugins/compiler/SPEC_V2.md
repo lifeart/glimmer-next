@@ -584,6 +584,7 @@ function appendInlineSourceMap(
 | `$_fin` | Finalize component | Returns roots array from component |
 | `$_args` | Args wrapper | Wraps component arguments (compat mode) |
 | `$_edp` | Empty DOM props | `[[], [], []]` constant |
+| `$_style` | Style modifier | Sets style.* bindings |
 
 ### 11.2 Control Flow Symbols
 
@@ -928,7 +929,7 @@ $_tag('button', [[], [], [['click', ($e, $n) => this.handleClick($e, $n)]]], [..
 
 **Output:**
 ```javascript
-[['0', ($n) => { const $v = $_TO_VALUE(() => this.textColor); $n.style.setProperty('color', $v); }]]
+[['0', ($n) => $_style($n, 'color', this.textColor)]]
 ```
 
 ### 15.4 @oncreated and @textContent
@@ -986,6 +987,7 @@ const SYMBOLS = {
   GET_ARGS: '$_GET_ARGS',
   GET_FW: '$_GET_FW',
   TO_VALUE: '$_TO_VALUE',
+  STYLE: '$_style',
   ARGS_PROPERTY: '$args',
 
   // Built-in helpers
