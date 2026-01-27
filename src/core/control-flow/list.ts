@@ -74,6 +74,9 @@ export class BasicListComponent<T extends { id: number }> {
   indexMap: Map<string, number> = new Map();
   // Track reactive index formulas for cleanup (dev mode only)
   indexFormulaMap: Map<string, MergedCell> = new Map();
+  // Track per-item markers for stable relocation boundaries
+  itemMarkers: Map<string, Comment> = new Map();
+  markerSet: Set<Comment> = new Set();
   nodes: Node[] = [];
   [RENDERED_NODES_PROPERTY]: Array<Node> = [];
   [COMPONENT_ID_PROPERTY] = cId();
@@ -126,6 +129,8 @@ export class BasicListComponent<T extends { id: number }> {
       CHILD.delete(listId);
       TREE.delete(listId);
       PARENT.delete(listId);
+      this.itemMarkers.clear();
+      this.markerSet.clear();
     });
     if (IS_DEV_MODE) {
       Object.defineProperty(this, $_debug_args, {
@@ -170,6 +175,55 @@ export class BasicListComponent<T extends { id: number }> {
       }
     }
     this.tag = tag;
+  }
+  private createItemMarker(key: string) {
+    const marker = IS_DEV_MODE
+      ? this.api.comment(`list item ${key}`)
+      : this.api.comment();
+    this.itemMarkers.set(key, marker);
+    this.markerSet.add(marker);
+    this[RENDERED_NODES_PROPERTY].push(marker);
+    return marker;
+  }
+  private getItemMarker(key: string) {
+    return this.itemMarkers.get(key);
+  }
+  private isBoundaryMarker(node: Node) {
+    return this.markerSet.has(node as Comment);
+  }
+  private getNextBoundaryMarker(marker: Comment): Comment | null {
+    let node = marker.nextSibling;
+    while (node && node !== this.bottomMarker) {
+      if (this.isBoundaryMarker(node)) {
+        return node as Comment;
+      }
+      node = node.nextSibling;
+    }
+    return null;
+  }
+  private collectItemNodes(marker: Comment) {
+    const nodes: Node[] = [];
+    const end = this.getNextBoundaryMarker(marker) ?? this.bottomMarker;
+    let node: Node | null = marker;
+    while (node && node !== end) {
+      nodes.push(node);
+      node = node.nextSibling;
+    }
+    return nodes;
+  }
+  private relocateItem(marker: Comment, anchor: Node) {
+    const parent = this.api.parent(anchor);
+    if (!parent) return;
+    const nodesToMove = this.collectItemNodes(marker);
+    for (let i = 0; i < nodesToMove.length; i++) {
+      this.api.insert(parent, nodesToMove[i], anchor);
+    }
+  }
+  private removeMarker(marker: Comment) {
+    this.markerSet.delete(marker);
+    if (marker.isConnected) {
+      this.api.destroy(marker);
+    }
   }
   setupKeyForItem() {
     if (this.key === '@identity') {
@@ -248,7 +302,7 @@ export class BasicListComponent<T extends { id: number }> {
       isFirstRender,
       api,
     } = this;
-    const rowsToMove: Array<[GenericReturnType, number]> = [];
+    const rowsToMove: Array<{ key: string; index: number; isNew: boolean }> = [];
     const amountOfExistingKeys = amountOfKeys - removedIndexes.length;
     if (removedIndexes.length > 0 && keyMap.size > 0) {
       removedIndexes.sort((a, b) => a - b);
@@ -277,8 +331,13 @@ export class BasicListComponent<T extends { id: number }> {
       }
 
       const key = keyForItem(item, index);
-      const maybeRow = keyMap.get(key);
-      if (!maybeRow) {
+      const hasRow = keyMap.has(key);
+      const maybeRow = hasRow ? keyMap.get(key) : undefined;
+      let marker = this.getItemMarker(key);
+      if (!marker) {
+        marker = this.createItemMarker(key);
+      }
+      if (!hasRow) {
         let idx: number | MergedCell = index;
         if (IS_DEV_MODE) {
           // @todo - add `hasIndex` argument to compiler to tree-shake this
@@ -307,36 +366,55 @@ export class BasicListComponent<T extends { id: number }> {
         indexMap.set(key, index);
         if (isAppendOnly) {
           // TODO: in ssr parentNode may not exist
-          renderElement(api, this as unknown as ComponentLike, api.parent(targetNode)!, row, targetNode);
+          const parent = api.parent(targetNode)!;
+          api.insert(parent, marker, targetNode);
+          renderElement(
+            api,
+            this as unknown as ComponentLike,
+            parent,
+            row,
+            targetNode,
+          );
         } else {
-          rowsToMove.push([row, index]);
+          rowsToMove.push({ key, index, isNew: true });
         }
       } else {
         seenKeys++;
         const expectedIndex = indexMap.get(key)!;
         if (expectedIndex !== index) {
           indexMap.set(key, index);
-          rowsToMove.push([maybeRow, index]);
+          rowsToMove.push({ key, index, isNew: false });
         }
       }
     });
     setParentContext(null);
     rowsToMove
       .sort((r1, r2) => {
-        return r2[1] - r1[1];
+        return r2.index - r1.index;
       })
-      .forEach(([row, index]) => {
+      .forEach(({ key, index, isNew }) => {
         const nextItem = items[index + 1];
         const insertBeforeNode = nextItem
-          ? getFirstNode(api, keyMap.get(keyForItem(nextItem, index + 1))!)
+          ? this.getItemMarker(keyForItem(nextItem, index + 1)) ?? bottomMarker
           : bottomMarker;
-        renderElement(
-          api,
-          this as unknown as ComponentLike,
-          api.parent(insertBeforeNode)!,
-          row,
-          insertBeforeNode,
-        );
+        const parent = api.parent(insertBeforeNode)!;
+        const marker = this.getItemMarker(key);
+        if (!marker) {
+          return;
+        }
+        if (isNew) {
+          const row = keyMap.get(key)!;
+          api.insert(parent, marker, insertBeforeNode);
+          renderElement(
+            api,
+            this as unknown as ComponentLike,
+            parent,
+            row,
+            insertBeforeNode,
+          );
+          return;
+        }
+        this.relocateItem(marker, insertBeforeNode);
       });
     if (targetNode !== bottomMarker) {
       const parent = api.parent(targetNode)!;
@@ -375,7 +453,14 @@ export class SyncListComponent<
     );
   }
   fastCleanup() {
-    const { keyMap, bottomMarker, topMarker, indexMap, indexFormulaMap, api } = this;
+    const {
+      keyMap,
+      bottomMarker,
+      topMarker,
+      indexMap,
+      indexFormulaMap,
+      api,
+    } = this;
     const parent = api.parent(bottomMarker);
     if (
       parent &&
@@ -395,6 +480,8 @@ export class SyncListComponent<
       keyMap.clear();
       indexMap.clear();
       indexFormulaMap.clear();
+      this.itemMarkers.clear();
+      this.markerSet.clear();
       return true;
     } else {
       return false;
@@ -440,8 +527,10 @@ export class SyncListComponent<
     this.updateItems(items, amountOfKeys, indexesToRemove);
   }
   destroyItem(row: GenericReturnType, key: string) {
+    const marker = this.itemMarkers.get(key);
     this.keyMap.delete(key);
     this.indexMap.delete(key);
+    this.itemMarkers.delete(key);
     // Clean up reactive index formula if it exists
     const indexFormula = this.indexFormulaMap.get(key);
     if (indexFormula) {
@@ -449,6 +538,9 @@ export class SyncListComponent<
       this.indexFormulaMap.delete(key);
     }
     destroyElementSync(row as ComponentLike, false, this.api);
+    if (marker) {
+      this.removeMarker(marker);
+    }
   }
 }
 
@@ -478,7 +570,14 @@ export class AsyncListComponent<
     );
   }
   async fastCleanup() {
-    const { bottomMarker, topMarker, keyMap, indexMap, indexFormulaMap, api } = this;
+    const {
+      bottomMarker,
+      topMarker,
+      keyMap,
+      indexMap,
+      indexFormulaMap,
+      api,
+    } = this;
     const parent = api.parent(bottomMarker);
     if (
       parent &&
@@ -503,6 +602,8 @@ export class AsyncListComponent<
       keyMap.clear();
       indexMap.clear();
       indexFormulaMap.clear();
+      this.itemMarkers.clear();
+      this.markerSet.clear();
       return true;
     } else {
       return false;
@@ -558,8 +659,10 @@ export class AsyncListComponent<
     this.updateItems(items, amountOfKeys, indexesToRemove);
   }
   async destroyItem(row: GenericReturnType, key: string) {
+    const marker = this.itemMarkers.get(key);
     this.keyMap.delete(key);
     this.indexMap.delete(key);
+    this.itemMarkers.delete(key);
     // Clean up reactive index formula if it exists
     const indexFormula = this.indexFormulaMap.get(key);
     if (indexFormula) {
@@ -567,5 +670,8 @@ export class AsyncListComponent<
       this.indexFormulaMap.delete(key);
     }
     await destroyElement(row as ComponentLike, false, this.api);
+    if (marker) {
+      this.removeMarker(marker);
+    }
   }
 }
