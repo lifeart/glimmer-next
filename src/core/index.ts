@@ -46,3 +46,23 @@ export {
 } from '@/core/suspense-utils';
 
 export { configureGXT, type GXTConfig, type GXTConfigInput, type PoolConfig } from '@/core/config';
+
+// Context API exports for Ember integration
+export {
+  provideContext,
+  getContext,
+  initDOM,
+  cleanupFastContext,
+  RENDERING_CONTEXT,
+  ROOT_CONTEXT,
+} from '@/core/context';
+
+// DOM API exports for custom rendering contexts
+export { HTMLBrowserDOMApi, type DOMApi } from '@/core/dom-api';
+
+// Symbol exports for Ember integration
+export {
+  RENDERING_CONTEXT_PROPERTY,
+  RENDERED_NODES_PROPERTY,
+  COMPONENT_ID_PROPERTY,
+} from '@/core/types';

@@ -1287,3 +1287,59 @@ describe('If Component Destruction', () => {
     expect(trueBranchOpcodeCount).toBe(countAfterDestroy);
   });
 });
+
+describe('renderElement unknown types fallback', () => {
+  let window: Window;
+  let document: Document;
+  let api: DOMApi;
+  let root: Root;
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    window = new Window();
+    document = window.document as unknown as Document;
+    api = new HTMLBrowserDOMApi(document);
+    cleanupFastContext();
+    root = new Root(document);
+    provideContext(root, RENDERING_CONTEXT, api);
+    container = document.createElement('div');
+    document.body.appendChild(container);
+  });
+
+  afterEach(() => {
+    cleanupFastContext();
+    TREE.clear();
+    PARENT.clear();
+    CHILD.clear();
+    window.close();
+  });
+
+  test('renders object with custom toString as text', () => {
+    const component = new Component({});
+    component[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, component);
+
+    const customObj = {
+      toString() {
+        return 'custom-text';
+      },
+    };
+
+    renderElement(api, component, container, customObj as any);
+    expect(container.textContent).toBe('custom-text');
+    expect(component[RENDERED_NODES_PROPERTY].length).toBe(1);
+  });
+
+  test('skips plain object with [object Object] toString', () => {
+    const component = new Component({});
+    component[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, component);
+
+    const plainObj = { foo: 'bar' };
+
+    // In dev mode this may warn but not throw, in prod it should skip silently
+    renderElement(api, component, container, plainObj as any);
+    // Should not render [object Object]
+    expect(container.textContent).not.toBe('[object Object]');
+  });
+});

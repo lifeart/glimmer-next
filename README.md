@@ -35,6 +35,10 @@
 - Related PR: [glimmer-vm/pull/1541](https://github.com/glimmerjs/glimmer-vm/pull/1541)
 - Sample App: [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark/tree/master/frameworks/keyed/gxt)
 
+## Documentation
+
+- [Runtime Compiler](./docs/runtime-compiler.md) - Compile templates at runtime for dynamic content, CMS integration, or development tools
+
 ## Component sample
 
 Based on [template imports RFC](https://rfcs.emberjs.com/id/0779-first-class-component-templates/)

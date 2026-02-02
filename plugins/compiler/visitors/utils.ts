@@ -10,6 +10,37 @@ import type { CompilerContext } from '../context';
 import type { SerializedValue, SourceRange, PathPart } from '../types';
 import { SYMBOLS, INTERNAL_HELPERS, getBuiltInHelperSymbol } from '../serializers/symbols';
 import { B, serializeJS, type JSExpression } from '../builder';
+import { isSafeKey, quoteKey } from '../utils/js-utils';
+
+/**
+ * Serialize a path expression, using bracket notation for hyphenated property names.
+ * Converts "c.my-component" to "c["my-component"]"
+ *
+ * Note: If the path already contains optional chaining (?.), it's returned as-is
+ * since toOptionalChaining has already processed it correctly.
+ */
+function serializePathExpression(pathStr: string): string {
+  // If path already has optional chaining, return as-is
+  // This prevents splitting "a?.b" by "." which would incorrectly
+  // yield ["a?", "b"] instead of preserving the optional chain
+  if (pathStr.includes('?.')) {
+    return pathStr;
+  }
+
+  const parts = pathStr.split('.');
+  if (parts.length === 0) return pathStr;
+
+  let result = parts[0];
+  for (let i = 1; i < parts.length; i++) {
+    const part = parts[i];
+    if (isSafeKey(part)) {
+      result += `.${part}`;
+    } else {
+      result += `[${JSON.stringify(part)}]`;
+    }
+  }
+  return result;
+}
 
 // Line offset cache for converting line/column to byte offset
 let cachedSource: string | null = null;
@@ -387,7 +418,7 @@ export function serializeValueToString(value: SerializedValue): string {
       return String(value.value);
 
     case 'path':
-      return value.expression;
+      return serializePathExpression(value.expression);
 
     case 'spread':
       return value.expression;
@@ -566,7 +597,7 @@ function serializeHelperCall(value: SerializedValue & { kind: 'helper' }): strin
     const namedPairs: string[] = [];
     for (const [key, val] of value.named) {
       // Wrap each value in a getter
-      namedPairs.push(`${key}: () => ${serializeValueToString(val)}`);
+      namedPairs.push(`${quoteKey(key)}: () => ${serializeValueToString(val)}`);
     }
     return `${symbolName}({ ${namedPairs.join(', ')} })`;
   }
@@ -575,7 +606,7 @@ function serializeHelperCall(value: SerializedValue & { kind: 'helper' }): strin
   if (value.named.size > 0) {
     const namedPairs: string[] = [];
     for (const [key, val] of value.named) {
-      namedPairs.push(`${key}: ${serializeValueToString(val)}`);
+      namedPairs.push(`${quoteKey(key)}: ${serializeValueToString(val)}`);
     }
     args.push(`{ ${namedPairs.join(', ')} }`);
   }
@@ -591,6 +622,25 @@ function serializeHelperCall(value: SerializedValue & { kind: 'helper' }): strin
   // Special handling for debugger - prepend this and use .call
   if (symbolName === SYMBOLS.DEBUGGER) {
     return `${symbolName}.call(this${args.length > 0 ? `, ${args.join(', ')}` : ''})`;
+  }
+
+  // Special handling for component/helper/modifier helpers
+  // These expect: $_componentHelper([...positional], {...named})
+  // NOT: $_componentHelper(...positional, named)
+  if (
+    symbolName === SYMBOLS.COMPONENT_HELPER ||
+    symbolName === SYMBOLS.HELPER_HELPER ||
+    symbolName === SYMBOLS.MODIFIER_HELPER
+  ) {
+    // Build positional as array
+    const positionalArgs = value.positional.map(arg => serializeValueToString(arg));
+    // Build named as object
+    const namedPairs: string[] = [];
+    for (const [key, val] of value.named) {
+      namedPairs.push(`${quoteKey(key)}: ${serializeValueToString(val)}`);
+    }
+    const namedObj = namedPairs.length > 0 ? `{ ${namedPairs.join(', ')} }` : '{}';
+    return `${symbolName}([${positionalArgs.join(', ')}], ${namedObj})`;
   }
 
   return `${symbolName}(${args.join(', ')})`;

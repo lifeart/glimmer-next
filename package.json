@@ -63,6 +63,10 @@
       "import": "./dist/gxt.compiler.es.js",
       "types": "./dist/compiler.d.ts"
     },
+    "./runtime-compiler": {
+      "import": "./dist/gxt.runtime-compiler.es.js",
+      "types": "./dist/runtime-compiler.d.ts"
+    },
     "./ember-inspector": {
       "import": "./dist/gxt.ember-inspector.es.js",
       "types": "./dist/src/utils/ember-inspector.d.ts"

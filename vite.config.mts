@@ -107,6 +107,7 @@ export default defineConfig(({ mode }) => ({
           entry: [
             path.join(currentPath, "src", "core", "index.ts"),
             path.join(currentPath, "plugins", "compiler.ts"),
+            path.join(currentPath, "plugins", "runtime-compiler.ts"),
             path.join(
               currentPath,
               "src",

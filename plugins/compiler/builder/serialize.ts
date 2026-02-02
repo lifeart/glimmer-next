@@ -8,6 +8,7 @@
 import type { CodeEmitter } from '../tracking/code-emitter';
 import type { SourceRange, MappingSource } from '../types';
 import { PURE_FUNCTIONS } from '../serializers/symbols';
+import { isSafeKey } from '../utils/js-utils';
 import type {
   JSExpression,
   JSStatement,
@@ -340,12 +341,27 @@ function serializeMemberStreaming(node: JSMemberExpression, ctx: SerializeContex
     serializeNodeStreaming(node.property as JSExpression, ctx);
     emitter.emit(']');
   } else {
-    const accessor = node.optional ? '?.' : '.';
-    emitter.emit(accessor);
-    if (node.propertySourceRange) {
-      emitter.emitMapped(node.property as string, node.propertySourceRange, 'PathExpression', node.property as string);
+    const prop = node.property as string;
+
+    // Use bracket notation for property names that aren't valid JS identifiers
+    // (e.g., hyphenated names like "my-component")
+    if (!isSafeKey(prop)) {
+      emitter.emit(node.optional ? '?.[' : '[');
+      // Preserve source mapping for hyphenated properties when available
+      if (node.propertySourceRange) {
+        emitter.emitMapped(JSON.stringify(prop), node.propertySourceRange, 'PathExpression', prop);
+      } else {
+        emitter.emit(JSON.stringify(prop));
+      }
+      emitter.emit(']');
     } else {
-      emitter.emit(node.property as string);
+      const accessor = node.optional ? '?.' : '.';
+      emitter.emit(accessor);
+      if (node.propertySourceRange) {
+        emitter.emitMapped(prop, node.propertySourceRange, 'PathExpression', prop);
+      } else {
+        emitter.emit(prop);
+      }
     }
   }
 }
@@ -869,9 +885,18 @@ function serializeMember(node: JSMemberExpression, ctx: SerializeContext): strin
   }
 
   const prop = node.property as string;
+
+  // Use bracket notation for property names that aren't valid JS identifiers
+  // (e.g., hyphenated names like "my-component")
+  if (!isSafeKey(prop)) {
+    const code = node.optional ? `${obj}?.[${JSON.stringify(prop)}]` : `${obj}[${JSON.stringify(prop)}]`;
+    return emit(code, ctx, node.sourceRange);
+  }
+
   const accessor = node.optional ? '?.' : '.';
   const code = `${obj}${accessor}${prop}`;
-  return code;
+  // Emit with source range to preserve source mapping for safe properties
+  return emit(code, ctx, node.sourceRange);
 }
 
 function serializeCall(node: JSCallExpression, ctx: SerializeContext): string {
@@ -1130,10 +1155,3 @@ function serializeExprStmt(
 // ============================================================================
 // Helpers
 // ============================================================================
-
-/**
- * Check if a string is a safe JavaScript key (doesn't need quoting).
- */
-function isSafeKey(key: string): boolean {
-  return /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(key);
-}

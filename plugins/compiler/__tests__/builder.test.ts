@@ -87,6 +87,15 @@ describe('Code Builder', () => {
       expect(serializeJS(computedMember(id('foo'), string('bar')))).toBe('foo["bar"]');
     });
 
+    test('member expression with hyphenated property uses bracket notation', () => {
+      // Hyphenated property names are not valid JS identifiers, so they must use bracket notation
+      expect(serializeJS(member(id('obj'), 'my-component'))).toBe('obj["my-component"]');
+    });
+
+    test('optional member expression with hyphenated property uses bracket notation', () => {
+      expect(serializeJS(optionalMember(id('obj'), 'my-component'))).toBe('obj?.["my-component"]');
+    });
+
     test('path helper', () => {
       expect(serializeJS(path('this.foo.bar'))).toBe('this.foo.bar');
     });

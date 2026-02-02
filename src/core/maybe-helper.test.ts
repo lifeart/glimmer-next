@@ -387,3 +387,39 @@ describe('$_modifierHelper()', () => {
     expect(calls[0][1]).toEqual(['getterArg', 'cellArg']);
   });
 });
+
+describe('$_componentHelper with string component names', () => {
+  test('handles string component name', () => {
+    const wrapped = $_componentHelper(['my-component'], { foo: 'bar' });
+
+    // Should return a function
+    expect(typeof wrapped).toBe('function');
+
+    // Should have the string component name marker
+    expect((wrapped as any).__stringComponentName).toBe('my-component');
+  });
+
+  test('string component wrapper merges hash args', () => {
+    const wrapped = $_componentHelper(['string-comp'], { prebound: 'value' });
+
+    // Call with runtime args
+    const args = { runtime: 'arg' };
+    wrapped(args);
+
+    // Hash args should be merged into the args
+    expect(args).toEqual({ runtime: 'arg', prebound: 'value' });
+  });
+
+  test('string component wrapper unwraps hash getters', () => {
+    const wrapped = $_componentHelper(['string-comp'], {
+      fromGetter: () => 'unwrapped',
+      literal: 'direct',
+    });
+
+    const args: Record<string, unknown> = {};
+    wrapped(args);
+
+    expect(args.fromGetter).toBe('unwrapped');
+    expect(args.literal).toBe('direct');
+  });
+});

@@ -138,9 +138,29 @@ export function $_unwrapHelperArg(value: unknown): unknown {
 
 /**
  * Component helper - curries a component with pre-bound args.
+ * Handles both class/function components and string component names.
  */
 export function $_componentHelper(params: any[], hash: Record<string, unknown>) {
   const componentFn = $_unwrapHelperArg(params[0]);
+
+  // For string component names, return a special wrapper that will be resolved at render time
+  if (typeof componentFn === 'string') {
+    // Return the string as the component identifier
+    // The component manager will resolve it when $_c is called
+    const wrappedComponent = function wrappedStringComponent(args: Record<string, unknown>) {
+      const keys = Object.keys(hash);
+      for (let i = 0; i < keys.length; i++) {
+        const key = keys[i];
+        args[key] = $_unwrapHelperArg(hash[key]);
+      }
+      // Return the string - the manager will handle resolution
+      // The args are merged so the resolved component gets them
+      return args;
+    };
+    // Mark the wrapper with the string component name for manager resolution
+    (wrappedComponent as any).__stringComponentName = componentFn;
+    return wrappedComponent;
+  }
 
   return function wrappedComponent(args: Record<string, unknown>) {
     const keys = Object.keys(hash);

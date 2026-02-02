@@ -493,6 +493,19 @@ function buildBuiltInHelper(
     return B.methodCall(callTarget, 'call', callArgs, sourceRange);
   }
 
+  // Special handling for component/helper/modifier helpers
+  // These expect: $_componentHelper([...positional], {...named})
+  // NOT: $_componentHelper(...positional, named)
+  if (
+    symbol === SYMBOLS.COMPONENT_HELPER ||
+    symbol === SYMBOLS.HELPER_HELPER ||
+    symbol === SYMBOLS.MODIFIER_HELPER
+  ) {
+    const posArgs = positional.map(arg => buildValue(ctx, arg, ctxName));
+    const namedObj = buildNamedArgsObject(ctx, named, ctxName);
+    return B.call(helperId, [B.array(posArgs), namedObj], sourceRange);
+  }
+
   return B.call(helperId, args, sourceRange);
 }
 

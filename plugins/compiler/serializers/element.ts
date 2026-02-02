@@ -437,6 +437,16 @@ function buildModifierExpr(
     namedProps.push(B.prop(key, buildValue(ctx, val, ctxName), false, val.sourceRange));
   }
 
+  // Check if modifier name is a known binding
+  // For @args, this., or $_ prefixed names, treat as known
+  // For dotted paths, check the root segment
+  const rootName = mod.name.split(/[.\[]/)[0];
+  const isKnownModifier = mod.name.startsWith('@') ||
+    mod.name.startsWith('this.') ||
+    mod.name.startsWith('this[') ||
+    mod.name.startsWith('$_') ||
+    ctx.scopeTracker.hasBinding(rootName);
+
   const modCallee = mod.pathRange
     ? B.id(modName, mod.pathRange, 'PathExpression', mod.name)
     : modName;
@@ -444,8 +454,15 @@ function buildModifierExpr(
   if (ctx.flags.WITH_MODIFIER_MANAGER) {
     // ($n) => $__maybeModifier(modName, $n, [...positional], {named})
     const namedObj = namedProps.length > 0 ? B.object(namedProps) : B.emptyObject();
+
+    // For known bindings, pass the function reference directly
+    // For unknown bindings, pass the name as a string for runtime resolution
+    const modRef = isKnownModifier
+      ? (typeof modCallee === 'string' ? B.id(modCallee) : modCallee)
+      : B.string(mod.name, mod.pathRange);
+
     const callExpr = B.call(SYMBOLS.MAYBE_MODIFIER, [
-      typeof modCallee === 'string' ? B.id(modCallee) : modCallee,
+      modRef,
       B.id('$n'),
       B.array(positionalExprs),
       namedObj,
