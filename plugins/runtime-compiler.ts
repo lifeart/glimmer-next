@@ -6,17 +6,38 @@
  *
  * Usage:
  * ```typescript
- * import { compileTemplate, setupGlobalScope } from '@lifeart/gxt/runtime-compiler';
+ * import { template } from '@lifeart/gxt/runtime-compiler';
+ * import { Component } from '@lifeart/gxt';
+ * import { $template } from '@lifeart/gxt/shared';
  *
- * // Setup global scope first (required once)
- * setupGlobalScope();
+ * // As a class template property:
+ * class MyComponent extends Component {
+ *   name = 'World';
+ *   [$template] = template('<div>Hello {{this.name}}</div>');
+ * }
  *
- * // Compile a template
- * const templateFn = compileTemplate('<div>{{this.name}}</div>');
+ * // As a template-only component (no class needed):
+ * const Greeting = template('<div>Hello {{@name}}!</div>');
  *
- * // Use the template
- * const result = templateFn.call(context);
+ * // With child components in scope:
+ * const Badge = template('<span class="badge">{{@label}}</span>');
+ * const Card = template('<div class="card"><Badge @label={{@title}} /></div>', {
+ *   scope: { Badge }
+ * });
+ *
+ * // With dynamic eval for unknown bindings:
+ * const name = 'World';
+ * const DynamicComponent = template(dynamicTemplateString, {
+ *   eval() {
+ *     return eval(arguments[0]);
+ *   }
+ * });
  * ```
+ *
+ * ## Security Warning
+ *
+ * The `eval` option should only be used with trusted template strings.
+ * Using eval with untrusted input is a security risk.
  */
 
 import { compile as compilerCompile, type CompileOptions, type CompileResult } from './compiler/index';
@@ -233,6 +254,14 @@ export function compileTemplate(
     const scopeVars = options.scopeValues || {};
     const scopeNames = Object.keys(scopeVars);
     const scopeValuesList = Object.values(scopeVars);
+
+    // Validate scope names to prevent code injection via new Function()
+    const validIdentifier = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/;
+    for (const name of scopeNames) {
+      if (!validIdentifier.test(name)) {
+        throw new Error(`[gxt-runtime-compiler] Invalid scope name: "${name}". Scope names must be valid JavaScript identifiers.`);
+      }
+    }
 
     // Create function that returns the compiled template array
     // We wrap it in a function that has access to both GXT symbols and scope values
@@ -506,3 +535,150 @@ export function createTemplateFactory(
 // NOTE: Auto-setup has been removed to avoid side effects on module import.
 // Consumers should call setupGlobalScope() explicitly, or rely on
 // compileTemplate()'s lazy initialization (see lines 189-191).
+
+// Constants matching shared.ts - used for template components
+const $template = 'template' as const;
+const $args = 'args' as const;
+
+/**
+ * Options for template function
+ */
+export interface TemplateOptions extends RuntimeCompileOptions {
+  /** Components, helpers, and other values to make available in the template scope */
+  scope?: Record<string, unknown>;
+  /**
+   * Dynamic scope access for unknown bindings. Allows templates to access
+   * variables from the outer JavaScript scope without explicitly listing them.
+   *
+   * WARNING: Only use with trusted template strings. Using eval with untrusted
+   * input is a security risk.
+   *
+   * @example
+   * ```typescript
+   * const name = 'World';
+   * const MyComponent = template(dynamicTemplateString, {
+   *   eval() {
+   *     return eval(arguments[0]);
+   *   }
+   * });
+   * ```
+   *
+   * Note: Use `arguments[0]` instead of a named parameter to avoid shadowing
+   * variables that the template might be trying to access.
+   */
+  eval?: (...args: string[]) => unknown;
+}
+
+/**
+ * Creates a universal template that works both as a class template property
+ * and as a standalone template-only component.
+ *
+ * @example
+ * ```typescript
+ * import { template } from '@lifeart/gxt/runtime-compiler';
+ * import { Component } from '@lifeart/gxt';
+ * import { $template } from '@lifeart/gxt/shared';
+ *
+ * // As a class template:
+ * class MyComponent extends Component {
+ *   name = 'World';
+ *   [$template] = template('<div>Hello {{this.name}}</div>');
+ * }
+ *
+ * // As a template-only component:
+ * const Greeting = template('<div>Hello {{@name}}!</div>');
+ *
+ * // With nested components:
+ * const Badge = template('<span class="badge">{{@label}}</span>');
+ * const Card = template('<div class="card"><Badge @label={{@title}} /></div>', {
+ *   scope: { Badge }
+ * });
+ *
+ * // Class using template-only child:
+ * class Parent extends Component {
+ *   [$template] = template('<Card @title={{this.title}} />', { scope: { Card } });
+ * }
+ * ```
+ *
+ * @param templateSource - The template string to compile
+ * @param options - Optional compilation options including scope
+ * @returns A universal template function
+ */
+export function template(
+  templateSource: string,
+  options?: TemplateOptions
+): any {
+  const { scope, eval: evalOption, ...restOptions } = options || {};
+
+  // Merge scope into scopeValues and bindings
+  const scopeKeys = scope ? Object.keys(scope) : [];
+  const mergedOptions: RuntimeCompileOptions = {
+    ...restOptions,
+    scopeValues: scope ? { ...restOptions.scopeValues, ...scope } : restOptions.scopeValues,
+    bindings: scopeKeys.length > 0
+      ? new Set([...(restOptions.bindings || []), ...scopeKeys])
+      : restOptions.bindings,
+    flags: {
+      IS_GLIMMER_COMPAT_MODE: true,
+      ...restOptions.flags,
+      // Enable eval support only when eval option is provided (reduces bundle size otherwise)
+      // Applied after spread to ensure eval option always takes precedence
+      ...(evalOption ? { WITH_EVAL_SUPPORT: true } : {}),
+    },
+  };
+
+  const result = compileTemplate(templateSource, mergedOptions);
+  if (result.errors.length > 0) {
+    const errorMsg = result.errors.map(e => e.message).join('\n');
+    throw new Error(`Template compilation failed:\n${errorMsg}`);
+  }
+  const fn = result.templateFn;
+
+  // Extract eval function from options
+  const evalFn = evalOption;
+
+  /**
+   * Universal template function:
+   * - When called with `this` context (as [$template] on a class): renders the template
+   * - When called without `this` (as a factory): creates a template-only instance
+   */
+  function universalTemplate(this: any, args?: Record<string, unknown>, _fw?: unknown) {
+    // If called with 'this' context, render the template
+    if (this) {
+      // Store eval function on the component instance for deferred rendering
+      // (e.g., when {{#if}} becomes true later). This is accessed via this.$_eval
+      // Note: Can't set on this[$args] because it's a Proxy that may reject new properties
+      if (evalFn) {
+        this.$_eval = evalFn;
+      }
+      // Set eval function for this render (save previous for nested templates)
+      const prevEval = (globalThis as any).$_eval;
+      // Always set (or clear) eval for this template - don't inherit from parent
+      (globalThis as any).$_eval = evalFn;
+      try {
+        return $_fin(fn.call(this), this);
+      } finally {
+        // Restore previous eval function
+        (globalThis as any).$_eval = prevEval;
+      }
+    }
+
+    // Otherwise, create a template-only component instance
+    // Store eval function on instance for deferred rendering
+    const instance = {
+      [$template]: universalTemplate,
+      [$args]: args || {},
+      args: args || {},
+      $_eval: evalFn, // Store eval function for deferred rendering
+    };
+    return instance;
+  }
+
+  // Remove prototype so $_c treats this as a factory function, not a class
+  (universalTemplate as any).prototype = undefined;
+  // Mark as template for debugging
+  (universalTemplate as any).__templateOnly = true;
+
+  return universalTemplate;
+}
+

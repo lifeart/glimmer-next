@@ -3175,15 +3175,30 @@ describe('WITH_HELPER_MANAGER flag behavior', () => {
     expect(result.code).not.toContain(SYMBOLS.MAYBE_HELPER);
   });
 
-  test('unknown binding with hash args uses maybeHelper with scope key', () => {
+  test('unknown binding with hash args uses maybeHelper (no context by default)', () => {
     const template = '{{unknownHelper name="world"}}';
     const result = compile(template);
 
     expect(result.errors).toHaveLength(0);
     expect(result.code).toContain(SYMBOLS.MAYBE_HELPER);
     expect(result.code).toContain('"unknownHelper"');
-    // Should have scope key for runtime resolution
-    expect(result.code).toContain(SYMBOLS.SCOPE_KEY);
+    // Named args are passed in hash, but context NOT passed without WITH_EVAL_SUPPORT
+    expect(result.code).toContain('name:');
+    expect(result.code).not.toContain(', this)');
+  });
+
+  test('unknown binding with hash args passes context when WITH_EVAL_SUPPORT enabled', () => {
+    const template = '{{unknownHelper name="world"}}';
+    const result = compile(template, {
+      flags: { WITH_EVAL_SUPPORT: true },
+    });
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.code).toContain(SYMBOLS.MAYBE_HELPER);
+    expect(result.code).toContain('"unknownHelper"');
+    // With WITH_EVAL_SUPPORT, context IS passed as 4th arg
+    expect(result.code).toContain('name:');
+    expect(result.code).toMatch(/\$_maybeHelper\([^)]+,\s*\{[^}]*name:[^}]*\},\s*this\)/);
   });
 
   test('builtin helpers are not affected by WITH_HELPER_MANAGER flag', () => {
@@ -3280,6 +3295,22 @@ describe('WITH_HELPER_MANAGER flag behavior', () => {
     expect(positionalResult.code).not.toContain(SYMBOLS.SCOPE_KEY);
     expect(hashResult.code).not.toContain(SYMBOLS.SCOPE_KEY);
   });
+
+  test('WITH_EVAL_SUPPORT=true + WITH_HELPER_MANAGER=true: known uses maybeHelper with ref, unknown passes context', () => {
+    const template = '{{knownHelper arg1}}{{unknownHelper arg2}}';
+    const result = compile(template, {
+      bindings: new Set(['knownHelper']),
+      flags: { WITH_EVAL_SUPPORT: true, WITH_HELPER_MANAGER: true },
+    });
+
+    expect(result.errors).toHaveLength(0);
+    // Known binding should use $_maybeHelper with function reference (not string)
+    // Unknown binding should use $_maybeHelper with string and context
+    expect(result.code).toContain(SYMBOLS.MAYBE_HELPER);
+    // unknownHelper should be passed as a string with context
+    expect(result.code).toContain('"unknownHelper"');
+    expect(result.code).toMatch(/\$_maybeHelper\("unknownHelper",.*?,\s*this\)/);
+  });
 });
 
 describe('Regression: visitSimpleMustache unified behavior', () => {
@@ -3316,13 +3347,28 @@ describe('Regression: visitSimpleMustache unified behavior', () => {
     expect(result.code).toContain('"someUnknown"');
   });
 
-  test('unknown helper with hash args uses maybeHelper with scope', () => {
+  test('unknown helper with hash args uses maybeHelper (no context by default)', () => {
     const template = '{{someUnknown key="val"}}';
     const result = compile(template);
 
     expect(result.errors).toHaveLength(0);
     expect(result.code).toContain(SYMBOLS.MAYBE_HELPER);
-    expect(result.code).toContain(SYMBOLS.SCOPE_KEY);
+    // Named args in hash, but context NOT passed without WITH_EVAL_SUPPORT
+    expect(result.code).toContain('key:');
+    expect(result.code).not.toContain(', this)');
+  });
+
+  test('unknown helper with hash args passes context when WITH_EVAL_SUPPORT enabled', () => {
+    const template = '{{someUnknown key="val"}}';
+    const result = compile(template, {
+      flags: { WITH_EVAL_SUPPORT: true },
+    });
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.code).toContain(SYMBOLS.MAYBE_HELPER);
+    // With WITH_EVAL_SUPPORT, context IS passed as 4th arg
+    expect(result.code).toContain('key:');
+    expect(result.code).toMatch(/\$_maybeHelper\([^)]+,\s*\{[^}]*key:[^}]*\},\s*this\)/);
   });
 
   test('known binding with hash args uses direct call', () => {

@@ -423,3 +423,120 @@ describe('$_componentHelper with string component names', () => {
     expect(args.literal).toBe('direct');
   });
 });
+
+describe('$_maybeHelper with string value (eval resolution)', () => {
+  test('resolves string value via globalThis.$_eval', () => {
+    const prevEval = (globalThis as any).$_eval;
+    try {
+      (globalThis as any).$_eval = (name: string) => {
+        if (name === 'greeting') return 'Hello!';
+        throw new ReferenceError(`${name} is not defined`);
+      };
+      const result = $_maybeHelper('greeting', []);
+      expect(result).toBe('Hello!');
+    } finally {
+      (globalThis as any).$_eval = prevEval;
+    }
+  });
+
+  test('resolves string value via context.$_eval (3-arg form)', () => {
+    const ctx = {
+      $_eval: (name: string) => {
+        if (name === 'myVar') return 42;
+        throw new ReferenceError(`${name} is not defined`);
+      },
+      $args: {},
+    };
+    const result = $_maybeHelper('myVar', [], ctx);
+    expect(result).toBe(42);
+  });
+
+  test('resolves string value via context.$_eval (4-arg form with hash)', () => {
+    const ctx = {
+      $_eval: (name: string) => {
+        if (name === 'helper') return 'resolved';
+        throw new ReferenceError(`${name} is not defined`);
+      },
+      $args: {},
+    };
+    const hash = { format: () => 'short' };
+    const result = $_maybeHelper('helper', [], hash, ctx);
+    expect(result).toBe('resolved');
+  });
+
+  test('calls resolved function with unwrapped args when eval returns function', () => {
+    const mockFn = vi.fn((...args: any[]) => args.join('-'));
+    const ctx = {
+      $_eval: (name: string) => {
+        if (name === 'myHelper') return mockFn;
+        throw new ReferenceError(`${name} is not defined`);
+      },
+      $args: {},
+    };
+    const result = $_maybeHelper('myHelper', ['a', 'b'], ctx);
+    expect(mockFn).toHaveBeenCalled();
+    expect(result).toBe('a-b');
+  });
+
+  test('returns undefined when eval throws', () => {
+    const ctx = {
+      $_eval: () => {
+        throw new ReferenceError('not defined');
+      },
+      $args: {},
+    };
+    const result = $_maybeHelper('missing', [], ctx);
+    expect(result).toBeUndefined();
+  });
+
+  test('returns string value as-is when no eval is available (2-arg form)', () => {
+    const prevEval = (globalThis as any).$_eval;
+    try {
+      (globalThis as any).$_eval = undefined;
+      const result = $_maybeHelper('unknownBinding', []);
+      expect(result).toBe('unknownBinding');
+    } finally {
+      (globalThis as any).$_eval = prevEval;
+    }
+  });
+
+  test('context.$_eval takes precedence over globalThis.$_eval', () => {
+    const prevEval = (globalThis as any).$_eval;
+    try {
+      (globalThis as any).$_eval = () => 'global';
+      const ctx = {
+        $_eval: () => 'context',
+        $args: {},
+      };
+      const result = $_maybeHelper('anyVar', [], ctx);
+      expect(result).toBe('context');
+    } finally {
+      (globalThis as any).$_eval = prevEval;
+    }
+  });
+
+  test('distinguishes hash from context in 3rd argument', () => {
+    // A plain hash object should NOT be treated as context
+    const hash = { format: () => 'short', style: () => 'bold' };
+    const prevEval = (globalThis as any).$_eval;
+    try {
+      (globalThis as any).$_eval = undefined;
+      // With a plain hash (no $_eval or $args), should return string as-is
+      const result = $_maybeHelper('binding', [], hash);
+      expect(result).toBe('binding');
+    } finally {
+      (globalThis as any).$_eval = prevEval;
+    }
+  });
+
+  test('2-arg form returns string when no eval anywhere', () => {
+    const prevEval = (globalThis as any).$_eval;
+    try {
+      delete (globalThis as any).$_eval;
+      const result = $_maybeHelper('myBinding', []);
+      expect(result).toBe('myBinding');
+    } finally {
+      (globalThis as any).$_eval = prevEval;
+    }
+  });
+});

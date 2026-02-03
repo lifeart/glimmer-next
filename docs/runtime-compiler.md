@@ -8,6 +8,7 @@ The runtime compiler enables compiling Glimmer/Handlebars templates to executabl
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [API Reference](#api-reference)
+  - [template](#template)
   - [createCompiler](#createcompiler)
   - [compileTemplate](#compiletemplate)
   - [compile](#compile)
@@ -103,6 +104,180 @@ if (result.errors.length === 0) {
 ---
 
 ## API Reference
+
+### template
+
+Creates a universal template function for class-based or template-only components. **Recommended for component templates.**
+
+```typescript
+function template(
+  templateSource: string,
+  options?: TemplateOptions
+): UniversalTemplate;
+```
+
+#### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `templateSource` | `string` | Template source code |
+| `options` | `TemplateOptions` | Optional configuration |
+
+#### Options
+
+```typescript
+interface TemplateOptions {
+  /** Components, helpers, and values available in the template */
+  scope?: Record<string, unknown>;
+
+  /** Function to resolve unknown bindings at runtime. Use arguments[0] to avoid shadowing. */
+  eval?: (...args: string[]) => unknown;
+
+  /** Additional known bindings beyond scope keys */
+  bindings?: Set<string>;
+
+  /** Compiler flags */
+  flags?: Partial<Flags>;
+
+  /** Additional scope values */
+  scopeValues?: Record<string, unknown>;
+}
+```
+
+#### The `eval` Option
+
+The `eval` option enables dynamic resolution of unknown bindings at runtime. This is useful when:
+- Template variables are defined in the lexical scope of the calling code
+- You need to access variables that aren't known at compile time
+- Building REPL-style interfaces or template editors
+
+```typescript
+import { template } from '@lifeart/gxt/runtime-compiler';
+
+// Define a variable in the outer scope
+const greeting = 'Hello, World!';
+
+// Create template with eval to access outer scope
+const MyTemplate = template('<div>{{greeting}}</div>', {
+  eval() {
+    return eval(arguments[0]); // Resolves 'greeting' from outer scope
+  }
+});
+
+// The template will render: <div>Hello, World!</div>
+```
+
+> **Important:** Always use `arguments[0]` instead of a named parameter like `eval(name)`. A named parameter would shadow any outer variable with the same name, making it impossible to resolve. For example, `eval(name) { return eval(name); }` would always return the parameter itself when resolving `{{name}}`.
+
+#### How `eval` Works
+
+1. When the template encounters an unknown binding (not in `scope` or `bindings`), it calls `$_maybeHelper`
+2. `$_maybeHelper` checks if an `eval` function is available
+3. If yes, it calls `eval(bindingName)` to resolve the value
+4. If the result is a function (helper), it's called with any provided arguments
+
+#### Performance Note: `WITH_EVAL_SUPPORT` Optimization
+
+When you use the `eval` option, the compiler automatically sets `WITH_EVAL_SUPPORT: true`. This flag:
+- Passes component context to `$_maybeHelper` for eval resolution
+- Enables deferred eval resolution in control flow blocks (`{{#if}}`, `{{#each}}`)
+
+**Without `eval` option** (default): Context is NOT passed, resulting in smaller generated code:
+```javascript
+// Generated code without eval
+$_maybeHelper("unknownBinding", [])
+```
+
+**With `eval` option**: Context IS passed for eval access:
+```javascript
+// Generated code with eval
+$_maybeHelper("unknownBinding", [], this)
+```
+
+This optimization reduces bundle size when eval isn't needed.
+
+#### Example: Class-based Component
+
+```typescript
+import { Component, $template } from '@lifeart/gxt';
+import { template } from '@lifeart/gxt/runtime-compiler';
+import { Card } from './components';
+
+class MyComponent extends Component {
+  message = 'Hello!';
+
+  [$template] = template('<Card @title={{this.message}} />', {
+    scope: { Card }
+  });
+}
+```
+
+#### Example: Template-only Component with Eval
+
+```typescript
+import { template } from '@lifeart/gxt/runtime-compiler';
+
+// Variables in outer scope
+const formatDate = (d: Date) => d.toLocaleDateString();
+const title = 'Dashboard';
+
+// Template can access these via eval
+const Dashboard = template(`
+  <div class="dashboard">
+    <h1>{{title}}</h1>
+    <p>Last updated: {{formatDate now}}</p>
+  </div>
+`, {
+  eval(name) {
+    return eval(name);
+  }
+});
+```
+
+#### Example: Reactive Values with Eval
+
+```typescript
+import { cell } from '@lifeart/gxt';
+import { template } from '@lifeart/gxt/runtime-compiler';
+
+const countCell = cell(0);
+
+const Counter = template(`
+  <button {{on "click" increment}}>Count: {{count.value}}</button>
+`, {
+  eval(name) {
+    const count = countCell;
+    const increment = () => countCell.update(c => c + 1);
+    return eval(name);
+  }
+});
+```
+
+#### Example: Deferred Rendering with Eval
+
+Eval works correctly even when content renders later (e.g., inside `{{#if}}` that becomes true):
+
+```typescript
+import { cell } from '@lifeart/gxt';
+import { template } from '@lifeart/gxt/runtime-compiler';
+
+const showContent = cell(false);
+const secretMessage = 'Revealed!';
+
+const Revealer = template(`
+  {{#if @show}}
+    <div class="secret">{{secretMessage}}</div>
+  {{/if}}
+`, {
+  eval(name) {
+    return eval(name);
+  }
+});
+
+// When showContent changes to true, secretMessage is resolved via eval
+```
+
+---
 
 ### createCompiler
 
@@ -621,9 +796,38 @@ const compile = createCompiler({ Button }, {
     WITH_EMBER_INTEGRATION: true,       // Ember compatibility (default: true)
     WITH_HELPER_MANAGER: true,          // Helper manager support (default: true)
     WITH_MODIFIER_MANAGER: true,        // Modifier manager support (default: true)
+    WITH_EVAL_SUPPORT: false,           // Pass context for eval resolution (default: false)
     TRY_CATCH_ERROR_HANDLING: false,    // Wrap in try-catch (default: false)
   },
 });
+```
+
+#### Flag Details
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `IS_GLIMMER_COMPAT_MODE` | `true` | Enables `@arg` syntax and Glimmer-compatible features |
+| `WITH_EMBER_INTEGRATION` | `true` | Enables Ember.js compatibility layer |
+| `WITH_HELPER_MANAGER` | `true` | Enables helper manager protocol support |
+| `WITH_MODIFIER_MANAGER` | `true` | Enables modifier manager protocol support |
+| `WITH_EVAL_SUPPORT` | `false` | Passes context to `$_maybeHelper` for eval-based binding resolution. Automatically enabled when using `template()` with the `eval` option. |
+| `TRY_CATCH_ERROR_HANDLING` | `false` | Wraps component rendering in try-catch for error boundaries |
+
+#### `WITH_EVAL_SUPPORT` Flag
+
+This flag controls whether the compiler generates code that passes context to `$_maybeHelper` for unknown bindings. This context is needed for the `eval` option to resolve bindings dynamically.
+
+**When `false` (default):**
+- Smaller generated code
+- Unknown bindings return the binding name as-is (e.g., `{{foo}}` renders as "foo")
+- No eval-based resolution
+
+**When `true`:**
+- Passes `this` context to `$_maybeHelper`
+- Enables `eval` function to resolve unknown bindings
+- Slightly larger generated code
+
+**Automatic behavior:** When using `template(src, { eval: fn })`, the compiler automatically sets `WITH_EVAL_SUPPORT: true`. You don't need to set it manually.
 ```
 
 ### Bindings
@@ -808,6 +1012,31 @@ const compile = createCompiler({
   // Only UI components and pure helpers
 });
 ```
+
+### The `eval` Option
+
+**The `eval` option is the most security-sensitive feature of the runtime compiler.** When used, it passes binding names from templates directly to JavaScript's `eval()` function.
+
+**Never use `eval` with untrusted templates:**
+
+```typescript
+// DANGEROUS - attacker controls template AND eval is enabled
+const userTemplate = getUserInput();
+template(userTemplate, {
+  eval() { return eval(arguments[0]); } // Full code execution!
+});
+
+// The attacker could craft: {{constructor.constructor("malicious code")()}}
+```
+
+**Security guidelines for `eval`:**
+
+- Only use `eval` with templates you fully control (hardcoded or from trusted sources)
+- Templates using `eval` have the same security posture as directly executing code
+- The combination of untrusted templates + `eval` option = arbitrary code execution
+- If you need dynamic templates from a CMS, prefer `scope` over `eval` to limit what the template can access
+
+**`globalThis.$_eval` note:** During synchronous rendering, `eval` is stored on `globalThis.$_eval` as a fallback. This is automatically restored after rendering. For deferred rendering (e.g., when `{{#if}}` becomes true later), the eval function is propagated via component instance properties. This design is safe for single-threaded synchronous rendering but is not designed for concurrent async rendering of multiple templates with different eval functions.
 
 ---
 

@@ -104,6 +104,12 @@ export class BasicListComponent<T extends { id: number }> {
   ) {
     this.api = initDOM(ctx);
     this.ItemComponent = ItemComponent;
+    // Propagate $_eval from parent context for deferred rendering
+    // @ts-expect-error $_eval may exist on ctx
+    if (ctx?.$_eval) {
+      // @ts-expect-error $_eval may exist
+      this.$_eval = ctx.$_eval;
+    }
     // @ts-expect-error typings error
     addToTree(ctx, this, 'from list constructor');
     const mainNode = outlet;

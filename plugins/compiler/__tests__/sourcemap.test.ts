@@ -1601,7 +1601,9 @@ describe('Multi-line source position accuracy', () => {
     const result = compile(template, {
       sourceMap: { enabled: true },
       flags: { IS_GLIMMER_COMPAT_MODE: true },
-      bindings: new Set(['NestedRouter', 'Benchmark']),
+      // Include IS_GLIMMER_COMPAT_MODE in bindings so it's compiled as an identifier
+      // (Unknown bindings go through $_maybeHelper as strings, which wouldn't have identifier mappings)
+      bindings: new Set(['NestedRouter', 'Benchmark', 'IS_GLIMMER_COMPAT_MODE']),
     });
 
     expect(result.sourceMap).toBeDefined();

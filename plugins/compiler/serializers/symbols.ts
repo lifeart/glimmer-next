@@ -73,6 +73,9 @@ export const SYMBOLS = {
 
   // Scope key for runtime resolution
   SCOPE_KEY: '$_scope',
+
+  // Eval key for dynamic scope access
+  EVAL_KEY: '$_eval',
 } as const;
 
 export type SymbolName = keyof typeof SYMBOLS;

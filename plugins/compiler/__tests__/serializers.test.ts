@@ -1313,7 +1313,7 @@ describe('WITH_HELPER_MANAGER serialization behavior', () => {
     expect(result).not.toContain(SYMBOLS.MAYBE_HELPER);
   });
 
-  test('unknown binding always uses maybeHelper with string name and scope key', () => {
+  test('unknown binding uses maybeHelper with string name (no context by default)', () => {
     const ctx = createContext('', {
       flags: { WITH_HELPER_MANAGER: false },
     });
@@ -1324,7 +1324,23 @@ describe('WITH_HELPER_MANAGER serialization behavior', () => {
     );
     expect(result).toContain(SYMBOLS.MAYBE_HELPER);
     expect(result).toContain('"unknownHelper"');
-    expect(result).toContain(SYMBOLS.SCOPE_KEY);
+    // Without WITH_EVAL_SUPPORT, context is NOT passed (smaller bundle)
+    expect(result).not.toContain(', this)');
+  });
+
+  test('unknown binding passes context when WITH_EVAL_SUPPORT is enabled', () => {
+    const ctx = createContext('', {
+      flags: { WITH_HELPER_MANAGER: false, WITH_EVAL_SUPPORT: true },
+    });
+    const result = serializeValue(
+      ctx,
+      helper('unknownHelper', [literal('arg')]),
+      'this'
+    );
+    expect(result).toContain(SYMBOLS.MAYBE_HELPER);
+    expect(result).toContain('"unknownHelper"');
+    // With WITH_EVAL_SUPPORT, context IS passed for $_eval access
+    expect(result).toMatch(/\$_maybeHelper\([^)]+,\s*this\)/);
   });
 
   test('@arg helper with WITH_HELPER_MANAGER=true uses maybeHelper with resolved ref', () => {

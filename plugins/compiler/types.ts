@@ -71,6 +71,8 @@ export interface CompilerFlags {
   readonly IS_GLIMMER_COMPAT_MODE: boolean;
   readonly WITH_HELPER_MANAGER: boolean;
   readonly WITH_MODIFIER_MANAGER: boolean;
+  /** Enable eval support - passes context to $_maybeHelper for $_eval access. Default: false */
+  readonly WITH_EVAL_SUPPORT: boolean;
 }
 
 /**
@@ -92,6 +94,7 @@ export const DEFAULT_FLAGS: CompilerFlags = Object.freeze({
   IS_GLIMMER_COMPAT_MODE: true,
   WITH_HELPER_MANAGER: false, // Must match runtime default (plugins/flags.ts)
   WITH_MODIFIER_MANAGER: false, // Must match runtime default (plugins/flags.ts)
+  WITH_EVAL_SUPPORT: false, // Enable only when template uses eval option (reduces bundle size)
 });
 
 /**

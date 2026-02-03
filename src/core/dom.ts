@@ -664,6 +664,12 @@ export function $_inElement(
         // @ts-expect-error construct signature
         this.debugName = `InElement-${unstableWrapperId++}`;
       }
+      // Propagate $_eval from parent context for deferred rendering
+      // @ts-expect-error $_eval may exist on ctx
+      if (ctx?.$_eval) {
+        // @ts-expect-error $_eval may exist on ctx
+        this.$_eval = ctx.$_eval;
+      }
       let appendRef!: HTMLElement;
       if (isFn(elementRef)) {
         let result = elementRef();
@@ -710,6 +716,13 @@ export function $_ucw(
       if (IS_DEV_MODE) {
         // @ts-expect-error construct signature
         this.debugName = `UnstableChildWrapper-${unstableWrapperId++}`;
+      }
+      // Propagate $_eval from parent context for deferred rendering
+      // This ensures eval-based bindings work inside control flow blocks
+      // @ts-expect-error $_eval may exist on ctx
+      if (ctx?.$_eval) {
+        // @ts-expect-error $_eval may exist on ctx
+        this.$_eval = ctx.$_eval;
       }
       try {
         setParentContext(this);
@@ -775,16 +788,33 @@ if (!import.meta.env.SSR) {
   }
 }
 
-export function $_GET_SCOPES(hash: Record<string, unknown>) {
+export function $_GET_SCOPES(hashOrCtx: Record<string, unknown> | any, ctx?: any) {
+  // If context is provided, get scope from ctx[$args].$_scope
+  if (ctx) {
+    // @ts-expect-error typings
+    const scope = ctx[$args]?.$_scope;
+    return scope ? [scope] : [];
+  }
+  // Legacy: get scope from hash getter
   // @ts-expect-error typings
-  return hash[CONSTANTS.SCOPE_KEY]?.() || [];
+  return hashOrCtx[CONSTANTS.SCOPE_KEY]?.() || [];
 }
 
 export const $_maybeHelper = (
   value: any,
   args: any[],
-  _hash: Record<string, unknown>,
+  _hashOrCtx?: Record<string, unknown> | any, // Hash object for known bindings, context for unknown, or undefined
+  _maybeCtx?: any, // Optional 4th arg: context when 3rd arg is hash for unknown bindings
 ) => {
+  // Determine context and hash based on arguments:
+  // - 4 args: _hashOrCtx is hash, _maybeCtx is context (unknown binding with named args)
+  // - 3 args with context: _hashOrCtx is context (unknown binding without named args)
+  // - 3 args with hash: _hashOrCtx is hash (known binding)
+  // - 2 args: no hash or context (WITH_EVAL_SUPPORT=false, no named args)
+  const isCtxIn3rd = !_maybeCtx && _hashOrCtx && typeof _hashOrCtx === 'object' && (Object.hasOwn(_hashOrCtx, '$_eval') || Object.hasOwn(_hashOrCtx, '$args') || _hashOrCtx[$args] !== undefined);
+  const _ctx = _maybeCtx ?? (isCtxIn3rd ? _hashOrCtx : undefined);
+  // Default _hash to empty object when not provided (WITH_EVAL_SUPPORT=false case)
+  const _hash = _maybeCtx ? _hashOrCtx : (isCtxIn3rd ? {} : (_hashOrCtx ?? {}));
   if (typeof value === 'function') {
     if (value.helperType === 'ember') {
       // @ts-expect-error amount of args
@@ -814,11 +844,38 @@ export const $_maybeHelper = (
   if (typeof value === 'string') {
     // @ts-expect-error amount of args
     const hash = $_args(_hash, false);
-    const scopes = $_GET_SCOPES(hash);
+
+    // Dynamic eval - resolve the value directly
+    // The outer getter from compiled code handles reactivity
+    // Check ctx.$_eval first (passed directly, avoids closure overhead)
+    // Then fall back to globalThis.$_eval for initial render
+    // @ts-expect-error $_eval may exist on ctx
+    const evalFn = _ctx?.$_eval ?? globalThis.$_eval;
+    if (typeof evalFn === 'function') {
+      try {
+        const result = evalFn(value);
+        // If result is a function (helper), call it with args
+        return typeof result === 'function'
+          ? result(...$_unwrapArgs(args))
+          : result;
+      } catch (e) {
+        // ReferenceError is expected for undefined variables - suppress silently
+        // Other errors may indicate bugs - warn in dev mode
+        if (IS_DEV_MODE && !(e instanceof ReferenceError)) {
+          console.warn(`[gxt] eval resolution error for "${value}":`, e);
+        }
+        return undefined;
+      }
+    }
+
+    const scopes = $_GET_SCOPES(hash, _ctx);
     for (let i = 0; i < scopes.length; i++) {
       const scope = scopes[i];
       if (value in scope) {
-        return scope[value](...$_unwrapArgs(args));
+        const scopeVal = scope[value];
+        return typeof scopeVal === 'function'
+          ? scopeVal(...$_unwrapArgs(args))
+          : scopeVal;
       }
     }
   }
