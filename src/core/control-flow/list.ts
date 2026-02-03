@@ -115,7 +115,6 @@ export class BasicListComponent<T extends { id: number }> {
   // Track per-item markers for stable relocation boundaries
   itemMarkers: Map<string, Comment> = new Map();
   markerSet: Set<Comment> = new Set();
-  nodes: Node[] = [];
   [RENDERED_NODES_PROPERTY]: Array<Node> = [];
   [COMPONENT_ID_PROPERTY] = cId();
   ItemComponent: (
@@ -195,8 +194,8 @@ export class BasicListComponent<T extends { id: number }> {
     }
     this.topMarker = topMarker;
     if (IS_DEV_MODE) {
-      // HMR logic
-      this[RENDERED_NODES_PROPERTY] = [topMarker];
+      // HMR / inspector bounds: topMarker..bottomMarker defines the full list extent
+      this[RENDERED_NODES_PROPERTY] = [topMarker, this.bottomMarker];
     }
 
     this.api.insert(mainNode, this.topMarker);
@@ -223,7 +222,6 @@ export class BasicListComponent<T extends { id: number }> {
       : this.api.comment();
     this.itemMarkers.set(key, marker);
     this.markerSet.add(marker);
-    this[RENDERED_NODES_PROPERTY].push(marker);
     return marker;
   }
   private getItemMarker(key: string) {
