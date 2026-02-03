@@ -666,11 +666,8 @@ export function $_inElement(
       }
       // Propagate $_eval from parent context for deferred rendering
       if (WITH_DYNAMIC_EVAL) {
-        // @ts-expect-error $_eval may exist on ctx
-        if (ctx?.$_eval) {
-          // @ts-expect-error $_eval may exist on ctx
-          this.$_eval = ctx.$_eval;
-        }
+        // @ts-ignore $_eval may exist on ctx
+        if (ctx?.$_eval) { this.$_eval = ctx.$_eval; }
       }
       let appendRef!: HTMLElement;
       if (isFn(elementRef)) {
@@ -722,11 +719,8 @@ export function $_ucw(
       // Propagate $_eval from parent context for deferred rendering
       // This ensures eval-based bindings work inside control flow blocks
       if (WITH_DYNAMIC_EVAL) {
-        // @ts-expect-error $_eval may exist on ctx
-        if (ctx?.$_eval) {
-          // @ts-expect-error $_eval may exist on ctx
-          this.$_eval = ctx.$_eval;
-        }
+        // @ts-ignore $_eval may exist on ctx
+        if (ctx?.$_eval) { this.$_eval = ctx.$_eval; }
       }
       try {
         setParentContext(this);
@@ -795,12 +789,10 @@ if (!import.meta.env.SSR) {
 export function $_GET_SCOPES(hashOrCtx: Record<string, unknown> | any, ctx?: any) {
   // If context is provided, get scope from ctx[$args].$_scope
   if (ctx) {
-    // @ts-expect-error typings
     const scope = ctx[$args]?.$_scope;
     return scope ? [scope] : [];
   }
   // Legacy: get scope from hash getter
-  // @ts-expect-error typings
   return hashOrCtx[CONSTANTS.SCOPE_KEY]?.() || [];
 }
 

@@ -24,7 +24,6 @@ import {
   $_c,
   $_args,
   $_edp,
-  $_fin,
 } from './dom';
 import { cell } from './reactive';
 import { renderElement } from './render-core';
@@ -748,6 +747,7 @@ describe('Runtime Compiler Integration', () => {
 
   describe('Dynamic Eval Option', () => {
     test('eval resolves simple binding from outer scope', () => {
+      // @ts-ignore TS6133 - variable captured by eval()
       const greeting = 'Hello from eval!';
 
       render('<div class="eval-test">{{greeting}}</div>', {}, {
@@ -760,7 +760,9 @@ describe('Runtime Compiler Integration', () => {
     });
 
     test('eval resolves multiple bindings from outer scope', () => {
+      // @ts-ignore TS6133 - variable captured by eval()
       const firstName = 'John';
+      // @ts-ignore TS6133 - variable captured by eval()
       const lastName = 'Doe';
 
       render('<div class="name">{{firstName}} {{lastName}}</div>', {}, {
@@ -773,6 +775,7 @@ describe('Runtime Compiler Integration', () => {
     });
 
     test('eval works with template-only components', () => {
+      // @ts-ignore TS6133 - variable captured by eval()
       const message = 'Dynamic message';
 
       const DynamicGreeting = template('<span class="dynamic">{{message}}</span>', {
@@ -787,6 +790,7 @@ describe('Runtime Compiler Integration', () => {
     });
 
     test('eval works with class-based components', () => {
+      // @ts-ignore TS6133 - variable captured by eval()
       const externalValue = 'External';
 
       class EvalComponent extends Component {
@@ -804,6 +808,7 @@ describe('Runtime Compiler Integration', () => {
     });
 
     test('scope takes precedence over eval', () => {
+      // @ts-ignore TS6133 - variable captured by eval()
       const name = 'from eval';
 
       render('<div class="precedence">{{name}}</div>', {}, {
@@ -819,6 +824,7 @@ describe('Runtime Compiler Integration', () => {
     });
 
     test('@args take precedence over eval', () => {
+      // @ts-ignore TS6133 - variable captured by eval()
       const name = 'from eval';
 
       render('<div class="args-precedence">{{@name}}</div>', { name: 'from args' }, {
@@ -831,6 +837,7 @@ describe('Runtime Compiler Integration', () => {
     });
 
     test('this.property takes precedence over eval', () => {
+      // @ts-ignore TS6133 - variable captured by eval()
       const myProp = 'from eval';
 
       class PrecedenceComponent extends Component {
@@ -867,6 +874,7 @@ describe('Runtime Compiler Integration', () => {
 
     test('eval works for text interpolation inside conditional', () => {
       // Note: {{#if @condition}} uses @args, but {{message}} inside uses eval
+      // @ts-ignore TS6133 - variable captured by eval()
       const message = 'Conditional message';
 
       render(
@@ -874,6 +882,7 @@ describe('Runtime Compiler Integration', () => {
         { show: true },
         {
           eval: (() => {
+            // @ts-ignore TS6133 - variable captured by eval()
             const message = 'Conditional message';
             return function() { return eval(arguments[0]); };
           })()
@@ -890,6 +899,7 @@ describe('Runtime Compiler Integration', () => {
         { items: ['A', 'B', 'C'] },
         {
           eval: (() => {
+            // @ts-ignore TS6133 - variable captured by eval()
             const prefix = 'Item';
             return function() { return eval(arguments[0]); };
           })()
@@ -902,7 +912,9 @@ describe('Runtime Compiler Integration', () => {
     });
 
     test('eval with nested child components', () => {
+      // @ts-ignore TS6133 - variable captured by eval()
       const parentValue = 'Parent';
+      // @ts-ignore TS6133 - variable captured by eval()
       const childValue = 'Child';
 
       const ChildComponent = template('<span class="child">{{childValue}}</span>', {
@@ -945,6 +957,7 @@ describe('Runtime Compiler Integration', () => {
 
       const ChildWithOwnEval = template('<span class="child-eval">{{value}}</span>', {
         eval() {
+          // @ts-ignore TS6133 - variable captured by eval()
           const value = childScope;
           return eval(arguments[0]);
         }
@@ -956,6 +969,7 @@ describe('Runtime Compiler Integration', () => {
         {
           scope: { ChildWithOwnEval },
           eval() {
+            // @ts-ignore TS6133 - variable captured by eval()
             const value = parentScope;
             return eval(arguments[0]);
           }
@@ -967,6 +981,7 @@ describe('Runtime Compiler Integration', () => {
     });
 
     test('child component without eval does NOT inherit parent eval', () => {
+      // @ts-ignore TS6133 - variable captured by eval()
       const parentValue = 'Parent Value';
 
       // Child has no eval - should NOT see parentValue
@@ -978,6 +993,7 @@ describe('Runtime Compiler Integration', () => {
         {
           scope: { ChildWithoutEval },
           eval() {
+            // @ts-ignore TS6133 - variable captured by eval()
             const parentValue = 'Parent Value';
             return eval(arguments[0]);
           }
@@ -990,12 +1006,9 @@ describe('Runtime Compiler Integration', () => {
     });
 
     test('eval returning a function calls it with args', () => {
-      const helpers = {
-        formatName: (first: string, last: string) => `${last}, ${first}`
-      };
-
       render('<div class="helper-eval">{{formatName "John" "Doe"}}</div>', {}, {
         eval: (() => {
+          // @ts-ignore TS6133 - variable captured by eval()
           const formatName = (first: string, last: string) => `${last}, ${first}`;
           return function() { return eval(arguments[0]); };
         })()
@@ -1007,6 +1020,7 @@ describe('Runtime Compiler Integration', () => {
     test('eval returning null is used (not treated as undefined)', () => {
       render('<div class="null-eval">Value: {{nullValue}}</div>', {}, {
         eval: (() => {
+          // @ts-ignore TS6133 - variable captured by eval()
           const nullValue = null;
           return function() { return eval(arguments[0]); };
         })()
@@ -1018,6 +1032,7 @@ describe('Runtime Compiler Integration', () => {
     test('eval returning false is used (not treated as undefined)', () => {
       render('<div class="false-eval">Value: {{falseValue}}</div>', {}, {
         eval: (() => {
+          // @ts-ignore TS6133 - variable captured by eval()
           const falseValue = false;
           return function() { return eval(arguments[0]); };
         })()
@@ -1029,6 +1044,7 @@ describe('Runtime Compiler Integration', () => {
     test('eval returning 0 is used (not treated as undefined)', () => {
       render('<div class="zero-eval">Count: {{zeroValue}}</div>', {}, {
         eval: (() => {
+          // @ts-ignore TS6133 - variable captured by eval()
           const zeroValue = 0;
           return function() { return eval(arguments[0]); };
         })()
@@ -1040,6 +1056,7 @@ describe('Runtime Compiler Integration', () => {
     test('eval returning empty string is used (not treated as undefined)', () => {
       render('<div class="empty-eval">Name: [{{emptyValue}}]</div>', {}, {
         eval: (() => {
+          // @ts-ignore TS6133 - variable captured by eval()
           const emptyValue = '';
           return function() { return eval(arguments[0]); };
         })()
@@ -1051,6 +1068,7 @@ describe('Runtime Compiler Integration', () => {
     test('eval returning an object is used', () => {
       render('<div class="object-eval">{{user.name}} ({{user.age}})</div>', {}, {
         eval: (() => {
+          // @ts-ignore TS6133 - variable captured by eval()
           const user = { name: 'Alice', age: 30 };
           return function() { return eval(arguments[0]); };
         })()
@@ -1084,6 +1102,7 @@ describe('Runtime Compiler Integration', () => {
         eval: (() => {
           return function() {
             callCount++;
+            // @ts-ignore TS6133 - variable captured by eval()
             const dynamicValue = currentValue;
             return eval(arguments[0]);
           };
@@ -1101,6 +1120,7 @@ describe('Runtime Compiler Integration', () => {
       render('<div class="cell-eval">{{cellValue}}</div>', {}, {
         eval: (() => {
           // Capture valueCell in closure
+          // @ts-ignore TS6133 - variable captured by eval()
           const cellValue = valueCell;
           return function() {
             return eval(arguments[0]);
@@ -1126,6 +1146,7 @@ describe('Runtime Compiler Integration', () => {
         {},
         {
           eval: (() => {
+            // @ts-ignore TS6133 - variable captured by eval()
             const showIt = true;
             return function() { return eval(arguments[0]); };
           })()
@@ -1142,6 +1163,7 @@ describe('Runtime Compiler Integration', () => {
         {},
         {
           eval: (() => {
+            // @ts-ignore TS6133 - variable captured by eval()
             const showIt = false;
             return function() { return eval(arguments[0]); };
           })()
@@ -1160,6 +1182,7 @@ describe('Runtime Compiler Integration', () => {
         {},
         {
           eval: (() => {
+            // @ts-ignore TS6133 - variable captured by eval()
             const showIt = showCell;
             return function() { return eval(arguments[0]); };
           })()
@@ -1185,6 +1208,7 @@ describe('Runtime Compiler Integration', () => {
         {},
         {
           eval: (() => {
+            // @ts-ignore TS6133 - variable captured by eval()
             const myItems = ['X', 'Y', 'Z'];
             return function() { return eval(arguments[0]); };
           })()
@@ -1206,8 +1230,11 @@ describe('Runtime Compiler Integration', () => {
         {},
         {
           eval: (() => {
+            // @ts-ignore TS6133 - variable captured by eval()
             const showList = true;
+            // @ts-ignore TS6133 - variable captured by eval()
             const items = ['A', 'B'];
+            // @ts-ignore TS6133 - variable captured by eval()
             const prefix = 'Item';
             return function() { return eval(arguments[0]); };
           })()
@@ -1233,6 +1260,7 @@ describe('Runtime Compiler Integration', () => {
         { show: () => showCell.value },
         {
           eval: (() => {
+            // @ts-ignore TS6133 - variable captured by eval()
             const message = 'Deferred eval message!';
             return function() { return eval(arguments[0]); };
           })()
@@ -1267,6 +1295,7 @@ describe('Runtime Compiler Integration', () => {
         { items: () => itemsCell.value },
         {
           eval: (() => {
+            // @ts-ignore TS6133 - variable captured by eval()
             const prefix = 'Added';
             return function() { return eval(arguments[0]); };
           })()
@@ -1298,6 +1327,7 @@ describe('Runtime Compiler Integration', () => {
         { items: () => itemsCell.value },
         {
           eval: (() => {
+            // @ts-ignore TS6133 - variable captured by eval()
             const label = 'Item';
             return function() { return eval(arguments[0]); };
           })()
@@ -1344,6 +1374,7 @@ describe('Runtime Compiler Integration', () => {
         },
         {
           eval: (() => {
+            // @ts-ignore TS6133 - variable captured by eval()
             const prefix = 'Active';
             return function() { return eval(arguments[0]); };
           })()

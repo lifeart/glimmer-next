@@ -120,7 +120,7 @@ export function buildPathExpression(
     // Build $_maybeHelper("name", [], ctx) or $_maybeHelper("name", [])
     // Pass ctx only when WITH_EVAL_SUPPORT is enabled (for $_eval access)
     // This avoids creating closure functions on every reactive update
-    const maybeHelperArgs = [
+    const maybeHelperArgs: JSExpression[] = [
       B.string(expression, value.sourceRange),
       B.array([]),
     ];

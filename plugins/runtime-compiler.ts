@@ -668,7 +668,6 @@ export function template(
     const instance = {
       [$template]: universalTemplate,
       [$args]: args || {},
-      args: args || {},
       $_eval: evalFn, // Store eval function for deferred rendering
     };
     return instance;

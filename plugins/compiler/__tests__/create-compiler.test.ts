@@ -5,7 +5,6 @@ import { describe, test, expect, beforeEach } from 'vitest';
 import {
   createCompiler,
   setupGlobalScope,
-  type ScopedCompiler,
 } from '../../runtime-compiler';
 
 describe('createCompiler', () => {

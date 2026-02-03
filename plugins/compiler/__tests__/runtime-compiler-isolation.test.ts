@@ -88,7 +88,7 @@ describe('Runtime Compiler Isolation', () => {
   });
 
   test('multiple setupGlobalScope calls are idempotent', async () => {
-    const { setupGlobalScope, isGlobalScopeReady, GXT_RUNTIME_SYMBOLS } = await import('../../runtime-compiler');
+    const { setupGlobalScope, GXT_RUNTIME_SYMBOLS } = await import('../../runtime-compiler');
 
     setupGlobalScope();
     const firstTag = (globalThis as any).$_tag;

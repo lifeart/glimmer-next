@@ -174,7 +174,6 @@ function buildEach(
   // Ensure we have proper block params
   const paramNames = normalizeEachParams(control.blockParams);
   const paramRanges = control.blockParamRanges ?? [];
-  const indexParamName = paramNames[1];
 
   // Validate and normalize key
   const eachKey = normalizeEachKey(ctx, control);
