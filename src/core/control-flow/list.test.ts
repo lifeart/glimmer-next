@@ -1150,3 +1150,742 @@ describe('List Component Destruction', () => {
     expect(TREE.size).toBe(initialTreeSize);
   });
 });
+
+describe('Item Markers', () => {
+  let window: Window;
+  let document: Document;
+  let api: DOMApi;
+  let root: Root;
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    window = new Window();
+    document = window.document as unknown as Document;
+    api = new HTMLBrowserDOMApi(document);
+    cleanupFastContext();
+    root = new Root(document);
+    provideContext(root, RENDERING_CONTEXT, api);
+    container = document.createElement('div');
+    document.body.appendChild(container);
+  });
+
+  afterEach(() => {
+    cleanupFastContext();
+    TREE.clear();
+    PARENT.clear();
+    CHILD.clear();
+    window.close();
+  });
+
+  async function createList(items: Array<{ id: number }>) {
+    const { SyncListComponent } = await import('./list');
+    const { cell } = await import('../reactive');
+
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, parentComponent);
+
+    const itemsCell = cell(items);
+    const topMarker = document.createComment('list top');
+
+    const listInstance = new SyncListComponent(
+      {
+        tag: itemsCell,
+        key: 'id',
+        ctx: parentComponent,
+        ItemComponent: (item: { id: number }) => {
+          const div = document.createElement('div');
+          div.textContent = String(item.id);
+          div.setAttribute('data-id', String(item.id));
+          return [div];
+        },
+      },
+      container,
+      topMarker,
+    );
+
+    return { listInstance, itemsCell, parentComponent };
+  }
+
+  test('markers are created for each item on initial render', async () => {
+    const { listInstance } = await createList([{ id: 1 }, { id: 2 }, { id: 3 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(listInstance.itemMarkers.size).toBe(3);
+    expect(listInstance.markerSet.size).toBe(3);
+  });
+
+  test('item markers are present in the DOM and connected', async () => {
+    const { listInstance } = await createList([{ id: 1 }, { id: 2 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Each item marker should be connected to the DOM
+    for (const marker of listInstance.itemMarkers.values()) {
+      expect(marker.isConnected).toBe(true);
+    }
+    // Markers should be between topMarker and bottomMarker
+    for (const marker of listInstance.itemMarkers.values()) {
+      let found = false;
+      let node: Node | null = listInstance.topMarker.nextSibling;
+      while (node && node !== listInstance.bottomMarker) {
+        if (node === marker) {
+          found = true;
+          break;
+        }
+        node = node.nextSibling;
+      }
+      expect(found).toBe(true);
+    }
+  });
+
+  test('each marker appears before its item content in DOM order', async () => {
+    const { listInstance } = await createList([{ id: 1 }, { id: 2 }, { id: 3 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Collect element nodes in DOM order and verify order is 1, 2, 3
+    const divs: HTMLElement[] = [];
+    let node: Node | null = listInstance.topMarker.nextSibling;
+    while (node && node !== listInstance.bottomMarker) {
+      if (node.nodeType === 1 /* Element */) {
+        divs.push(node as HTMLElement);
+      }
+      node = node.nextSibling;
+    }
+    expect(divs.length).toBe(3);
+    expect(divs[0].getAttribute('data-id')).toBe('1');
+    expect(divs[1].getAttribute('data-id')).toBe('2');
+    expect(divs[2].getAttribute('data-id')).toBe('3');
+
+    // Each item's marker should appear before its div in DOM order
+    for (const [key, marker] of listInstance.itemMarkers.entries()) {
+      const div = divs.find(d => d.getAttribute('data-id') === String(key));
+      expect(div).toBeDefined();
+      // marker should be a preceding sibling of div
+      let found = false;
+      let n: Node | null = marker.nextSibling;
+      while (n && n !== listInstance.bottomMarker) {
+        if (n === div) {
+          found = true;
+          break;
+        }
+        if (listInstance.markerSet.has(n as Comment)) {
+          break; // hit another item's marker before finding div
+        }
+        n = n.nextSibling;
+      }
+      expect(found).toBe(true);
+    }
+  });
+
+  test('markers are cleaned up when items are removed', async () => {
+    const { listInstance, itemsCell } = await createList([{ id: 1 }, { id: 2 }, { id: 3 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(listInstance.itemMarkers.size).toBe(3);
+
+    // Remove middle item
+    itemsCell.update([{ id: 1 }, { id: 3 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(listInstance.itemMarkers.size).toBe(2);
+    expect(listInstance.markerSet.size).toBe(2);
+    // key is the raw item.id value (number), not a string
+    expect(listInstance.itemMarkers.has(2 as any)).toBe(false);
+  });
+
+  test('markers are cleaned up on fastCleanup (empty list)', async () => {
+    const { listInstance, itemsCell } = await createList([{ id: 1 }, { id: 2 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(listInstance.itemMarkers.size).toBe(2);
+
+    // Empty the list
+    itemsCell.update([]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(listInstance.itemMarkers.size).toBe(0);
+    expect(listInstance.markerSet.size).toBe(0);
+  });
+
+  test('reordering items preserves markers and moves nodes correctly', async () => {
+    const { listInstance, itemsCell } = await createList([{ id: 1 }, { id: 2 }, { id: 3 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Reverse order
+    itemsCell.update([{ id: 3 }, { id: 2 }, { id: 1 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Still 3 markers
+    expect(listInstance.itemMarkers.size).toBe(3);
+
+    // Verify DOM order is now 3, 2, 1
+    const divs: HTMLElement[] = [];
+    let node: Node | null = listInstance.topMarker.nextSibling;
+    while (node && node !== listInstance.bottomMarker) {
+      if (node.nodeType === 1 /* Element */) {
+        divs.push(node as HTMLElement);
+      }
+      node = node.nextSibling;
+    }
+    expect(divs.length).toBe(3);
+    expect(divs[0].getAttribute('data-id')).toBe('3');
+    expect(divs[1].getAttribute('data-id')).toBe('2');
+    expect(divs[2].getAttribute('data-id')).toBe('1');
+  });
+
+  test('adding new items creates new markers', async () => {
+    const { listInstance, itemsCell } = await createList([{ id: 1 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(listInstance.itemMarkers.size).toBe(1);
+
+    // Add more items
+    itemsCell.update([{ id: 1 }, { id: 2 }, { id: 3 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(listInstance.itemMarkers.size).toBe(3);
+    expect(listInstance.markerSet.size).toBe(3);
+  });
+
+  test('interleaving new and existing items positions correctly', async () => {
+    const { listInstance, itemsCell } = await createList([{ id: 1 }, { id: 3 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Insert id:2 between id:1 and id:3
+    itemsCell.update([{ id: 1 }, { id: 2 }, { id: 3 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(listInstance.itemMarkers.size).toBe(3);
+
+    // Verify DOM order is 1, 2, 3
+    const divs: HTMLElement[] = [];
+    let node: Node | null = listInstance.topMarker.nextSibling;
+    while (node && node !== listInstance.bottomMarker) {
+      if (node.nodeType === 1) {
+        divs.push(node as HTMLElement);
+      }
+      node = node.nextSibling;
+    }
+    expect(divs.length).toBe(3);
+    expect(divs[0].getAttribute('data-id')).toBe('1');
+    expect(divs[1].getAttribute('data-id')).toBe('2');
+    expect(divs[2].getAttribute('data-id')).toBe('3');
+  });
+
+  test('inserting at beginning shifts existing items', async () => {
+    const { listInstance, itemsCell } = await createList([{ id: 2 }, { id: 3 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Insert at beginning
+    itemsCell.update([{ id: 1 }, { id: 2 }, { id: 3 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    const divs: HTMLElement[] = [];
+    let node: Node | null = listInstance.topMarker.nextSibling;
+    while (node && node !== listInstance.bottomMarker) {
+      if (node.nodeType === 1) {
+        divs.push(node as HTMLElement);
+      }
+      node = node.nextSibling;
+    }
+    expect(divs.length).toBe(3);
+    expect(divs[0].getAttribute('data-id')).toBe('1');
+    expect(divs[1].getAttribute('data-id')).toBe('2');
+    expect(divs[2].getAttribute('data-id')).toBe('3');
+  });
+
+  test('swap two items relocates correctly', async () => {
+    const { listInstance, itemsCell } = await createList([{ id: 1 }, { id: 2 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Swap
+    itemsCell.update([{ id: 2 }, { id: 1 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    const divs: HTMLElement[] = [];
+    let node: Node | null = listInstance.topMarker.nextSibling;
+    while (node && node !== listInstance.bottomMarker) {
+      if (node.nodeType === 1) {
+        divs.push(node as HTMLElement);
+      }
+      node = node.nextSibling;
+    }
+    expect(divs.length).toBe(2);
+    expect(divs[0].getAttribute('data-id')).toBe('2');
+    expect(divs[1].getAttribute('data-id')).toBe('1');
+  });
+
+  test('DOM elements are moved, not recreated, during reorder', async () => {
+    const { listInstance, itemsCell } = await createList([{ id: 1 }, { id: 2 }, { id: 3 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Grab references to the original DOM elements
+    const originalDivs: HTMLElement[] = [];
+    let node: Node | null = listInstance.topMarker.nextSibling;
+    while (node && node !== listInstance.bottomMarker) {
+      if (node.nodeType === 1) {
+        (node as HTMLElement).setAttribute('data-marked', 'true');
+        originalDivs.push(node as HTMLElement);
+      }
+      node = node.nextSibling;
+    }
+
+    // Reverse order
+    itemsCell.update([{ id: 3 }, { id: 2 }, { id: 1 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Verify same DOM nodes were moved (not recreated)
+    const divs: HTMLElement[] = [];
+    node = listInstance.topMarker.nextSibling;
+    while (node && node !== listInstance.bottomMarker) {
+      if (node.nodeType === 1) {
+        divs.push(node as HTMLElement);
+      }
+      node = node.nextSibling;
+    }
+
+    expect(divs.length).toBe(3);
+    // Same DOM nodes, just reordered
+    expect(divs[0]).toBe(originalDivs[2]); // id:3 was at index 2
+    expect(divs[1]).toBe(originalDivs[1]); // id:2 stayed at index 1
+    expect(divs[2]).toBe(originalDivs[0]); // id:1 was at index 0
+    // All should still have the marked attribute
+    divs.forEach(div => {
+      expect(div.getAttribute('data-marked')).toBe('true');
+    });
+  });
+
+  test('remove and add in same update works correctly', async () => {
+    const { listInstance, itemsCell } = await createList([{ id: 1 }, { id: 2 }, { id: 3 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Remove id:2, add id:4
+    itemsCell.update([{ id: 1 }, { id: 4 }, { id: 3 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(listInstance.itemMarkers.size).toBe(3);
+    // keys are raw item.id values (numbers)
+    expect(listInstance.itemMarkers.has(2 as any)).toBe(false);
+    expect(listInstance.itemMarkers.has(4 as any)).toBe(true);
+
+    const divs: HTMLElement[] = [];
+    let node: Node | null = listInstance.topMarker.nextSibling;
+    while (node && node !== listInstance.bottomMarker) {
+      if (node.nodeType === 1) {
+        divs.push(node as HTMLElement);
+      }
+      node = node.nextSibling;
+    }
+    expect(divs.length).toBe(3);
+    expect(divs[0].getAttribute('data-id')).toBe('1');
+    expect(divs[1].getAttribute('data-id')).toBe('4');
+    expect(divs[2].getAttribute('data-id')).toBe('3');
+  });
+
+  test('single item list works with markers', async () => {
+    const { listInstance, itemsCell } = await createList([{ id: 1 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(listInstance.itemMarkers.size).toBe(1);
+
+    // Remove the only item
+    itemsCell.update([]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(listInstance.itemMarkers.size).toBe(0);
+
+    // Add it back
+    itemsCell.update([{ id: 1 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(listInstance.itemMarkers.size).toBe(1);
+  });
+
+  test('markerSet stays in sync with itemMarkers', async () => {
+    const { listInstance, itemsCell } = await createList([{ id: 1 }, { id: 2 }, { id: 3 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(listInstance.markerSet.size).toBe(listInstance.itemMarkers.size);
+
+    // Remove one
+    itemsCell.update([{ id: 1 }, { id: 3 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(listInstance.markerSet.size).toBe(listInstance.itemMarkers.size);
+
+    // Add two
+    itemsCell.update([{ id: 1 }, { id: 3 }, { id: 4 }, { id: 5 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(listInstance.markerSet.size).toBe(listInstance.itemMarkers.size);
+
+    // Clear all
+    itemsCell.update([]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(listInstance.markerSet.size).toBe(0);
+    expect(listInstance.itemMarkers.size).toBe(0);
+  });
+
+  test('multiple sequential reorders maintain correct DOM order', async () => {
+    const { listInstance, itemsCell } = await createList([
+      { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 },
+    ]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    const getDivOrder = () => {
+      const divs: string[] = [];
+      let node: Node | null = listInstance.topMarker.nextSibling;
+      while (node && node !== listInstance.bottomMarker) {
+        if (node.nodeType === 1) {
+          divs.push((node as HTMLElement).getAttribute('data-id')!);
+        }
+        node = node.nextSibling;
+      }
+      return divs;
+    };
+
+    // Reorder 1: reverse
+    itemsCell.update([{ id: 5 }, { id: 4 }, { id: 3 }, { id: 2 }, { id: 1 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+    expect(getDivOrder()).toEqual(['5', '4', '3', '2', '1']);
+
+    // Reorder 2: move last to first
+    itemsCell.update([{ id: 1 }, { id: 5 }, { id: 4 }, { id: 3 }, { id: 2 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+    expect(getDivOrder()).toEqual(['1', '5', '4', '3', '2']);
+
+    // Reorder 3: original order
+    itemsCell.update([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+    expect(getDivOrder()).toEqual(['1', '2', '3', '4', '5']);
+  });
+
+  test('items with multiple root nodes relocate all nodes together', async () => {
+    const { SyncListComponent } = await import('./list');
+    const { cell } = await import('../reactive');
+
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, parentComponent);
+
+    const itemsCell = cell([{ id: 1 }, { id: 2 }]);
+    const topMarker = document.createComment('list top');
+
+    const listInstance = new SyncListComponent(
+      {
+        tag: itemsCell,
+        key: 'id',
+        ctx: parentComponent,
+        ItemComponent: (item: { id: number }) => {
+          // Each item produces two root nodes
+          const span = document.createElement('span');
+          span.textContent = `${item.id}-a`;
+          span.setAttribute('data-id', `${item.id}-a`);
+          const em = document.createElement('em');
+          em.textContent = `${item.id}-b`;
+          em.setAttribute('data-id', `${item.id}-b`);
+          return [span, em];
+        },
+      },
+      container,
+      topMarker,
+    );
+
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Swap items
+    itemsCell.update([{ id: 2 }, { id: 1 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Verify all nodes are in correct order
+    const elements: HTMLElement[] = [];
+    let node: Node | null = listInstance.topMarker.nextSibling;
+    while (node && node !== listInstance.bottomMarker) {
+      if (node.nodeType === 1) {
+        elements.push(node as HTMLElement);
+      }
+      node = node.nextSibling;
+    }
+
+    expect(elements.length).toBe(4);
+    expect(elements[0].getAttribute('data-id')).toBe('2-a');
+    expect(elements[1].getAttribute('data-id')).toBe('2-b');
+    expect(elements[2].getAttribute('data-id')).toBe('1-a');
+    expect(elements[3].getAttribute('data-id')).toBe('1-b');
+  });
+
+  test('removed item marker is disconnected from DOM', async () => {
+    const { listInstance, itemsCell } = await createList([{ id: 1 }, { id: 2 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Get reference to marker before removal (key is raw item.id, a number)
+    const marker2 = listInstance.itemMarkers.get(2 as any);
+    expect(marker2).toBeDefined();
+    expect(marker2!.isConnected).toBe(true);
+
+    // Remove item 2
+    itemsCell.update([{ id: 1 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Marker should be disconnected
+    expect(marker2!.isConnected).toBe(false);
+  });
+
+  test('items with comment-only content (closed if) relocate correctly', async () => {
+    // Simulates {{#each}} where each item has a closed {{#if}} — only a comment placeholder
+    const { SyncListComponent } = await import('./list');
+    const { cell } = await import('../reactive');
+
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, parentComponent);
+
+    const itemsCell = cell([{ id: 1 }, { id: 2 }, { id: 3 }]);
+    const topMarker = document.createComment('list top');
+
+    const listInstance = new SyncListComponent(
+      {
+        tag: itemsCell,
+        key: 'id',
+        ctx: parentComponent,
+        ItemComponent: (item: { id: number }) => {
+          // Simulate a closed if: only a comment placeholder, no visible content
+          const ifPlaceholder = document.createComment(`if-placeholder-${item.id}`);
+          return [ifPlaceholder];
+        },
+      },
+      container,
+      topMarker,
+    );
+
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Each item has: item marker + if placeholder = 2 comments
+    // Plus topMarker and bottomMarker
+    // Reverse the list
+    itemsCell.update([{ id: 3 }, { id: 2 }, { id: 1 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Verify comment order: each item marker should precede its if-placeholder
+    const comments: Comment[] = [];
+    let node: Node | null = listInstance.topMarker.nextSibling;
+    while (node && node !== listInstance.bottomMarker) {
+      if (node.nodeType === 8) {
+        comments.push(node as Comment);
+      }
+      node = node.nextSibling;
+    }
+    // 3 item markers + 3 if placeholders = 6 comments
+    expect(comments.length).toBeGreaterThanOrEqual(6);
+
+    // Verify the if-placeholders are in the reversed order
+    const ifPlaceholders = comments.filter(c =>
+      c.textContent?.startsWith('if-placeholder-'),
+    );
+    expect(ifPlaceholders.length).toBe(3);
+    expect(ifPlaceholders[0].textContent).toBe('if-placeholder-3');
+    expect(ifPlaceholders[1].textContent).toBe('if-placeholder-2');
+    expect(ifPlaceholders[2].textContent).toBe('if-placeholder-1');
+  });
+
+  test('content inserted at if-placeholder after relocation appears in correct position', async () => {
+    // Simulates: item relocated while if is closed, then if opens — content appears in right place
+    const { SyncListComponent } = await import('./list');
+    const { cell } = await import('../reactive');
+
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, parentComponent);
+
+    // Track if-placeholders so we can insert content later
+    const placeholders = new Map<number, Comment>();
+
+    const itemsCell = cell([{ id: 1 }, { id: 2 }, { id: 3 }]);
+    const topMarker = document.createComment('list top');
+
+    const listInstance = new SyncListComponent(
+      {
+        tag: itemsCell,
+        key: 'id',
+        ctx: parentComponent,
+        ItemComponent: (item: { id: number }) => {
+          // Simulate closed if: just a placeholder
+          const ifPlaceholder = document.createComment(`if-${item.id}`);
+          placeholders.set(item.id, ifPlaceholder);
+          return [ifPlaceholder];
+        },
+      },
+      container,
+      topMarker,
+    );
+
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Reverse the list: [3, 2, 1]
+    itemsCell.update([{ id: 3 }, { id: 2 }, { id: 1 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Now simulate "if opens" for item 2: insert content before its placeholder
+    const ph2 = placeholders.get(2)!;
+    expect(ph2.isConnected).toBe(true);
+    const div2 = document.createElement('div');
+    div2.setAttribute('data-id', '2');
+    div2.textContent = 'Item 2 content';
+    ph2.parentNode!.insertBefore(div2, ph2);
+
+    // Simulate "if opens" for item 1
+    const ph1 = placeholders.get(1)!;
+    const div1 = document.createElement('div');
+    div1.setAttribute('data-id', '1');
+    div1.textContent = 'Item 1 content';
+    ph1.parentNode!.insertBefore(div1, ph1);
+
+    // Verify DOM order of visible content matches the reversed list order: 3, 2, 1
+    const divs: HTMLElement[] = [];
+    let node: Node | null = listInstance.topMarker.nextSibling;
+    while (node && node !== listInstance.bottomMarker) {
+      if (node.nodeType === 1) {
+        divs.push(node as HTMLElement);
+      }
+      node = node.nextSibling;
+    }
+    expect(divs.length).toBe(2); // only items 2 and 1 have content
+    expect(divs[0].getAttribute('data-id')).toBe('2');
+    expect(divs[1].getAttribute('data-id')).toBe('1');
+  });
+
+  test('items with nested sub-structure (simulating nested list) relocate all inner nodes', async () => {
+    // Simulates {{#each}} where each item contains a nested list with its own markers
+    const { SyncListComponent } = await import('./list');
+    const { cell } = await import('../reactive');
+
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, parentComponent);
+
+    const itemsCell = cell([{ id: 1 }, { id: 2 }]);
+    const topMarker = document.createComment('list top');
+
+    const listInstance = new SyncListComponent(
+      {
+        tag: itemsCell,
+        key: 'id',
+        ctx: parentComponent,
+        ItemComponent: (item: { id: number }) => {
+          // Simulate a nested list structure: topMarker, items, bottomMarker
+          const innerTop = document.createComment(`inner-top-${item.id}`);
+          const innerItem1 = document.createElement('span');
+          innerItem1.setAttribute('data-inner', `${item.id}-a`);
+          innerItem1.textContent = `${item.id}-a`;
+          const innerItem2 = document.createElement('span');
+          innerItem2.setAttribute('data-inner', `${item.id}-b`);
+          innerItem2.textContent = `${item.id}-b`;
+          const innerBottom = document.createComment(`inner-bottom-${item.id}`);
+          return [innerTop, innerItem1, innerItem2, innerBottom];
+        },
+      },
+      container,
+      topMarker,
+    );
+
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Verify initial DOM order
+    const getInnerOrder = () => {
+      const spans: string[] = [];
+      let node: Node | null = listInstance.topMarker.nextSibling;
+      while (node && node !== listInstance.bottomMarker) {
+        if (node.nodeType === 1) {
+          spans.push((node as HTMLElement).getAttribute('data-inner')!);
+        }
+        node = node.nextSibling;
+      }
+      return spans;
+    };
+
+    expect(getInnerOrder()).toEqual(['1-a', '1-b', '2-a', '2-b']);
+
+    // Swap items
+    itemsCell.update([{ id: 2 }, { id: 1 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // All inner nodes should move together
+    expect(getInnerOrder()).toEqual(['2-a', '2-b', '1-a', '1-b']);
+
+    // Verify inner list comments also moved with their items
+    const innerComments: string[] = [];
+    let node: Node | null = listInstance.topMarker.nextSibling;
+    while (node && node !== listInstance.bottomMarker) {
+      if (node.nodeType === 8 && (node as Comment).textContent?.startsWith('inner-')) {
+        innerComments.push((node as Comment).textContent!);
+      }
+      node = node.nextSibling;
+    }
+    // Inner markers for id:2 should come before id:1
+    expect(innerComments).toEqual([
+      'inner-top-2', 'inner-bottom-2',
+      'inner-top-1', 'inner-bottom-1',
+    ]);
+  });
+
+  test('mixed items: some with content, some empty (closed if), reorder correctly', async () => {
+    const { SyncListComponent } = await import('./list');
+    const { cell } = await import('../reactive');
+
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, parentComponent);
+
+    const itemsCell = cell([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
+    const topMarker = document.createComment('list top');
+
+    const listInstance = new SyncListComponent(
+      {
+        tag: itemsCell,
+        key: 'id',
+        ctx: parentComponent,
+        ItemComponent: (item: { id: number }) => {
+          if (item.id % 2 === 0) {
+            // Even items: visible content
+            const div = document.createElement('div');
+            div.setAttribute('data-id', String(item.id));
+            div.textContent = `Item ${item.id}`;
+            return [div];
+          } else {
+            // Odd items: closed if (comment only)
+            const placeholder = document.createComment(`closed-${item.id}`);
+            return [placeholder];
+          }
+        },
+      },
+      container,
+      topMarker,
+    );
+
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Verify initial visible elements: only even ids
+    const getVisibleOrder = () => {
+      const divs: string[] = [];
+      let node: Node | null = listInstance.topMarker.nextSibling;
+      while (node && node !== listInstance.bottomMarker) {
+        if (node.nodeType === 1) {
+          divs.push((node as HTMLElement).getAttribute('data-id')!);
+        }
+        node = node.nextSibling;
+      }
+      return divs;
+    };
+
+    expect(getVisibleOrder()).toEqual(['2', '4']);
+
+    // Reverse: [4, 3, 2, 1]
+    itemsCell.update([{ id: 4 }, { id: 3 }, { id: 2 }, { id: 1 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Visible elements should be reversed: 4, 2
+    expect(getVisibleOrder()).toEqual(['4', '2']);
+    expect(listInstance.itemMarkers.size).toBe(4);
+  });
+});

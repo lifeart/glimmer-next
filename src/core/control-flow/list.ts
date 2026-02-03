@@ -214,10 +214,16 @@ export class BasicListComponent<T extends { id: number }> {
   private relocateItem(marker: Comment, anchor: Node) {
     const parent = this.api.parent(anchor);
     if (!parent) return;
-    const nodesToMove = this.collectItemNodes(marker);
-    for (let i = 0; i < nodesToMove.length; i++) {
-      this.api.insert(parent, nodesToMove[i], anchor);
+    const end = this.getNextBoundaryMarker(marker) ?? this.bottomMarker;
+    const fragment = this.api.fragment();
+    let node: Node | null = marker;
+    let next: Node | null;
+    while (node && node !== end) {
+      next = node.nextSibling;
+      this.api.insert(fragment, node);
+      node = next;
     }
+    this.api.insert(parent, fragment, anchor);
   }
   private removeMarker(marker: Comment) {
     this.markerSet.delete(marker);
