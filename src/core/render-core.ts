@@ -210,7 +210,9 @@ export function renderElement(
   }
   if (isTagLike(el)) {
     const node = api.text('');
-    ctx[RENDERED_NODES_PROPERTY].push(node);
+    if (!skipRegistration) {
+      ctx[RENDERED_NODES_PROPERTY].push(node);
+    }
     api.insert(target, node, placeholder);
     registerDestructor(
       ctx,

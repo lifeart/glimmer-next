@@ -1401,6 +1401,74 @@ describe('Source Map - sourceRange propagation', () => {
     );
     expect(genText).toMatch(/\[.*".*".*\]/);
   });
+
+  test('block-mode component produces ElementNode mapping with valid sourceRange', () => {
+    const template = '{{#MyComponent}}content{{/MyComponent}}';
+    const result = compile(template, { bindings: new Set(['MyComponent']) });
+
+    expect(result.errors).toHaveLength(0);
+
+    const elements = collectNodes(result.mappingTree, 'ElementNode');
+    expect(elements.length).toBeGreaterThanOrEqual(1);
+
+    const node = elements[0];
+    expect(node.sourceRange.start).toBeGreaterThanOrEqual(0);
+    expect(node.sourceRange.end).toBeLessThanOrEqual(template.length);
+    const sourceText = template.substring(node.sourceRange.start, node.sourceRange.end);
+    expect(sourceText).toContain('MyComponent');
+  });
+
+  test('block-mode component with args produces valid mapping nodes', () => {
+    const template = '{{#MyComponent name="val" age="30"}}content{{/MyComponent}}';
+    const result = compile(template, { bindings: new Set(['MyComponent']) });
+
+    expect(result.errors).toHaveLength(0);
+
+    // Args go through component serialization pipeline — verify ElementNode exists
+    const elements = collectNodes(result.mappingTree, 'ElementNode');
+    expect(elements.length).toBeGreaterThanOrEqual(1);
+
+    // StringLiteral nodes should be present for the arg values
+    const literals = collectNodes(result.mappingTree, 'StringLiteral');
+    expect(literals.length).toBeGreaterThanOrEqual(2);
+
+    for (const lit of literals) {
+      expect(lit.sourceRange.start).toBeGreaterThanOrEqual(0);
+      expect(lit.sourceRange.end).toBeLessThanOrEqual(template.length);
+    }
+  });
+
+  test('block-mode component has all mapping nodes within bounds', () => {
+    const template = '{{#MyComponent name="val" as |item|}}{{item.name}}{{/MyComponent}}';
+    const result = compile(template, { bindings: new Set(['MyComponent']) });
+
+    expect(result.errors).toHaveLength(0);
+
+    const allNodes = collectAllNodes(result.mappingTree);
+    for (const node of allNodes) {
+      expect(node.sourceRange.start).toBeGreaterThanOrEqual(0);
+      expect(node.sourceRange.end).toBeLessThanOrEqual(template.length);
+      expect(node.sourceRange.start).toBeLessThanOrEqual(node.sourceRange.end);
+
+      expect(node.generatedRange.start).toBeGreaterThanOrEqual(0);
+      expect(node.generatedRange.end).toBeLessThanOrEqual(result.code.length);
+      expect(node.generatedRange.start).toBeLessThanOrEqual(node.generatedRange.end);
+    }
+  });
+
+  test('block-mode dotted path component produces ElementNode mapping', () => {
+    const template = '{{#this.dynamicComponent as |x|}}{{x}}{{/this.dynamicComponent}}';
+    const result = compile(template);
+
+    expect(result.errors).toHaveLength(0);
+
+    const elements = collectNodes(result.mappingTree, 'ElementNode');
+    expect(elements.length).toBeGreaterThanOrEqual(1);
+
+    const node = elements[0];
+    const sourceText = template.substring(node.sourceRange.start, node.sourceRange.end);
+    expect(sourceText).toContain('this.dynamicComponent');
+  });
 });
 
 describe('code formatting', () => {
@@ -2027,6 +2095,72 @@ describe('Component slots', () => {
       bindings: new Set(['List']),
     });
     expect(result.code).toContain('item');
+  });
+
+  test('block params in default slot are recognized as known bindings', () => {
+    const result = compile('<List as |item|><div>{{item.name}}</div></List>', {
+      bindings: new Set(['List']),
+    });
+    expect(result.code).toContain('item.name');
+    // Block param references must NOT be wrapped in $_maybeHelper
+    expect(result.code).not.toContain('$_maybeHelper');
+  });
+
+  test('multiple block params in default slot are known bindings', () => {
+    const result = compile(
+      '<Table as |row index|><span>{{row.label}}</span><span>{{index}}</span></Table>',
+      { bindings: new Set(['Table']) }
+    );
+    expect(result.code).toContain('row.label');
+    expect(result.code).toContain('index');
+    expect(result.code).not.toContain('$_maybeHelper');
+  });
+
+  test('named slot with block params are known bindings', () => {
+    const result = compile(
+      '<Card><:body as |data|><div>{{data.value}}</div></:body></Card>',
+      { bindings: new Set(['Card']) }
+    );
+    expect(result.code).toContain('data.value');
+    expect(result.code).not.toContain('$_maybeHelper');
+  });
+
+  test('named slot block param with nested component', () => {
+    const result = compile(
+      '<Card><:body as |data|><Child @val={{data.x}} /></:body></Card>',
+      { bindings: new Set(['Card', 'Child']) }
+    );
+    expect(result.code).toContain('data.x');
+    expect(result.code).not.toContain('$_maybeHelper');
+    expect(result.code).toContain(SYMBOLS.COMPONENT);
+  });
+
+  test('block param shadowing outer binding', () => {
+    const result = compile(
+      '<Outer as |item|><Inner as |item|>{{item}}</Inner></Outer>',
+      { bindings: new Set(['Outer', 'Inner']) }
+    );
+    // Inner item shadows outer item — should still compile without error
+    expect(result.code).toContain('item');
+    expect(result.errors).toHaveLength(0);
+  });
+
+  test('block param used in helper', () => {
+    const result = compile(
+      '<List as |item|>{{if item.active "yes" "no"}}</List>',
+      { bindings: new Set(['List']) }
+    );
+    expect(result.code).toContain('item.active');
+    expect(result.code).not.toContain('$_maybeHelper');
+  });
+
+  test('block param used in element attribute', () => {
+    const result = compile(
+      '<List as |item|><div class={{item.class}}>text</div></List>',
+      { bindings: new Set(['List']) }
+    );
+    expect(result.code).toContain('item.class');
+    expect(result.code).not.toContain('$_maybeHelper');
   });
 });
 
@@ -3472,6 +3606,24 @@ describe('Source map names in mapping tree', () => {
       expect(names).toContain('Outer');
       expect(names).toContain('Inner');
     });
+
+    test('block-mode component has name in mapping tree', () => {
+      const result = compile('{{#MyComp name="val"}}content{{/MyComp}}', {
+        bindings: new Set(['MyComp']),
+      });
+      expect(result.errors).toHaveLength(0);
+
+      const names = collectNames(result.mappingTree);
+      expect(names).toContain('MyComp');
+    });
+
+    test('block-mode dotted path component has name in mapping tree', () => {
+      const result = compile('{{#this.dynComp as |x|}}{{x}}{{/this.dynComp}}');
+      expect(result.errors).toHaveLength(0);
+
+      const names = collectNames(result.mappingTree);
+      expect(names).toContain('this.dynComp');
+    });
   });
 
   describe('mustache expressions', () => {
@@ -3840,5 +3992,81 @@ describe('Source map names in mapping tree', () => {
       expect(names.some(n => n.includes('gxt'))).toBe(true);
       expect(names.some(n => n.includes('vanila'))).toBe(true);
     });
+  });
+});
+
+describe('Block-mode component invocations', () => {
+  test('basic block component with no args and no block params', () => {
+    const result = compile('{{#MyComponent}}content{{/MyComponent}}', {
+      bindings: new Set(['MyComponent']),
+    });
+    expect(result.code).toContain(SYMBOLS.COMPONENT);
+    expect(result.code).toContain('MyComponent');
+    expect(result.errors).toHaveLength(0);
+  });
+
+  test('block component with hash args', () => {
+    const result = compile('{{#MyComponent name="val"}}content{{/MyComponent}}', {
+      bindings: new Set(['MyComponent']),
+    });
+    expect(result.code).toContain(SYMBOLS.COMPONENT);
+    expect(result.code).toContain('name: "val"');
+  });
+
+  test('block component with block params (property access not wrapped in $_maybeHelper)', () => {
+    const result = compile('{{#MyComponent as |item|}}{{item.name}}{{/MyComponent}}', {
+      bindings: new Set(['MyComponent']),
+    });
+    expect(result.code).toContain(SYMBOLS.COMPONENT);
+    expect(result.code).toContain('item.name');
+    // Block param references must NOT be wrapped in $_maybeHelper
+    expect(result.code).not.toContain('$_maybeHelper');
+  });
+
+  test('block component with multiple block params', () => {
+    const result = compile('{{#MyComponent as |a b|}}{{a}} {{b}}{{/MyComponent}}', {
+      bindings: new Set(['MyComponent']),
+    });
+    expect(result.code).toContain(SYMBOLS.COMPONENT);
+    expect(result.code).not.toContain('$_maybeHelper');
+  });
+
+  test('block component with hash args AND block params', () => {
+    const result = compile(
+      '{{#MyComponent name="val" as |item|}}{{item.name}}{{/MyComponent}}',
+      { bindings: new Set(['MyComponent']) }
+    );
+    expect(result.code).toContain(SYMBOLS.COMPONENT);
+    expect(result.code).toContain('name: "val"');
+    expect(result.code).toContain('item.name');
+  });
+
+  test('unknown block name without binding returns null', () => {
+    const result = compile('{{#unknown-thing}}content{{/unknown-thing}}');
+    // Unknown block name with no params and no binding — should be dropped
+    expect(result.code).not.toContain('unknown-thing');
+  });
+
+  test('dotted path component block', () => {
+    const result = compile(
+      '{{#this.dynamicComponent as |x|}}{{x}}{{/this.dynamicComponent}}'
+    );
+    expect(result.code).toContain(SYMBOLS.DYNAMIC_COMPONENT);
+    expect(result.code).not.toContain('$_maybeHelper');
+  });
+
+  test('positional params emit W005 warning', () => {
+    const result = compile(
+      '{{#MyComponent this.foo}}content{{/MyComponent}}',
+      { bindings: new Set(['MyComponent']) }
+    );
+    // Component block should still compile
+    expect(result.code).toContain(SYMBOLS.COMPONENT);
+    // But a warning should be emitted about positional params
+    expect(result.warnings.length).toBeGreaterThanOrEqual(1);
+    const w005 = result.warnings.find((w) => w.code === 'W005');
+    expect(w005).toBeDefined();
+    expect(w005!.message).toContain('Positional parameters');
+    expect(w005!.message).toContain('MyComponent');
   });
 });

@@ -159,8 +159,7 @@ describe('Runtime Compiler Integration', () => {
       expect(container.textContent).toContain('Name: TestUser');
     });
 
-    // Skip: Runtime template rendering with complex context needs investigation
-    test.skip('runtime-compiled component with reactive cell property', async () => {
+    test('runtime-compiled component with reactive cell property', async () => {
       class ReactivePropertyComponent extends Component {
         countCell = cell(0);
         get countValue() {

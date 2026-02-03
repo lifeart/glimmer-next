@@ -582,17 +582,29 @@ function buildSlots(
     // Get slot children
     const children = isNamedSlot ? (slot as HBSNode).children : node.children;
 
+    // Check for block params - must happen BEFORE serializing children
+    // so that block param references (e.g., `intl.name` from `as |intl|`)
+    // are recognized as known bindings during serialization
+    const blockParams = '_nodeType' in slot && slot._nodeType === 'element' ? slot.blockParams : [];
+    const blockParamRanges = '_nodeType' in slot && slot._nodeType === 'element'
+      ? slot.blockParamRanges ?? []
+      : [];
+
+    // Add block params to scope tracker during serialization
+    for (const param of blockParams) {
+      ctx.scopeTracker.addBinding(param, { kind: 'block-param', name: param });
+    }
+
     // Build slot children as JSExpression array (proper tree for correct indentation)
     const slotChildExprs = buildChildrenExprs(ctx, children, sContext);
     const slotArrayExpr = fmt.options.enabled && slotChildExprs.length > 0
       ? B.formattedArray(slotChildExprs, true)
       : B.array(slotChildExprs);
 
-    // Check for block params
-    const blockParams = '_nodeType' in slot && slot._nodeType === 'element' ? slot.blockParams : [];
-    const blockParamRanges = '_nodeType' in slot && slot._nodeType === 'element'
-      ? slot.blockParamRanges ?? []
-      : [];
+    // Remove block params from scope after serialization
+    for (const param of blockParams) {
+      ctx.scopeTracker.removeBinding(param);
+    }
     const hasBlockParams = blockParams.length > 0;
 
     // Build the slot function: (ctx, ...blockParams) => [children]
