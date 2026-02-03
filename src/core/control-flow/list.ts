@@ -69,6 +69,44 @@ function countLessThan(arr: number[], target: number) {
   return low;
 }
 
+/**
+ * Compute positions in `arr` that form the Longest Increasing Subsequence.
+ * Items at these positions are already in correct relative order and don't
+ * need to be relocated.  O(n log n) time, O(n) space.
+ */
+export function longestIncreasingSubsequence(arr: number[]): Set<number> {
+  const n = arr.length;
+  if (n === 0) return new Set();
+  // tails[i] = smallest tail value for an increasing subsequence of length i+1
+  const tails: number[] = [];
+  // tailIdx[i] = index in arr where tails[i] was found
+  const tailIdx: number[] = [];
+  // pred[i] = index in arr of the predecessor of arr[i] in the IS
+  const pred: number[] = new Array(n).fill(-1);
+
+  for (let i = 0; i < n; i++) {
+    let lo = 0,
+      hi = tails.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (tails[mid] < arr[i]) lo = mid + 1;
+      else hi = mid;
+    }
+    tails[lo] = arr[i];
+    tailIdx[lo] = i;
+    pred[i] = lo > 0 ? tailIdx[lo - 1] : -1;
+  }
+
+  // Reconstruct: walk predecessors back from the last element of the LIS
+  const result = new Set<number>();
+  let k = tailIdx[tails.length - 1];
+  for (let i = tails.length - 1; i >= 0; i--) {
+    result.add(k);
+    k = pred[k];
+  }
+  return result;
+}
+
 export class BasicListComponent<T extends { id: number }> {
   keyMap: Map<string, GenericReturnType> = new Map();
   indexMap: Map<string, number> = new Map();
@@ -99,6 +137,8 @@ export class BasicListComponent<T extends { id: number }> {
       yield keyForItem(items[i], i);
     }
   }
+  // Cached fragment reused across relocateItem calls to avoid allocating new ones
+  private _relocateFragment!: DocumentFragment;
   declare api: DOMApi;
   constructor(
     { tag, ctx, key, ItemComponent }: ListComponentArgs<T>,
@@ -106,6 +146,7 @@ export class BasicListComponent<T extends { id: number }> {
     topMarker: Comment,
   ) {
     this.api = initDOM(ctx);
+    this._relocateFragment = this.api.fragment();
     this.ItemComponent = ItemComponent;
     // Propagate $_eval from parent context for deferred rendering
     if (WITH_DYNAMIC_EVAL) {
@@ -201,21 +242,14 @@ export class BasicListComponent<T extends { id: number }> {
     }
     return null;
   }
-  private collectItemNodes(marker: Comment) {
-    const nodes: Node[] = [];
-    const end = this.getNextBoundaryMarker(marker) ?? this.bottomMarker;
-    let node: Node | null = marker;
-    while (node && node !== end) {
-      nodes.push(node);
-      node = node.nextSibling;
-    }
-    return nodes;
-  }
   private relocateItem(marker: Comment, anchor: Node) {
     const parent = this.api.parent(anchor);
     if (!parent) return;
     const end = this.getNextBoundaryMarker(marker) ?? this.bottomMarker;
-    const fragment = this.api.fragment();
+    // Item already immediately precedes the anchor — nothing to move
+    if (end === anchor) return;
+    // Reuse cached fragment (it's empty after each insertBefore)
+    const fragment = this._relocateFragment;
     let node: Node | null = marker;
     let next: Node | null;
     while (node && node !== end) {
@@ -225,7 +259,7 @@ export class BasicListComponent<T extends { id: number }> {
     }
     this.api.insert(parent, fragment, anchor);
   }
-  private removeMarker(marker: Comment) {
+  protected removeMarker(marker: Comment) {
     this.markerSet.delete(marker);
     if (marker.isConnected) {
       this.api.destroy(marker);
@@ -309,6 +343,8 @@ export class BasicListComponent<T extends { id: number }> {
       api,
     } = this;
     const rowsToMove: Array<{ key: string; index: number; isNew: boolean }> = [];
+    // Collect ALL existing items (in new order) for LIS-based move minimization
+    const existingInNewOrder: Array<{ key: string; newIndex: number; oldIndex: number }> = [];
     const amountOfExistingKeys = amountOfKeys - removedIndexes.length;
     if (removedIndexes.length > 0 && keyMap.size > 0) {
       removedIndexes.sort((a, b) => a - b);
@@ -338,7 +374,6 @@ export class BasicListComponent<T extends { id: number }> {
 
       const key = keyForItem(item, index);
       const hasRow = keyMap.has(key);
-      const maybeRow = hasRow ? keyMap.get(key) : undefined;
       let marker = this.getItemMarker(key);
       if (!marker) {
         marker = this.createItemMarker(key);
@@ -386,13 +421,38 @@ export class BasicListComponent<T extends { id: number }> {
         }
       } else {
         seenKeys++;
-        const expectedIndex = indexMap.get(key)!;
-        if (expectedIndex !== index) {
+        const oldIndex = indexMap.get(key)!;
+        existingInNewOrder.push({ key, newIndex: index, oldIndex });
+        if (oldIndex !== index) {
           indexMap.set(key, index);
-          rowsToMove.push({ key, index, isNew: false });
         }
       }
     });
+
+    // Use LIS on ALL existing items' old indices (in new-list order) to find
+    // the largest subset already in correct relative order.  Only items
+    // outside the LIS need actual DOM relocation.
+    if (existingInNewOrder.length > 1) {
+      const oldIndices = existingInNewOrder.map(e => e.oldIndex);
+      const stable = longestIncreasingSubsequence(oldIndices);
+      for (let i = 0; i < existingInNewOrder.length; i++) {
+        if (!stable.has(i)) {
+          rowsToMove.push({
+            key: existingInNewOrder[i].key,
+            index: existingInNewOrder[i].newIndex,
+            isNew: false,
+          });
+        }
+      }
+    } else if (existingInNewOrder.length === 1 && existingInNewOrder[0].oldIndex !== existingInNewOrder[0].newIndex) {
+      // Single existing item that changed position
+      rowsToMove.push({
+        key: existingInNewOrder[0].key,
+        index: existingInNewOrder[0].newIndex,
+        isNew: false,
+      });
+    }
+
     setParentContext(null);
     rowsToMove
       .sort((r1, r2) => {

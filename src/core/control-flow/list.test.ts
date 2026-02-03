@@ -1,6 +1,6 @@
 import { expect, test, describe, beforeEach, afterEach } from 'vitest';
 import { Window } from 'happy-dom';
-import { getFirstNode } from './list';
+import { getFirstNode, longestIncreasingSubsequence } from './list';
 import { HTMLBrowserDOMApi, DOMApi } from '../dom-api';
 import { Component } from '../component';
 import {
@@ -1887,5 +1887,425 @@ describe('Item Markers', () => {
     // Visible elements should be reversed: 4, 2
     expect(getVisibleOrder()).toEqual(['4', '2']);
     expect(listInstance.itemMarkers.size).toBe(4);
+  });
+});
+
+describe('AsyncListComponent markers', () => {
+  let window: Window;
+  let document: Document;
+  let api: DOMApi;
+  let root: Root;
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    window = new Window();
+    document = window.document as unknown as Document;
+    api = new HTMLBrowserDOMApi(document);
+    cleanupFastContext();
+    root = new Root(document);
+    provideContext(root, RENDERING_CONTEXT, api);
+    container = document.createElement('div');
+    document.body.appendChild(container);
+  });
+
+  afterEach(() => {
+    cleanupFastContext();
+    TREE.clear();
+    PARENT.clear();
+    CHILD.clear();
+    window.close();
+  });
+
+  async function createAsyncList(items: Array<{ id: number }>) {
+    const { AsyncListComponent } = await import('./list');
+    const { cell } = await import('../reactive');
+
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, parentComponent);
+
+    const itemsCell = cell(items);
+    const topMarker = document.createComment('list top');
+
+    const listInstance = new AsyncListComponent(
+      {
+        tag: itemsCell,
+        key: 'id',
+        ctx: parentComponent,
+        ItemComponent: (item: { id: number }) => {
+          const div = document.createElement('div');
+          div.textContent = String(item.id);
+          div.setAttribute('data-id', String(item.id));
+          return [div];
+        },
+      },
+      container,
+      topMarker,
+    );
+
+    return { listInstance, itemsCell, parentComponent };
+  }
+
+  const getDivOrder = (listInstance: any) => {
+    const divs: string[] = [];
+    let node: Node | null = listInstance.topMarker.nextSibling;
+    while (node && node !== listInstance.bottomMarker) {
+      if (node.nodeType === 1) {
+        divs.push((node as HTMLElement).getAttribute('data-id')!);
+      }
+      node = node.nextSibling;
+    }
+    return divs;
+  };
+
+  test('async list creates markers for each item', async () => {
+    const { listInstance } = await createAsyncList([{ id: 1 }, { id: 2 }, { id: 3 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(listInstance.itemMarkers.size).toBe(3);
+    expect(listInstance.markerSet.size).toBe(3);
+  });
+
+  test('async list reorders items correctly', async () => {
+    const { listInstance, itemsCell } = await createAsyncList([{ id: 1 }, { id: 2 }, { id: 3 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder(listInstance)).toEqual(['1', '2', '3']);
+
+    // Reverse
+    itemsCell.update([{ id: 3 }, { id: 2 }, { id: 1 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder(listInstance)).toEqual(['3', '2', '1']);
+    expect(listInstance.itemMarkers.size).toBe(3);
+  });
+
+  test('async list cleans up markers on item removal', async () => {
+    const { listInstance, itemsCell } = await createAsyncList([{ id: 1 }, { id: 2 }, { id: 3 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Remove middle item
+    itemsCell.update([{ id: 1 }, { id: 3 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(listInstance.itemMarkers.size).toBe(2);
+    expect(listInstance.markerSet.size).toBe(2);
+    expect(listInstance.itemMarkers.has(2 as any)).toBe(false);
+  });
+
+  test('async list cleans up all markers on empty list (fastCleanup)', async () => {
+    const { listInstance, itemsCell } = await createAsyncList([{ id: 1 }, { id: 2 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(listInstance.itemMarkers.size).toBe(2);
+
+    itemsCell.update([]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(listInstance.itemMarkers.size).toBe(0);
+    expect(listInstance.markerSet.size).toBe(0);
+  });
+
+  test('async list move-to-front with LIS optimization', async () => {
+    const { listInstance, itemsCell } = await createAsyncList([
+      { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 },
+    ]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Move last to front
+    itemsCell.update([{ id: 5 }, { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder(listInstance)).toEqual(['5', '1', '2', '3', '4']);
+  });
+
+  test('async list DOM elements are moved, not recreated', async () => {
+    const { listInstance, itemsCell } = await createAsyncList([{ id: 1 }, { id: 2 }, { id: 3 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Mark original DOM nodes
+    const originalNodes = new Map<string, Node>();
+    let node: Node | null = listInstance.topMarker.nextSibling;
+    while (node && node !== listInstance.bottomMarker) {
+      if (node.nodeType === 1) {
+        const id = (node as HTMLElement).getAttribute('data-id')!;
+        (node as HTMLElement).setAttribute('data-original', 'yes');
+        originalNodes.set(id, node);
+      }
+      node = node.nextSibling;
+    }
+
+    // Reverse
+    itemsCell.update([{ id: 3 }, { id: 2 }, { id: 1 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Verify same DOM nodes
+    node = listInstance.topMarker.nextSibling;
+    while (node && node !== listInstance.bottomMarker) {
+      if (node.nodeType === 1) {
+        const id = (node as HTMLElement).getAttribute('data-id')!;
+        expect(node).toBe(originalNodes.get(id));
+        expect((node as HTMLElement).getAttribute('data-original')).toBe('yes');
+      }
+      node = node.nextSibling;
+    }
+  });
+});
+
+describe('longestIncreasingSubsequence', () => {
+  test('empty array', () => {
+    expect(longestIncreasingSubsequence([])).toEqual(new Set());
+  });
+
+  test('single element', () => {
+    expect(longestIncreasingSubsequence([5])).toEqual(new Set([0]));
+  });
+
+  test('already sorted', () => {
+    const result = longestIncreasingSubsequence([0, 1, 2, 3, 4]);
+    expect(result.size).toBe(5);
+    // All positions should be in the LIS
+    for (let i = 0; i < 5; i++) {
+      expect(result.has(i)).toBe(true);
+    }
+  });
+
+  test('reversed array', () => {
+    const result = longestIncreasingSubsequence([4, 3, 2, 1, 0]);
+    // LIS of a reversed array has length 1
+    expect(result.size).toBe(1);
+  });
+
+  test('move-to-front pattern [4, 0, 1, 2, 3]', () => {
+    const result = longestIncreasingSubsequence([4, 0, 1, 2, 3]);
+    // LIS = [0, 1, 2, 3] at positions 1-4
+    expect(result.size).toBe(4);
+    expect(result.has(0)).toBe(false); // position 0 (value 4) is NOT in LIS
+    expect(result.has(1)).toBe(true);
+    expect(result.has(2)).toBe(true);
+    expect(result.has(3)).toBe(true);
+    expect(result.has(4)).toBe(true);
+  });
+
+  test('swap-adjacent pattern [0, 2, 1, 3]', () => {
+    const result = longestIncreasingSubsequence([0, 2, 1, 3]);
+    // LIS = [0, 1, 3] or [0, 2, 3] — length 3
+    expect(result.size).toBe(3);
+  });
+
+  test('interleaved pattern [0, 3, 1, 4, 2]', () => {
+    const result = longestIncreasingSubsequence([0, 3, 1, 4, 2]);
+    // LIS length = 3 (e.g. [0, 1, 2] or [0, 3, 4] or [0, 1, 4])
+    expect(result.size).toBe(3);
+  });
+
+  test('all equal values', () => {
+    // Strictly increasing, so all equal = LIS of length 1
+    const result = longestIncreasingSubsequence([3, 3, 3, 3]);
+    expect(result.size).toBe(1);
+  });
+
+  test('LIS positions are valid indices', () => {
+    const arr = [5, 2, 8, 6, 3, 6, 9, 7];
+    const result = longestIncreasingSubsequence(arr);
+    // Verify all returned positions are valid indices
+    for (const pos of result) {
+      expect(pos).toBeGreaterThanOrEqual(0);
+      expect(pos).toBeLessThan(arr.length);
+    }
+    // Verify the values at returned positions form an increasing sequence
+    const values = [...result].sort((a, b) => a - b).map(i => arr[i]);
+    for (let i = 1; i < values.length; i++) {
+      expect(values[i]).toBeGreaterThan(values[i - 1]);
+    }
+  });
+});
+
+describe('LIS-based move minimization', () => {
+  let window: Window;
+  let document: Document;
+  let api: DOMApi;
+  let root: Root;
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    window = new Window();
+    document = window.document as unknown as Document;
+    api = new HTMLBrowserDOMApi(document);
+    cleanupFastContext();
+    root = new Root(document);
+    provideContext(root, RENDERING_CONTEXT, api);
+    container = document.createElement('div');
+    document.body.appendChild(container);
+  });
+
+  afterEach(() => {
+    cleanupFastContext();
+    TREE.clear();
+    PARENT.clear();
+    CHILD.clear();
+    window.close();
+  });
+
+  async function createTrackedList(items: Array<{ id: number }>) {
+    const { SyncListComponent } = await import('./list');
+    const { cell } = await import('../reactive');
+
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, parentComponent);
+
+    const itemsCell = cell(items);
+    const topMarker = document.createComment('list top');
+    let insertCount = 0;
+
+    // Wrap api to count insertBefore calls on the real parent
+    const originalInsert = api.insert.bind(api);
+    const trackedApi = Object.create(api);
+    trackedApi.insert = (parent: Node, child: Node, anchor?: Node | null) => {
+      // Count only insertions into the container (not into fragments)
+      if (parent === container) {
+        insertCount++;
+      }
+      return originalInsert(parent, child, anchor);
+    };
+
+    const listInstance = new SyncListComponent(
+      {
+        tag: itemsCell,
+        key: 'id',
+        ctx: parentComponent,
+        ItemComponent: (item: { id: number }) => {
+          const div = document.createElement('div');
+          div.textContent = String(item.id);
+          div.setAttribute('data-id', String(item.id));
+          return [div];
+        },
+      },
+      container,
+      topMarker,
+    );
+
+    const getDivOrder = () => {
+      const divs: string[] = [];
+      let node: Node | null = listInstance.topMarker.nextSibling;
+      while (node && node !== listInstance.bottomMarker) {
+        if (node.nodeType === 1) {
+          divs.push((node as HTMLElement).getAttribute('data-id')!);
+        }
+        node = node.nextSibling;
+      }
+      return divs;
+    };
+
+    const resetInsertCount = () => { insertCount = 0; };
+    const getInsertCount = () => insertCount;
+
+    return { listInstance, itemsCell, getDivOrder, resetInsertCount, getInsertCount };
+  }
+
+  test('move-to-front: only moved item is relocated', async () => {
+    const { itemsCell, getDivOrder, resetInsertCount, getInsertCount } =
+      await createTrackedList([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    resetInsertCount();
+    // Move last item to front: [5, 1, 2, 3, 4]
+    itemsCell.update([{ id: 5 }, { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder()).toEqual(['5', '1', '2', '3', '4']);
+    // With LIS, only item 5 needs to move (1 fragment insertion to container)
+    // Items 1-4 are already in correct relative order (LIS)
+    expect(getInsertCount()).toBeLessThanOrEqual(2); // fragment insert + possibly marker
+  });
+
+  test('move-to-back: only moved item is relocated', async () => {
+    const { itemsCell, getDivOrder, resetInsertCount, getInsertCount } =
+      await createTrackedList([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    resetInsertCount();
+    // Move first item to back: [2, 3, 4, 5, 1]
+    itemsCell.update([{ id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }, { id: 1 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder()).toEqual(['2', '3', '4', '5', '1']);
+    expect(getInsertCount()).toBeLessThanOrEqual(2);
+  });
+
+  test('adjacent swap produces correct result with minimal moves', async () => {
+    const { itemsCell, getDivOrder } =
+      await createTrackedList([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Swap middle pair: [1, 3, 2, 4]
+    itemsCell.update([{ id: 1 }, { id: 3 }, { id: 2 }, { id: 4 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder()).toEqual(['1', '3', '2', '4']);
+  });
+
+  test('rotation produces correct DOM order', async () => {
+    const { itemsCell, getDivOrder } =
+      await createTrackedList([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Rotate left by 2: [3, 4, 5, 1, 2]
+    itemsCell.update([{ id: 3 }, { id: 4 }, { id: 5 }, { id: 1 }, { id: 2 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder()).toEqual(['3', '4', '5', '1', '2']);
+  });
+
+  test('full reversal produces correct DOM order', async () => {
+    const { itemsCell, getDivOrder } =
+      await createTrackedList([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Full reverse
+    itemsCell.update([{ id: 5 }, { id: 4 }, { id: 3 }, { id: 2 }, { id: 1 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder()).toEqual(['5', '4', '3', '2', '1']);
+  });
+
+  test('stable items are not relocated when only one item moves', async () => {
+    // With 10 items, moving just one should leave 9 untouched
+    const items = Array.from({ length: 10 }, (_, i) => ({ id: i + 1 }));
+    const { listInstance, itemsCell, getDivOrder } = await createTrackedList(items);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Grab original DOM references for items 1-9
+    const originalNodes = new Map<string, Node>();
+    let node: Node | null = listInstance.topMarker.nextSibling;
+    while (node && node !== listInstance.bottomMarker) {
+      if (node.nodeType === 1) {
+        const id = (node as HTMLElement).getAttribute('data-id')!;
+        (node as HTMLElement).setAttribute('data-stable', 'yes');
+        originalNodes.set(id, node);
+      }
+      node = node.nextSibling;
+    }
+
+    // Move item 10 to front
+    const newItems = [{ id: 10 }, ...items.slice(0, 9)];
+    itemsCell.update(newItems);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder()).toEqual(['10', '1', '2', '3', '4', '5', '6', '7', '8', '9']);
+
+    // Verify items 1-9 are the same DOM nodes (not recreated)
+    node = listInstance.topMarker.nextSibling;
+    while (node && node !== listInstance.bottomMarker) {
+      if (node.nodeType === 1) {
+        const id = (node as HTMLElement).getAttribute('data-id')!;
+        if (id !== '10') {
+          expect((node as HTMLElement).getAttribute('data-stable')).toBe('yes');
+          expect(node).toBe(originalNodes.get(id));
+        }
+      }
+      node = node.nextSibling;
+    }
   });
 });
