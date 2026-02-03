@@ -828,7 +828,38 @@ This flag controls whether the compiler generates code that passes context to `$
 - Slightly larger generated code
 
 **Automatic behavior:** When using `template(src, { eval: fn })`, the compiler automatically sets `WITH_EVAL_SUPPORT: true`. You don't need to set it manually.
+
+#### `WITH_DYNAMIC_EVAL` Vite Plugin Flag
+
+In addition to the compiler-level `WITH_EVAL_SUPPORT` flag, there is a **Vite plugin flag** `WITH_DYNAMIC_EVAL` that controls whether the runtime eval resolution code is included in the final bundle at all.
+
+```typescript
+// vite.config.ts
+import { compiler } from '@lifeart/gxt/compiler';
+
+export default defineConfig({
+  plugins: [
+    compiler('development', {
+      flags: {
+        WITH_DYNAMIC_EVAL: true, // Include eval resolution code in bundle
+      },
+    }),
+  ],
+});
 ```
+
+**When `false` (default):**
+- All eval-related runtime code is tree-shaken from the bundle
+- `$_eval` propagation through control flow is removed
+- Context detection in `$_maybeHelper` is simplified
+- Smaller bundle size for apps that don't use the runtime compiler's `eval` option
+
+**When `true`:**
+- Eval resolution code is included in the bundle
+- `$_eval` propagation through `{{#if}}`, `{{#each}}`, `{{in-element}}` works
+- Required when using `template()` with the `eval` option
+
+**Note:** This is separate from the compiler-level `WITH_EVAL_SUPPORT` flag. `WITH_EVAL_SUPPORT` controls what code the compiler *generates*. `WITH_DYNAMIC_EVAL` controls what code the runtime *includes*. If you use `template()` with the `eval` option, ensure both flags are enabled (the compiler flag is set automatically; the Vite flag must be set manually).
 
 ### Bindings
 

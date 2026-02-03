@@ -63,10 +63,12 @@ export class IfCondition {
     this.trueBranch = trueBranch;
     this.falseBranch = falseBranch;
     // Propagate $_eval from parent context for deferred rendering
-    // @ts-expect-error $_eval may exist on parentContext
-    if (parentContext?.$_eval) {
-      // @ts-expect-error $_eval may exist
-      this.$_eval = parentContext.$_eval;
+    if (WITH_DYNAMIC_EVAL) {
+      // @ts-expect-error $_eval may exist on parentContext
+      if (parentContext?.$_eval) {
+        // @ts-expect-error $_eval may exist
+        this.$_eval = parentContext.$_eval;
+      }
     }
     // @ts-expect-error typings error
     addToTree(parentContext, this, 'from if constructor');

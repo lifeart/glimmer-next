@@ -9,6 +9,7 @@ export type Flags = {
   WITH_EMBER_INTEGRATION: boolean;
   WITH_CONTEXT_API: boolean;
   ASYNC_COMPILE_TRANSFORMS: boolean;
+  WITH_DYNAMIC_EVAL: boolean;
 };
 
 export function defaultFlags() {
@@ -23,5 +24,6 @@ export function defaultFlags() {
     WITH_EMBER_INTEGRATION: false,
     WITH_CONTEXT_API: true,
     ASYNC_COMPILE_TRANSFORMS: true,
+    WITH_DYNAMIC_EVAL: false,
   } as Flags;
 }

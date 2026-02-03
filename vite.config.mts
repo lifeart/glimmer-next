@@ -76,6 +76,9 @@ export default defineConfig(({ mode }) => ({
         }),
     compiler(mode, {
       authorMode: true,
+      flags: {
+        WITH_DYNAMIC_EVAL: true,
+      },
     }),
   ],
   test: {

@@ -665,10 +665,12 @@ export function $_inElement(
         this.debugName = `InElement-${unstableWrapperId++}`;
       }
       // Propagate $_eval from parent context for deferred rendering
-      // @ts-expect-error $_eval may exist on ctx
-      if (ctx?.$_eval) {
+      if (WITH_DYNAMIC_EVAL) {
         // @ts-expect-error $_eval may exist on ctx
-        this.$_eval = ctx.$_eval;
+        if (ctx?.$_eval) {
+          // @ts-expect-error $_eval may exist on ctx
+          this.$_eval = ctx.$_eval;
+        }
       }
       let appendRef!: HTMLElement;
       if (isFn(elementRef)) {
@@ -719,10 +721,12 @@ export function $_ucw(
       }
       // Propagate $_eval from parent context for deferred rendering
       // This ensures eval-based bindings work inside control flow blocks
-      // @ts-expect-error $_eval may exist on ctx
-      if (ctx?.$_eval) {
+      if (WITH_DYNAMIC_EVAL) {
         // @ts-expect-error $_eval may exist on ctx
-        this.$_eval = ctx.$_eval;
+        if (ctx?.$_eval) {
+          // @ts-expect-error $_eval may exist on ctx
+          this.$_eval = ctx.$_eval;
+        }
       }
       try {
         setParentContext(this);
@@ -811,8 +815,17 @@ export const $_maybeHelper = (
   // - 3 args with context: _hashOrCtx is context (unknown binding without named args)
   // - 3 args with hash: _hashOrCtx is hash (known binding)
   // - 2 args: no hash or context (WITH_EVAL_SUPPORT=false, no named args)
-  const isCtxIn3rd = !_maybeCtx && _hashOrCtx && typeof _hashOrCtx === 'object' && (Object.hasOwn(_hashOrCtx, '$_eval') || Object.hasOwn(_hashOrCtx, '$args') || _hashOrCtx[$args] !== undefined);
-  const _ctx = _maybeCtx ?? (isCtxIn3rd ? _hashOrCtx : undefined);
+  // When WITH_DYNAMIC_EVAL is false, context detection is skipped (tree-shaken at build time)
+  const isCtxIn3rd = WITH_DYNAMIC_EVAL
+    && !_maybeCtx
+    && _hashOrCtx
+    && typeof _hashOrCtx === 'object'
+    && (_hashOrCtx.hasOwnProperty('$_eval')
+      || _hashOrCtx.hasOwnProperty('$args')
+      || _hashOrCtx[$args] !== undefined);
+  const _ctx = WITH_DYNAMIC_EVAL
+    ? (_maybeCtx ?? (isCtxIn3rd ? _hashOrCtx : undefined))
+    : undefined;
   // Default _hash to empty object when not provided (WITH_EVAL_SUPPORT=false case)
   const _hash = _maybeCtx ? _hashOrCtx : (isCtxIn3rd ? {} : (_hashOrCtx ?? {}));
   if (typeof value === 'function') {
@@ -845,26 +858,28 @@ export const $_maybeHelper = (
     // @ts-expect-error amount of args
     const hash = $_args(_hash, false);
 
-    // Dynamic eval - resolve the value directly
-    // The outer getter from compiled code handles reactivity
-    // Check ctx.$_eval first (passed directly, avoids closure overhead)
-    // Then fall back to globalThis.$_eval for initial render
-    // @ts-expect-error $_eval may exist on ctx
-    const evalFn = _ctx?.$_eval ?? globalThis.$_eval;
-    if (typeof evalFn === 'function') {
-      try {
-        const result = evalFn(value);
-        // If result is a function (helper), call it with args
-        return typeof result === 'function'
-          ? result(...$_unwrapArgs(args))
-          : result;
-      } catch (e) {
-        // ReferenceError is expected for undefined variables - suppress silently
-        // Other errors may indicate bugs - warn in dev mode
-        if (IS_DEV_MODE && !(e instanceof ReferenceError)) {
-          console.warn(`[gxt] eval resolution error for "${value}":`, e);
+    // Dynamic eval - resolve the value directly (tree-shaken when WITH_DYNAMIC_EVAL=false)
+    if (WITH_DYNAMIC_EVAL) {
+      // The outer getter from compiled code handles reactivity
+      // Check ctx.$_eval first (passed directly, avoids closure overhead)
+      // Then fall back to globalThis.$_eval for initial render
+      // @ts-expect-error $_eval may exist on ctx
+      const evalFn = _ctx?.$_eval ?? globalThis.$_eval;
+      if (typeof evalFn === 'function') {
+        try {
+          const result = evalFn(value);
+          // If result is a function (helper), call it with args
+          return typeof result === 'function'
+            ? result(...$_unwrapArgs(args))
+            : result;
+        } catch (e) {
+          // ReferenceError is expected for undefined variables - suppress silently
+          // Other errors may indicate bugs - warn in dev mode
+          if (IS_DEV_MODE && !(e instanceof ReferenceError)) {
+            console.warn(`[gxt] eval resolution error for "${value}":`, e);
+          }
+          return undefined;
         }
-        return undefined;
       }
     }
 
