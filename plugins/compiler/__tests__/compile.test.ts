@@ -3309,28 +3309,14 @@ describe('WITH_HELPER_MANAGER flag behavior', () => {
     expect(result.code).not.toContain(SYMBOLS.MAYBE_HELPER);
   });
 
-  test('unknown binding with hash args uses maybeHelper (no context by default)', () => {
+  test('unknown binding with hash args uses maybeHelper with context', () => {
     const template = '{{unknownHelper name="world"}}';
     const result = compile(template);
 
     expect(result.errors).toHaveLength(0);
     expect(result.code).toContain(SYMBOLS.MAYBE_HELPER);
     expect(result.code).toContain('"unknownHelper"');
-    // Named args are passed in hash, but context NOT passed without WITH_EVAL_SUPPORT
-    expect(result.code).toContain('name:');
-    expect(result.code).not.toContain(', this)');
-  });
-
-  test('unknown binding with hash args passes context when WITH_EVAL_SUPPORT enabled', () => {
-    const template = '{{unknownHelper name="world"}}';
-    const result = compile(template, {
-      flags: { WITH_EVAL_SUPPORT: true },
-    });
-
-    expect(result.errors).toHaveLength(0);
-    expect(result.code).toContain(SYMBOLS.MAYBE_HELPER);
-    expect(result.code).toContain('"unknownHelper"');
-    // With WITH_EVAL_SUPPORT, context IS passed as 4th arg
+    // Named args are passed in hash, context always passed for scope resolution
     expect(result.code).toContain('name:');
     expect(result.code).toMatch(/\$_maybeHelper\([^)]+,\s*\{[^}]*name:[^}]*\},\s*this\)/);
   });
@@ -3430,11 +3416,11 @@ describe('WITH_HELPER_MANAGER flag behavior', () => {
     expect(hashResult.code).not.toContain(SYMBOLS.SCOPE_KEY);
   });
 
-  test('WITH_EVAL_SUPPORT=true + WITH_HELPER_MANAGER=true: known uses maybeHelper with ref, unknown passes context', () => {
+  test('WITH_HELPER_MANAGER=true: known uses maybeHelper with ref, unknown passes context', () => {
     const template = '{{knownHelper arg1}}{{unknownHelper arg2}}';
     const result = compile(template, {
       bindings: new Set(['knownHelper']),
-      flags: { WITH_EVAL_SUPPORT: true, WITH_HELPER_MANAGER: true },
+      flags: { WITH_HELPER_MANAGER: true },
     });
 
     expect(result.errors).toHaveLength(0);
@@ -3481,26 +3467,13 @@ describe('Regression: visitSimpleMustache unified behavior', () => {
     expect(result.code).toContain('"someUnknown"');
   });
 
-  test('unknown helper with hash args uses maybeHelper (no context by default)', () => {
+  test('unknown helper with hash args uses maybeHelper with context', () => {
     const template = '{{someUnknown key="val"}}';
     const result = compile(template);
 
     expect(result.errors).toHaveLength(0);
     expect(result.code).toContain(SYMBOLS.MAYBE_HELPER);
-    // Named args in hash, but context NOT passed without WITH_EVAL_SUPPORT
-    expect(result.code).toContain('key:');
-    expect(result.code).not.toContain(', this)');
-  });
-
-  test('unknown helper with hash args passes context when WITH_EVAL_SUPPORT enabled', () => {
-    const template = '{{someUnknown key="val"}}';
-    const result = compile(template, {
-      flags: { WITH_EVAL_SUPPORT: true },
-    });
-
-    expect(result.errors).toHaveLength(0);
-    expect(result.code).toContain(SYMBOLS.MAYBE_HELPER);
-    // With WITH_EVAL_SUPPORT, context IS passed as 4th arg
+    // Named args in hash, context always passed for scope resolution
     expect(result.code).toContain('key:');
     expect(result.code).toMatch(/\$_maybeHelper\([^)]+,\s*\{[^}]*key:[^}]*\},\s*this\)/);
   });
@@ -3541,6 +3514,71 @@ describe('Regression: visitSimpleMustache unified behavior', () => {
     expect(result.errors).toHaveLength(0);
     expect(result.code).toContain('this.compute(');
     expect(result.code).not.toContain(SYMBOLS.MAYBE_HELPER);
+  });
+});
+
+describe('Path expression optional chaining with known bindings', () => {
+  test('known binding with dotted path uses direct access, not $_maybeHelper', () => {
+    const template = '{{myObject.foo.bar}}';
+    const result = compile(template, { bindings: new Set(['myObject']) });
+
+    expect(result.errors).toHaveLength(0);
+    // Known binding should use direct optional-chained path, not $_maybeHelper
+    expect(result.code).not.toContain(SYMBOLS.MAYBE_HELPER);
+    expect(result.code).toContain('myObject');
+  });
+
+  test('known binding path uses optional chaining for safety', () => {
+    const template = '{{myObject.foo.bar.baz}}';
+    const result = compile(template, { bindings: new Set(['myObject']) });
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.code).not.toContain(SYMBOLS.MAYBE_HELPER);
+    // Should have optional chaining for deep paths
+    expect(result.code).toContain('?.');
+  });
+
+  test('unknown binding with dotted path uses $_maybeHelper with context', () => {
+    const template = '{{unknownObj.foo.bar}}';
+    const result = compile(template);
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.code).toContain(SYMBOLS.MAYBE_HELPER);
+    // Context should always be passed for unknown bindings
+    expect(result.code).toMatch(/,\s*this\)/);
+  });
+
+  test('unknown dashed helper gets context for scope resolution', () => {
+    const template = '{{x-borf "YES"}}';
+    const result = compile(template);
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.code).toContain(SYMBOLS.MAYBE_HELPER);
+    expect(result.code).toContain('"x-borf"');
+    // Context must be passed so scope resolution works
+    expect(result.code).toMatch(/,\s*this\)/);
+  });
+
+  test('unknown dashed helper without args gets context', () => {
+    const template = '{{x-borf}}';
+    const result = compile(template);
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.code).toContain(SYMBOLS.MAYBE_HELPER);
+    expect(result.code).toContain('"x-borf"');
+    expect(result.code).toMatch(/,\s*this\)/);
+  });
+
+  test('known binding used as helper arg gets direct path, not $_maybeHelper', () => {
+    const template = '{{check myObject.foo.bar.baz}}';
+    const result = compile(template, { bindings: new Set(['check', 'myObject']) });
+
+    expect(result.errors).toHaveLength(0);
+    // check is known so it's a direct call
+    expect(result.code).toContain('check(');
+    // myObject.foo.bar.baz should be a direct path, not wrapped in $_maybeHelper
+    expect(result.code).toContain('myObject');
+    expect(result.code).not.toContain('"myObject');
   });
 });
 

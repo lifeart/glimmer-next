@@ -107,7 +107,7 @@ export function buildPathExpression(
 
   // Check if this is a known binding
   // Known bindings: @args, this.*, or explicitly declared in scopeTracker
-  const rootName = expression.split(/[.\[]/)[0];
+  const rootName = expression.split(/[?.\[]/)[0];
   const isKnown = value.isArg ||
     expression.startsWith('this.') ||
     expression.startsWith('this[') ||
@@ -123,11 +123,8 @@ export function buildPathExpression(
     const maybeHelperArgs: JSExpression[] = [
       B.string(expression, value.sourceRange),
       B.array([]),
+      B.id(ctxName),
     ];
-    // Only pass context when eval support is enabled
-    if (ctx.flags.WITH_EVAL_SUPPORT) {
-      maybeHelperArgs.push(B.id(ctxName));
-    }
     const maybeHelperCall = B.call(SYMBOLS.MAYBE_HELPER, maybeHelperArgs, value.sourceRange);
 
     if (wrapInGetter) {
@@ -429,29 +426,23 @@ function buildMaybeHelper(
     ], sourceRange);
   }
 
-  // Unknown binding - pass context only when WITH_EVAL_SUPPORT is enabled
+  // Unknown binding - always pass context for scope resolution
   // $_maybeHelper accesses ctx.$_eval and ctx[$args].$_scope directly
   if (namedProps.length > 0) {
-    // Unknown with named args - pass hash, optionally context (3 or 4 args)
-    const callArgs = [
+    // Unknown with named args - pass hash and context (4 args)
+    return B.call(SYMBOLS.MAYBE_HELPER, [
       helperRef,
       B.array(posArgs),
       B.object(namedProps),
-    ];
-    if (ctx.flags.WITH_EVAL_SUPPORT) {
-      callArgs.push(B.id(ctxName));
-    }
-    return B.call(SYMBOLS.MAYBE_HELPER, callArgs, sourceRange);
+      B.id(ctxName),
+    ], sourceRange);
   }
-  // Unknown without named args - pass context only if eval support enabled
-  const callArgs = [
+  // Unknown without named args - pass context (3 args)
+  return B.call(SYMBOLS.MAYBE_HELPER, [
     helperRef,
     B.array(posArgs),
-  ];
-  if (ctx.flags.WITH_EVAL_SUPPORT) {
-    callArgs.push(B.id(ctxName));
-  }
-  return B.call(SYMBOLS.MAYBE_HELPER, callArgs, sourceRange);
+    B.id(ctxName),
+  ], sourceRange);
 }
 
 /**

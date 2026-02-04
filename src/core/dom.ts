@@ -789,8 +789,12 @@ if (!import.meta.env.SSR) {
 export function $_GET_SCOPES(hashOrCtx: Record<string, unknown> | any, ctx?: any) {
   // If context is provided, get scope from ctx[$args].$_scope
   if (ctx) {
-    const scope = ctx[$args]?.$_scope;
-    return scope ? [scope] : [];
+    const scopeValue = ctx[$args]?.[CONSTANTS.SCOPE_KEY];
+    // Support both function-based scope (() => [scope]) and direct scope objects
+    if (typeof scopeValue === 'function') {
+      return scopeValue() || [];
+    }
+    return scopeValue ? [scopeValue] : [];
   }
   // Legacy: get scope from hash getter
   return hashOrCtx[CONSTANTS.SCOPE_KEY]?.() || [];
@@ -806,19 +810,15 @@ export const $_maybeHelper = (
   // - 4 args: _hashOrCtx is hash, _maybeCtx is context (unknown binding with named args)
   // - 3 args with context: _hashOrCtx is context (unknown binding without named args)
   // - 3 args with hash: _hashOrCtx is hash (known binding)
-  // - 2 args: no hash or context (WITH_EVAL_SUPPORT=false, no named args)
-  // When WITH_DYNAMIC_EVAL is false, context detection is skipped (tree-shaken at build time)
-  const isCtxIn3rd = WITH_DYNAMIC_EVAL
-    && !_maybeCtx
+  // - 2 args: no hash or context
+  const isCtxIn3rd = !_maybeCtx
     && _hashOrCtx
     && typeof _hashOrCtx === 'object'
     && (_hashOrCtx.hasOwnProperty('$_eval')
-      || _hashOrCtx.hasOwnProperty('$args')
+      || _hashOrCtx.hasOwnProperty($args)
       || _hashOrCtx[$args] !== undefined);
-  const _ctx = WITH_DYNAMIC_EVAL
-    ? (_maybeCtx ?? (isCtxIn3rd ? _hashOrCtx : undefined))
-    : undefined;
-  // Default _hash to empty object when not provided (WITH_EVAL_SUPPORT=false case)
+  const _ctx = _maybeCtx ?? (isCtxIn3rd ? _hashOrCtx : undefined);
+  // Default _hash to empty object when not provided
   const _hash = _maybeCtx ? _hashOrCtx : (isCtxIn3rd ? {} : (_hashOrCtx ?? {}));
   if (typeof value === 'function') {
     if (value.helperType === 'ember') {

@@ -540,3 +540,167 @@ describe('$_maybeHelper with string value (eval resolution)', () => {
     }
   });
 });
+
+describe('$_maybeHelper with scope resolution via context', () => {
+  test('resolves dashed helper from scope via context (function-valued $_scope)', () => {
+    const prevEval = (globalThis as any).$_eval;
+    try {
+      (globalThis as any).$_eval = undefined;
+      const scope = {
+        'x-borf': (value: string) => value,
+      };
+      // Simulate component with args.$_scope set to a getter function (old pattern)
+      const ctx = {
+        args: {
+          $_scope: () => [scope],
+        },
+      };
+      const result = $_maybeHelper('x-borf', ['YES'], ctx);
+      expect(result).toBe('YES');
+    } finally {
+      (globalThis as any).$_eval = prevEval;
+    }
+  });
+
+  test('resolves dashed helper from scope via context (direct scope object)', () => {
+    const prevEval = (globalThis as any).$_eval;
+    try {
+      (globalThis as any).$_eval = undefined;
+      const scope = {
+        'x-borf': () => 'YES',
+      };
+      // Simulate component with args.$_scope set to direct scope object (new pattern)
+      const ctx = {
+        args: {
+          $_scope: scope,
+        },
+      };
+      const result = $_maybeHelper('x-borf', [], ctx);
+      expect(result).toBe('YES');
+    } finally {
+      (globalThis as any).$_eval = prevEval;
+    }
+  });
+
+  test('returns string when scope does not contain the helper', () => {
+    const prevEval = (globalThis as any).$_eval;
+    try {
+      (globalThis as any).$_eval = undefined;
+      const scope = {
+        'other-helper': () => 'NO',
+      };
+      const ctx = {
+        args: {
+          $_scope: () => [scope],
+        },
+      };
+      const result = $_maybeHelper('x-borf', [], ctx);
+      expect(result).toBe('x-borf');
+    } finally {
+      (globalThis as any).$_eval = prevEval;
+    }
+  });
+
+  test('scope non-function value is returned directly', () => {
+    const prevEval = (globalThis as any).$_eval;
+    try {
+      (globalThis as any).$_eval = undefined;
+      const scope = {
+        'my-value': 42,
+      };
+      const ctx = {
+        args: {
+          $_scope: () => [scope],
+        },
+      };
+      const result = $_maybeHelper('my-value', [], ctx);
+      expect(result).toBe(42);
+    } finally {
+      (globalThis as any).$_eval = prevEval;
+    }
+  });
+
+  test('context with no $_scope returns string as-is', () => {
+    const prevEval = (globalThis as any).$_eval;
+    try {
+      (globalThis as any).$_eval = undefined;
+      const ctx = {
+        args: {},
+      };
+      const result = $_maybeHelper('x-borf', [], ctx);
+      expect(result).toBe('x-borf');
+    } finally {
+      (globalThis as any).$_eval = prevEval;
+    }
+  });
+
+  test('context with hash and named args resolves scope (4-arg form)', () => {
+    const prevEval = (globalThis as any).$_eval;
+    try {
+      (globalThis as any).$_eval = undefined;
+      const scope = {
+        'my-helper': (...args: any[]) => args.join('-'),
+      };
+      const ctx = {
+        args: {
+          $_scope: () => [scope],
+        },
+      };
+      const hash = { format: () => 'short' };
+      const result = $_maybeHelper('my-helper', ['a', 'b'], hash, ctx);
+      expect(result).toBe('a-b');
+    } finally {
+      (globalThis as any).$_eval = prevEval;
+    }
+  });
+});
+
+describe('$_GET_SCOPES', () => {
+  // Import $_GET_SCOPES for direct testing
+  test('returns scopes from hash getter (legacy pattern)', async () => {
+    const { $_GET_SCOPES } = await import('./dom');
+    const scope = { 'x-foo': () => 'bar' };
+    const hash = {
+      $_scope: () => [scope],
+    };
+    const result = $_GET_SCOPES(hash);
+    expect(result).toEqual([scope]);
+  });
+
+  test('returns scopes from context with function-valued $_scope', async () => {
+    const { $_GET_SCOPES } = await import('./dom');
+    const scope = { 'x-foo': () => 'bar' };
+    const ctx = {
+      args: {
+        $_scope: () => [scope],
+      },
+    };
+    const result = $_GET_SCOPES({}, ctx);
+    expect(result).toEqual([scope]);
+  });
+
+  test('returns scopes from context with direct scope object', async () => {
+    const { $_GET_SCOPES } = await import('./dom');
+    const scope = { 'x-foo': () => 'bar' };
+    const ctx = {
+      args: {
+        $_scope: scope,
+      },
+    };
+    const result = $_GET_SCOPES({}, ctx);
+    expect(result).toEqual([scope]);
+  });
+
+  test('returns empty array when context has no $_scope', async () => {
+    const { $_GET_SCOPES } = await import('./dom');
+    const ctx = { args: {} };
+    const result = $_GET_SCOPES({}, ctx);
+    expect(result).toEqual([]);
+  });
+
+  test('returns empty array when hash has no $_scope', async () => {
+    const { $_GET_SCOPES } = await import('./dom');
+    const result = $_GET_SCOPES({});
+    expect(result).toEqual([]);
+  });
+});

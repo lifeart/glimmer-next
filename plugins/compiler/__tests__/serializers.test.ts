@@ -16,7 +16,7 @@ import {
   EVENT_TYPE,
   INTERNAL_HELPERS,
 } from '../serializers';
-import { buildValue } from '../serializers/value';
+import { buildValue, buildPathExpression } from '../serializers/value';
 import { serializeJS } from '../builder';
 import {
   literal,
@@ -761,6 +761,110 @@ describe('buildValue', () => {
 });
 
 // ============================================================================
+// Corner Case Tests: buildPathExpression with optional chaining
+// ============================================================================
+
+describe('buildPathExpression optional chaining rootName extraction', () => {
+  test('known binding with optional chaining in expression is NOT treated as unknown', () => {
+    // When toOptionalChaining converts "myObj.foo.bar" to "myObj?.foo?.bar",
+    // buildPathExpression must still recognize "myObj" as a known binding
+    const ctx = createContext('<div>test</div>', { bindings: new Set(['myObj']) });
+    const value = path('myObj?.foo?.bar');
+    const result = serializeJS(buildPathExpression(ctx, value));
+    // Should NOT use $_maybeHelper - it should be a direct path access
+    expect(result).not.toContain(SYMBOLS.MAYBE_HELPER);
+    expect(result).toContain('myObj');
+  });
+
+  test('unknown binding without optional chaining generates $_maybeHelper', () => {
+    const ctx = createContext('<div>test</div>');
+    // Binding "unknownRef" is NOT in scope
+    const value = path('unknownRef');
+    const result = serializeJS(buildPathExpression(ctx, value));
+    expect(result).toContain(SYMBOLS.MAYBE_HELPER);
+    expect(result).toContain('"unknownRef"');
+  });
+
+  test('known binding with bracket notation is NOT treated as unknown', () => {
+    const ctx = createContext('<div>test</div>', { bindings: new Set(['arr']) });
+    const value = path('arr[0]');
+    const result = serializeJS(buildPathExpression(ctx, value));
+    expect(result).not.toContain(SYMBOLS.MAYBE_HELPER);
+  });
+
+  test('this.property paths are always known', () => {
+    const ctx = createContext('<div>test</div>');
+    const value = path('this.foo?.bar?.baz');
+    const result = serializeJS(buildPathExpression(ctx, value));
+    expect(result).not.toContain(SYMBOLS.MAYBE_HELPER);
+    expect(result).toContain('this');
+  });
+
+  test('@arg paths are always known', () => {
+    const ctx = createContext('<div>test</div>');
+    const value = path('@user?.name', true);
+    const result = serializeJS(buildPathExpression(ctx, value));
+    expect(result).not.toContain(SYMBOLS.MAYBE_HELPER);
+  });
+
+  test('unknown binding with optional chaining passes context', () => {
+    const ctx = createContext('<div>test</div>');
+    const value = path('unknown?.foo?.bar');
+    const result = serializeJS(buildPathExpression(ctx, value));
+    expect(result).toContain(SYMBOLS.MAYBE_HELPER);
+    // Context should be passed for scope resolution
+    expect(result).toMatch(/this\)/);
+  });
+});
+
+describe('buildMaybeHelper always passes context for unknown bindings', () => {
+  test('unknown helper without named args passes context', () => {
+    const ctx = createContext('', {
+      flags: { WITH_HELPER_MANAGER: false },
+    });
+    const result = serializeValue(
+      ctx,
+      helper('unknownHelper', [literal('arg')]),
+      'this'
+    );
+    expect(result).toContain(SYMBOLS.MAYBE_HELPER);
+    // Context always passed as last arg
+    expect(result).toMatch(/,\s*this\)/);
+  });
+
+  test('unknown helper with named args passes context as 4th arg', () => {
+    const ctx = createContext('', {
+      flags: { WITH_HELPER_MANAGER: false },
+    });
+    const named = new Map<string, SerializedValue>([['key', literal('val')]]);
+    const result = serializeValue(
+      ctx,
+      helper('unknownHelper', [literal('arg')], named),
+      'this'
+    );
+    expect(result).toContain(SYMBOLS.MAYBE_HELPER);
+    expect(result).toContain('key:');
+    // Context passed after hash
+    expect(result).toMatch(/\},\s*this\)/);
+  });
+
+  test('known helper with WITH_HELPER_MANAGER uses function ref', () => {
+    const ctx = createContext('', {
+      bindings: new Set(['knownHelper']),
+      flags: { WITH_HELPER_MANAGER: true },
+    });
+    const result = serializeValue(
+      ctx,
+      helper('knownHelper', [literal('arg')]),
+      'this'
+    );
+    expect(result).toContain(SYMBOLS.MAYBE_HELPER);
+    // Known binding should use function ref (identifier), not string
+    expect(result).toContain('knownHelper');
+  });
+});
+
+// ============================================================================
 // Corner Case Tests
 // ============================================================================
 
@@ -1313,7 +1417,7 @@ describe('WITH_HELPER_MANAGER serialization behavior', () => {
     expect(result).not.toContain(SYMBOLS.MAYBE_HELPER);
   });
 
-  test('unknown binding uses maybeHelper with string name (no context by default)', () => {
+  test('unknown binding uses maybeHelper with string name and context', () => {
     const ctx = createContext('', {
       flags: { WITH_HELPER_MANAGER: false },
     });
@@ -1324,22 +1428,7 @@ describe('WITH_HELPER_MANAGER serialization behavior', () => {
     );
     expect(result).toContain(SYMBOLS.MAYBE_HELPER);
     expect(result).toContain('"unknownHelper"');
-    // Without WITH_EVAL_SUPPORT, context is NOT passed (smaller bundle)
-    expect(result).not.toContain(', this)');
-  });
-
-  test('unknown binding passes context when WITH_EVAL_SUPPORT is enabled', () => {
-    const ctx = createContext('', {
-      flags: { WITH_HELPER_MANAGER: false, WITH_EVAL_SUPPORT: true },
-    });
-    const result = serializeValue(
-      ctx,
-      helper('unknownHelper', [literal('arg')]),
-      'this'
-    );
-    expect(result).toContain(SYMBOLS.MAYBE_HELPER);
-    expect(result).toContain('"unknownHelper"');
-    // With WITH_EVAL_SUPPORT, context IS passed for $_eval access
+    // Context is always passed for unknown bindings (for scope resolution)
     expect(result).toMatch(/\$_maybeHelper\([^)]+,\s*this\)/);
   });
 
