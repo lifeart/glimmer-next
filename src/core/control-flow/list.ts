@@ -36,8 +36,9 @@ import { setParentContext } from '../tracking';
 export { getFirstNode };
 
 /*
-  This is a list manager, it's used to render and sync a list of items.
-  It's a proof of concept, it's not optimized, it's not a final API.
+  List manager for rendering and syncing arrays of items.
+  Uses per-item comment markers for stable DOM boundaries,
+  LIS-based move minimization, and DocumentFragment batching.
 
   Based on Glimmer-VM list update logic.
 */
@@ -110,8 +111,8 @@ export function longestIncreasingSubsequence(arr: number[]): Set<number> {
 export class BasicListComponent<T extends { id: number }> {
   keyMap: Map<string, GenericReturnType> = new Map();
   indexMap: Map<string, number> = new Map();
-  // Track reactive index formulas for cleanup (dev mode only)
-  indexFormulaMap: Map<string, MergedCell> = new Map();
+  // Track reactive index formulas for cleanup (dev mode only, lazily initialized)
+  indexFormulaMap: Map<string, MergedCell> | null = null;
   // Track per-item markers for stable relocation boundaries
   itemMarkers: Map<string, Comment> = new Map();
   markerSet: Set<Comment> = new Set();
@@ -126,15 +127,16 @@ export class BasicListComponent<T extends { id: number }> {
   topMarker!: Comment;
   key: string = '@identity';
   tag!: Cell<T[]> | MergedCell;
-  isSync = false;
   isFirstRender = true;
   get ctx() {
     return this;
   }
-  *keyGenerator(items: T[], keyForItem: (item: T, index: number) => string) {
+  protected keysForItems(items: T[], keyForItem: (item: T, index: number) => string): Set<string> {
+    const set = new Set<string>();
     for (let i = 0; i < items.length; i++) {
-      yield keyForItem(items[i], i);
+      set.add(keyForItem(items[i], i));
     }
+    return set;
   }
   // Cached fragment reused across relocateItem calls to avoid allocating new ones
   private _relocateFragment!: DocumentFragment;
@@ -157,7 +159,6 @@ export class BasicListComponent<T extends { id: number }> {
     }
     // @ts-expect-error typings error
     addToTree(ctx, this, 'from list constructor');
-    const mainNode = outlet;
     this[RENDERED_NODES_PROPERTY] = [];
     if (key) {
       this.key = key;
@@ -198,8 +199,8 @@ export class BasicListComponent<T extends { id: number }> {
       this[RENDERED_NODES_PROPERTY] = [topMarker, this.bottomMarker];
     }
 
-    this.api.insert(mainNode, this.topMarker);
-    this.api.insert(mainNode, this.bottomMarker);
+    this.api.insert(outlet, this.topMarker);
+    this.api.insert(outlet, this.bottomMarker);
 
     const originalTag = tag;
 
@@ -263,7 +264,7 @@ export class BasicListComponent<T extends { id: number }> {
       this.api.destroy(marker);
     }
   }
-  setupKeyForItem() {
+  private setupKeyForItem() {
     if (this.key === '@identity') {
       let cnt = 0;
       const map: WeakMap<T, string> = new WeakMap();
@@ -311,7 +312,7 @@ export class BasicListComponent<T extends { id: number }> {
       throw new Error(`Key for item not implemented, ${JSON.stringify(item)}`);
     }
   }
-  getTargetNode(amountOfKeys: number) {
+  private getTargetNode(amountOfKeys: number) {
     if (amountOfKeys > 0) {
       return this.bottomMarker;
     } else {
@@ -319,7 +320,7 @@ export class BasicListComponent<T extends { id: number }> {
       // list fragment marker
       const marker = IS_DEV_MODE
         ? this.api.comment('list fragment target marker')
-        : this.api.comment('');
+        : this.api.comment();
       if (isRehydrationScheduled()) {
         fragment = this.api.parent(marker) as unknown as DocumentFragment;
         // TODO: figure out, likely error here, because we don't append fragment
@@ -340,9 +341,15 @@ export class BasicListComponent<T extends { id: number }> {
       isFirstRender,
       api,
     } = this;
-    const rowsToMove: Array<{ key: string; index: number; isNew: boolean }> = [];
-    // Collect ALL existing items (in new order) for LIS-based move minimization
-    const existingInNewOrder: Array<{ key: string; newIndex: number; oldIndex: number }> = [];
+    // Flat parallel arrays to avoid per-item object allocations
+    const moveKeys: string[] = [];
+    const moveIndices: number[] = [];
+    const moveIsNew: boolean[] = [];
+    // Existing items in new-list order (flat arrays for LIS input)
+    const existKeys: string[] = [];
+    const existNewIdx: number[] = [];
+    const existOldIdx: number[] = [];
+
     const amountOfExistingKeys = amountOfKeys - removedIndexes.length;
     if (removedIndexes.length > 0 && keyMap.size > 0) {
       removedIndexes.sort((a, b) => a - b);
@@ -396,6 +403,7 @@ export class BasicListComponent<T extends { id: number }> {
           }, `each.index[${index}]`);
           idx = indexFormula;
           // Track formula for cleanup when item is destroyed
+          if (!this.indexFormulaMap) this.indexFormulaMap = new Map();
           this.indexFormulaMap.set(key, indexFormula);
         }
 
@@ -415,12 +423,16 @@ export class BasicListComponent<T extends { id: number }> {
             targetNode,
           );
         } else {
-          rowsToMove.push({ key, index, isNew: true });
+          moveKeys.push(key);
+          moveIndices.push(index);
+          moveIsNew.push(true);
         }
       } else {
         seenKeys++;
         const oldIndex = indexMap.get(key)!;
-        existingInNewOrder.push({ key, newIndex: index, oldIndex });
+        existKeys.push(key);
+        existNewIdx.push(index);
+        existOldIdx.push(oldIndex);
         if (oldIndex !== index) {
           indexMap.set(key, index);
         }
@@ -430,56 +442,57 @@ export class BasicListComponent<T extends { id: number }> {
     // Use LIS on ALL existing items' old indices (in new-list order) to find
     // the largest subset already in correct relative order.  Only items
     // outside the LIS need actual DOM relocation.
-    if (existingInNewOrder.length > 1) {
-      const oldIndices = existingInNewOrder.map(e => e.oldIndex);
-      const stable = longestIncreasingSubsequence(oldIndices);
-      for (let i = 0; i < existingInNewOrder.length; i++) {
+    if (existKeys.length > 1) {
+      const stable = longestIncreasingSubsequence(existOldIdx);
+      for (let i = 0; i < existKeys.length; i++) {
         if (!stable.has(i)) {
-          rowsToMove.push({
-            key: existingInNewOrder[i].key,
-            index: existingInNewOrder[i].newIndex,
-            isNew: false,
-          });
+          moveKeys.push(existKeys[i]);
+          moveIndices.push(existNewIdx[i]);
+          moveIsNew.push(false);
         }
       }
-    } else if (existingInNewOrder.length === 1 && existingInNewOrder[0].oldIndex !== existingInNewOrder[0].newIndex) {
+    } else if (existKeys.length === 1 && existOldIdx[0] !== existNewIdx[0]) {
       // Single existing item that changed position
-      rowsToMove.push({
-        key: existingInNewOrder[0].key,
-        index: existingInNewOrder[0].newIndex,
-        isNew: false,
-      });
+      moveKeys.push(existKeys[0]);
+      moveIndices.push(existNewIdx[0]);
+      moveIsNew.push(false);
     }
 
     setParentContext(null);
-    rowsToMove
-      .sort((r1, r2) => {
-        return r2.index - r1.index;
-      })
-      .forEach(({ key, index, isNew }) => {
-        const nextItem = items[index + 1];
-        const insertBeforeNode = nextItem
-          ? this.getItemMarker(keyForItem(nextItem, index + 1)) ?? bottomMarker
-          : bottomMarker;
-        const parent = api.parent(insertBeforeNode)!;
-        const marker = this.getItemMarker(key);
-        if (!marker) {
-          return;
-        }
-        if (isNew) {
-          const row = keyMap.get(key)!;
-          api.insert(parent, marker, insertBeforeNode);
-          renderElement(
-            api,
-            this as unknown as ComponentLike,
-            parent,
-            row,
-            insertBeforeNode,
-          );
-          return;
-        }
-        this.relocateItem(marker, insertBeforeNode);
-      });
+
+    // Build sorted order (descending by index) via an index array — O(n log n)
+    const moveLen = moveKeys.length;
+    const order: number[] = new Array(moveLen);
+    for (let i = 0; i < moveLen; i++) order[i] = i;
+    order.sort((a, b) => moveIndices[b] - moveIndices[a]);
+
+    for (let oi = 0; oi < moveLen; oi++) {
+      const i = order[oi];
+      const key = moveKeys[i];
+      const index = moveIndices[i];
+      const nextItem = items[index + 1];
+      const insertBeforeNode = nextItem
+        ? this.getItemMarker(keyForItem(nextItem, index + 1)) ?? bottomMarker
+        : bottomMarker;
+      const parent = api.parent(insertBeforeNode)!;
+      const marker = this.getItemMarker(key);
+      if (!marker) {
+        continue;
+      }
+      if (moveIsNew[i]) {
+        const row = keyMap.get(key)!;
+        api.insert(parent, marker, insertBeforeNode);
+        renderElement(
+          api,
+          this as unknown as ComponentLike,
+          parent,
+          row,
+          insertBeforeNode,
+        );
+        continue;
+      }
+      this.relocateItem(marker, insertBeforeNode);
+    }
     if (targetNode !== bottomMarker) {
       const parent = api.parent(targetNode)!;
       const trueParent = api.parent(bottomMarker)!;
@@ -535,15 +548,17 @@ export class SyncListComponent<
         destroyElementSync(value as ComponentLike, true, this.api);
       }
       // Clean up all reactive index formulas
-      for (const formula of indexFormulaMap.values()) {
-        formula.destroy();
+      if (indexFormulaMap) {
+        for (const formula of indexFormulaMap.values()) {
+          formula.destroy();
+        }
+        indexFormulaMap.clear();
       }
       this.api.clearChildren(parent);
       this.api.insert(parent, topMarker);
       this.api.insert(parent, bottomMarker);
       keyMap.clear();
       indexMap.clear();
-      indexFormulaMap.clear();
       this.itemMarkers.clear();
       this.markerSet.clear();
       return true;
@@ -563,7 +578,7 @@ export class SyncListComponent<
     const indexesToRemove: number[] = [];
 
     if (amountOfKeys > 0) {
-      const updatingKeys = new Set(this.keyGenerator(items, keyForItem));
+      const updatingKeys = this.keysForItems(items, keyForItem);
       const keysToRemove: string[] = [];
       const rowsToRemove: GenericReturnType[] = [];
 
@@ -596,10 +611,12 @@ export class SyncListComponent<
     this.indexMap.delete(key);
     this.itemMarkers.delete(key);
     // Clean up reactive index formula if it exists
-    const indexFormula = this.indexFormulaMap.get(key);
-    if (indexFormula) {
-      indexFormula.destroy();
-      this.indexFormulaMap.delete(key);
+    if (this.indexFormulaMap) {
+      const indexFormula = this.indexFormulaMap.get(key);
+      if (indexFormula) {
+        indexFormula.destroy();
+        this.indexFormulaMap.delete(key);
+      }
     }
     destroyElementSync(row as ComponentLike, false, this.api);
     if (marker) {
@@ -657,15 +674,17 @@ export class AsyncListComponent<
       await Promise.all(promises);
       promises.length = 0;
       // Clean up all reactive index formulas
-      for (const formula of indexFormulaMap.values()) {
-        formula.destroy();
+      if (indexFormulaMap) {
+        for (const formula of indexFormulaMap.values()) {
+          formula.destroy();
+        }
+        indexFormulaMap.clear();
       }
       this.api.clearChildren(parent);
       this.api.insert(parent, topMarker);
       this.api.insert(parent, bottomMarker);
       keyMap.clear();
       indexMap.clear();
-      indexFormulaMap.clear();
       this.itemMarkers.clear();
       this.markerSet.clear();
       return true;
@@ -688,7 +707,7 @@ export class AsyncListComponent<
       const rowsToRemove: GenericReturnType[] = [];
       const removeQueue: Array<Promise<void>> = [];
 
-      const updatingKeys = new Set(this.keyGenerator(items, keyForItem));
+      const updatingKeys = this.keysForItems(items, keyForItem);
       for (const [key, row] of keyMap.entries()) {
         if (updatingKeys.has(key)) {
           continue;
@@ -728,10 +747,12 @@ export class AsyncListComponent<
     this.indexMap.delete(key);
     this.itemMarkers.delete(key);
     // Clean up reactive index formula if it exists
-    const indexFormula = this.indexFormulaMap.get(key);
-    if (indexFormula) {
-      indexFormula.destroy();
-      this.indexFormulaMap.delete(key);
+    if (this.indexFormulaMap) {
+      const indexFormula = this.indexFormulaMap.get(key);
+      if (indexFormula) {
+        indexFormula.destroy();
+        this.indexFormulaMap.delete(key);
+      }
     }
     await destroyElement(row as ComponentLike, false, this.api);
     if (marker) {
