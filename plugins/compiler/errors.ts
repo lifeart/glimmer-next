@@ -17,6 +17,7 @@ export const ERROR_HINTS: Readonly<Record<string, string>> = {
   'W002': 'Avoid using browser globals (window, document, console) as binding names.',
   'W003': 'Use @identity or a property name for each block keys.',
   'W004': 'Consider using a more descriptive binding name.',
+  'W005': 'Positional parameters are not supported on component block invocations. Use named arguments (@name=value) instead.',
 
   // Errors
   'E001': 'Check template syntax for unclosed tags or invalid expressions.',

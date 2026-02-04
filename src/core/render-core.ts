@@ -210,7 +210,9 @@ export function renderElement(
   }
   if (isTagLike(el)) {
     const node = api.text('');
-    ctx[RENDERED_NODES_PROPERTY].push(node);
+    if (!skipRegistration) {
+      ctx[RENDERED_NODES_PROPERTY].push(node);
+    }
     api.insert(target, node, placeholder);
     registerDestructor(
       ctx,
@@ -225,6 +227,33 @@ export function renderElement(
       renderElement(api, ctx, target, el[i], placeholder, skipRegistration);
     }
   } else {
-    throw new Error(`Unknown rendering path`);
+    // For unknown types, use TRY_CATCH_ERROR_HANDLING to determine behavior
+    if (TRY_CATCH_ERROR_HANDLING) {
+      // In error-handling mode: try graceful conversion, throw only if that fails
+      if (el !== null && el !== undefined) {
+        try {
+          const text = String(el);
+          if (text && text !== '[object Object]') {
+            const textNode = api.text(text);
+            if (!skipRegistration) {
+              ctx[RENDERED_NODES_PROPERTY].push(textNode);
+            }
+            api.insert(target, textNode, placeholder);
+            return;
+          }
+        } catch {
+          // Conversion failed, fall through to error
+        }
+      }
+      // Graceful handling failed - throw in dev mode, skip in prod
+      if (IS_DEV_MODE) {
+        throw new Error(`Unknown rendering path: ${typeof el}`);
+      }
+    } else {
+      // Without error handling: just throw immediately in dev mode
+      if (IS_DEV_MODE) {
+        throw new Error(`Unknown rendering path: ${typeof el}`);
+      }
+    }
   }
 }

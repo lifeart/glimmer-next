@@ -1401,6 +1401,74 @@ describe('Source Map - sourceRange propagation', () => {
     );
     expect(genText).toMatch(/\[.*".*".*\]/);
   });
+
+  test('block-mode component produces ElementNode mapping with valid sourceRange', () => {
+    const template = '{{#MyComponent}}content{{/MyComponent}}';
+    const result = compile(template, { bindings: new Set(['MyComponent']) });
+
+    expect(result.errors).toHaveLength(0);
+
+    const elements = collectNodes(result.mappingTree, 'ElementNode');
+    expect(elements.length).toBeGreaterThanOrEqual(1);
+
+    const node = elements[0];
+    expect(node.sourceRange.start).toBeGreaterThanOrEqual(0);
+    expect(node.sourceRange.end).toBeLessThanOrEqual(template.length);
+    const sourceText = template.substring(node.sourceRange.start, node.sourceRange.end);
+    expect(sourceText).toContain('MyComponent');
+  });
+
+  test('block-mode component with args produces valid mapping nodes', () => {
+    const template = '{{#MyComponent name="val" age="30"}}content{{/MyComponent}}';
+    const result = compile(template, { bindings: new Set(['MyComponent']) });
+
+    expect(result.errors).toHaveLength(0);
+
+    // Args go through component serialization pipeline — verify ElementNode exists
+    const elements = collectNodes(result.mappingTree, 'ElementNode');
+    expect(elements.length).toBeGreaterThanOrEqual(1);
+
+    // StringLiteral nodes should be present for the arg values
+    const literals = collectNodes(result.mappingTree, 'StringLiteral');
+    expect(literals.length).toBeGreaterThanOrEqual(2);
+
+    for (const lit of literals) {
+      expect(lit.sourceRange.start).toBeGreaterThanOrEqual(0);
+      expect(lit.sourceRange.end).toBeLessThanOrEqual(template.length);
+    }
+  });
+
+  test('block-mode component has all mapping nodes within bounds', () => {
+    const template = '{{#MyComponent name="val" as |item|}}{{item.name}}{{/MyComponent}}';
+    const result = compile(template, { bindings: new Set(['MyComponent']) });
+
+    expect(result.errors).toHaveLength(0);
+
+    const allNodes = collectAllNodes(result.mappingTree);
+    for (const node of allNodes) {
+      expect(node.sourceRange.start).toBeGreaterThanOrEqual(0);
+      expect(node.sourceRange.end).toBeLessThanOrEqual(template.length);
+      expect(node.sourceRange.start).toBeLessThanOrEqual(node.sourceRange.end);
+
+      expect(node.generatedRange.start).toBeGreaterThanOrEqual(0);
+      expect(node.generatedRange.end).toBeLessThanOrEqual(result.code.length);
+      expect(node.generatedRange.start).toBeLessThanOrEqual(node.generatedRange.end);
+    }
+  });
+
+  test('block-mode dotted path component produces ElementNode mapping', () => {
+    const template = '{{#this.dynamicComponent as |x|}}{{x}}{{/this.dynamicComponent}}';
+    const result = compile(template);
+
+    expect(result.errors).toHaveLength(0);
+
+    const elements = collectNodes(result.mappingTree, 'ElementNode');
+    expect(elements.length).toBeGreaterThanOrEqual(1);
+
+    const node = elements[0];
+    const sourceText = template.substring(node.sourceRange.start, node.sourceRange.end);
+    expect(sourceText).toContain('this.dynamicComponent');
+  });
 });
 
 describe('code formatting', () => {
@@ -2027,6 +2095,72 @@ describe('Component slots', () => {
       bindings: new Set(['List']),
     });
     expect(result.code).toContain('item');
+  });
+
+  test('block params in default slot are recognized as known bindings', () => {
+    const result = compile('<List as |item|><div>{{item.name}}</div></List>', {
+      bindings: new Set(['List']),
+    });
+    expect(result.code).toContain('item.name');
+    // Block param references must NOT be wrapped in $_maybeHelper
+    expect(result.code).not.toContain('$_maybeHelper');
+  });
+
+  test('multiple block params in default slot are known bindings', () => {
+    const result = compile(
+      '<Table as |row index|><span>{{row.label}}</span><span>{{index}}</span></Table>',
+      { bindings: new Set(['Table']) }
+    );
+    expect(result.code).toContain('row.label');
+    expect(result.code).toContain('index');
+    expect(result.code).not.toContain('$_maybeHelper');
+  });
+
+  test('named slot with block params are known bindings', () => {
+    const result = compile(
+      '<Card><:body as |data|><div>{{data.value}}</div></:body></Card>',
+      { bindings: new Set(['Card']) }
+    );
+    expect(result.code).toContain('data.value');
+    expect(result.code).not.toContain('$_maybeHelper');
+  });
+
+  test('named slot block param with nested component', () => {
+    const result = compile(
+      '<Card><:body as |data|><Child @val={{data.x}} /></:body></Card>',
+      { bindings: new Set(['Card', 'Child']) }
+    );
+    expect(result.code).toContain('data.x');
+    expect(result.code).not.toContain('$_maybeHelper');
+    expect(result.code).toContain(SYMBOLS.COMPONENT);
+  });
+
+  test('block param shadowing outer binding', () => {
+    const result = compile(
+      '<Outer as |item|><Inner as |item|>{{item}}</Inner></Outer>',
+      { bindings: new Set(['Outer', 'Inner']) }
+    );
+    // Inner item shadows outer item — should still compile without error
+    expect(result.code).toContain('item');
+    expect(result.errors).toHaveLength(0);
+  });
+
+  test('block param used in helper', () => {
+    const result = compile(
+      '<List as |item|>{{if item.active "yes" "no"}}</List>',
+      { bindings: new Set(['List']) }
+    );
+    expect(result.code).toContain('item.active');
+    expect(result.code).not.toContain('$_maybeHelper');
+  });
+
+  test('block param used in element attribute', () => {
+    const result = compile(
+      '<List as |item|><div class={{item.class}}>text</div></List>',
+      { bindings: new Set(['List']) }
+    );
+    expect(result.code).toContain('item.class');
+    expect(result.code).not.toContain('$_maybeHelper');
   });
 });
 
@@ -3175,15 +3309,16 @@ describe('WITH_HELPER_MANAGER flag behavior', () => {
     expect(result.code).not.toContain(SYMBOLS.MAYBE_HELPER);
   });
 
-  test('unknown binding with hash args uses maybeHelper with scope key', () => {
+  test('unknown binding with hash args uses maybeHelper with context', () => {
     const template = '{{unknownHelper name="world"}}';
     const result = compile(template);
 
     expect(result.errors).toHaveLength(0);
     expect(result.code).toContain(SYMBOLS.MAYBE_HELPER);
     expect(result.code).toContain('"unknownHelper"');
-    // Should have scope key for runtime resolution
-    expect(result.code).toContain(SYMBOLS.SCOPE_KEY);
+    // Named args are passed in hash, context always passed for scope resolution
+    expect(result.code).toContain('name:');
+    expect(result.code).toMatch(/\$_maybeHelper\([^)]+,\s*\{[^}]*name:[^}]*\},\s*this\)/);
   });
 
   test('builtin helpers are not affected by WITH_HELPER_MANAGER flag', () => {
@@ -3280,6 +3415,22 @@ describe('WITH_HELPER_MANAGER flag behavior', () => {
     expect(positionalResult.code).not.toContain(SYMBOLS.SCOPE_KEY);
     expect(hashResult.code).not.toContain(SYMBOLS.SCOPE_KEY);
   });
+
+  test('WITH_HELPER_MANAGER=true: known uses maybeHelper with ref, unknown passes context', () => {
+    const template = '{{knownHelper arg1}}{{unknownHelper arg2}}';
+    const result = compile(template, {
+      bindings: new Set(['knownHelper']),
+      flags: { WITH_HELPER_MANAGER: true },
+    });
+
+    expect(result.errors).toHaveLength(0);
+    // Known binding should use $_maybeHelper with function reference (not string)
+    // Unknown binding should use $_maybeHelper with string and context
+    expect(result.code).toContain(SYMBOLS.MAYBE_HELPER);
+    // unknownHelper should be passed as a string with context
+    expect(result.code).toContain('"unknownHelper"');
+    expect(result.code).toMatch(/\$_maybeHelper\("unknownHelper",.*?,\s*this\)/);
+  });
 });
 
 describe('Regression: visitSimpleMustache unified behavior', () => {
@@ -3316,13 +3467,15 @@ describe('Regression: visitSimpleMustache unified behavior', () => {
     expect(result.code).toContain('"someUnknown"');
   });
 
-  test('unknown helper with hash args uses maybeHelper with scope', () => {
+  test('unknown helper with hash args uses maybeHelper with context', () => {
     const template = '{{someUnknown key="val"}}';
     const result = compile(template);
 
     expect(result.errors).toHaveLength(0);
     expect(result.code).toContain(SYMBOLS.MAYBE_HELPER);
-    expect(result.code).toContain(SYMBOLS.SCOPE_KEY);
+    // Named args in hash, context always passed for scope resolution
+    expect(result.code).toContain('key:');
+    expect(result.code).toMatch(/\$_maybeHelper\([^)]+,\s*\{[^}]*key:[^}]*\},\s*this\)/);
   });
 
   test('known binding with hash args uses direct call', () => {
@@ -3361,6 +3514,71 @@ describe('Regression: visitSimpleMustache unified behavior', () => {
     expect(result.errors).toHaveLength(0);
     expect(result.code).toContain('this.compute(');
     expect(result.code).not.toContain(SYMBOLS.MAYBE_HELPER);
+  });
+});
+
+describe('Path expression optional chaining with known bindings', () => {
+  test('known binding with dotted path uses direct access, not $_maybeHelper', () => {
+    const template = '{{myObject.foo.bar}}';
+    const result = compile(template, { bindings: new Set(['myObject']) });
+
+    expect(result.errors).toHaveLength(0);
+    // Known binding should use direct optional-chained path, not $_maybeHelper
+    expect(result.code).not.toContain(SYMBOLS.MAYBE_HELPER);
+    expect(result.code).toContain('myObject');
+  });
+
+  test('known binding path uses optional chaining for safety', () => {
+    const template = '{{myObject.foo.bar.baz}}';
+    const result = compile(template, { bindings: new Set(['myObject']) });
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.code).not.toContain(SYMBOLS.MAYBE_HELPER);
+    // Should have optional chaining for deep paths
+    expect(result.code).toContain('?.');
+  });
+
+  test('unknown binding with dotted path uses $_maybeHelper with context', () => {
+    const template = '{{unknownObj.foo.bar}}';
+    const result = compile(template);
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.code).toContain(SYMBOLS.MAYBE_HELPER);
+    // Context should always be passed for unknown bindings
+    expect(result.code).toMatch(/,\s*this\)/);
+  });
+
+  test('unknown dashed helper gets context for scope resolution', () => {
+    const template = '{{x-borf "YES"}}';
+    const result = compile(template);
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.code).toContain(SYMBOLS.MAYBE_HELPER);
+    expect(result.code).toContain('"x-borf"');
+    // Context must be passed so scope resolution works
+    expect(result.code).toMatch(/,\s*this\)/);
+  });
+
+  test('unknown dashed helper without args gets context', () => {
+    const template = '{{x-borf}}';
+    const result = compile(template);
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.code).toContain(SYMBOLS.MAYBE_HELPER);
+    expect(result.code).toContain('"x-borf"');
+    expect(result.code).toMatch(/,\s*this\)/);
+  });
+
+  test('known binding used as helper arg gets direct path, not $_maybeHelper', () => {
+    const template = '{{check myObject.foo.bar.baz}}';
+    const result = compile(template, { bindings: new Set(['check', 'myObject']) });
+
+    expect(result.errors).toHaveLength(0);
+    // check is known so it's a direct call
+    expect(result.code).toContain('check(');
+    // myObject.foo.bar.baz should be a direct path, not wrapped in $_maybeHelper
+    expect(result.code).toContain('myObject');
+    expect(result.code).not.toContain('"myObject');
   });
 });
 
@@ -3425,6 +3643,24 @@ describe('Source map names in mapping tree', () => {
       const names = collectNames(result.mappingTree);
       expect(names).toContain('Outer');
       expect(names).toContain('Inner');
+    });
+
+    test('block-mode component has name in mapping tree', () => {
+      const result = compile('{{#MyComp name="val"}}content{{/MyComp}}', {
+        bindings: new Set(['MyComp']),
+      });
+      expect(result.errors).toHaveLength(0);
+
+      const names = collectNames(result.mappingTree);
+      expect(names).toContain('MyComp');
+    });
+
+    test('block-mode dotted path component has name in mapping tree', () => {
+      const result = compile('{{#this.dynComp as |x|}}{{x}}{{/this.dynComp}}');
+      expect(result.errors).toHaveLength(0);
+
+      const names = collectNames(result.mappingTree);
+      expect(names).toContain('this.dynComp');
     });
   });
 
@@ -3794,5 +4030,81 @@ describe('Source map names in mapping tree', () => {
       expect(names.some(n => n.includes('gxt'))).toBe(true);
       expect(names.some(n => n.includes('vanila'))).toBe(true);
     });
+  });
+});
+
+describe('Block-mode component invocations', () => {
+  test('basic block component with no args and no block params', () => {
+    const result = compile('{{#MyComponent}}content{{/MyComponent}}', {
+      bindings: new Set(['MyComponent']),
+    });
+    expect(result.code).toContain(SYMBOLS.COMPONENT);
+    expect(result.code).toContain('MyComponent');
+    expect(result.errors).toHaveLength(0);
+  });
+
+  test('block component with hash args', () => {
+    const result = compile('{{#MyComponent name="val"}}content{{/MyComponent}}', {
+      bindings: new Set(['MyComponent']),
+    });
+    expect(result.code).toContain(SYMBOLS.COMPONENT);
+    expect(result.code).toContain('name: "val"');
+  });
+
+  test('block component with block params (property access not wrapped in $_maybeHelper)', () => {
+    const result = compile('{{#MyComponent as |item|}}{{item.name}}{{/MyComponent}}', {
+      bindings: new Set(['MyComponent']),
+    });
+    expect(result.code).toContain(SYMBOLS.COMPONENT);
+    expect(result.code).toContain('item.name');
+    // Block param references must NOT be wrapped in $_maybeHelper
+    expect(result.code).not.toContain('$_maybeHelper');
+  });
+
+  test('block component with multiple block params', () => {
+    const result = compile('{{#MyComponent as |a b|}}{{a}} {{b}}{{/MyComponent}}', {
+      bindings: new Set(['MyComponent']),
+    });
+    expect(result.code).toContain(SYMBOLS.COMPONENT);
+    expect(result.code).not.toContain('$_maybeHelper');
+  });
+
+  test('block component with hash args AND block params', () => {
+    const result = compile(
+      '{{#MyComponent name="val" as |item|}}{{item.name}}{{/MyComponent}}',
+      { bindings: new Set(['MyComponent']) }
+    );
+    expect(result.code).toContain(SYMBOLS.COMPONENT);
+    expect(result.code).toContain('name: "val"');
+    expect(result.code).toContain('item.name');
+  });
+
+  test('unknown block name without binding returns null', () => {
+    const result = compile('{{#unknown-thing}}content{{/unknown-thing}}');
+    // Unknown block name with no params and no binding — should be dropped
+    expect(result.code).not.toContain('unknown-thing');
+  });
+
+  test('dotted path component block', () => {
+    const result = compile(
+      '{{#this.dynamicComponent as |x|}}{{x}}{{/this.dynamicComponent}}'
+    );
+    expect(result.code).toContain(SYMBOLS.DYNAMIC_COMPONENT);
+    expect(result.code).not.toContain('$_maybeHelper');
+  });
+
+  test('positional params emit W005 warning', () => {
+    const result = compile(
+      '{{#MyComponent this.foo}}content{{/MyComponent}}',
+      { bindings: new Set(['MyComponent']) }
+    );
+    // Component block should still compile
+    expect(result.code).toContain(SYMBOLS.COMPONENT);
+    // But a warning should be emitted about positional params
+    expect(result.warnings.length).toBeGreaterThanOrEqual(1);
+    const w005 = result.warnings.find((w) => w.code === 'W005');
+    expect(w005).toBeDefined();
+    expect(w005!.message).toContain('Positional parameters');
+    expect(w005!.message).toContain('MyComponent');
   });
 });

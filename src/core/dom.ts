@@ -138,9 +138,29 @@ export function $_unwrapHelperArg(value: unknown): unknown {
 
 /**
  * Component helper - curries a component with pre-bound args.
+ * Handles both class/function components and string component names.
  */
 export function $_componentHelper(params: any[], hash: Record<string, unknown>) {
   const componentFn = $_unwrapHelperArg(params[0]);
+
+  // For string component names, return a special wrapper that will be resolved at render time
+  if (typeof componentFn === 'string') {
+    // Return the string as the component identifier
+    // The component manager will resolve it when $_c is called
+    const wrappedComponent = function wrappedStringComponent(args: Record<string, unknown>) {
+      const keys = Object.keys(hash);
+      for (let i = 0; i < keys.length; i++) {
+        const key = keys[i];
+        args[key] = $_unwrapHelperArg(hash[key]);
+      }
+      // Return the string - the manager will handle resolution
+      // The args are merged so the resolved component gets them
+      return args;
+    };
+    // Mark the wrapper with the string component name for manager resolution
+    (wrappedComponent as any).__stringComponentName = componentFn;
+    return wrappedComponent;
+  }
 
   return function wrappedComponent(args: Record<string, unknown>) {
     const keys = Object.keys(hash);
@@ -644,6 +664,11 @@ export function $_inElement(
         // @ts-expect-error construct signature
         this.debugName = `InElement-${unstableWrapperId++}`;
       }
+      // Propagate $_eval from parent context for deferred rendering
+      if (WITH_DYNAMIC_EVAL) {
+        // @ts-ignore $_eval may exist on ctx
+        if (ctx?.$_eval) { this.$_eval = ctx.$_eval; }
+      }
       let appendRef!: HTMLElement;
       if (isFn(elementRef)) {
         let result = elementRef();
@@ -690,6 +715,12 @@ export function $_ucw(
       if (IS_DEV_MODE) {
         // @ts-expect-error construct signature
         this.debugName = `UnstableChildWrapper-${unstableWrapperId++}`;
+      }
+      // Propagate $_eval from parent context for deferred rendering
+      // This ensures eval-based bindings work inside control flow blocks
+      if (WITH_DYNAMIC_EVAL) {
+        // @ts-ignore $_eval may exist on ctx
+        if (ctx?.$_eval) { this.$_eval = ctx.$_eval; }
       }
       try {
         setParentContext(this);
@@ -755,16 +786,40 @@ if (!import.meta.env.SSR) {
   }
 }
 
-export function $_GET_SCOPES(hash: Record<string, unknown>) {
-  // @ts-expect-error typings
-  return hash[CONSTANTS.SCOPE_KEY]?.() || [];
+export function $_GET_SCOPES(hashOrCtx: Record<string, unknown> | any, ctx?: any) {
+  // If context is provided, get scope from ctx[$args].$_scope
+  if (ctx) {
+    const scopeValue = ctx[$args]?.[CONSTANTS.SCOPE_KEY];
+    // Support both function-based scope (() => [scope]) and direct scope objects
+    if (typeof scopeValue === 'function') {
+      return scopeValue() || [];
+    }
+    return scopeValue ? [scopeValue] : [];
+  }
+  // Legacy: get scope from hash getter
+  return hashOrCtx[CONSTANTS.SCOPE_KEY]?.() || [];
 }
 
 export const $_maybeHelper = (
   value: any,
   args: any[],
-  _hash: Record<string, unknown>,
+  _hashOrCtx?: Record<string, unknown> | any, // Hash object for known bindings, context for unknown, or undefined
+  _maybeCtx?: any, // Optional 4th arg: context when 3rd arg is hash for unknown bindings
 ) => {
+  // Determine context and hash based on arguments:
+  // - 4 args: _hashOrCtx is hash, _maybeCtx is context (unknown binding with named args)
+  // - 3 args with context: _hashOrCtx is context (unknown binding without named args)
+  // - 3 args with hash: _hashOrCtx is hash (known binding)
+  // - 2 args: no hash or context
+  const isCtxIn3rd = !_maybeCtx
+    && _hashOrCtx
+    && typeof _hashOrCtx === 'object'
+    && (_hashOrCtx.hasOwnProperty('$_eval')
+      || _hashOrCtx.hasOwnProperty($args)
+      || _hashOrCtx[$args] !== undefined);
+  const _ctx = _maybeCtx ?? (isCtxIn3rd ? _hashOrCtx : undefined);
+  // Default _hash to empty object when not provided
+  const _hash = _maybeCtx ? _hashOrCtx : (isCtxIn3rd ? {} : (_hashOrCtx ?? {}));
   if (typeof value === 'function') {
     if (value.helperType === 'ember') {
       // @ts-expect-error amount of args
@@ -794,11 +849,40 @@ export const $_maybeHelper = (
   if (typeof value === 'string') {
     // @ts-expect-error amount of args
     const hash = $_args(_hash, false);
-    const scopes = $_GET_SCOPES(hash);
+
+    // Dynamic eval - resolve the value directly (tree-shaken when WITH_DYNAMIC_EVAL=false)
+    if (WITH_DYNAMIC_EVAL) {
+      // The outer getter from compiled code handles reactivity
+      // Check ctx.$_eval first (passed directly, avoids closure overhead)
+      // Then fall back to globalThis.$_eval for initial render
+      // @ts-expect-error $_eval may exist on ctx
+      const evalFn = _ctx?.$_eval ?? globalThis.$_eval;
+      if (typeof evalFn === 'function') {
+        try {
+          const result = evalFn(value);
+          // If result is a function (helper), call it with args
+          return typeof result === 'function'
+            ? result(...$_unwrapArgs(args))
+            : result;
+        } catch (e) {
+          // ReferenceError is expected for undefined variables - suppress silently
+          // Other errors may indicate bugs - warn in dev mode
+          if (IS_DEV_MODE && !(e instanceof ReferenceError)) {
+            console.warn(`[gxt] eval resolution error for "${value}":`, e);
+          }
+          return undefined;
+        }
+      }
+    }
+
+    const scopes = $_GET_SCOPES(hash, _ctx);
     for (let i = 0; i < scopes.length; i++) {
       const scope = scopes[i];
       if (value in scope) {
-        return scope[value](...$_unwrapArgs(args));
+        const scopeVal = scope[value];
+        return typeof scopeVal === 'function'
+          ? scopeVal(...$_unwrapArgs(args))
+          : scopeVal;
       }
     }
   }

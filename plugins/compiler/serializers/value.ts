@@ -53,7 +53,7 @@ export function buildValue(
       return buildLiteral(value.value, value.sourceRange);
 
     case 'path':
-      return buildPathExpression(ctx, value);
+      return buildPathExpression(ctx, value, ctx.flags.IS_GLIMMER_COMPAT_MODE, ctxName);
 
     case 'spread':
       return buildSpread(ctx, value.expression, value.sourceRange);
@@ -93,12 +93,46 @@ function buildLiteral(
 /**
  * Build a path expression.
  * Uses proper JSExpression types instead of $: magic prefix.
+ *
+ * For unknown bindings in IS_GLIMMER_COMPAT_MODE, this generates a
+ * $_maybeHelper call to support dynamic resolution via eval/scope.
  */
 export function buildPathExpression(
   ctx: CompilerContext,
   value: PathValue,
-  wrapInGetter = ctx.flags.IS_GLIMMER_COMPAT_MODE
+  wrapInGetter = ctx.flags.IS_GLIMMER_COMPAT_MODE,
+  ctxName = 'this'
 ): JSExpression {
+  const expression = value.expression;
+
+  // Check if this is a known binding
+  // Known bindings: @args, this.*, or explicitly declared in scopeTracker
+  const rootName = expression.split(/[?.\[]/)[0];
+  const isKnown = value.isArg ||
+    expression.startsWith('this.') ||
+    expression.startsWith('this[') ||
+    expression === 'this' ||
+    ctx.scopeTracker.hasBinding(rootName);
+
+  // For unknown bindings in compat mode, use $_maybeHelper for dynamic resolution
+  // This enables eval/scope-based lookup for unknown references
+  if (!isKnown && ctx.flags.IS_GLIMMER_COMPAT_MODE) {
+    // Build $_maybeHelper("name", [], ctx) or $_maybeHelper("name", [])
+    // Pass ctx only when WITH_EVAL_SUPPORT is enabled (for $_eval access)
+    // This avoids creating closure functions on every reactive update
+    const maybeHelperArgs: JSExpression[] = [
+      B.string(expression, value.sourceRange),
+      B.array([]),
+      B.id(ctxName),
+    ];
+    const maybeHelperCall = B.call(SYMBOLS.MAYBE_HELPER, maybeHelperArgs, value.sourceRange);
+
+    if (wrapInGetter) {
+      return B.reactiveGetter(maybeHelperCall, value.sourceRange);
+    }
+    return maybeHelperCall;
+  }
+
   const pathExpr = buildPathBase(ctx, value);
   if (wrapInGetter && ctx.flags.IS_GLIMMER_COMPAT_MODE) {
     return B.reactiveGetter(pathExpr, value.sourceRange);
@@ -216,7 +250,7 @@ function buildConcat(
   const exprs = parts.map(p => {
     if (p.kind === 'path') {
       // Direct reference for source mapping, no reactive getter wrapping
-      return buildPathExpression(ctx, p, false);
+      return buildPathExpression(ctx, p, false, ctxName);
     }
     return buildValue(ctx, p, ctxName);
   });
@@ -373,24 +407,41 @@ function buildMaybeHelper(
     namedProps.push(B.prop(key, buildValue(ctx, val, ctxName), false, val.sourceRange));
   }
 
-  // Add scope key only for unknown bindings (need runtime resolution)
-  if (!resolvedRef) {
-    const argsAccess = B.computedMember(B.id(ctxName), B.id(SYMBOLS.ARGS_PROPERTY));
-    const scopeAccess = B.optionalMember(argsAccess, SYMBOLS.SCOPE_KEY);
-    const scopeGetter = B.arrow([], scopeAccess);
-    namedProps.push(B.prop(SYMBOLS.SCOPE_KEY, scopeGetter));
-  }
+  // For unknown bindings, context is passed directly as last arg
+  // $_maybeHelper accesses ctx.$_eval and ctx[$args].$_scope directly
+  // This avoids creating closure functions on every reactive update
 
   // For known bindings, pass the function reference; for unknown, pass string name
   const helperRef = resolvedRef
     ? B.id(resolvedRef, nameRange, 'PathExpression', name)
     : B.string(name, nameRange);
-  const namedObj = namedProps.length > 0 ? B.object(namedProps) : B.emptyObject();
 
+  if (resolvedRef) {
+    // Known binding - pass hash with named args
+    const namedObj = namedProps.length > 0 ? B.object(namedProps) : B.emptyObject();
+    return B.call(SYMBOLS.MAYBE_HELPER, [
+      helperRef,
+      B.array(posArgs),
+      namedObj,
+    ], sourceRange);
+  }
+
+  // Unknown binding - always pass context for scope resolution
+  // $_maybeHelper accesses ctx.$_eval and ctx[$args].$_scope directly
+  if (namedProps.length > 0) {
+    // Unknown with named args - pass hash and context (4 args)
+    return B.call(SYMBOLS.MAYBE_HELPER, [
+      helperRef,
+      B.array(posArgs),
+      B.object(namedProps),
+      B.id(ctxName),
+    ], sourceRange);
+  }
+  // Unknown without named args - pass context (3 args)
   return B.call(SYMBOLS.MAYBE_HELPER, [
     helperRef,
     B.array(posArgs),
-    namedObj,
+    B.id(ctxName),
   ], sourceRange);
 }
 
@@ -493,6 +544,19 @@ function buildBuiltInHelper(
     return B.methodCall(callTarget, 'call', callArgs, sourceRange);
   }
 
+  // Special handling for component/helper/modifier helpers
+  // These expect: $_componentHelper([...positional], {...named})
+  // NOT: $_componentHelper(...positional, named)
+  if (
+    symbol === SYMBOLS.COMPONENT_HELPER ||
+    symbol === SYMBOLS.HELPER_HELPER ||
+    symbol === SYMBOLS.MODIFIER_HELPER
+  ) {
+    const posArgs = positional.map(arg => buildValue(ctx, arg, ctxName));
+    const namedObj = buildNamedArgsObject(ctx, named, ctxName);
+    return B.call(helperId, [B.array(posArgs), namedObj], sourceRange);
+  }
+
   return B.call(helperId, args, sourceRange);
 }
 
@@ -538,7 +602,7 @@ function buildDirectCallArgs(
   for (const arg of positional) {
     if (arg.kind === 'path') {
       // For direct calls, pass paths as plain references (no reactive getter)
-      args.push(buildPathExpression(ctx, arg, false));
+      args.push(buildPathExpression(ctx, arg, false, ctxName));
     } else {
       args.push(buildValue(ctx, arg, ctxName));
     }
@@ -619,7 +683,7 @@ function buildFnHelperArgs(
       // First arg is function reference - don't wrap in getter
       // For paths, use raw output instead of reactiveGetter
       if (arg.kind === 'path') {
-        args.push(buildPathExpression(ctx, arg, false));
+        args.push(buildPathExpression(ctx, arg, false, ctxName));
       } else {
         args.push(buildValue(ctx, arg, ctxName));
       }

@@ -115,7 +115,7 @@ plugins/compiler/
 ├── visitors/
 │   ├── index.ts          # visit() dispatcher
 │   ├── element.ts        # Element/component visiting
-│   ├── block.ts          # Block statement visiting (if, each, let)
+│   ├── block.ts          # Block statement visiting (if, each, let, component blocks)
 │   ├── mustache.ts       # Mustache expression visiting
 │   ├── text.ts           # Text node visiting
 │   └── utils.ts          # Path resolution, node ranges
@@ -864,7 +864,50 @@ $_c(List, $_args(
 ), this)
 ```
 
-### 14.5 Yield/Outlet
+### 14.5 Block-Mode Component Invocations
+
+Block-mode component invocations (`{{#Component}}...{{/Component}}`) are converted to
+angle-bracket equivalents at the visitor level, reusing the existing component serialization
+pipeline.
+
+**Detection:** A block statement is a component invocation when:
+- The name is **not** a built-in keyword (`if`, `each`, `unless`, `let`, `in-element`)
+- The name is a known binding **or** contains a dot (path-based component)
+
+**Template:**
+```hbs
+{{#MyComponent name="val" as |item|}}
+  {{item.name}}
+{{/MyComponent}}
+```
+
+**Equivalent angle-bracket form:**
+```hbs
+<MyComponent @name={{val}} as |item|>
+  {{item.name}}
+</MyComponent>
+```
+
+**Output:**
+```javascript
+$_c(MyComponent, $_args(
+  { name: "val" },
+  {
+    default_: true,
+    default: (ctx0, item) => [() => item.name]
+  },
+  $_edp
+), this)
+```
+
+**Notes:**
+- Hash pairs become `@`-prefixed args (e.g., `name="val"` → `@name`)
+- Block params are recognized as known bindings (no `$_maybeHelper` wrapping)
+- Positional params are not supported and emit warning **W005**
+- The `{{else}}` branch is not supported (angle-bracket components have no else block)
+- Dotted paths (e.g., `{{#this.dynamicComponent}}`) produce `$_dc` calls
+
+### 14.6 Yield/Outlet
 
 **Template (inside component):**
 ```hbs

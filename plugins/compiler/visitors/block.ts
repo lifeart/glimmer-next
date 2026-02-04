@@ -6,7 +6,7 @@
 
 import type { ASTv1 } from '@glimmer/syntax';
 import type { CompilerContext, VisitFn } from '../context';
-import type { SerializedValue, HBSControlExpression, HBSChild, SourceRange } from '../types';
+import type { SerializedValue, HBSControlExpression, HBSChild, HBSNode, AttributeTuple, SourceRange } from '../types';
 import { literal, raw, isSerializedValue, isHBSNode, isHBSControlExpression } from '../types';
 import { getNodeRange, serializeValueToString, getBlockParamRanges, getPathExpressionString } from './utils';
 import { addWarning } from '../context';
@@ -56,6 +56,101 @@ function getSerializeChild(ctx: CompilerContext): ((ctx: CompilerContext, child:
 }
 
 /**
+ * Built-in block keywords that should NOT be treated as component invocations.
+ */
+const BUILTIN_BLOCK_KEYWORDS = new Set([
+  'if',
+  'each',
+  'unless',
+  'let',
+  'in-element',
+]);
+
+/**
+ * Check if a block statement is a component invocation.
+ * A block is a component invocation when the name is NOT a built-in keyword
+ * AND is either a known binding or contains a dot (path-based component).
+ */
+function isComponentBlock(ctx: CompilerContext, node: ASTv1.BlockStatement): boolean {
+  if (node.path.type !== 'PathExpression') return false;
+  const name = getPathExpressionString(node.path);
+  if (BUILTIN_BLOCK_KEYWORDS.has(name)) return false;
+  // Known binding or dotted path
+  return ctx.scopeTracker.hasBinding(name) || name.includes('.');
+}
+
+/**
+ * Convert a block-mode component invocation to an HBSNode.
+ * This reuses the existing angle-bracket component serialization pipeline.
+ */
+function convertComponentBlock(
+  ctx: CompilerContext,
+  node: ASTv1.BlockStatement,
+  range?: SourceRange
+): HBSNode {
+  // isComponentBlock already verified node.path.type === 'PathExpression'
+  const pathExpr = node.path as ASTv1.PathExpression;
+  const tag = getPathExpressionString(pathExpr);
+  const tagRange = getNodeRange(pathExpr);
+
+  // Positional params are not supported on component blocks (angle-bracket
+  // components have no positional param syntax). Emit a warning if present.
+  if (node.params.length > 0) {
+    addWarning(
+      ctx,
+      `Positional parameters are not supported on component block "{{#${tag}}}" and will be ignored`,
+      'W005'
+    );
+  }
+
+  // Convert hash pairs to @-prefixed attribute tuples
+  const attributes: AttributeTuple[] = node.hash.pairs.map((pair) => {
+    const value = getVisit(ctx)(ctx, pair.value, false);
+    const serializedValue = value !== null && isSerializedValue(value) ? value : literal(null);
+    return [`@${pair.key}`, serializedValue] as const;
+  });
+
+  // Add block params to scope before visiting children
+  const blockParams = node.program.blockParams;
+  const blockParamRanges = getBlockParamRanges(node);
+  for (const param of blockParams) {
+    warnOnReservedBinding(ctx, param);
+    ctx.scopeTracker.addBinding(param, { kind: 'block-param', name: param });
+  }
+
+  // Note: node.inverse ({{else}} branch) is intentionally not handled here.
+  // Angle-bracket components don't support else blocks.
+
+  // Visit children
+  const children = getVisitChildren(ctx)(ctx, node.program.body);
+
+  // Remove block params from scope
+  for (const param of blockParams) {
+    ctx.scopeTracker.removeBinding(param);
+  }
+
+  // Check for stable children (text or element nodes)
+  const hasStable = children.some(
+    (child) => typeof child === 'string' || isHBSNode(child)
+  );
+
+  return {
+    _nodeType: 'element',
+    tag,
+    attributes,
+    properties: [],
+    events: [],
+    children,
+    blockParams,
+    blockParamRanges: blockParamRanges ?? undefined,
+    selfClosing: false,
+    hasStableChild: hasStable,
+    sourceRange: range,
+    tagRange,
+  };
+}
+
+/**
  * Visit a BlockStatement node.
  *
  * @param ctx - The compiler context
@@ -64,8 +159,13 @@ function getSerializeChild(ctx: CompilerContext): ((ctx: CompilerContext, child:
 export function visitBlock(
   ctx: CompilerContext,
   node: ASTv1.BlockStatement
-): HBSControlExpression | SerializedValue | null {
+): HBSControlExpression | SerializedValue | HBSNode | null {
   const range = getNodeRange(node);
+
+  // Detect component block invocations before checking params
+  if (isComponentBlock(ctx, node)) {
+    return convertComponentBlock(ctx, node, range);
+  }
 
   // Blocks must have at least one param
   if (!node.params.length) {

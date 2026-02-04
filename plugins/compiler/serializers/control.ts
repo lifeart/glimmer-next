@@ -174,7 +174,6 @@ function buildEach(
   // Ensure we have proper block params
   const paramNames = normalizeEachParams(control.blockParams);
   const paramRanges = control.blockParamRanges ?? [];
-  const indexParamName = paramNames[1];
 
   // Validate and normalize key
   const eachKey = normalizeEachKey(ctx, control);
@@ -186,7 +185,8 @@ function buildEach(
   const hasStable = hasStableChildsForControlNode(control.children);
 
   // Build the callback body with index replacement
-  const bodyExpr = buildEachBody(ctx, control.children, newCtxName, indexParamName, hasStable);
+  // Pass all param names so they can be tracked as known bindings during serialization
+  const bodyExpr = buildEachBody(ctx, control.children, newCtxName, paramNames, hasStable);
 
   // Build the full callback: (item, index, ctx) => body
   const callbackParams = [
@@ -262,13 +262,26 @@ function buildEachBody(
   ctx: CompilerContext,
   children: readonly HBSChild[],
   ctxName: string,
-  indexParam: string,
+  paramNames: string[],
   hasStable: boolean
 ): JSExpression {
+  const indexParam = paramNames[1] ?? '$index';
   const usesIndex = childrenUseIndex(children, indexParam);
+
+  // Add block params to scope tracker during serialization
+  // This ensures that references to block params (e.g., `item`) are recognized as known bindings
+  for (const param of paramNames) {
+    ctx.scopeTracker.addBinding(param, { kind: 'block-param', name: param });
+  }
 
   const childCtxName = hasStable ? ctxName : nextCtxName(ctx);
   const childExprs = buildChildrenExprs(ctx, children, childCtxName);
+
+  // Remove block params from scope after serialization
+  for (const param of paramNames) {
+    ctx.scopeTracker.removeBinding(param);
+  }
+
   const rewrittenExprs = usesIndex
     ? childExprs.map((expr) => replaceIndexRefsInExpr(expr, indexParam))
     : childExprs;

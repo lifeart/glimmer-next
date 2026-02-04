@@ -23,6 +23,7 @@ declare global {
   const WITH_MODIFIER_MANAGER: boolean;
   const WITH_EMBER_INTEGRATION: boolean;
   const WITH_CONTEXT_API: boolean;
+  const WITH_DYNAMIC_EVAL: boolean;
 }
 
 declare module 'glint-environment-gxt/globals' {

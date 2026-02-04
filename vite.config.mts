@@ -76,6 +76,9 @@ export default defineConfig(({ mode }) => ({
         }),
     compiler(mode, {
       authorMode: true,
+      flags: {
+        WITH_DYNAMIC_EVAL: true,
+      },
     }),
   ],
   test: {
@@ -107,6 +110,7 @@ export default defineConfig(({ mode }) => ({
           entry: [
             path.join(currentPath, "src", "core", "index.ts"),
             path.join(currentPath, "plugins", "compiler.ts"),
+            path.join(currentPath, "plugins", "runtime-compiler.ts"),
             path.join(
               currentPath,
               "src",

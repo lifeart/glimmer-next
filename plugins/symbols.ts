@@ -44,6 +44,7 @@ export const SYMBOLS = {
 
 export const CONSTANTS = {
   SCOPE_KEY: '$_scope',
+  EVAL_KEY: '$_eval',
 };
 
 export const EVENT_TYPE = {

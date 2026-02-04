@@ -387,3 +387,320 @@ describe('$_modifierHelper()', () => {
     expect(calls[0][1]).toEqual(['getterArg', 'cellArg']);
   });
 });
+
+describe('$_componentHelper with string component names', () => {
+  test('handles string component name', () => {
+    const wrapped = $_componentHelper(['my-component'], { foo: 'bar' });
+
+    // Should return a function
+    expect(typeof wrapped).toBe('function');
+
+    // Should have the string component name marker
+    expect((wrapped as any).__stringComponentName).toBe('my-component');
+  });
+
+  test('string component wrapper merges hash args', () => {
+    const wrapped = $_componentHelper(['string-comp'], { prebound: 'value' });
+
+    // Call with runtime args
+    const args = { runtime: 'arg' };
+    wrapped(args);
+
+    // Hash args should be merged into the args
+    expect(args).toEqual({ runtime: 'arg', prebound: 'value' });
+  });
+
+  test('string component wrapper unwraps hash getters', () => {
+    const wrapped = $_componentHelper(['string-comp'], {
+      fromGetter: () => 'unwrapped',
+      literal: 'direct',
+    });
+
+    const args: Record<string, unknown> = {};
+    wrapped(args);
+
+    expect(args.fromGetter).toBe('unwrapped');
+    expect(args.literal).toBe('direct');
+  });
+});
+
+describe('$_maybeHelper with string value (eval resolution)', () => {
+  test('resolves string value via globalThis.$_eval', () => {
+    const prevEval = (globalThis as any).$_eval;
+    try {
+      (globalThis as any).$_eval = (name: string) => {
+        if (name === 'greeting') return 'Hello!';
+        throw new ReferenceError(`${name} is not defined`);
+      };
+      const result = $_maybeHelper('greeting', []);
+      expect(result).toBe('Hello!');
+    } finally {
+      (globalThis as any).$_eval = prevEval;
+    }
+  });
+
+  test('resolves string value via context.$_eval (3-arg form)', () => {
+    const ctx = {
+      $_eval: (name: string) => {
+        if (name === 'myVar') return 42;
+        throw new ReferenceError(`${name} is not defined`);
+      },
+      $args: {},
+    };
+    const result = $_maybeHelper('myVar', [], ctx);
+    expect(result).toBe(42);
+  });
+
+  test('resolves string value via context.$_eval (4-arg form with hash)', () => {
+    const ctx = {
+      $_eval: (name: string) => {
+        if (name === 'helper') return 'resolved';
+        throw new ReferenceError(`${name} is not defined`);
+      },
+      $args: {},
+    };
+    const hash = { format: () => 'short' };
+    const result = $_maybeHelper('helper', [], hash, ctx);
+    expect(result).toBe('resolved');
+  });
+
+  test('calls resolved function with unwrapped args when eval returns function', () => {
+    const mockFn = vi.fn((...args: any[]) => args.join('-'));
+    const ctx = {
+      $_eval: (name: string) => {
+        if (name === 'myHelper') return mockFn;
+        throw new ReferenceError(`${name} is not defined`);
+      },
+      $args: {},
+    };
+    const result = $_maybeHelper('myHelper', ['a', 'b'], ctx);
+    expect(mockFn).toHaveBeenCalled();
+    expect(result).toBe('a-b');
+  });
+
+  test('returns undefined when eval throws', () => {
+    const ctx = {
+      $_eval: () => {
+        throw new ReferenceError('not defined');
+      },
+      $args: {},
+    };
+    const result = $_maybeHelper('missing', [], ctx);
+    expect(result).toBeUndefined();
+  });
+
+  test('returns string value as-is when no eval is available (2-arg form)', () => {
+    const prevEval = (globalThis as any).$_eval;
+    try {
+      (globalThis as any).$_eval = undefined;
+      const result = $_maybeHelper('unknownBinding', []);
+      expect(result).toBe('unknownBinding');
+    } finally {
+      (globalThis as any).$_eval = prevEval;
+    }
+  });
+
+  test('context.$_eval takes precedence over globalThis.$_eval', () => {
+    const prevEval = (globalThis as any).$_eval;
+    try {
+      (globalThis as any).$_eval = () => 'global';
+      const ctx = {
+        $_eval: () => 'context',
+        $args: {},
+      };
+      const result = $_maybeHelper('anyVar', [], ctx);
+      expect(result).toBe('context');
+    } finally {
+      (globalThis as any).$_eval = prevEval;
+    }
+  });
+
+  test('distinguishes hash from context in 3rd argument', () => {
+    // A plain hash object should NOT be treated as context
+    const hash = { format: () => 'short', style: () => 'bold' };
+    const prevEval = (globalThis as any).$_eval;
+    try {
+      (globalThis as any).$_eval = undefined;
+      // With a plain hash (no $_eval or $args), should return string as-is
+      const result = $_maybeHelper('binding', [], hash);
+      expect(result).toBe('binding');
+    } finally {
+      (globalThis as any).$_eval = prevEval;
+    }
+  });
+
+  test('2-arg form returns string when no eval anywhere', () => {
+    const prevEval = (globalThis as any).$_eval;
+    try {
+      delete (globalThis as any).$_eval;
+      const result = $_maybeHelper('myBinding', []);
+      expect(result).toBe('myBinding');
+    } finally {
+      (globalThis as any).$_eval = prevEval;
+    }
+  });
+});
+
+describe('$_maybeHelper with scope resolution via context', () => {
+  test('resolves dashed helper from scope via context (function-valued $_scope)', () => {
+    const prevEval = (globalThis as any).$_eval;
+    try {
+      (globalThis as any).$_eval = undefined;
+      const scope = {
+        'x-borf': (value: string) => value,
+      };
+      // Simulate component with args.$_scope set to a getter function (old pattern)
+      const ctx = {
+        args: {
+          $_scope: () => [scope],
+        },
+      };
+      const result = $_maybeHelper('x-borf', ['YES'], ctx);
+      expect(result).toBe('YES');
+    } finally {
+      (globalThis as any).$_eval = prevEval;
+    }
+  });
+
+  test('resolves dashed helper from scope via context (direct scope object)', () => {
+    const prevEval = (globalThis as any).$_eval;
+    try {
+      (globalThis as any).$_eval = undefined;
+      const scope = {
+        'x-borf': () => 'YES',
+      };
+      // Simulate component with args.$_scope set to direct scope object (new pattern)
+      const ctx = {
+        args: {
+          $_scope: scope,
+        },
+      };
+      const result = $_maybeHelper('x-borf', [], ctx);
+      expect(result).toBe('YES');
+    } finally {
+      (globalThis as any).$_eval = prevEval;
+    }
+  });
+
+  test('returns string when scope does not contain the helper', () => {
+    const prevEval = (globalThis as any).$_eval;
+    try {
+      (globalThis as any).$_eval = undefined;
+      const scope = {
+        'other-helper': () => 'NO',
+      };
+      const ctx = {
+        args: {
+          $_scope: () => [scope],
+        },
+      };
+      const result = $_maybeHelper('x-borf', [], ctx);
+      expect(result).toBe('x-borf');
+    } finally {
+      (globalThis as any).$_eval = prevEval;
+    }
+  });
+
+  test('scope non-function value is returned directly', () => {
+    const prevEval = (globalThis as any).$_eval;
+    try {
+      (globalThis as any).$_eval = undefined;
+      const scope = {
+        'my-value': 42,
+      };
+      const ctx = {
+        args: {
+          $_scope: () => [scope],
+        },
+      };
+      const result = $_maybeHelper('my-value', [], ctx);
+      expect(result).toBe(42);
+    } finally {
+      (globalThis as any).$_eval = prevEval;
+    }
+  });
+
+  test('context with no $_scope returns string as-is', () => {
+    const prevEval = (globalThis as any).$_eval;
+    try {
+      (globalThis as any).$_eval = undefined;
+      const ctx = {
+        args: {},
+      };
+      const result = $_maybeHelper('x-borf', [], ctx);
+      expect(result).toBe('x-borf');
+    } finally {
+      (globalThis as any).$_eval = prevEval;
+    }
+  });
+
+  test('context with hash and named args resolves scope (4-arg form)', () => {
+    const prevEval = (globalThis as any).$_eval;
+    try {
+      (globalThis as any).$_eval = undefined;
+      const scope = {
+        'my-helper': (...args: any[]) => args.join('-'),
+      };
+      const ctx = {
+        args: {
+          $_scope: () => [scope],
+        },
+      };
+      const hash = { format: () => 'short' };
+      const result = $_maybeHelper('my-helper', ['a', 'b'], hash, ctx);
+      expect(result).toBe('a-b');
+    } finally {
+      (globalThis as any).$_eval = prevEval;
+    }
+  });
+});
+
+describe('$_GET_SCOPES', () => {
+  // Import $_GET_SCOPES for direct testing
+  test('returns scopes from hash getter (legacy pattern)', async () => {
+    const { $_GET_SCOPES } = await import('./dom');
+    const scope = { 'x-foo': () => 'bar' };
+    const hash = {
+      $_scope: () => [scope],
+    };
+    const result = $_GET_SCOPES(hash);
+    expect(result).toEqual([scope]);
+  });
+
+  test('returns scopes from context with function-valued $_scope', async () => {
+    const { $_GET_SCOPES } = await import('./dom');
+    const scope = { 'x-foo': () => 'bar' };
+    const ctx = {
+      args: {
+        $_scope: () => [scope],
+      },
+    };
+    const result = $_GET_SCOPES({}, ctx);
+    expect(result).toEqual([scope]);
+  });
+
+  test('returns scopes from context with direct scope object', async () => {
+    const { $_GET_SCOPES } = await import('./dom');
+    const scope = { 'x-foo': () => 'bar' };
+    const ctx = {
+      args: {
+        $_scope: scope,
+      },
+    };
+    const result = $_GET_SCOPES({}, ctx);
+    expect(result).toEqual([scope]);
+  });
+
+  test('returns empty array when context has no $_scope', async () => {
+    const { $_GET_SCOPES } = await import('./dom');
+    const ctx = { args: {} };
+    const result = $_GET_SCOPES({}, ctx);
+    expect(result).toEqual([]);
+  });
+
+  test('returns empty array when hash has no $_scope', async () => {
+    const { $_GET_SCOPES } = await import('./dom');
+    const result = $_GET_SCOPES({});
+    expect(result).toEqual([]);
+  });
+});
