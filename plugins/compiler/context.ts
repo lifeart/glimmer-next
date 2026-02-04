@@ -18,6 +18,7 @@ import type {
   HBSChild,
   HBSNode,
   HBSControlExpression,
+  TypeHints,
 } from './types';
 import { createFlags, DEFAULT_FLAGS, DEFAULT_FORMAT_OPTIONS } from './types';
 import { ScopeTracker, createScopeTracker } from './tracking/scope-tracker';
@@ -232,6 +233,9 @@ export interface CompilerContext {
   
   /** CALLBACK to determine lexical scope */
   readonly lexicalScope?: (variable: string) => boolean;
+
+  /** Type hints for type-directed optimization (from CompileOptions) */
+  readonly typeHints?: TypeHints;
 }
 
 /**
@@ -294,6 +298,7 @@ export function createContext(
     },
     customizeComponentName: options.customizeComponentName,
     lexicalScope: options.lexicalScope,
+    typeHints: options.typeHints,
   };
 }
 

@@ -293,11 +293,13 @@ function processTransformedFiles(
       lexicalScope: content.lexicalScope,
       flags: {
         IS_GLIMMER_COMPAT_MODE: globalFlags.IS_GLIMMER_COMPAT_MODE ?? true,
+        WITH_TYPE_OPTIMIZATION: !!content.typeHints,
       },
       format: format ? { enabled: true, baseIndent: '      ' } : false,
       diagnostics: {
         baseOffset: content.loc?.start.offset,
       },
+      typeHints: content.typeHints,
     });
 
     // Throw on compiler errors
