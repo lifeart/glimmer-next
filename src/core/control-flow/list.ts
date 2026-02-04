@@ -232,9 +232,7 @@ export class BasicListComponent<T extends { id: number }> {
     }
     this.tag = tag;
   }
-  private relocateItem(marker: Comment, anchor: Node) {
-    const parent = this.api.parent(anchor);
-    if (!parent) return;
+  private relocateItem(marker: Comment, anchor: Node, parent: Node) {
     const { markerSet, bottomMarker, _relocateFragment: fragment } = this;
     // Find end boundary: next item marker or bottomMarker
     let end: Node = bottomMarker;
@@ -373,12 +371,13 @@ export class BasicListComponent<T extends { id: number }> {
       }
     }
 
+    const self = this as unknown as ComponentLike;
     let targetNode = items.length
       ? this.getTargetNode(amountOfExistingKeys)
       : bottomMarker;
     let seenKeys = 0;
     let isAppendOnly = isFirstRender;
-    setParentContext(this as unknown as ComponentLike);
+    setParentContext(self);
     for (let index = 0; index < items.length; index++) {
       const item = items[index];
       if (seenKeys === amountOfExistingKeys) {
@@ -422,7 +421,7 @@ export class BasicListComponent<T extends { id: number }> {
           this.indexFormulaMap.set(key, indexFormula);
         }
 
-        const row = ItemComponent(item, idx, this as unknown as Component<any>);
+        const row = ItemComponent(item, idx, self as unknown as Component<any>);
 
         keyMap.set(key, row);
         indexMap.set(key, index);
@@ -432,7 +431,7 @@ export class BasicListComponent<T extends { id: number }> {
           api.insert(parent, marker, targetNode);
           renderElement(
             api,
-            this as unknown as ComponentLike,
+            self,
             parent,
             row,
             targetNode,
@@ -476,63 +475,64 @@ export class BasicListComponent<T extends { id: number }> {
     setParentContext(null);
 
     const moveLen = moveKeys.length;
-    if (moveLen === 1) {
-      // Single move — skip sort overhead
-      const key = moveKeys[0];
-      const idx = moveIndices[0];
-      const nextItem = items[idx + 1];
-      const insertBeforeNode = nextItem
-        ? itemMarkers.get(keyForItem(nextItem, idx + 1)) ?? bottomMarker
-        : bottomMarker;
-      const parent = api.parent(insertBeforeNode)!;
-      const marker = itemMarkers.get(key);
-      if (marker) {
-        if (moveIsNew[0]) {
-          const row = keyMap.get(key)!;
-          api.insert(parent, marker, insertBeforeNode);
-          renderElement(
-            api,
-            this as unknown as ComponentLike,
-            parent,
-            row,
-            insertBeforeNode,
-          );
-        } else {
-          this.relocateItem(marker, insertBeforeNode);
-        }
-      }
-    } else if (moveLen > 1) {
-      // Build sorted order (descending by index) via an index array
-      order.length = moveLen;
-      for (let i = 0; i < moveLen; i++) order[i] = i;
-      order.sort((a, b) => moveIndices[b] - moveIndices[a]);
-
-      for (let oi = 0; oi < moveLen; oi++) {
-        const i = order[oi];
-        const key = moveKeys[i];
-        const idx = moveIndices[i];
+    if (moveLen > 0) {
+      const moveParent = api.parent(bottomMarker)!;
+      if (moveLen === 1) {
+        // Single move — skip sort overhead
+        const key = moveKeys[0];
+        const idx = moveIndices[0];
         const nextItem = items[idx + 1];
         const insertBeforeNode = nextItem
           ? itemMarkers.get(keyForItem(nextItem, idx + 1)) ?? bottomMarker
           : bottomMarker;
-        const parent = api.parent(insertBeforeNode)!;
         const marker = itemMarkers.get(key);
-        if (!marker) {
-          continue;
+        if (marker) {
+          if (moveIsNew[0]) {
+            const row = keyMap.get(key)!;
+            api.insert(moveParent, marker, insertBeforeNode);
+            renderElement(
+              api,
+              self,
+              moveParent,
+              row,
+              insertBeforeNode,
+            );
+          } else {
+            this.relocateItem(marker, insertBeforeNode, moveParent);
+          }
         }
-        if (moveIsNew[i]) {
-          const row = keyMap.get(key)!;
-          api.insert(parent, marker, insertBeforeNode);
-          renderElement(
-            api,
-            this as unknown as ComponentLike,
-            parent,
-            row,
-            insertBeforeNode,
-          );
-          continue;
+      } else {
+        // Build sorted order (descending by index) via an index array
+        order.length = moveLen;
+        for (let i = 0; i < moveLen; i++) order[i] = i;
+        order.sort((a, b) => moveIndices[b] - moveIndices[a]);
+
+        for (let oi = 0; oi < moveLen; oi++) {
+          const i = order[oi];
+          const key = moveKeys[i];
+          const idx = moveIndices[i];
+          const nextItem = items[idx + 1];
+          const insertBeforeNode = nextItem
+            ? itemMarkers.get(keyForItem(nextItem, idx + 1)) ?? bottomMarker
+            : bottomMarker;
+          const marker = itemMarkers.get(key);
+          if (!marker) {
+            continue;
+          }
+          if (moveIsNew[i]) {
+            const row = keyMap.get(key)!;
+            api.insert(moveParent, marker, insertBeforeNode);
+            renderElement(
+              api,
+              self,
+              moveParent,
+              row,
+              insertBeforeNode,
+            );
+            continue;
+          }
+          this.relocateItem(marker, insertBeforeNode, moveParent);
         }
-        this.relocateItem(marker, insertBeforeNode);
       }
     }
     if (targetNode !== bottomMarker) {
