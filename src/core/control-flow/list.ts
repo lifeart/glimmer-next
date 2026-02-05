@@ -477,60 +477,29 @@ export class BasicListComponent<T extends { id: number }> {
     const moveLen = moveKeys.length;
     if (moveLen > 0) {
       const moveParent = api.parent(bottomMarker)!;
-      if (moveLen === 1) {
-        // Single move — skip sort overhead
-        const key = moveKeys[0];
-        const idx = moveIndices[0];
+      // Sort descending by index when multiple moves; skip for single move
+      if (moveLen > 1) {
+        order.length = moveLen;
+        for (let i = 0; i < moveLen; i++) order[i] = i;
+        order.sort((a, b) => moveIndices[b] - moveIndices[a]);
+      }
+
+      for (let oi = 0; oi < moveLen; oi++) {
+        const i = moveLen === 1 ? 0 : order[oi];
+        const key = moveKeys[i];
+        const marker = itemMarkers.get(key);
+        if (!marker) continue;
+
+        const idx = moveIndices[i];
         const nextItem = items[idx + 1];
         const insertBeforeNode = nextItem
           ? itemMarkers.get(keyForItem(nextItem, idx + 1)) ?? bottomMarker
           : bottomMarker;
-        const marker = itemMarkers.get(key);
-        if (marker) {
-          if (moveIsNew[0]) {
-            const row = keyMap.get(key)!;
-            api.insert(moveParent, marker, insertBeforeNode);
-            renderElement(
-              api,
-              self,
-              moveParent,
-              row,
-              insertBeforeNode,
-            );
-          } else {
-            this.relocateItem(marker, insertBeforeNode, moveParent);
-          }
-        }
-      } else {
-        // Build sorted order (descending by index) via an index array
-        order.length = moveLen;
-        for (let i = 0; i < moveLen; i++) order[i] = i;
-        order.sort((a, b) => moveIndices[b] - moveIndices[a]);
 
-        for (let oi = 0; oi < moveLen; oi++) {
-          const i = order[oi];
-          const key = moveKeys[i];
-          const idx = moveIndices[i];
-          const nextItem = items[idx + 1];
-          const insertBeforeNode = nextItem
-            ? itemMarkers.get(keyForItem(nextItem, idx + 1)) ?? bottomMarker
-            : bottomMarker;
-          const marker = itemMarkers.get(key);
-          if (!marker) {
-            continue;
-          }
-          if (moveIsNew[i]) {
-            const row = keyMap.get(key)!;
-            api.insert(moveParent, marker, insertBeforeNode);
-            renderElement(
-              api,
-              self,
-              moveParent,
-              row,
-              insertBeforeNode,
-            );
-            continue;
-          }
+        if (moveIsNew[i]) {
+          api.insert(moveParent, marker, insertBeforeNode);
+          renderElement(api, self, moveParent, keyMap.get(key)!, insertBeforeNode);
+        } else {
           this.relocateItem(marker, insertBeforeNode, moveParent);
         }
       }
