@@ -55,37 +55,40 @@ type ListComponentArgs<T> = {
 };
 type RenderTarget = HTMLElement | DocumentFragment;
 
-// Helper function for binary search
+// Binary search helper for index adjustment after removals
 function countLessThan(arr: number[], target: number) {
   let low = 0,
     high = arr.length;
   while (low < high) {
     const mid = (low + high) >> 1;
-    if (arr[mid] < target) {
-      low = mid + 1;
-    } else {
-      high = mid;
-    }
+    if (arr[mid] < target) low = mid + 1;
+    else high = mid;
   }
   return low;
 }
 
+// Reusable arrays for LIS algorithm — avoids allocations on each update
+const _lisTails: number[] = [];
+const _lisTailIdx: number[] = [];
+const _lisPred: number[] = [];
+
 /**
  * Compute positions in `arr` that form the Longest Increasing Subsequence.
  * Items at these positions are already in correct relative order and don't
- * need to be relocated.  O(n log n) time, O(n) space.
+ * need to be relocated.  O(n log n) time, O(n) space (reused).
  */
 export function longestIncreasingSubsequence(arr: number[], out?: Set<number>): Set<number> {
   const n = arr.length;
   const result = out ?? new Set<number>();
   if (out) out.clear();
   if (n === 0) return result;
-  // tails[i] = smallest tail value for an increasing subsequence of length i+1
-  const tails: number[] = [];
-  // tailIdx[i] = index in arr where tails[i] was found
-  const tailIdx: number[] = [];
-  // pred[i] = index in arr of the predecessor of arr[i] in the IS
-  const pred: number[] = new Array(n);
+
+  const tails = _lisTails;
+  const tailIdx = _lisTailIdx;
+  const pred = _lisPred;
+  tails.length = 0;
+  tailIdx.length = 0;
+  pred.length = n;
 
   for (let i = 0; i < n; i++) {
     let lo = 0,
@@ -125,6 +128,7 @@ export class BasicListComponent<T extends { id: number }> {
   private _existNewIdx: number[] = [];
   private _existOldIdx: number[] = [];
   private _order: number[] = [];
+  private _itemKeys: string[] = []; // cached keys for current update
   private _lisResult: Set<number> = new Set();
   private _updatingKeys: Set<string> = new Set();
   protected _keysToRemove: string[] = [];
@@ -351,6 +355,7 @@ export class BasicListComponent<T extends { id: number }> {
       _existOldIdx: existOldIdx,
       _lisResult: lisResult,
       _order: order,
+      _itemKeys: itemKeys,
     } = this;
     moveKeys.length = 0;
     moveIndices.length = 0;
@@ -358,6 +363,7 @@ export class BasicListComponent<T extends { id: number }> {
     existKeys.length = 0;
     existNewIdx.length = 0;
     existOldIdx.length = 0;
+    itemKeys.length = items.length;
 
     const amountOfExistingKeys = amountOfKeys - removedIndexes.length;
     if (removedIndexes.length > 0 && keyMap.size > 0) {
@@ -389,6 +395,7 @@ export class BasicListComponent<T extends { id: number }> {
       }
 
       const key = keyForItem(item, index);
+      itemKeys[index] = key;
       if (!keyMap.has(key)) {
         let marker = itemMarkers.get(key);
         if (!marker) {
@@ -491,9 +498,9 @@ export class BasicListComponent<T extends { id: number }> {
         if (!marker) continue;
 
         const idx = moveIndices[i];
-        const nextItem = items[idx + 1];
-        const insertBeforeNode = nextItem
-          ? itemMarkers.get(keyForItem(nextItem, idx + 1)) ?? bottomMarker
+        const nextKey = itemKeys[idx + 1];
+        const insertBeforeNode = nextKey
+          ? itemMarkers.get(nextKey) ?? bottomMarker
           : bottomMarker;
 
         if (moveIsNew[i]) {
