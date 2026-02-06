@@ -37,6 +37,7 @@ import { opcodeFor } from '@/core/vm';
 import {
   SyncListComponent,
   AsyncListComponent,
+  type InverseFn,
 } from '@/core/control-flow/list';
 import {
   DestructorFn,
@@ -273,10 +274,11 @@ function $prop(
     let prevPropValue: any = undefined;
     destructors.push(
       opcodeFor(result as AnyCell, (resolvedValue) => {
-        if (resolvedValue === prevPropValue) {
+        const val = resolvedValue === null ? '' : resolvedValue;
+        if (val === prevPropValue) {
           return;
         }
-        prevPropValue = api.prop(element, key, resolvedValue);
+        prevPropValue = api.prop(element, key, val);
       }),
     );
   } else {
@@ -363,10 +365,8 @@ function $attr(
   if (isReactive) {
     destructors.push(
       opcodeFor(result as AnyCell, (resolvedValue) => {
-        if (!isEmpty(resolvedValue)) {
-          // @ts-expect-error type casting
-          api.attr(element, key, resolvedValue);
-        }
+        // @ts-expect-error type casting
+        api.attr(element, key, resolvedValue);
       }),
     );
   } else {
@@ -397,7 +397,7 @@ function $ev(
     } else {
       destructors.push(
         opcodeFor(result as AnyCell, (value) => {
-          api.textContent(element, String(value));
+          api.textContent(element, String(value ?? ''));
         }),
       );
     }
@@ -1213,6 +1213,7 @@ export function $_eachSync<T extends { id: number }>(
   fn: (item: T) => Array<ComponentReturnType | Node>,
   key: string | null = null,
   ctx: Component<any>,
+  inverseFn?: InverseFn,
 ) {
   const api = initDOM(ctx);
   const { outlet, placeholder } = getRenderTargets(
@@ -1225,6 +1226,7 @@ export function $_eachSync<T extends { id: number }>(
       ItemComponent: fn,
       ctx,
       key,
+      inverseFn,
     },
     // @ts-expect-error outlet
     outlet,
@@ -1239,6 +1241,7 @@ export function $_each<T extends { id: number }>(
   fn: (item: T) => Array<ComponentReturnType | Node>,
   key: string | null = null,
   ctx: Component<any>,
+  inverseFn?: InverseFn,
 ) {
   const api = initDOM(ctx);
   const { outlet, placeholder } = getRenderTargets(
@@ -1251,6 +1254,7 @@ export function $_each<T extends { id: number }>(
       ItemComponent: fn,
       key,
       ctx,
+      inverseFn,
     },
     // @ts-expect-error outlet
     outlet,

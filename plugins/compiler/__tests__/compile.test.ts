@@ -156,6 +156,19 @@ describe('compile()', () => {
       expect(result.code).toContain('"@identity"');
     });
 
+    test('each-else passes inverseFn as 5th argument to $_each', () => {
+      const withElse = compile('{{#each this.items as |item|}}<div>{{item}}</div>{{else}}<span>empty</span>{{/each}}');
+      const withoutElse = compile('{{#each this.items as |item|}}<div>{{item}}</div>{{/each}}');
+      // Should use $_each, not $_if wrapping
+      expect(withElse.code).toContain(SYMBOLS.EACH);
+      expect(withElse.code).not.toContain(SYMBOLS.IF);
+      // inverseFn contains the else content
+      expect(withElse.code).toContain('"empty"');
+      // Without else: no inverse content, shorter code
+      expect(withoutElse.code).not.toContain('"empty"');
+      expect(withElse.code.length).toBeGreaterThan(withoutElse.code.length);
+    });
+
     test('compiles sync each block', () => {
       const result = compile('{{#each this.items sync=true as |item|}}{{item}}{{/each}}');
       expect(result.code).toContain(SYMBOLS.EACH_SYNC);

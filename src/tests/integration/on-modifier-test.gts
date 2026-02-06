@@ -40,13 +40,13 @@ module('Integration | Modifier | on', function () {
     };
     await render(
       <template>
-        <input data-test-input {{on 'focus' handleFocus}} />
+        <button data-test-focus {{on 'focus' handleFocus}}>focusable</button>
       </template>,
     );
     assert.false(focused, 'not focused yet');
 
-    const input = find<HTMLInputElement>('[data-test-input]');
-    input.dispatchEvent(new FocusEvent('focus'));
+    const el = find('[data-test-focus]');
+    el.dispatchEvent(new FocusEvent('focus'));
     assert.true(focused, 'focus handler fired');
   });
 
