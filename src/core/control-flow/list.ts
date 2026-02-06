@@ -36,8 +36,9 @@ import { setParentContext } from '../tracking';
 export { getFirstNode };
 
 /*
-  This is a list manager, it's used to render and sync a list of items.
-  It's a proof of concept, it's not optimized, it's not a final API.
+  List manager for rendering and syncing arrays of items.
+  Uses per-item comment markers for stable DOM boundaries,
+  LIS-based move minimization, and DocumentFragment batching.
 
   Based on Glimmer-VM list update logic.
 */
@@ -54,27 +55,70 @@ type ListComponentArgs<T> = {
 };
 type RenderTarget = HTMLElement | DocumentFragment;
 
-// Helper function for binary search
-function countLessThan(arr: number[], target: number) {
-  let low = 0,
-    high = arr.length;
-  while (low < high) {
-    const mid = (low + high) >> 1;
-    if (arr[mid] < target) {
-      low = mid + 1;
-    } else {
-      high = mid;
+// Reusable arrays for LIS algorithm — avoids allocations on each update
+const _lisTails: number[] = [];
+const _lisTailIdx: number[] = [];
+const _lisPred: number[] = [];
+
+/**
+ * Compute positions in `arr` that form the Longest Increasing Subsequence.
+ * Items at these positions are already in correct relative order and don't
+ * need to be relocated.  O(n log n) time, O(n) space (reused).
+ */
+export function longestIncreasingSubsequence(arr: number[], out?: Set<number>): Set<number> {
+  const n = arr.length;
+  const result = out ?? new Set<number>();
+  if (out) out.clear();
+  if (n === 0) return result;
+
+  const tails = _lisTails;
+  const tailIdx = _lisTailIdx;
+  const pred = _lisPred;
+  tails.length = 0;
+  tailIdx.length = 0;
+  pred.length = n;
+
+  for (let i = 0; i < n; i++) {
+    let lo = 0,
+      hi = tails.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (tails[mid] < arr[i]) lo = mid + 1;
+      else hi = mid;
     }
+    tails[lo] = arr[i];
+    tailIdx[lo] = i;
+    pred[i] = lo > 0 ? tailIdx[lo - 1] : -1;
   }
-  return low;
+
+  // Reconstruct: walk predecessors back from the last element of the LIS
+  let k = tailIdx[tails.length - 1];
+  for (let i = tails.length - 1; i >= 0; i--) {
+    result.add(k);
+    k = pred[k];
+  }
+  return result;
 }
 
 export class BasicListComponent<T extends { id: number }> {
   keyMap: Map<string, GenericReturnType> = new Map();
   indexMap: Map<string, number> = new Map();
-  // Track reactive index formulas for cleanup (dev mode only)
-  indexFormulaMap: Map<string, MergedCell> = new Map();
-  nodes: Node[] = [];
+  // Track reactive index formulas for cleanup (dev mode only, lazily initialized)
+  indexFormulaMap: Map<string, MergedCell> | null = null;
+  // Track per-item markers for stable relocation boundaries
+  itemMarkers: Map<string, Comment> = new Map();
+  markerSet: Set<Comment> = new Set();
+  // Reusable arrays/sets — cleared per update to avoid GC pressure
+  private _existKeys: string[] = [];
+  private _existNewIdx: number[] = [];
+  private _existOldIdx: number[] = [];
+  private _itemKeys: string[] = []; // cached keys for current update
+  private _lisResult: Set<number> = new Set();
+  private _updatingKeys: Set<string> = new Set();
+  private _moveSet: Set<string> = new Set();
+  private _freshMoveKeys: Set<string> = new Set();
+  protected _keysToRemove: string[] = [];
+  protected _rowsToRemove: GenericReturnType[] = [];
   [RENDERED_NODES_PROPERTY]: Array<Node> = [];
   [COMPONENT_ID_PROPERTY] = cId();
   ItemComponent: (
@@ -86,16 +130,20 @@ export class BasicListComponent<T extends { id: number }> {
   topMarker!: Comment;
   key: string = '@identity';
   tag!: Cell<T[]> | MergedCell;
-  isSync = false;
   isFirstRender = true;
   get ctx() {
     return this;
   }
-  *keyGenerator(items: T[], keyForItem: (item: T, index: number) => string) {
+  protected keysForItems(items: T[], keyForItem: (item: T, index: number) => string): Set<string> {
+    const set = this._updatingKeys;
+    set.clear();
     for (let i = 0; i < items.length; i++) {
-      yield keyForItem(items[i], i);
+      set.add(keyForItem(items[i], i));
     }
+    return set;
   }
+  // Cached fragment reused across relocateItem calls to avoid allocating new ones
+  private _relocateFragment!: DocumentFragment;
   declare api: DOMApi;
   constructor(
     { tag, ctx, key, ItemComponent }: ListComponentArgs<T>,
@@ -103,6 +151,7 @@ export class BasicListComponent<T extends { id: number }> {
     topMarker: Comment,
   ) {
     this.api = initDOM(ctx);
+    this._relocateFragment = this.api.fragment();
     this.ItemComponent = ItemComponent;
     // Propagate $_eval from parent context for deferred rendering
     if (WITH_DYNAMIC_EVAL) {
@@ -114,7 +163,6 @@ export class BasicListComponent<T extends { id: number }> {
     }
     // @ts-expect-error typings error
     addToTree(ctx, this, 'from list constructor');
-    const mainNode = outlet;
     this[RENDERED_NODES_PROPERTY] = [];
     if (key) {
       this.key = key;
@@ -126,6 +174,8 @@ export class BasicListComponent<T extends { id: number }> {
       CHILD.delete(listId);
       TREE.delete(listId);
       PARENT.delete(listId);
+      this.itemMarkers.clear();
+      this.markerSet.clear();
     });
     if (IS_DEV_MODE) {
       Object.defineProperty(this, $_debug_args, {
@@ -149,12 +199,12 @@ export class BasicListComponent<T extends { id: number }> {
     }
     this.topMarker = topMarker;
     if (IS_DEV_MODE) {
-      // HMR logic
-      this[RENDERED_NODES_PROPERTY] = [topMarker];
+      // HMR / inspector bounds: topMarker..bottomMarker defines the full list extent
+      this[RENDERED_NODES_PROPERTY] = [topMarker, this.bottomMarker];
     }
 
-    this.api.insert(mainNode, this.topMarker);
-    this.api.insert(mainNode, this.bottomMarker);
+    this.api.insert(outlet, this.topMarker);
+    this.api.insert(outlet, this.bottomMarker);
 
     const originalTag = tag;
 
@@ -171,7 +221,40 @@ export class BasicListComponent<T extends { id: number }> {
     }
     this.tag = tag;
   }
-  setupKeyForItem() {
+  private relocateItem(marker: Comment, anchor: Node, parent: Node) {
+    const { markerSet, bottomMarker, _relocateFragment: fragment } = this;
+    // Find end boundary: next item marker or bottomMarker
+    let end: Node = bottomMarker;
+    let node: Node | null = marker.nextSibling;
+    while (node && node !== bottomMarker) {
+      if (node.nodeType === 8 && markerSet.has(node as Comment)) {
+        end = node;
+        break;
+      }
+      node = node.nextSibling;
+    }
+    // Item already immediately precedes the anchor — nothing to move
+    if (end === anchor) return;
+    // Collect marker + content into reusable fragment
+    node = marker;
+    let next: Node | null;
+    while (node && node !== end) {
+      next = node.nextSibling;
+      this.api.insert(fragment, node);
+      node = next;
+    }
+    this.api.insert(parent, fragment, anchor);
+  }
+  protected removeMarker(key: string) {
+    const marker = this.itemMarkers.get(key);
+    if (!marker) return;
+    this.itemMarkers.delete(key);
+    this.markerSet.delete(marker);
+    if (marker.isConnected) {
+      this.api.destroy(marker);
+    }
+  }
+  private setupKeyForItem() {
     if (this.key === '@identity') {
       let cnt = 0;
       const map: WeakMap<T, string> = new WeakMap();
@@ -219,7 +302,7 @@ export class BasicListComponent<T extends { id: number }> {
       throw new Error(`Key for item not implemented, ${JSON.stringify(item)}`);
     }
   }
-  getTargetNode(amountOfKeys: number) {
+  private getTargetNode(amountOfKeys: number) {
     if (amountOfKeys > 0) {
       return this.bottomMarker;
     } else {
@@ -227,7 +310,7 @@ export class BasicListComponent<T extends { id: number }> {
       // list fragment marker
       const marker = IS_DEV_MODE
         ? this.api.comment('list fragment target marker')
-        : this.api.comment('');
+        : this.api.comment();
       if (isRehydrationScheduled()) {
         fragment = this.api.parent(marker) as unknown as DocumentFragment;
         // TODO: figure out, likely error here, because we don't append fragment
@@ -238,7 +321,7 @@ export class BasicListComponent<T extends { id: number }> {
       return marker;
     }
   }
-  updateItems(items: T[], amountOfKeys: number, removedIndexes: number[]) {
+  updateItems(items: T[], amountOfKeys: number, removedCount: number) {
     const {
       indexMap,
       keyMap,
@@ -247,27 +330,34 @@ export class BasicListComponent<T extends { id: number }> {
       ItemComponent,
       isFirstRender,
       api,
+      itemMarkers,
+      markerSet,
+      _existKeys: existKeys,
+      _existNewIdx: existNewIdx,
+      _existOldIdx: existOldIdx,
+      _lisResult: lisResult,
+      _itemKeys: itemKeys,
+      _moveSet: moveSet,
+      _freshMoveKeys: freshMoveKeys,
     } = this;
-    const rowsToMove: Array<[GenericReturnType, number]> = [];
-    const amountOfExistingKeys = amountOfKeys - removedIndexes.length;
-    if (removedIndexes.length > 0 && keyMap.size > 0) {
-      removedIndexes.sort((a, b) => a - b);
-      for (const key of keyMap.keys()) {
-        let keyIndex = indexMap.get(key)!;
-        const count = countLessThan(removedIndexes, keyIndex);
-        if (count !== 0) {
-          indexMap.set(key, keyIndex - count);
-        }
-      }
-    }
+    existKeys.length = 0;
+    existNewIdx.length = 0;
+    existOldIdx.length = 0;
+    itemKeys.length = items.length;
+    moveSet.clear();
+    freshMoveKeys.clear();
 
+    const amountOfExistingKeys = amountOfKeys - removedCount;
+
+    const self = this as unknown as ComponentLike;
     let targetNode = items.length
       ? this.getTargetNode(amountOfExistingKeys)
       : bottomMarker;
     let seenKeys = 0;
     let isAppendOnly = isFirstRender;
-    setParentContext(this as unknown as ComponentLike);
-    items.forEach((item, index) => {
+    setParentContext(self);
+    for (let index = 0; index < items.length; index++) {
+      const item = items[index];
       if (seenKeys === amountOfExistingKeys) {
         isAppendOnly = true;
         if (targetNode === bottomMarker) {
@@ -277,8 +367,16 @@ export class BasicListComponent<T extends { id: number }> {
       }
 
       const key = keyForItem(item, index);
-      const maybeRow = keyMap.get(key);
-      if (!maybeRow) {
+      itemKeys[index] = key;
+      if (!keyMap.has(key)) {
+        let marker = itemMarkers.get(key);
+        if (!marker) {
+          marker = IS_DEV_MODE
+            ? api.comment(`list item ${key}`)
+            : api.comment();
+          itemMarkers.set(key, marker);
+          markerSet.add(marker);
+        }
         let idx: number | MergedCell = index;
         if (IS_DEV_MODE) {
           // @todo - add `hasIndex` argument to compiler to tree-shake this
@@ -298,46 +396,59 @@ export class BasicListComponent<T extends { id: number }> {
           }, `each.index[${index}]`);
           idx = indexFormula;
           // Track formula for cleanup when item is destroyed
+          if (!this.indexFormulaMap) this.indexFormulaMap = new Map();
           this.indexFormulaMap.set(key, indexFormula);
         }
 
-        const row = ItemComponent(item, idx, this as unknown as Component<any>);
+        const row = ItemComponent(item, idx, self as unknown as Component<any>);
 
         keyMap.set(key, row);
         indexMap.set(key, index);
         if (isAppendOnly) {
           // TODO: in ssr parentNode may not exist
-          renderElement(api, this as unknown as ComponentLike, api.parent(targetNode)!, row, targetNode);
+          const parent = api.parent(targetNode)!;
+          api.insert(parent, marker, targetNode);
+          renderElement(
+            api,
+            self,
+            parent,
+            row,
+            targetNode,
+          );
         } else {
-          rowsToMove.push([row, index]);
+          moveSet.add(key);
+          freshMoveKeys.add(key);
         }
       } else {
         seenKeys++;
-        const expectedIndex = indexMap.get(key)!;
-        if (expectedIndex !== index) {
+        const oldIndex = indexMap.get(key)!;
+        existKeys.push(key);
+        existNewIdx.push(index);
+        existOldIdx.push(oldIndex);
+        if (oldIndex !== index) {
           indexMap.set(key, index);
-          rowsToMove.push([maybeRow, index]);
         }
       }
-    });
+    }
+
+    // Use LIS on existing items' old indices (in new-list order) to find
+    // the largest subset already in correct relative order.  Only items
+    // outside the LIS need actual DOM relocation.
+    if (existKeys.length > 1) {
+      const stable = longestIncreasingSubsequence(existOldIdx, lisResult);
+      for (let i = 0; i < existKeys.length; i++) {
+        if (!stable.has(i)) {
+          moveSet.add(existKeys[i]);
+        }
+      }
+    } else if (existKeys.length === 1 && existOldIdx[0] !== existNewIdx[0]) {
+      moveSet.add(existKeys[0]);
+    }
+
     setParentContext(null);
-    rowsToMove
-      .sort((r1, r2) => {
-        return r2[1] - r1[1];
-      })
-      .forEach(([row, index]) => {
-        const nextItem = items[index + 1];
-        const insertBeforeNode = nextItem
-          ? getFirstNode(api, keyMap.get(keyForItem(nextItem, index + 1))!)
-          : bottomMarker;
-        renderElement(
-          api,
-          this as unknown as ComponentLike,
-          api.parent(insertBeforeNode)!,
-          row,
-          insertBeforeNode,
-        );
-      });
+
+    // Insert batched append-only fragment into main DOM before the move phase,
+    // so that all item markers are reachable in the live DOM tree.
     if (targetNode !== bottomMarker) {
       const parent = api.parent(targetNode)!;
       const trueParent = api.parent(bottomMarker)!;
@@ -349,6 +460,33 @@ export class BasicListComponent<T extends { id: number }> {
       }
       if (parent && trueParent !== parent) {
         api.insert(trueParent, parent, bottomMarker);
+      }
+    }
+
+    // Move phase: iterate right-to-left through the new item list,
+    // maintaining a running anchor.  Stable (LIS) items just update the
+    // anchor; moved/new items are inserted before it.
+    if (moveSet.size > 0) {
+      const moveParent = api.parent(bottomMarker)!;
+      let anchor: Node = bottomMarker;
+      for (let idx = items.length - 1; idx >= 0; idx--) {
+        const key = itemKeys[idx];
+        if (!moveSet.has(key)) {
+          // Stable item (LIS or already-appended) — use its marker as anchor
+          const marker = itemMarkers.get(key);
+          if (marker) anchor = marker;
+          continue;
+        }
+        const marker = itemMarkers.get(key);
+        if (!marker) continue;
+
+        if (freshMoveKeys.has(key)) {
+          api.insert(moveParent, marker, anchor);
+          renderElement(api, self, moveParent, keyMap.get(key)!, anchor);
+        } else {
+          this.relocateItem(marker, anchor, moveParent);
+        }
+        anchor = marker;
       }
     }
     if (isFirstRender) {
@@ -375,7 +513,14 @@ export class SyncListComponent<
     );
   }
   fastCleanup() {
-    const { keyMap, bottomMarker, topMarker, indexMap, indexFormulaMap, api } = this;
+    const {
+      keyMap,
+      bottomMarker,
+      topMarker,
+      indexMap,
+      indexFormulaMap,
+      api,
+    } = this;
     const parent = api.parent(bottomMarker);
     if (
       parent &&
@@ -386,35 +531,40 @@ export class SyncListComponent<
         destroyElementSync(value as ComponentLike, true, this.api);
       }
       // Clean up all reactive index formulas
-      for (const formula of indexFormulaMap.values()) {
-        formula.destroy();
+      if (indexFormulaMap) {
+        for (const formula of indexFormulaMap.values()) {
+          formula.destroy();
+        }
+        indexFormulaMap.clear();
       }
       this.api.clearChildren(parent);
       this.api.insert(parent, topMarker);
       this.api.insert(parent, bottomMarker);
       keyMap.clear();
       indexMap.clear();
-      indexFormulaMap.clear();
+      this.itemMarkers.clear();
+      this.markerSet.clear();
       return true;
     } else {
       return false;
     }
   }
   syncList(items: T[]) {
-    const { keyMap, keyForItem, indexMap } = this;
+    const { keyMap, keyForItem } = this;
     if (items.length === 0 && !this.isFirstRender) {
       if (this.fastCleanup()) {
         return;
       }
     }
     let amountOfKeys = keyMap.size;
-
-    const indexesToRemove: number[] = [];
+    let removedCount = 0;
 
     if (amountOfKeys > 0) {
-      const updatingKeys = new Set(this.keyGenerator(items, keyForItem));
-      const keysToRemove: string[] = [];
-      const rowsToRemove: GenericReturnType[] = [];
+      const updatingKeys = this.keysForItems(items, keyForItem);
+      const keysToRemove = this._keysToRemove;
+      const rowsToRemove = this._rowsToRemove;
+      keysToRemove.length = 0;
+      rowsToRemove.length = 0;
 
       for (const [key, row] of keyMap.entries()) {
         if (updatingKeys.has(key)) {
@@ -422,33 +572,38 @@ export class SyncListComponent<
         }
         keysToRemove.push(key);
         rowsToRemove.push(row);
-        indexesToRemove.push(indexMap.get(key)!);
       }
       if (keysToRemove.length) {
         if (keysToRemove.length === amountOfKeys) {
           if (this.fastCleanup()) {
             amountOfKeys = 0;
             keysToRemove.length = 0;
-            indexesToRemove.length = 0;
           }
         }
+        removedCount = keysToRemove.length;
         for (let i = 0; i < keysToRemove.length; i++) {
           this.destroyItem(rowsToRemove[i], keysToRemove[i]);
         }
       }
+      // Release references to destroyed rows
+      rowsToRemove.length = 0;
     }
-    this.updateItems(items, amountOfKeys, indexesToRemove);
+    this.updateItems(items, amountOfKeys, removedCount);
   }
   destroyItem(row: GenericReturnType, key: string) {
-    this.keyMap.delete(key);
-    this.indexMap.delete(key);
+    const { keyMap, indexMap, indexFormulaMap } = this;
+    keyMap.delete(key);
+    indexMap.delete(key);
     // Clean up reactive index formula if it exists
-    const indexFormula = this.indexFormulaMap.get(key);
-    if (indexFormula) {
-      indexFormula.destroy();
-      this.indexFormulaMap.delete(key);
+    if (indexFormulaMap) {
+      const formula = indexFormulaMap.get(key);
+      if (formula) {
+        formula.destroy();
+        indexFormulaMap.delete(key);
+      }
     }
     destroyElementSync(row as ComponentLike, false, this.api);
+    this.removeMarker(key);
   }
 }
 
@@ -478,7 +633,14 @@ export class AsyncListComponent<
     );
   }
   async fastCleanup() {
-    const { bottomMarker, topMarker, keyMap, indexMap, indexFormulaMap, api } = this;
+    const {
+      bottomMarker,
+      topMarker,
+      keyMap,
+      indexMap,
+      indexFormulaMap,
+      api,
+    } = this;
     const parent = api.parent(bottomMarker);
     if (
       parent &&
@@ -494,15 +656,19 @@ export class AsyncListComponent<
       await Promise.all(promises);
       promises.length = 0;
       // Clean up all reactive index formulas
-      for (const formula of indexFormulaMap.values()) {
-        formula.destroy();
+      if (indexFormulaMap) {
+        for (const formula of indexFormulaMap.values()) {
+          formula.destroy();
+        }
+        indexFormulaMap.clear();
       }
       this.api.clearChildren(parent);
       this.api.insert(parent, topMarker);
       this.api.insert(parent, bottomMarker);
       keyMap.clear();
       indexMap.clear();
-      indexFormulaMap.clear();
+      this.itemMarkers.clear();
+      this.markerSet.clear();
       return true;
     } else {
       return false;
@@ -514,37 +680,40 @@ export class AsyncListComponent<
         return;
       }
     }
-    const { keyMap, keyForItem, indexMap } = this;
+    const { keyMap, keyForItem } = this;
     let amountOfKeys = keyMap.size;
-    const indexesToRemove: number[] = [];
+    let removedCount = 0;
 
     if (amountOfKeys > 0) {
-      const keysToRemove: string[] = [];
-      const rowsToRemove: GenericReturnType[] = [];
+      const keysToRemove = this._keysToRemove;
+      const rowsToRemove = this._rowsToRemove;
+      keysToRemove.length = 0;
+      rowsToRemove.length = 0;
       const removeQueue: Array<Promise<void>> = [];
 
-      const updatingKeys = new Set(this.keyGenerator(items, keyForItem));
+      const updatingKeys = this.keysForItems(items, keyForItem);
       for (const [key, row] of keyMap.entries()) {
         if (updatingKeys.has(key)) {
           continue;
         }
         keysToRemove.push(key);
         rowsToRemove.push(row);
-        indexesToRemove.push(indexMap.get(key)!);
       }
       if (keysToRemove.length) {
         if (keysToRemove.length === amountOfKeys) {
           if (await this.fastCleanup()) {
             amountOfKeys = 0;
             keysToRemove.length = 0;
-            indexesToRemove.length = 0;
           }
         }
+        removedCount = keysToRemove.length;
 
         for (let i = 0; i < keysToRemove.length; i++) {
           removeQueue.push(this.destroyItem(rowsToRemove[i], keysToRemove[i]));
         }
       }
+      // Release references to destroyed rows
+      rowsToRemove.length = 0;
 
       const removePromise = Promise.all(removeQueue);
 
@@ -555,17 +724,21 @@ export class AsyncListComponent<
         });
       }
     }
-    this.updateItems(items, amountOfKeys, indexesToRemove);
+    this.updateItems(items, amountOfKeys, removedCount);
   }
   async destroyItem(row: GenericReturnType, key: string) {
-    this.keyMap.delete(key);
-    this.indexMap.delete(key);
+    const { keyMap, indexMap, indexFormulaMap } = this;
+    keyMap.delete(key);
+    indexMap.delete(key);
     // Clean up reactive index formula if it exists
-    const indexFormula = this.indexFormulaMap.get(key);
-    if (indexFormula) {
-      indexFormula.destroy();
-      this.indexFormulaMap.delete(key);
+    if (indexFormulaMap) {
+      const formula = indexFormulaMap.get(key);
+      if (formula) {
+        formula.destroy();
+        indexFormulaMap.delete(key);
+      }
     }
     await destroyElement(row as ComponentLike, false, this.api);
+    this.removeMarker(key);
   }
 }

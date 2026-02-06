@@ -316,7 +316,7 @@ describe('Destruction Flow Tests', () => {
       await new Promise(resolve => setTimeout(resolve, 10));
 
       // Verify formulas were created
-      expect(list.indexFormulaMap.size).toBe(3);
+      expect(list.indexFormulaMap?.size).toBe(3);
 
       // Remove an item
       items.value = [{ id: 1 }, { id: 3 }];
@@ -325,8 +325,8 @@ describe('Destruction Flow Tests', () => {
       await new Promise(resolve => setTimeout(resolve, 10));
 
       // Verify formula was cleaned up (item 2 removed)
-      expect(list.indexFormulaMap.size).toBe(2);
-      expect(list.indexFormulaMap.has('2')).toBe(false);
+      expect(list.indexFormulaMap?.size).toBe(2);
+      expect(list.indexFormulaMap?.has('2')).toBe(false);
 
       // Clean up
       destroyElementSync(parentComponent, true, api);
@@ -364,7 +364,7 @@ describe('Destruction Flow Tests', () => {
       // Wait for render
       await new Promise(resolve => setTimeout(resolve, 10));
 
-      expect(list.indexFormulaMap.size).toBe(3);
+      expect(list.indexFormulaMap?.size).toBe(3);
 
       // Clear all items
       items.value = [];
@@ -373,7 +373,7 @@ describe('Destruction Flow Tests', () => {
       await new Promise(resolve => setTimeout(resolve, 10));
 
       // Verify all formulas were cleaned up
-      expect(list.indexFormulaMap.size).toBe(0);
+      expect(list.indexFormulaMap?.size).toBe(0);
 
       // Clean up
       destroyElementSync(parentComponent, true, api);
@@ -609,7 +609,7 @@ describe('Destruction Flow Tests', () => {
       await new Promise(resolve => setTimeout(resolve, 20));
 
       // Verify formulas were created
-      expect(list.indexFormulaMap.size).toBe(3);
+      expect(list.indexFormulaMap?.size).toBe(3);
 
       // Remove an item
       items.value = [{ id: 1 }, { id: 3 }];
@@ -618,7 +618,7 @@ describe('Destruction Flow Tests', () => {
       await new Promise(resolve => setTimeout(resolve, 50));
 
       // Verify formula was cleaned up (item 2 removed)
-      expect(list.indexFormulaMap.size).toBe(2);
+      expect(list.indexFormulaMap?.size).toBe(2);
 
       // Clean up
       destroyElementSync(parentComponent, true, api);
@@ -656,7 +656,7 @@ describe('Destruction Flow Tests', () => {
       // Wait for render
       await new Promise(resolve => setTimeout(resolve, 20));
 
-      expect(list.indexFormulaMap.size).toBe(3);
+      expect(list.indexFormulaMap?.size).toBe(3);
 
       // Clear all items (triggers fastCleanup)
       items.value = [];
@@ -665,7 +665,7 @@ describe('Destruction Flow Tests', () => {
       await new Promise(resolve => setTimeout(resolve, 50));
 
       // Verify all formulas were cleaned up
-      expect(list.indexFormulaMap.size).toBe(0);
+      expect(list.indexFormulaMap?.size).toBe(0);
 
       // Clean up
       destroyElementSync(parentComponent, true, api);
@@ -1291,7 +1291,7 @@ describe('Destruction Flow Tests', () => {
 
       // Final state should be empty
       expect(list.keyMap.size).toBe(0);
-      expect(list.indexFormulaMap.size).toBe(0);
+      expect(list.indexFormulaMap?.size).toBe(0);
 
       // Clean up
       destroyElementSync(parentComponent, true, api);
