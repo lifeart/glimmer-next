@@ -128,7 +128,7 @@ export class BasicListComponent<T extends { id: number }> {
   private _lisResult: Set<number> = new Set();
   private _updatingKeys: Set<string> = new Set();
   private _moveSet: Set<string> = new Set();
-  private _newMoveSet: Set<string> = new Set();
+  private _freshMoveKeys: Set<string> = new Set();
   protected _keysToRemove: string[] = [];
   protected _rowsToRemove: GenericReturnType[] = [];
   protected _indexesToRemove: number[] = [];
@@ -240,7 +240,7 @@ export class BasicListComponent<T extends { id: number }> {
     let end: Node = bottomMarker;
     let node: Node | null = marker.nextSibling;
     while (node && node !== bottomMarker) {
-      if (markerSet.has(node as Comment)) {
+      if (node.nodeType === 8 && markerSet.has(node as Comment)) {
         end = node;
         break;
       }
@@ -351,14 +351,14 @@ export class BasicListComponent<T extends { id: number }> {
       _lisResult: lisResult,
       _itemKeys: itemKeys,
       _moveSet: moveSet,
-      _newMoveSet: newMoveSet,
+      _freshMoveKeys: freshMoveKeys,
     } = this;
     existKeys.length = 0;
     existNewIdx.length = 0;
     existOldIdx.length = 0;
     itemKeys.length = items.length;
     moveSet.clear();
-    newMoveSet.clear();
+    freshMoveKeys.clear();
 
     const amountOfExistingKeys = amountOfKeys - removedIndexes.length;
     if (removedIndexes.length > 0 && keyMap.size > 0) {
@@ -440,7 +440,7 @@ export class BasicListComponent<T extends { id: number }> {
           );
         } else {
           moveSet.add(key);
-          newMoveSet.add(key);
+          freshMoveKeys.add(key);
         }
       } else {
         seenKeys++;
@@ -503,7 +503,7 @@ export class BasicListComponent<T extends { id: number }> {
         const marker = itemMarkers.get(key);
         if (!marker) continue;
 
-        if (newMoveSet.has(key)) {
+        if (freshMoveKeys.has(key)) {
           api.insert(moveParent, marker, anchor);
           renderElement(api, self, moveParent, keyMap.get(key)!, anchor);
         } else {

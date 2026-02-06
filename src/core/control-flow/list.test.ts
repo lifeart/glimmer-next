@@ -2459,6 +2459,24 @@ describe('LIS move-phase anchor bug regression', () => {
       node = node.nextSibling;
     }
   });
+
+  test('new items spanning both move and append-only zones', async () => {
+    // Initial: [A, B]. Update: [C, A, B, D].
+    // C is new in the move zone (seenKeys < 2), D is new in the append zone
+    // (seenKeys === 2). This exercises the interaction between fragment-appended
+    // items and move-phase items.
+    const { itemsCell, getDivOrder } = await createListHelper([
+      { id: 1 }, { id: 2 },
+    ]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder()).toEqual(['1', '2']);
+
+    itemsCell.update([{ id: 3 }, { id: 1 }, { id: 2 }, { id: 4 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder()).toEqual(['3', '1', '2', '4']);
+  });
 });
 
 describe('LIS-based move minimization', () => {
