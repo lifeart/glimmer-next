@@ -2121,6 +2121,346 @@ describe('longestIncreasingSubsequence', () => {
   });
 });
 
+describe('LIS move-phase anchor bug regression', () => {
+  // These tests target a specific bug in the move phase: when the move phase
+  // used `itemKeys[idx+1]` as anchors for moved items, LIS (stable) items'
+  // markers stayed at their OLD DOM positions, so using them as anchors placed
+  // items at wrong locations. The fix was to iterate right-to-left with a
+  // running anchor (starting at bottomMarker).
+
+  let window: Window;
+  let document: Document;
+  let api: DOMApi;
+  let root: Root;
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    window = new Window();
+    document = window.document as unknown as Document;
+    api = new HTMLBrowserDOMApi(document);
+    cleanupFastContext();
+    root = new Root(document);
+    provideContext(root, RENDERING_CONTEXT, api);
+    container = document.createElement('div');
+    document.body.appendChild(container);
+  });
+
+  afterEach(() => {
+    cleanupFastContext();
+    TREE.clear();
+    PARENT.clear();
+    CHILD.clear();
+    window.close();
+  });
+
+  async function createListHelper(items: Array<{ id: number }>) {
+    const { SyncListComponent } = await import('./list');
+    const { cell } = await import('../reactive');
+
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, parentComponent);
+
+    const itemsCell = cell(items);
+    const topMarker = document.createComment('list top');
+
+    const listInstance = new SyncListComponent(
+      {
+        tag: itemsCell,
+        key: 'id',
+        ctx: parentComponent,
+        ItemComponent: (item: { id: number }) => {
+          const div = document.createElement('div');
+          div.textContent = String(item.id);
+          div.setAttribute('data-id', String(item.id));
+          return [div];
+        },
+      },
+      container,
+      topMarker,
+    );
+
+    const getDivOrder = () => {
+      const divs: string[] = [];
+      let node: Node | null = listInstance.topMarker.nextSibling;
+      while (node && node !== listInstance.bottomMarker) {
+        if (node.nodeType === 1) {
+          divs.push((node as HTMLElement).getAttribute('data-id')!);
+        }
+        node = node.nextSibling;
+      }
+      return divs;
+    };
+
+    return { listInstance, itemsCell, parentComponent, getDivOrder };
+  }
+
+  async function createMultiRootListHelper(items: Array<{ id: number }>) {
+    const { SyncListComponent } = await import('./list');
+    const { cell } = await import('../reactive');
+
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, parentComponent);
+
+    const itemsCell = cell(items);
+    const topMarker = document.createComment('list top');
+
+    const listInstance = new SyncListComponent(
+      {
+        tag: itemsCell,
+        key: 'id',
+        ctx: parentComponent,
+        ItemComponent: (item: { id: number }) => {
+          // Each item renders TWO DOM nodes
+          const span1 = document.createElement('span');
+          span1.textContent = `${item.id}-a`;
+          span1.setAttribute('data-id', `${item.id}-a`);
+          const span2 = document.createElement('span');
+          span2.textContent = `${item.id}-b`;
+          span2.setAttribute('data-id', `${item.id}-b`);
+          return [span1, span2];
+        },
+      },
+      container,
+      topMarker,
+    );
+
+    const getElementOrder = () => {
+      const els: string[] = [];
+      let node: Node | null = listInstance.topMarker.nextSibling;
+      while (node && node !== listInstance.bottomMarker) {
+        if (node.nodeType === 1) {
+          els.push((node as HTMLElement).getAttribute('data-id')!);
+        }
+        node = node.nextSibling;
+      }
+      return els;
+    };
+
+    return { listInstance, itemsCell, parentComponent, getElementOrder };
+  }
+
+  test('full reversal [0,1,2,3,4] -> [4,3,2,1,0] produces correct DOM order', async () => {
+    // This is the primary regression case. With 5 items, reversing yields an
+    // LIS of length 1 (only 1 item is "stable"), so 4 items must be relocated.
+    // The old bug used stale anchors for those 4 moves, producing wrong order.
+    const { itemsCell, getDivOrder } = await createListHelper([
+      { id: 0 }, { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 },
+    ]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder()).toEqual(['0', '1', '2', '3', '4']);
+
+    // Full reverse
+    itemsCell.update([{ id: 4 }, { id: 3 }, { id: 2 }, { id: 1 }, { id: 0 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder()).toEqual(['4', '3', '2', '1', '0']);
+  });
+
+  test('full reversal with multiple root nodes per item', async () => {
+    // Same reversal, but each item renders two spans. This tests that
+    // relocateItem correctly collects ALL nodes between markers when moving.
+    const { itemsCell, getElementOrder } = await createMultiRootListHelper([
+      { id: 0 }, { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 },
+    ]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getElementOrder()).toEqual([
+      '0-a', '0-b', '1-a', '1-b', '2-a', '2-b', '3-a', '3-b', '4-a', '4-b',
+    ]);
+
+    // Full reverse
+    itemsCell.update([{ id: 4 }, { id: 3 }, { id: 2 }, { id: 1 }, { id: 0 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getElementOrder()).toEqual([
+      '4-a', '4-b', '3-a', '3-b', '2-a', '2-b', '1-a', '1-b', '0-a', '0-b',
+    ]);
+  });
+
+  test('shuffle with append and removal produces correct DOM order', async () => {
+    // Start with 6 items, remove some, add new ones, shuffle the rest.
+    // This exercises the combination of LIS-based moves, new item insertion,
+    // and removed item cleanup in a single update cycle.
+    const { itemsCell, getDivOrder } = await createListHelper([
+      { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }, { id: 6 },
+    ]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder()).toEqual(['1', '2', '3', '4', '5', '6']);
+
+    // Remove 2 and 5, add 7 and 8, shuffle: [4, 7, 1, 6, 8, 3]
+    itemsCell.update([
+      { id: 4 }, { id: 7 }, { id: 1 }, { id: 6 }, { id: 8 }, { id: 3 },
+    ]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder()).toEqual(['4', '7', '1', '6', '8', '3']);
+  });
+
+  test('move single item from start to end [0,1,2,3,4] -> [1,2,3,4,0]', async () => {
+    // The moved item (0) must end up after all LIS items (1,2,3,4 are the LIS).
+    // The old bug could misplace item 0 because the anchor for it was
+    // a stable item whose marker had not yet been relocated.
+    const { itemsCell, getDivOrder } = await createListHelper([
+      { id: 0 }, { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 },
+    ]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder()).toEqual(['0', '1', '2', '3', '4']);
+
+    // Move first to end
+    itemsCell.update([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 0 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder()).toEqual(['1', '2', '3', '4', '0']);
+  });
+
+  test('move single item from end to start [0,1,2,3,4] -> [4,0,1,2,3]', async () => {
+    // The moved item (4) must end up before all LIS items (0,1,2,3 are the LIS).
+    // With the old bug, item 4's anchor would be the marker of item 0 which
+    // was still at its old position, placing item 4 incorrectly.
+    const { itemsCell, getDivOrder } = await createListHelper([
+      { id: 0 }, { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 },
+    ]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder()).toEqual(['0', '1', '2', '3', '4']);
+
+    // Move last to start
+    itemsCell.update([{ id: 4 }, { id: 0 }, { id: 1 }, { id: 2 }, { id: 3 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder()).toEqual(['4', '0', '1', '2', '3']);
+  });
+
+  test('full reversal then restore to original order', async () => {
+    // Two consecutive reorderings: reverse, then back to original.
+    // This ensures the fix works across multiple update cycles.
+    const { itemsCell, getDivOrder } = await createListHelper([
+      { id: 0 }, { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 },
+    ]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Reverse
+    itemsCell.update([{ id: 4 }, { id: 3 }, { id: 2 }, { id: 1 }, { id: 0 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+    expect(getDivOrder()).toEqual(['4', '3', '2', '1', '0']);
+
+    // Restore original
+    itemsCell.update([{ id: 0 }, { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+    expect(getDivOrder()).toEqual(['0', '1', '2', '3', '4']);
+  });
+
+  test('reverse of 3-item list with multiple root nodes per item', async () => {
+    // Smaller reversal (3 items) with multi-root to ensure the boundary
+    // detection in relocateItem works at every scale.
+    const { itemsCell, getElementOrder } = await createMultiRootListHelper([
+      { id: 1 }, { id: 2 }, { id: 3 },
+    ]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getElementOrder()).toEqual(['1-a', '1-b', '2-a', '2-b', '3-a', '3-b']);
+
+    itemsCell.update([{ id: 3 }, { id: 2 }, { id: 1 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getElementOrder()).toEqual(['3-a', '3-b', '2-a', '2-b', '1-a', '1-b']);
+  });
+
+  test('shuffle with append and removal - multi root nodes', async () => {
+    // Combines removal, insertion, and reordering with multi-root items.
+    const { itemsCell, getElementOrder } = await createMultiRootListHelper([
+      { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 },
+    ]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getElementOrder()).toEqual([
+      '1-a', '1-b', '2-a', '2-b', '3-a', '3-b', '4-a', '4-b',
+    ]);
+
+    // Remove 2, add 5, reorder: [3, 5, 1, 4]
+    itemsCell.update([{ id: 3 }, { id: 5 }, { id: 1 }, { id: 4 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getElementOrder()).toEqual([
+      '3-a', '3-b', '5-a', '5-b', '1-a', '1-b', '4-a', '4-b',
+    ]);
+  });
+
+  test('move start-to-end with multi root nodes', async () => {
+    const { itemsCell, getElementOrder } = await createMultiRootListHelper([
+      { id: 0 }, { id: 1 }, { id: 2 }, { id: 3 },
+    ]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Move item 0 from start to end
+    itemsCell.update([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 0 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getElementOrder()).toEqual([
+      '1-a', '1-b', '2-a', '2-b', '3-a', '3-b', '0-a', '0-b',
+    ]);
+  });
+
+  test('move end-to-start with multi root nodes', async () => {
+    const { itemsCell, getElementOrder } = await createMultiRootListHelper([
+      { id: 0 }, { id: 1 }, { id: 2 }, { id: 3 },
+    ]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Move item 3 from end to start
+    itemsCell.update([{ id: 3 }, { id: 0 }, { id: 1 }, { id: 2 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getElementOrder()).toEqual([
+      '3-a', '3-b', '0-a', '0-b', '1-a', '1-b', '2-a', '2-b',
+    ]);
+  });
+
+  test('DOM elements are moved (not recreated) during full reversal', async () => {
+    // Ensures the fix relocates DOM nodes rather than recreating them,
+    // preserving event listeners and state.
+    const { listInstance, itemsCell, getDivOrder } = await createListHelper([
+      { id: 0 }, { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 },
+    ]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Grab references to original DOM nodes
+    const originalNodes = new Map<string, Node>();
+    let node: Node | null = listInstance.topMarker.nextSibling;
+    while (node && node !== listInstance.bottomMarker) {
+      if (node.nodeType === 1) {
+        const id = (node as HTMLElement).getAttribute('data-id')!;
+        (node as HTMLElement).setAttribute('data-original', 'true');
+        originalNodes.set(id, node);
+      }
+      node = node.nextSibling;
+    }
+    expect(originalNodes.size).toBe(5);
+
+    // Full reverse
+    itemsCell.update([{ id: 4 }, { id: 3 }, { id: 2 }, { id: 1 }, { id: 0 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder()).toEqual(['4', '3', '2', '1', '0']);
+
+    // Verify same DOM nodes, just reordered
+    node = listInstance.topMarker.nextSibling;
+    while (node && node !== listInstance.bottomMarker) {
+      if (node.nodeType === 1) {
+        const id = (node as HTMLElement).getAttribute('data-id')!;
+        expect(node).toBe(originalNodes.get(id));
+        expect((node as HTMLElement).getAttribute('data-original')).toBe('true');
+      }
+      node = node.nextSibling;
+    }
+  });
+});
+
 describe('LIS-based move minimization', () => {
   let window: Window;
   let document: Document;

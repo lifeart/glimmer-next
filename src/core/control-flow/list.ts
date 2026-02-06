@@ -121,16 +121,14 @@ export class BasicListComponent<T extends { id: number }> {
   itemMarkers: Map<string, Comment> = new Map();
   markerSet: Set<Comment> = new Set();
   // Reusable arrays/sets — cleared per update to avoid GC pressure
-  private _moveKeys: string[] = [];
-  private _moveIndices: number[] = [];
-  private _moveIsNew: boolean[] = [];
   private _existKeys: string[] = [];
   private _existNewIdx: number[] = [];
   private _existOldIdx: number[] = [];
-  private _order: number[] = [];
   private _itemKeys: string[] = []; // cached keys for current update
   private _lisResult: Set<number> = new Set();
   private _updatingKeys: Set<string> = new Set();
+  private _moveSet: Set<string> = new Set();
+  private _newMoveSet: Set<string> = new Set();
   protected _keysToRemove: string[] = [];
   protected _rowsToRemove: GenericReturnType[] = [];
   protected _indexesToRemove: number[] = [];
@@ -347,23 +345,20 @@ export class BasicListComponent<T extends { id: number }> {
       api,
       itemMarkers,
       markerSet,
-      _moveKeys: moveKeys,
-      _moveIndices: moveIndices,
-      _moveIsNew: moveIsNew,
       _existKeys: existKeys,
       _existNewIdx: existNewIdx,
       _existOldIdx: existOldIdx,
       _lisResult: lisResult,
-      _order: order,
       _itemKeys: itemKeys,
+      _moveSet: moveSet,
+      _newMoveSet: newMoveSet,
     } = this;
-    moveKeys.length = 0;
-    moveIndices.length = 0;
-    moveIsNew.length = 0;
     existKeys.length = 0;
     existNewIdx.length = 0;
     existOldIdx.length = 0;
     itemKeys.length = items.length;
+    moveSet.clear();
+    newMoveSet.clear();
 
     const amountOfExistingKeys = amountOfKeys - removedIndexes.length;
     if (removedIndexes.length > 0 && keyMap.size > 0) {
@@ -444,9 +439,8 @@ export class BasicListComponent<T extends { id: number }> {
             targetNode,
           );
         } else {
-          moveKeys.push(key);
-          moveIndices.push(index);
-          moveIsNew.push(true);
+          moveSet.add(key);
+          newMoveSet.add(key);
         }
       } else {
         seenKeys++;
@@ -467,50 +461,17 @@ export class BasicListComponent<T extends { id: number }> {
       const stable = longestIncreasingSubsequence(existOldIdx, lisResult);
       for (let i = 0; i < existKeys.length; i++) {
         if (!stable.has(i)) {
-          moveKeys.push(existKeys[i]);
-          moveIndices.push(existNewIdx[i]);
-          moveIsNew.push(false);
+          moveSet.add(existKeys[i]);
         }
       }
     } else if (existKeys.length === 1 && existOldIdx[0] !== existNewIdx[0]) {
-      // Single existing item that changed position
-      moveKeys.push(existKeys[0]);
-      moveIndices.push(existNewIdx[0]);
-      moveIsNew.push(false);
+      moveSet.add(existKeys[0]);
     }
 
     setParentContext(null);
 
-    const moveLen = moveKeys.length;
-    if (moveLen > 0) {
-      const moveParent = api.parent(bottomMarker)!;
-      // Sort descending by index when multiple moves; skip for single move
-      if (moveLen > 1) {
-        order.length = moveLen;
-        for (let i = 0; i < moveLen; i++) order[i] = i;
-        order.sort((a, b) => moveIndices[b] - moveIndices[a]);
-      }
-
-      for (let oi = 0; oi < moveLen; oi++) {
-        const i = moveLen === 1 ? 0 : order[oi];
-        const key = moveKeys[i];
-        const marker = itemMarkers.get(key);
-        if (!marker) continue;
-
-        const idx = moveIndices[i];
-        const nextKey = itemKeys[idx + 1];
-        const insertBeforeNode = nextKey
-          ? itemMarkers.get(nextKey) ?? bottomMarker
-          : bottomMarker;
-
-        if (moveIsNew[i]) {
-          api.insert(moveParent, marker, insertBeforeNode);
-          renderElement(api, self, moveParent, keyMap.get(key)!, insertBeforeNode);
-        } else {
-          this.relocateItem(marker, insertBeforeNode, moveParent);
-        }
-      }
-    }
+    // Insert batched append-only fragment into main DOM before the move phase,
+    // so that all item markers are reachable in the live DOM tree.
     if (targetNode !== bottomMarker) {
       const parent = api.parent(targetNode)!;
       const trueParent = api.parent(bottomMarker)!;
@@ -522,6 +483,33 @@ export class BasicListComponent<T extends { id: number }> {
       }
       if (parent && trueParent !== parent) {
         api.insert(trueParent, parent, bottomMarker);
+      }
+    }
+
+    // Move phase: iterate right-to-left through the new item list,
+    // maintaining a running anchor.  Stable (LIS) items just update the
+    // anchor; moved/new items are inserted before it.
+    if (moveSet.size > 0) {
+      const moveParent = api.parent(bottomMarker)!;
+      let anchor: Node = bottomMarker;
+      for (let idx = items.length - 1; idx >= 0; idx--) {
+        const key = itemKeys[idx];
+        if (!moveSet.has(key)) {
+          // Stable item (LIS or already-appended) — use its marker as anchor
+          const marker = itemMarkers.get(key);
+          if (marker) anchor = marker;
+          continue;
+        }
+        const marker = itemMarkers.get(key);
+        if (!marker) continue;
+
+        if (newMoveSet.has(key)) {
+          api.insert(moveParent, marker, anchor);
+          renderElement(api, self, moveParent, keyMap.get(key)!, anchor);
+        } else {
+          this.relocateItem(marker, anchor, moveParent);
+        }
+        anchor = marker;
       }
     }
     if (isFirstRender) {
