@@ -28,7 +28,8 @@
     "preview": "vite preview",
     "benchmark": "zx ./bin/setup-bench.mjs",
     "prepublishOnly": "npm run build-lib && node ./utils/write-compiler-types.js",
-    "test": "vitest run",
+    "test": "pnpm run test:vitest && pnpm run test:qunit",
+    "test:vitest": "vitest run",
     "fix": "prettier --write .",
     "prerender:main": "node ./bin/prerender-main-page.mjs",
     "ci:nyc:merge": "nyc merge ./coverage-artifacts ./merged-coverage/coverage.json",
@@ -37,7 +38,7 @@
     "nyc:merge:vitest": "cp ./coverage/vitest/coverage-final.json ./coverage/vitest-final.json",
     "nyc:merge:all": "nyc merge ./coverage ./coverage/merged-final.json",
     "nyc:report": "nyc report --reporter=html --reporter=lcov --temp-dir ./coverage",
-    "test:coverage": "vitest run --coverage",
+    "test:coverage": "pnpm run test:vitest --coverage",
     "test:playwright": "playwright test",
     "test:qunit": "playwright test qunit.spec.ts --reporter=line"
   },

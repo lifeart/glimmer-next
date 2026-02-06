@@ -25,7 +25,7 @@ jobs:
         run: cd glint-environment-gxt && pnpm install && cd ..
 
       - name: Run tests with coverage
-        run: pnpm run test --coverage
+        run: pnpm run test:coverage
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4

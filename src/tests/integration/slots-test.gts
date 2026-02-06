@@ -436,4 +436,70 @@ module('Integration | InternalComponent | slots', function () {
     await rerender();
     assert.dom('[data-test-item]').exists();
   });
+  test('yielding null renders as empty text', async function (assert) {
+    const Yielder = <template>{{yield null}}</template>;
+    await render(
+      <template>
+        <Yielder as |val|>
+          <div data-test-el>{{val}}</div>
+        </Yielder>
+      </template>,
+    );
+    assert.dom('[data-test-el]').hasText('', 'null yielded as empty');
+  });
+  test('yielding undefined renders as empty text', async function (assert) {
+    const Yielder = <template>{{yield undefined}}</template>;
+    await render(
+      <template>
+        <Yielder as |val|>
+          <div data-test-el>{{val}}</div>
+        </Yielder>
+      </template>,
+    );
+    assert.dom('[data-test-el]').hasText('', 'undefined yielded as empty');
+  });
+  test('yielding 0 renders as "0"', async function (assert) {
+    const Yielder = <template>{{yield 0}}</template>;
+    await render(
+      <template>
+        <Yielder as |val|>
+          <div data-test-el>{{val}}</div>
+        </Yielder>
+      </template>,
+    );
+    assert.dom('[data-test-el]').hasText('0');
+  });
+  test('yielding false renders as "false"', async function (assert) {
+    const Yielder = <template>{{yield false}}</template>;
+    await render(
+      <template>
+        <Yielder as |val|>
+          <div data-test-el>{{val}}</div>
+        </Yielder>
+      </template>,
+    );
+    assert.dom('[data-test-el]').hasText('false');
+  });
+  test('yielding true renders as "true"', async function (assert) {
+    const Yielder = <template>{{yield true}}</template>;
+    await render(
+      <template>
+        <Yielder as |val|>
+          <div data-test-el>{{val}}</div>
+        </Yielder>
+      </template>,
+    );
+    assert.dom('[data-test-el]').hasText('true');
+  });
+  test('yielding empty string renders as empty', async function (assert) {
+    const Yielder = <template>{{yield ''}}</template>;
+    await render(
+      <template>
+        <Yielder as |val|>
+          <div data-test-el>{{val}}</div>
+        </Yielder>
+      </template>,
+    );
+    assert.dom('[data-test-el]').hasText('');
+  });
 });
