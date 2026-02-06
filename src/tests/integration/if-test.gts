@@ -526,6 +526,96 @@ module('Integration | InternalComponent | if', function () {
         .doesNotExist('false branch does not exist for updated to true value');
     });
   }
+  test('empty array is truthy in {{#if}}', async function (assert) {
+    const value: never[] = [];
+    await render(
+      <template>
+        {{#if value}}
+          <div data-test-truthy>truthy</div>
+        {{else}}
+          <div data-test-falsy>falsy</div>
+        {{/if}}
+      </template>,
+    );
+    assert.dom('[data-test-truthy]').exists('empty array is truthy');
+    assert.dom('[data-test-falsy]').doesNotExist();
+  });
+
+  test('null is falsy in {{#if}}', async function (assert) {
+    const value = null;
+    await render(
+      <template>
+        {{#if value}}
+          <div data-test-truthy>truthy</div>
+        {{else}}
+          <div data-test-falsy>falsy</div>
+        {{/if}}
+      </template>,
+    );
+    assert.dom('[data-test-falsy]').exists('null is falsy');
+    assert.dom('[data-test-truthy]').doesNotExist();
+  });
+
+  test('undefined is falsy in {{#if}}', async function (assert) {
+    const value = undefined;
+    await render(
+      <template>
+        {{#if value}}
+          <div data-test-truthy>truthy</div>
+        {{else}}
+          <div data-test-falsy>falsy</div>
+        {{/if}}
+      </template>,
+    );
+    assert.dom('[data-test-falsy]').exists('undefined is falsy');
+    assert.dom('[data-test-truthy]').doesNotExist();
+  });
+
+  test('0 is falsy in {{#if}}', async function (assert) {
+    const value = 0;
+    await render(
+      <template>
+        {{#if value}}
+          <div data-test-truthy>truthy</div>
+        {{else}}
+          <div data-test-falsy>falsy</div>
+        {{/if}}
+      </template>,
+    );
+    assert.dom('[data-test-falsy]').exists('0 is falsy');
+    assert.dom('[data-test-truthy]').doesNotExist();
+  });
+
+  test('empty string is falsy in {{#if}}', async function (assert) {
+    const value = '';
+    await render(
+      <template>
+        {{#if value}}
+          <div data-test-truthy>truthy</div>
+        {{else}}
+          <div data-test-falsy>falsy</div>
+        {{/if}}
+      </template>,
+    );
+    assert.dom('[data-test-falsy]').exists('empty string is falsy');
+    assert.dom('[data-test-truthy]').doesNotExist();
+  });
+
+  test('{{if}} inline helper in attribute position with reactive update', async function (assert) {
+    const isActive = cell(true);
+    await render(
+      <template>
+        <div data-test-el class={{if isActive 'active' 'inactive'}}>content</div>
+      </template>,
+    );
+    assert.dom('[data-test-el]').hasClass('active');
+
+    isActive.update(false);
+    await rerender();
+    assert.dom('[data-test-el]').hasClass('inactive');
+    assert.dom('[data-test-el]').doesNotHaveClass('active');
+  });
+
   test('it could be used as helper [false]', async function (assert) {
     const value = false;
     await render(<template>{{if value '1' '2'}}</template>);
@@ -535,5 +625,40 @@ module('Integration | InternalComponent | if', function () {
     const value = true;
     await render(<template>{{if value '1' '2'}}</template>);
     assert.dom().hasText('1');
+  });
+  test('{{if}} inline with 2 args renders empty string when false', async function (assert) {
+    const value = false;
+    await render(
+      <template>
+        <div data-test-el>{{if value 'visible'}}</div>
+      </template>,
+    );
+    assert.dom('[data-test-el]').hasText('', 'falsy condition with 2 args renders empty string');
+  });
+  test('{{if}} inline with 2 args renders truthy value when true', async function (assert) {
+    const value = true;
+    await render(
+      <template>
+        <div data-test-el>{{if value 'visible'}}</div>
+      </template>,
+    );
+    assert.dom('[data-test-el]').hasText('visible');
+  });
+  test('{{if}} inline with 2 args reactive toggle', async function (assert) {
+    const value = cell(true);
+    await render(
+      <template>
+        <div data-test-el>{{if value 'visible'}}</div>
+      </template>,
+    );
+    assert.dom('[data-test-el]').hasText('visible');
+
+    value.update(false);
+    await rerender();
+    assert.dom('[data-test-el]').hasText('', 'empty string when condition becomes false');
+
+    value.update(true);
+    await rerender();
+    assert.dom('[data-test-el]').hasText('visible', 'value restored when condition becomes true');
   });
 });

@@ -2224,6 +2224,102 @@ module('Integration | InternalComponent | each', function (hooks) {
     assert.equal(aNodes[49].textContent, '0');
   });
 
+  test('{{else}} block renders for empty list', async function (assert) {
+    const items = cell<{ id: number }[]>([]);
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items key='id' as |item|}}
+            <div data-test-item>{{item.id}}</div>
+          {{else}}
+            <div data-test-empty>No items</div>
+          {{/each}}
+        </div>
+      </template>,
+    );
+    assert.dom('[data-test-item]').doesNotExist('no items rendered');
+    assert.dom('[data-test-empty]').hasText('No items', 'else block rendered');
+  });
+
+  test('empty list then populated switches from else to items', async function (assert) {
+    const items = cell<{ id: number }[]>([]);
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items key='id' as |item|}}
+            <div data-test-item>{{item.id}}</div>
+          {{else}}
+            <div data-test-empty>No items</div>
+          {{/each}}
+        </div>
+      </template>,
+    );
+    assert.dom('[data-test-empty]').exists('else block rendered initially');
+    assert.dom('[data-test-item]').doesNotExist();
+
+    items.update([{ id: 1 }, { id: 2 }]);
+    await rerender();
+
+    assert.dom('[data-test-empty]').doesNotExist('else block removed');
+    assert.dom('[data-test-item]').exists({ count: 2 }, 'items rendered');
+  });
+
+  test('populated list then emptied switches from items to else', async function (assert) {
+    const items = cell([{ id: 1 }, { id: 2 }]);
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items key='id' as |item|}}
+            <div data-test-item>{{item.id}}</div>
+          {{else}}
+            <div data-test-empty>No items</div>
+          {{/each}}
+        </div>
+      </template>,
+    );
+    assert.dom('[data-test-item]').exists({ count: 2 }, 'items rendered initially');
+    assert.dom('[data-test-empty]').doesNotExist();
+
+    items.update([]);
+    await rerender();
+
+    assert.dom('[data-test-item]').doesNotExist('items removed');
+    assert.dom('[data-test-empty]').exists('else block rendered');
+  });
+
+  test('each else full round-trip: empty → populated → empty → populated', async function (assert) {
+    const items = cell<{ id: number }[]>([]);
+    await render(
+      <template>
+        <div data-test-container>
+          {{#each items key='id' as |item|}}
+            <div data-test-item>{{item.id}}</div>
+          {{else}}
+            <div data-test-empty>No items</div>
+          {{/each}}
+        </div>
+      </template>,
+    );
+
+    assert.dom('[data-test-empty]').exists('step 1: else block for empty list');
+    assert.dom('[data-test-item]').doesNotExist();
+
+    items.update([{ id: 1 }, { id: 2 }]);
+    await rerender();
+    assert.dom('[data-test-item]').exists({ count: 2 }, 'step 2: items rendered');
+    assert.dom('[data-test-empty]').doesNotExist();
+
+    items.update([]);
+    await rerender();
+    assert.dom('[data-test-empty]').exists('step 3: else block again');
+    assert.dom('[data-test-item]').doesNotExist();
+
+    items.update([{ id: 3 }]);
+    await rerender();
+    assert.dom('[data-test-item]').exists({ count: 1 }, 'step 4: items rendered again');
+    assert.dom('[data-test-empty]').doesNotExist();
+  });
+
   test('each - identity key with multiple roots', async function (assert) {
     const obj1 = { name: 'first' };
     const obj2 = { name: 'second' };
