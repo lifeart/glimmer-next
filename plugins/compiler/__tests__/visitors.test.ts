@@ -369,6 +369,8 @@ describe('Visitor Pattern', () => {
         // style.* becomes an oncreated event
         const styleEvent = result.events.find(([name]) => name === '@oncreated');
         expect(styleEvent).toBeDefined();
+        const handler = styleEvent?.[1];
+        expect(handler && handler.kind === 'helper' && handler.name === SYMBOLS.STYLE).toBe(true);
       }
     });
   });
@@ -513,12 +515,12 @@ describe('Visitor Pattern', () => {
       expect(result).toContain('this.onCreated($n)');
     });
 
-    test('serializes internal style setter helper', () => {
+    test('serializes style helper', () => {
       const result = serializeValueToString(
-        helper(INTERNAL_HELPERS.STYLE_SETTER, [literal('color'), path('this.color')])
+        helper(SYMBOLS.STYLE, [literal('color'), path('this.color')])
       );
-      expect(result).toContain('setProperty("color"');
-      expect(result).toContain(SYMBOLS.TO_VALUE);
+      expect(result).toContain(SYMBOLS.STYLE);
+      expect(result).toContain('"color"');
     });
   });
 

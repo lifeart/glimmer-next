@@ -24,6 +24,8 @@ import {
   setIsRendering,
   isRendering,
   type Cell,
+  DEBUG_MERGED_CELLS,
+  DEBUG_CELLS,
 } from './reactive';
 import { opcodeFor, evaluateOpcode, checkOpcode, effect } from './vm';
 import { syncDom } from './runtime';
@@ -36,6 +38,10 @@ beforeEach(() => {
   relatedTags.clear();
   setTracker(null);
   setIsRendering(false);
+  if (typeof IS_DEV_MODE !== 'undefined' && IS_DEV_MODE) {
+    DEBUG_MERGED_CELLS.clear();
+    DEBUG_CELLS.clear();
+  }
 });
 
 describe('opcodeFor', () => {
@@ -580,6 +586,23 @@ describe('effect function', () => {
     });
 
     expect(executed).toBe(true);
+
+    destroy();
+  });
+
+  test('effect stores debug label in dev mode', () => {
+    if (typeof IS_DEV_MODE === 'undefined' || !IS_DEV_MODE) {
+      return;
+    }
+    const marker = 'vm.effect.label';
+    const count = cell(0);
+    const destroy = effect(() => {
+      count.value;
+    }, marker);
+
+    const labels = Array.from(DEBUG_MERGED_CELLS).map((tag) => tag._debugName);
+    expect(labels.some((label) => label?.includes(`formula:effect:${marker}`))).toBe(true);
+    expect(labels.some((label) => label?.includes(`formula:effect.internal:${marker}`))).toBe(true);
 
     destroy();
   });

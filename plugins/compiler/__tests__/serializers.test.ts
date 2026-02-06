@@ -525,6 +525,7 @@ describe('Serializers', () => {
       expect(SYMBOLS.IF).toBe('$_if');
       expect(SYMBOLS.EACH).toBe('$_each');
       expect(SYMBOLS.SLOT).toBe('$_slot');
+      expect(SYMBOLS.STYLE).toBe('$_style');
     });
   });
 

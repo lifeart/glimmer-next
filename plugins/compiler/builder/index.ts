@@ -53,7 +53,6 @@ export type {
 
 // Re-export builder interfaces
 export type {
-  StyleSetterSymbols,
   ElementHelperSymbols,
 } from './builders';
 
@@ -102,7 +101,6 @@ export {
   methodBinding,
   iife,
   formattedArray,
-  styleSetter,
   elementHelperWrapper,
   // Statements
   varDecl,

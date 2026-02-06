@@ -467,7 +467,7 @@ function processStyleAttributes(
       : undefined;
 
     const styleHelper = helper(
-      INTERNAL_HELPERS.STYLE_SETTER,
+      SYMBOLS.STYLE,
       [literal(propertyName, propNameRange), value],
       new Map(),
       attrRange
