@@ -1,5 +1,6 @@
 import type Babel from '@babel/core';
 import { MAIN_IMPORT, SYMBOLS } from './symbols';
+import type { PropertyTypeHint } from './compiler/types';
 
 export type ResolvedHBS = {
   template: string;
@@ -14,6 +15,8 @@ export type ResolvedHBS = {
     start: { line: number; column: number; offset?: number };
     end: { line: number; column: number; offset?: number };
   };
+  /** Type hints extracted from decorators on the containing class */
+  typeHints?: { properties?: Record<string, PropertyTypeHint> };
 };
 
 function getScopeBindings(path: any, bindings: Set<string> = new Set()) {
@@ -32,7 +35,7 @@ export function processTemplate(
 ) {
   return function babelPlugin(babel: { types: typeof Babel.types }) {
     const { types: t } = babel;
-    type Context = Record<string, boolean | string | undefined | string[]>;
+    type Context = Record<string, boolean | string | undefined | string[] | Record<string, PropertyTypeHint>>;
     const getTemplateFunctionNames = (path: Babel.NodePath<any>) => {
       const state = (path.state ??= {}) as { templateFunctionNames?: Set<string> };
       if (!state.templateFunctionNames) {
@@ -118,6 +121,7 @@ export function processTemplate(
         },
         ClassBody: {
           enter(_: Babel.NodePath<Babel.types.ClassBody>, context: Context) {
+            context.decoratorHints = undefined;
             // here we assume that class is extends from our Component
             // @todo - check if it's really extends from Component
             context.isInsideClassBody = true;
@@ -129,6 +133,78 @@ export function processTemplate(
           exit(_: Babel.NodePath<Babel.types.ClassBody>, context: Context) {
             context.isInsideClassBody = false;
           },
+        },
+        ClassProperty(path: Babel.NodePath<Babel.types.ClassProperty>, context: Context) {
+          // Static properties are not accessed via this.propName in templates
+          if (path.node.static) return;
+          if (path.node.key.type === 'Identifier') {
+            const propName = path.node.key.name;
+            if (!context.decoratorHints) {
+              context.decoratorHints = {};
+            }
+            const hints = context.decoratorHints as Record<string, PropertyTypeHint>;
+            // Check if property has @tracked decorator
+            const isTracked = path.node.decorators?.some(
+              (d) => d.expression.type === 'Identifier' && d.expression.name === 'tracked'
+            ) ?? false;
+
+            // Classify based on initializer AST node
+            const init = path.node.value;
+            if (!init) {
+              if (isTracked) {
+                // @tracked with no initializer (e.g., `@tracked value!: string`)
+                hints[`this.${propName}`] = { kind: 'primitive', isTracked: true };
+              }
+              // No initializer, not tracked — unknown, skip
+              return;
+            }
+            const initType = init.type;
+            // cell() or formula() calls are reactive
+            if (initType === 'CallExpression'
+              && init.callee.type === 'Identifier'
+              && (init.callee.name === 'cell' || init.callee.name === 'formula')) {
+              hints[`this.${propName}`] = { kind: 'cell' };
+            }
+            // Arrow functions and function expressions
+            else if (initType === 'ArrowFunctionExpression' || initType === 'FunctionExpression') {
+              hints[`this.${propName}`] = isTracked
+                ? { kind: 'function', isTracked: true }
+                : { kind: 'function' };
+            }
+            // Object/array literals — could hold anything
+            else if (initType === 'ObjectExpression' || initType === 'ArrayExpression') {
+              hints[`this.${propName}`] = isTracked
+                ? { kind: 'object', isTracked: true }
+                : { kind: 'object' };
+            }
+            // new expressions (e.g., new Cell(), new Map()) — unknown
+            else if (initType === 'NewExpression') {
+              if (isTracked) {
+                hints[`this.${propName}`] = { kind: 'unknown', isTracked: true };
+              }
+              // Not tracked — don't emit a hint for unknown constructors
+            }
+            // Primitive literals: string, number, boolean, null
+            else if (
+              initType === 'StringLiteral' || initType === 'NumericLiteral'
+              || initType === 'BooleanLiteral' || initType === 'NullLiteral'
+            ) {
+              hints[`this.${propName}`] = isTracked
+                ? { kind: 'primitive', isTracked: true }
+                : { kind: 'primitive' };
+            }
+            // Template literals without expressions are effectively strings
+            else if (initType === 'TemplateLiteral' && init.expressions.length === 0) {
+              hints[`this.${propName}`] = isTracked
+                ? { kind: 'primitive', isTracked: true }
+                : { kind: 'primitive' };
+            }
+            // Anything else (call expressions, identifiers, etc.)
+            else if (isTracked) {
+              hints[`this.${propName}`] = { kind: 'unknown', isTracked: true };
+            }
+            // Not tracked, unknown expression — skip
+          }
         },
         ClassMethod(path: Babel.NodePath<Babel.types.ClassMethod>) {
           if (path.node.key.type === 'Identifier' && path.node.key.name === '$static') {
@@ -282,6 +358,7 @@ export function processTemplate(
             // Capture template content location for source maps
             // The quasi.quasis[0] contains the actual template string content
             const quasiLoc = path.node.quasi.quasis[0].loc;
+            const decoratorHints = context.decoratorHints as Record<string, PropertyTypeHint> | undefined;
             hbsToProcess.push({
               template,
               flags: {
@@ -301,7 +378,9 @@ export function processTemplate(
                   offset: path.node.quasi.quasis[0].end ?? (quasiLoc.end as any).offset,
                 },
               } : undefined,
+              typeHints: decoratorHints ? { properties: { ...decoratorHints } } : undefined,
             });
+            context.decoratorHints = undefined;
             path.replaceWith(t.identifier('$placeholder'));
           }
         },

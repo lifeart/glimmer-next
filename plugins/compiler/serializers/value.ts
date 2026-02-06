@@ -13,6 +13,7 @@ import {
   serializeJS,
   type JSExpression,
 } from '../builder';
+import { shouldSkipGetterWrapper } from '../type-hints';
 
 /**
  * Serialize a SerializedValue to JavaScript code.
@@ -134,7 +135,13 @@ export function buildPathExpression(
   }
 
   const pathExpr = buildPathBase(ctx, value);
+
+  // Type-directed optimization: skip getter wrapper for known-static values
   if (wrapInGetter && ctx.flags.IS_GLIMMER_COMPAT_MODE) {
+    if (shouldSkipGetterWrapper(ctx, value.expression, value.isArg)) {
+      // Type hint says this value is static -- emit direct reference
+      return pathExpr;
+    }
     return B.reactiveGetter(pathExpr, value.sourceRange);
   }
   return pathExpr;
