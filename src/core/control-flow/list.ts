@@ -55,18 +55,6 @@ type ListComponentArgs<T> = {
 };
 type RenderTarget = HTMLElement | DocumentFragment;
 
-// Binary search helper for index adjustment after removals
-function countLessThan(arr: number[], target: number) {
-  let low = 0,
-    high = arr.length;
-  while (low < high) {
-    const mid = (low + high) >> 1;
-    if (arr[mid] < target) low = mid + 1;
-    else high = mid;
-  }
-  return low;
-}
-
 // Reusable arrays for LIS algorithm — avoids allocations on each update
 const _lisTails: number[] = [];
 const _lisTailIdx: number[] = [];
@@ -131,7 +119,6 @@ export class BasicListComponent<T extends { id: number }> {
   private _freshMoveKeys: Set<string> = new Set();
   protected _keysToRemove: string[] = [];
   protected _rowsToRemove: GenericReturnType[] = [];
-  protected _indexesToRemove: number[] = [];
   [RENDERED_NODES_PROPERTY]: Array<Node> = [];
   [COMPONENT_ID_PROPERTY] = cId();
   ItemComponent: (
@@ -334,7 +321,7 @@ export class BasicListComponent<T extends { id: number }> {
       return marker;
     }
   }
-  updateItems(items: T[], amountOfKeys: number, removedIndexes: number[]) {
+  updateItems(items: T[], amountOfKeys: number, removedCount: number) {
     const {
       indexMap,
       keyMap,
@@ -360,17 +347,7 @@ export class BasicListComponent<T extends { id: number }> {
     moveSet.clear();
     freshMoveKeys.clear();
 
-    const amountOfExistingKeys = amountOfKeys - removedIndexes.length;
-    if (removedIndexes.length > 0 && keyMap.size > 0) {
-      removedIndexes.sort((a, b) => a - b);
-      for (const key of keyMap.keys()) {
-        let keyIndex = indexMap.get(key)!;
-        const count = countLessThan(removedIndexes, keyIndex);
-        if (count !== 0) {
-          indexMap.set(key, keyIndex - count);
-        }
-      }
-    }
+    const amountOfExistingKeys = amountOfKeys - removedCount;
 
     const self = this as unknown as ComponentLike;
     let targetNode = items.length
@@ -573,16 +550,14 @@ export class SyncListComponent<
     }
   }
   syncList(items: T[]) {
-    const { keyMap, keyForItem, indexMap } = this;
+    const { keyMap, keyForItem } = this;
     if (items.length === 0 && !this.isFirstRender) {
       if (this.fastCleanup()) {
         return;
       }
     }
     let amountOfKeys = keyMap.size;
-
-    const indexesToRemove = this._indexesToRemove;
-    indexesToRemove.length = 0;
+    let removedCount = 0;
 
     if (amountOfKeys > 0) {
       const updatingKeys = this.keysForItems(items, keyForItem);
@@ -597,16 +572,15 @@ export class SyncListComponent<
         }
         keysToRemove.push(key);
         rowsToRemove.push(row);
-        indexesToRemove.push(indexMap.get(key)!);
       }
       if (keysToRemove.length) {
         if (keysToRemove.length === amountOfKeys) {
           if (this.fastCleanup()) {
             amountOfKeys = 0;
             keysToRemove.length = 0;
-            indexesToRemove.length = 0;
           }
         }
+        removedCount = keysToRemove.length;
         for (let i = 0; i < keysToRemove.length; i++) {
           this.destroyItem(rowsToRemove[i], keysToRemove[i]);
         }
@@ -614,7 +588,7 @@ export class SyncListComponent<
       // Release references to destroyed rows
       rowsToRemove.length = 0;
     }
-    this.updateItems(items, amountOfKeys, indexesToRemove);
+    this.updateItems(items, amountOfKeys, removedCount);
   }
   destroyItem(row: GenericReturnType, key: string) {
     const { keyMap, indexMap, indexFormulaMap } = this;
@@ -706,10 +680,9 @@ export class AsyncListComponent<
         return;
       }
     }
-    const { keyMap, keyForItem, indexMap } = this;
+    const { keyMap, keyForItem } = this;
     let amountOfKeys = keyMap.size;
-    const indexesToRemove = this._indexesToRemove;
-    indexesToRemove.length = 0;
+    let removedCount = 0;
 
     if (amountOfKeys > 0) {
       const keysToRemove = this._keysToRemove;
@@ -725,16 +698,15 @@ export class AsyncListComponent<
         }
         keysToRemove.push(key);
         rowsToRemove.push(row);
-        indexesToRemove.push(indexMap.get(key)!);
       }
       if (keysToRemove.length) {
         if (keysToRemove.length === amountOfKeys) {
           if (await this.fastCleanup()) {
             amountOfKeys = 0;
             keysToRemove.length = 0;
-            indexesToRemove.length = 0;
           }
         }
+        removedCount = keysToRemove.length;
 
         for (let i = 0; i < keysToRemove.length; i++) {
           removeQueue.push(this.destroyItem(rowsToRemove[i], keysToRemove[i]));
@@ -752,7 +724,7 @@ export class AsyncListComponent<
         });
       }
     }
-    this.updateItems(items, amountOfKeys, indexesToRemove);
+    this.updateItems(items, amountOfKeys, removedCount);
   }
   async destroyItem(row: GenericReturnType, key: string) {
     const { keyMap, indexMap, indexFormulaMap } = this;

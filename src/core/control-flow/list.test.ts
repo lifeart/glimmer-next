@@ -2667,3 +2667,267 @@ describe('LIS-based move minimization', () => {
     }
   });
 });
+
+describe('DOM mutation counting', () => {
+  let window: Window;
+  let document: Document;
+  let api: DOMApi;
+  let root: Root;
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    window = new Window();
+    document = window.document as unknown as Document;
+    api = new HTMLBrowserDOMApi(document);
+    cleanupFastContext();
+    root = new Root(document);
+    provideContext(root, RENDERING_CONTEXT, api);
+    container = document.createElement('div');
+    document.body.appendChild(container);
+  });
+
+  afterEach(() => {
+    cleanupFastContext();
+    TREE.clear();
+    PARENT.clear();
+    CHILD.clear();
+    window.close();
+  });
+
+  async function createMutationTrackedList(items: Array<{ id: number }>) {
+    const { SyncListComponent } = await import('./list');
+    const { cell } = await import('../reactive');
+
+    let insertCount = 0;
+    let destroyCount = 0;
+    let fragmentInsertCount = 0;
+
+    // Wrap the real api methods with mutation counters
+    const originalInsert = api.insert.bind(api);
+    const originalDestroy = api.destroy.bind(api);
+    const originalClearChildren = api.clearChildren.bind(api);
+    const trackedApi = Object.create(api);
+    trackedApi.insert = (parent: Node, child: Node, anchor?: Node | null) => {
+      if (parent.nodeType === 11 /* DOCUMENT_FRAGMENT_NODE */) {
+        fragmentInsertCount++;
+      } else if (parent === container) {
+        insertCount++;
+      }
+      return originalInsert(parent, child, anchor);
+    };
+    trackedApi.destroy = (node: Node) => {
+      destroyCount++;
+      return originalDestroy(node);
+    };
+    trackedApi.clearChildren = (element: Node) => {
+      let child = element.firstChild;
+      while (child) {
+        destroyCount++;
+        child = child.nextSibling;
+      }
+      return originalClearChildren(element);
+    };
+
+    // Provide the tracked api as the rendering context so initDOM returns it
+    const trackedRoot = new Root(document);
+    provideContext(trackedRoot, RENDERING_CONTEXT, trackedApi);
+
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(trackedRoot, parentComponent);
+
+    const itemsCell = cell(items);
+    const topMarker = document.createComment('list top');
+
+    const listInstance = new SyncListComponent(
+      {
+        tag: itemsCell,
+        key: 'id',
+        ctx: parentComponent,
+        ItemComponent: (item: { id: number }) => {
+          const div = document.createElement('div');
+          div.textContent = String(item.id);
+          div.setAttribute('data-id', String(item.id));
+          return [div];
+        },
+      },
+      container,
+      topMarker,
+    );
+
+    const getDivOrder = () => {
+      const divs: string[] = [];
+      let node: Node | null = listInstance.topMarker.nextSibling;
+      while (node && node !== listInstance.bottomMarker) {
+        if (node.nodeType === 1) {
+          divs.push((node as HTMLElement).getAttribute('data-id')!);
+        }
+        node = node.nextSibling;
+      }
+      return divs;
+    };
+
+    const resetCounts = () => {
+      insertCount = 0;
+      destroyCount = 0;
+      fragmentInsertCount = 0;
+    };
+
+    return {
+      getInsertCount: () => insertCount,
+      getDestroyCount: () => destroyCount,
+      getFragmentInsertCount: () => fragmentInsertCount,
+      resetCounts,
+      getDivOrder,
+      itemsCell,
+      listInstance,
+    };
+  }
+
+  test('no-op update (same items, same order) — 0 container inserts, 0 destroys', async () => {
+    const { itemsCell, getDivOrder, resetCounts, getInsertCount, getDestroyCount } =
+      await createMutationTrackedList([{ id: 1 }, { id: 2 }, { id: 3 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder()).toEqual(['1', '2', '3']);
+    resetCounts();
+
+    // Update with identical items
+    itemsCell.update([{ id: 1 }, { id: 2 }, { id: 3 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder()).toEqual(['1', '2', '3']);
+    expect(getInsertCount()).toBe(0);
+    expect(getDestroyCount()).toBe(0);
+  });
+
+  test('append items at end — only new item inserts, 0 destroys', async () => {
+    const { itemsCell, getDivOrder, resetCounts, getInsertCount, getDestroyCount } =
+      await createMutationTrackedList([{ id: 1 }, { id: 2 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder()).toEqual(['1', '2']);
+    resetCounts();
+
+    // Append two items
+    itemsCell.update([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder()).toEqual(['1', '2', '3', '4']);
+    expect(getDestroyCount()).toBe(0);
+    // Batch fragment insert: 1 container insert for all appended items
+    expect(getInsertCount()).toBe(1);
+  });
+
+  test('remove items from end — 0 container inserts, destroys equal to removed count', async () => {
+    const { itemsCell, getDivOrder, resetCounts, getInsertCount, getDestroyCount } =
+      await createMutationTrackedList([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder()).toEqual(['1', '2', '3', '4']);
+    resetCounts();
+
+    // Remove last two items
+    itemsCell.update([{ id: 1 }, { id: 2 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder()).toEqual(['1', '2']);
+    expect(getInsertCount()).toBe(0);
+    // Each removed item: destroy div + destroy marker = 2 per item
+    expect(getDestroyCount()).toBe(4); // 2 items * 2 nodes each
+  });
+
+  test('full reversal (5 items) — correct order, 0 destroys', async () => {
+    const { itemsCell, getDivOrder, resetCounts, getInsertCount, getDestroyCount } =
+      await createMutationTrackedList([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder()).toEqual(['1', '2', '3', '4', '5']);
+    resetCounts();
+
+    // Full reverse
+    itemsCell.update([{ id: 5 }, { id: 4 }, { id: 3 }, { id: 2 }, { id: 1 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder()).toEqual(['5', '4', '3', '2', '1']);
+    expect(getDestroyCount()).toBe(0);
+    // LIS of [4,3,2,1,0] keeps 1 item stable, 4 items relocate
+    expect(getInsertCount()).toBe(4);
+  });
+
+  test('single move start-to-end — minimal inserts, 0 destroys', async () => {
+    const { itemsCell, getDivOrder, resetCounts, getInsertCount, getDestroyCount } =
+      await createMutationTrackedList([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder()).toEqual(['1', '2', '3', '4', '5']);
+    resetCounts();
+
+    // Move first item to end: [2, 3, 4, 5, 1]
+    itemsCell.update([{ id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }, { id: 1 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder()).toEqual(['2', '3', '4', '5', '1']);
+    expect(getDestroyCount()).toBe(0);
+    // Only item 1 relocates (1 fragment insert into container)
+    expect(getInsertCount()).toBe(1);
+  });
+
+  test('single move end-to-start — minimal inserts, 0 destroys', async () => {
+    const { itemsCell, getDivOrder, resetCounts, getInsertCount, getDestroyCount } =
+      await createMutationTrackedList([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder()).toEqual(['1', '2', '3', '4', '5']);
+    resetCounts();
+
+    // Move last item to start: [5, 1, 2, 3, 4]
+    itemsCell.update([{ id: 5 }, { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder()).toEqual(['5', '1', '2', '3', '4']);
+    expect(getDestroyCount()).toBe(0);
+    // Only item 5 relocates (1 fragment insert into container)
+    expect(getInsertCount()).toBe(1);
+  });
+
+  test('shuffle with removals and additions — destroys match removed, inserts cover new + moved', async () => {
+    const { itemsCell, getDivOrder, resetCounts, getInsertCount, getDestroyCount } =
+      await createMutationTrackedList([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder()).toEqual(['1', '2', '3', '4', '5']);
+    resetCounts();
+
+    // Remove 2, 4; add 6, 7; reorder remaining: [5, 6, 1, 7, 3]
+    itemsCell.update([{ id: 5 }, { id: 6 }, { id: 1 }, { id: 7 }, { id: 3 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder()).toEqual(['5', '6', '1', '7', '3']);
+    // 2 items removed (id:2, id:4), each has div + marker = 4 destroys
+    expect(getDestroyCount()).toBe(4);
+    // 2 new items + moved surviving items
+    expect(getInsertCount()).toBe(5);
+  });
+
+  test('replace all items — destroys for all old, inserts for all new', async () => {
+    const { itemsCell, getDivOrder, resetCounts, getInsertCount, getDestroyCount } =
+      await createMutationTrackedList([{ id: 1 }, { id: 2 }, { id: 3 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder()).toEqual(['1', '2', '3']);
+    resetCounts();
+
+    // Replace all items
+    itemsCell.update([{ id: 10 }, { id: 20 }, { id: 30 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder()).toEqual(['10', '20', '30']);
+    // clearChildren destroys all nodes in container (topMarker + bottomMarker + 3 markers + 3 divs = 8)
+    // plus fragment target marker destroy = 9 total
+    expect(getDestroyCount()).toBe(9);
+    // 3 new items rendered into fragment, 1 batch insert into container,
+    // plus topMarker + bottomMarker re-insert = 3
+    expect(getInsertCount()).toBe(3);
+  });
+});
