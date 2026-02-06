@@ -201,16 +201,19 @@ function buildEach(
   // Build key argument
   const keyArg = eachKey !== null ? B.string(eachKey) : B.nil();
 
-  // $_each(condition, callback, key, ctx)
-  // Use formatted call when formatting is enabled for better readability
+  // Build inverse (else) branch if present
+  const eachArgs: JSExpression[] = [conditionExpr, callback, keyArg, B.id(ctxName)];
+
+  if (control.inverse && control.inverse.length > 0) {
+    const inverseCtxName = nextCtxName(ctx);
+    const inverseBranch = buildIfBranch(ctx, control.inverse, inverseCtxName, ctxName);
+    eachArgs.push(inverseBranch);
+  }
+
+  // $_each(condition, callback, key, ctx[, inverseFn])
   return B.call(
     B.id(fnName),
-    [
-      conditionExpr,
-      callback,
-      keyArg,
-      B.id(ctxName),
-    ],
+    eachArgs,
     control.sourceRange,
     ctx.formatter.options.enabled,
     'BlockStatement'

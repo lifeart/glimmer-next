@@ -47,11 +47,14 @@ type GenericReturnType =
   | ComponentLike
   | Node;
 
+export type InverseFn = (ctx: Component<any>) => GenericReturnType | null;
+
 type ListComponentArgs<T> = {
   tag: Cell<T[]> | MergedCell;
   key: string | null;
   ctx: Component<any>;
   ItemComponent: (item: T, index?: number | MergedCell) => GenericReturnType;
+  inverseFn?: InverseFn;
 };
 type RenderTarget = HTMLElement | DocumentFragment;
 
@@ -126,6 +129,8 @@ export class BasicListComponent<T extends { id: number }> {
     index: number | MergedCell,
     ctx: Component<any>,
   ) => GenericReturnType;
+  inverseFn: InverseFn | null = null;
+  inverseContent: GenericReturnType | null = null;
   bottomMarker!: Comment;
   topMarker!: Comment;
   key: string = '@identity';
@@ -146,11 +151,14 @@ export class BasicListComponent<T extends { id: number }> {
   private _relocateFragment!: DocumentFragment;
   declare api: DOMApi;
   constructor(
-    { tag, ctx, key, ItemComponent }: ListComponentArgs<T>,
+    { tag, ctx, key, ItemComponent, inverseFn }: ListComponentArgs<T>,
     outlet: RenderTarget,
     topMarker: Comment,
   ) {
     this.api = initDOM(ctx);
+    if (inverseFn) {
+      this.inverseFn = inverseFn;
+    }
     this._relocateFragment = this.api.fragment();
     this.ItemComponent = ItemComponent;
     // Propagate $_eval from parent context for deferred rendering
@@ -295,6 +303,27 @@ export class BasicListComponent<T extends { id: number }> {
         return item[this.key] as unknown as string;
       };
     }
+  }
+  renderInverse() {
+    if (!this.inverseFn || this.inverseContent !== null) return;
+    const self = this as unknown as ComponentLike;
+    setParentContext(self);
+    this.inverseContent = this.inverseFn(self as unknown as Component<any>);
+    setParentContext(null);
+    const parent = this.api.parent(this.bottomMarker)!;
+    renderElement(this.api, self, parent, this.inverseContent, this.bottomMarker);
+  }
+  destroyInverseSync() {
+    if (this.inverseContent === null) return;
+    const content = this.inverseContent;
+    this.inverseContent = null;
+    destroyElementSync(content as ComponentLike, false, this.api);
+  }
+  async destroyInverseAsync() {
+    if (this.inverseContent === null) return;
+    const content = this.inverseContent;
+    this.inverseContent = null;
+    await destroyElement(content as ComponentLike, false, this.api);
   }
   // @ts-expect-error non-string return type
   keyForItem(item: T, index: number): string {
@@ -506,7 +535,11 @@ export class SyncListComponent<
     super(params, outlet, topMarker);
     registerDestructor(
       params.ctx,
-      () => this.syncList([]),
+      () => {
+        this.inverseFn = null;
+        this.destroyInverseSync();
+        this.syncList([]);
+      },
       opcodeFor(this.tag, (value) => {
         this.syncList(value as T[]);
       }),
@@ -551,8 +584,14 @@ export class SyncListComponent<
   }
   syncList(items: T[]) {
     const { keyMap, keyForItem } = this;
+
+    if (items.length > 0 && this.inverseContent !== null) {
+      this.destroyInverseSync();
+    }
+
     if (items.length === 0 && !this.isFirstRender) {
       if (this.fastCleanup()) {
+        if (this.inverseFn) this.renderInverse();
         return;
       }
     }
@@ -589,6 +628,10 @@ export class SyncListComponent<
       rowsToRemove.length = 0;
     }
     this.updateItems(items, amountOfKeys, removedCount);
+
+    if (items.length === 0 && this.inverseFn) {
+      this.renderInverse();
+    }
   }
   destroyItem(row: GenericReturnType, key: string) {
     const { keyMap, indexMap, indexFormulaMap } = this;
@@ -625,6 +668,8 @@ export class AsyncListComponent<
         }
       },
       async () => {
+        this.inverseFn = null;
+        await this.destroyInverseAsync();
         await this.syncList([]);
       },
       opcodeFor(this.tag, async (value) => {
@@ -675,8 +720,14 @@ export class AsyncListComponent<
     }
   }
   async syncList(items: T[]) {
+    // Destroy inverse when items arrive — guarded to avoid unnecessary await
+    if (items.length > 0 && this.inverseContent !== null) {
+      await this.destroyInverseAsync();
+    }
+
     if (items.length === 0 && !this.isFirstRender) {
       if (await this.fastCleanup()) {
+        if (this.inverseFn) this.renderInverse();
         return;
       }
     }
@@ -725,6 +776,10 @@ export class AsyncListComponent<
       }
     }
     this.updateItems(items, amountOfKeys, removedCount);
+
+    if (items.length === 0 && this.inverseFn) {
+      this.renderInverse();
+    }
   }
   async destroyItem(row: GenericReturnType, key: string) {
     const { keyMap, indexMap, indexFormulaMap } = this;
