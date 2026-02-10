@@ -178,6 +178,14 @@ describe('classifyReactivity', () => {
 });
 
 describe('shouldSkipGetterWrapper', () => {
+  test('returns false for args even with primitive hint', () => {
+    const ctx = makeCtx({
+      withTypeOptimization: true,
+      typeHints: { args: { label: { kind: 'primitive' } } },
+    });
+    expect(shouldSkipGetterWrapper(ctx, 'this[$args].label', true)).toBe(false);
+  });
+
   test('returns true for plain (non-tracked) property', () => {
     const ctx = makeCtx({
       withTypeOptimization: true,

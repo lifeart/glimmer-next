@@ -1,5 +1,8 @@
 import { describe, test, expect } from 'vitest';
+import { transformSync, type PluginItem } from '@babel/core';
+import { Preprocessor } from 'content-tag';
 import { transform } from '../test';
+import { processTemplate, type ResolvedHBS } from '../babel';
 import { defaultFlags } from '../flags';
 
 function transformGts(source: string): string {
@@ -16,6 +19,24 @@ function transformGts(source: string): string {
   return result.code;
 }
 
+function collectResolvedHbs(source: string): ResolvedHBS[] {
+  const p = new Preprocessor();
+  const intermediate = p.process(source, { filename: 'test.gts' }).code;
+  const hbsToProcess: ResolvedHBS[] = [];
+  const plugins: PluginItem[] = [processTemplate(hbsToProcess, 'development'), 'module:decorator-transforms'];
+  transformSync(intermediate, {
+    plugins,
+    filename: 'test.ts',
+    presets: [
+      [
+        '@babel/preset-typescript',
+        { allExtensions: true, onlyRemoveTypeImports: true, allowDeclareFields: true },
+      ],
+    ],
+  });
+  return hbsToProcess;
+}
+
 describe('Babel decorator extraction', () => {
   test('@tracked property keeps getter wrapper (reactive)', () => {
     const code = transformGts(`
@@ -26,6 +47,30 @@ describe('Babel decorator extraction', () => {
       }
     `);
     // tracked prop should have getter wrapper (reactive)
+    expect(code).toMatch(/\(\)\s*=>\s*this\.count/);
+  });
+
+  test('aliased tracked decorator keeps getter wrapper (reactive)', () => {
+    const code = transformGts(`
+      import { tracked as state } from '@glimmer/tracking';
+      export default class MyComponent {
+        @state count = 0;
+        <template>{{this.count}}</template>
+      }
+    `);
+    // tracked alias should still be detected as reactive
+    expect(code).toMatch(/\(\)\s*=>\s*this\.count/);
+  });
+
+  test('namespace tracked decorator keeps getter wrapper (reactive)', () => {
+    const code = transformGts(`
+      import * as Tracking from '@glimmer/tracking';
+      export default class MyComponent {
+        @Tracking.tracked count = 0;
+        <template>{{this.count}}</template>
+      }
+    `);
+    // namespace import should still resolve to tracked decorator
     expect(code).toMatch(/\(\)\s*=>\s*this\.count/);
   });
 
@@ -171,6 +216,44 @@ describe('Babel decorator extraction', () => {
     `);
     // No initializer → no hint → unknown → keeps getter
     expect(code).toMatch(/\(\)\s*=>\s*this\.rootNode/);
+  });
+
+  test('extracts args hints from glint signature alias', () => {
+    const hbs = collectResolvedHbs(`
+      type Sig = {
+        Args: {
+          label: string;
+          count: number;
+          onClick: () => void;
+        };
+      };
+      export default class MyComponent extends Component<Sig> {
+        <template>{{@label}} {{@count}} {{@onClick}}</template>
+      }
+    `);
+    expect(hbs).toHaveLength(1);
+    expect(hbs[0].typeHints?.args?.label).toEqual({ kind: 'primitive' });
+    expect(hbs[0].typeHints?.args?.count).toEqual({ kind: 'primitive' });
+    expect(hbs[0].typeHints?.args?.onClick).toEqual({ kind: 'function' });
+  });
+
+  test('extracts args hints from inline glint signature', () => {
+    const hbs = collectResolvedHbs(`
+      import type { Cell } from '@lifeart/gxt';
+      export default class MyComponent extends Component<{
+        Args: {
+          ready: boolean;
+          user: { name: string };
+          state: Cell<number>;
+        };
+      }> {
+        <template>{{@ready}} {{@user}} {{@state}}</template>
+      }
+    `);
+    expect(hbs).toHaveLength(1);
+    expect(hbs[0].typeHints?.args?.ready).toEqual({ kind: 'primitive' });
+    expect(hbs[0].typeHints?.args?.user).toEqual({ kind: 'object' });
+    expect(hbs[0].typeHints?.args?.state).toEqual({ kind: 'cell' });
   });
 
   test('numeric literal property skips getter wrapper', () => {
@@ -444,15 +527,16 @@ describe('Babel decorator extraction', () => {
     expect(code).toMatch(/\(\)\s*=>\s*this\.count/);
   });
 
-  test('property initialized with undefined keeps getter wrapper', () => {
+  test('property initialized with undefined skips getter wrapper', () => {
     const code = transformGts(`
       export default class MyComponent {
         value = undefined;
         <template>{{this.value}}</template>
       }
     `);
-    // undefined is an Identifier in AST, not a literal → no hint → keeps getter
-    expect(code).toMatch(/\(\)\s*=>\s*this\.value/);
+    // undefined initializer is a static primitive, so getter wrapper can be skipped.
+    expect(code).not.toMatch(/\(\)\s*=>\s*this\.value/);
+    expect(code).toContain('this.value');
   });
 
   test('template literal with expressions keeps getter wrapper', () => {

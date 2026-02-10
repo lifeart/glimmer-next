@@ -50,14 +50,13 @@ describe('type-directed optimization in compile pipeline', () => {
     expect(code).toMatch(/\(\)\s*=>\s*this\.title/);
   });
 
-  test('static arg skips getter wrapper', () => {
+  test('args keep getter wrapper even with primitive hints (conservative)', () => {
     const code = compileWith('{{@label}}', {
       args: { label: { kind: 'primitive' } },
     });
-    // Static arg should NOT have a getter wrapper
-    expect(code).not.toMatch(/\(\)\s*=>\s*this\[\$args\]\.label/);
-    // But the arg should still be referenced
-    expect(code).toContain('$args');
+    // Arg reactivity depends on call-site values (often getter functions),
+    // so getter wrapper is kept to preserve tracking.
+    expect(code).toMatch(/\(\)\s*=>\s*\$a\.label/);
   });
 
   test('mixed tracked and untracked props in one template', () => {

@@ -119,6 +119,11 @@ export function shouldSkipGetterWrapper(
   expression: string,
   isArg: boolean
 ): boolean {
+  // Arg reactivity depends on call-site expressions (often getter functions),
+  // not on the arg's static type. Keep getter wrappers for args to preserve tracking.
+  if (isArg) {
+    return false;
+  }
   const hint = lookupTypeHint(ctx, expression, isArg);
   const reactivity = classifyReactivity(hint);
   return reactivity === 'static';
