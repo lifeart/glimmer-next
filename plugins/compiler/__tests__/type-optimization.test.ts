@@ -138,6 +138,36 @@ describe('type-directed optimization in compile pipeline', () => {
     expect(code).toContain('this.version');
   });
 
+  test('readonly primitive literal is inlined', () => {
+    const code = compileWith('{{this.VERSION}}', {
+      properties: {
+        'this.VERSION': { kind: 'primitive', isReadonly: true, literalValue: '1.2.3' },
+      },
+    });
+    expect(code).toContain('"1.2.3"');
+    expect(code).not.toContain('this.VERSION');
+  });
+
+  test('mutable primitive literal is not inlined', () => {
+    const code = compileWith('{{this.value}}', {
+      properties: {
+        'this.value': { kind: 'primitive', literalValue: 7 },
+      },
+    });
+    expect(code).toContain('this.value');
+    expect(code).not.toMatch(/\(\)\s*=>\s*this\.value/);
+  });
+
+  test('tracked readonly primitive literal is not inlined', () => {
+    const code = compileWith('{{this.count}}', {
+      properties: {
+        'this.count': { kind: 'primitive', isReadonly: true, isTracked: true, literalValue: 1 },
+      },
+    });
+    expect(code).toContain('this.count');
+    expect(code).toMatch(/\(\)\s*=>\s*this\.count/);
+  });
+
   test('subpath does not match parent hint (falls back to unknown)', () => {
     const code = compileWith('{{this.user.name}}', {
       properties: { 'this.user': { kind: 'object' } },

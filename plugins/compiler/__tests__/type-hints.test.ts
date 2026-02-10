@@ -1,5 +1,11 @@
 import { describe, test, expect } from 'vitest';
-import { lookupTypeHint, classifyReactivity, shouldSkipGetterWrapper, lookupHelperReturnHint } from '../type-hints';
+import {
+  lookupTypeHint,
+  classifyReactivity,
+  shouldSkipGetterWrapper,
+  lookupHelperReturnHint,
+  getStaticLiteralValue,
+} from '../type-hints';
 import { createContext } from '../context';
 import type { CompilerContext } from '../context';
 import type { PropertyTypeHint, TypeHints } from '../types';
@@ -256,6 +262,56 @@ describe('shouldSkipGetterWrapper', () => {
       typeHints: { properties: { 'this.state': { kind: 'cell' } } },
     });
     expect(shouldSkipGetterWrapper(ctx, 'this.state', false)).toBe(false);
+  });
+});
+
+describe('getStaticLiteralValue', () => {
+  test('returns literal for readonly primitive property', () => {
+    const ctx = makeCtx({
+      withTypeOptimization: true,
+      typeHints: {
+        properties: {
+          'this.VERSION': { kind: 'primitive', isReadonly: true, literalValue: '1.0.0' },
+        },
+      },
+    });
+    expect(getStaticLiteralValue(ctx, 'this.VERSION', false)).toBe('1.0.0');
+  });
+
+  test('returns undefined for non-readonly primitive property', () => {
+    const ctx = makeCtx({
+      withTypeOptimization: true,
+      typeHints: {
+        properties: {
+          'this.value': { kind: 'primitive', literalValue: 1 },
+        },
+      },
+    });
+    expect(getStaticLiteralValue(ctx, 'this.value', false)).toBeUndefined();
+  });
+
+  test('returns undefined for tracked primitive property', () => {
+    const ctx = makeCtx({
+      withTypeOptimization: true,
+      typeHints: {
+        properties: {
+          'this.count': { kind: 'primitive', isReadonly: true, isTracked: true, literalValue: 1 },
+        },
+      },
+    });
+    expect(getStaticLiteralValue(ctx, 'this.count', false)).toBeUndefined();
+  });
+
+  test('returns undefined for args even when readonly literal hint exists', () => {
+    const ctx = makeCtx({
+      withTypeOptimization: true,
+      typeHints: {
+        args: {
+          label: { kind: 'primitive', isReadonly: true, literalValue: 'x' },
+        },
+      },
+    });
+    expect(getStaticLiteralValue(ctx, 'this[$args].label', true)).toBeUndefined();
   });
 });
 

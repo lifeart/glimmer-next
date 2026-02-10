@@ -436,14 +436,39 @@ export function resolveTemplateTypeHintsWithChecker(
   }
 }
 
-function mergeHintRecords<T extends PropertyTypeHint>(
-  base: Readonly<Record<string, T>> | undefined,
-  next: Readonly<Record<string, T>> | undefined
-): Readonly<Record<string, T>> | undefined {
+function mergePropertyHint(
+  base: PropertyTypeHint,
+  next: PropertyTypeHint
+): PropertyTypeHint {
+  const kind = next.kind === 'unknown' && base.kind !== 'unknown'
+    ? base.kind
+    : next.kind;
+
+  return {
+    kind,
+    ...(next.isTracked === true || base.isTracked === true ? { isTracked: true } : {}),
+    ...(next.isReadonly === true || base.isReadonly === true ? { isReadonly: true } : {}),
+    ...((next.literalValue ?? base.literalValue) !== undefined
+      ? { literalValue: next.literalValue ?? base.literalValue }
+      : {}),
+  };
+}
+
+function mergeHintRecords(
+  base: Readonly<Record<string, PropertyTypeHint>> | undefined,
+  next: Readonly<Record<string, PropertyTypeHint>> | undefined
+): Readonly<Record<string, PropertyTypeHint>> | undefined {
   if (!base && !next) return undefined;
   if (!base) return next;
   if (!next) return base;
-  return { ...base, ...next };
+
+  const merged: Record<string, PropertyTypeHint> = { ...base };
+  for (const [key, hint] of Object.entries(next)) {
+    merged[key] = key in merged
+      ? mergePropertyHint(merged[key], hint)
+      : hint;
+  }
+  return merged;
 }
 
 export function mergeTypeHints(
@@ -451,16 +476,16 @@ export function mergeTypeHints(
   next: TypeHints | undefined
 ): TypeHints | undefined {
   const properties = mergeHintRecords(
-    base?.properties as Readonly<Record<string, PropertyTypeHint>> | undefined,
-    next?.properties as Readonly<Record<string, PropertyTypeHint>> | undefined
+    base?.properties,
+    next?.properties
   );
   const args = mergeHintRecords(
-    base?.args as Readonly<Record<string, PropertyTypeHint>> | undefined,
-    next?.args as Readonly<Record<string, PropertyTypeHint>> | undefined
+    base?.args,
+    next?.args
   );
   const helperReturns = mergeHintRecords(
-    base?.helperReturns as Readonly<Record<string, PropertyTypeHint>> | undefined,
-    next?.helperReturns as Readonly<Record<string, PropertyTypeHint>> | undefined
+    base?.helperReturns,
+    next?.helperReturns
   );
 
   if (!properties && !args && !helperReturns) {

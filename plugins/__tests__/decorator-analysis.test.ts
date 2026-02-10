@@ -323,6 +323,17 @@ describe('Babel decorator extraction', () => {
     expect(code).toContain('this.value');
   });
 
+  test('checker literal value in readonly property is inlined', () => {
+    const code = transformGts(`
+      export default class MyComponent {
+        readonly VERSION = "1.2.3";
+        <template>{{this.VERSION}}</template>
+      }
+    `, { WITH_TYPE_CHECKER_HINTS: true });
+    expect(code).toContain('"1.2.3"');
+    expect(code).not.toContain('this.VERSION');
+  });
+
   test('hints do not leak from a template-less class to the next class', () => {
     const code = transformGts(`
       class Config {

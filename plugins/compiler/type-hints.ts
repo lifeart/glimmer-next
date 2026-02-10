@@ -8,6 +8,8 @@
 import type { CompilerContext } from './context';
 import type { ReactivityHint, PropertyTypeHint } from './types';
 
+export type StaticLiteralValue = string | number | boolean;
+
 /**
  * Look up the type hint for a path expression.
  *
@@ -127,6 +129,44 @@ export function shouldSkipGetterWrapper(
   const hint = lookupTypeHint(ctx, expression, isArg);
   const reactivity = classifyReactivity(hint);
   return reactivity === 'static';
+}
+
+/**
+ * Resolve a compile-time literal value for a path expression when it is safe
+ * to inline directly into generated code.
+ *
+ * Safety rules:
+ * - Never inline @args (call-site controlled)
+ * - Only inline primitive values
+ * - Only inline readonly, non-tracked properties
+ */
+export function getStaticLiteralValue(
+  ctx: CompilerContext,
+  expression: string,
+  isArg: boolean
+): StaticLiteralValue | undefined {
+  if (isArg) {
+    return undefined;
+  }
+
+  const hint = lookupTypeHint(ctx, expression, isArg);
+  if (!hint) {
+    return undefined;
+  }
+
+  if (hint.kind !== 'primitive') {
+    return undefined;
+  }
+
+  if (hint.isTracked) {
+    return undefined;
+  }
+
+  if (hint.isReadonly !== true) {
+    return undefined;
+  }
+
+  return hint.literalValue;
 }
 
 /**

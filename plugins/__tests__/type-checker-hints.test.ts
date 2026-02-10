@@ -63,6 +63,24 @@ describe('type-checker-hints', () => {
     expect(hints[0]?.properties?.['this.handle']).toEqual({ kind: 'function' });
   });
 
+  test('extracts readonly literal metadata for properties', () => {
+    const hints = resolveFromGts(`
+      type Sig = { Args: {} };
+
+      export default class Demo extends Component<Sig> {
+        readonly VERSION = "1.2.3";
+        <template>{{this.VERSION}}</template>
+      }
+    `);
+
+    expect(hints).toHaveLength(1);
+    expect(hints[0]?.properties?.['this.VERSION']).toEqual({
+      kind: 'primitive',
+      isReadonly: true,
+      literalValue: '1.2.3',
+    });
+  });
+
   test('mergeTypeHints combines records and gives precedence to next', () => {
     const merged = mergeTypeHints(
       {
@@ -78,5 +96,26 @@ describe('type-checker-hints', () => {
     expect(merged?.properties?.['this.title']).toEqual({ kind: 'primitive', isReadonly: true });
     expect(merged?.args?.count).toEqual({ kind: 'primitive' });
     expect(merged?.args?.onClick).toEqual({ kind: 'function' });
+  });
+
+  test('mergeTypeHints preserves checker metadata when next hint is partial', () => {
+    const merged = mergeTypeHints(
+      {
+        properties: {
+          'this.VERSION': { kind: 'primitive', isReadonly: true, literalValue: '1.2.3' },
+        },
+      },
+      {
+        properties: {
+          'this.VERSION': { kind: 'primitive' },
+        },
+      }
+    );
+
+    expect(merged?.properties?.['this.VERSION']).toEqual({
+      kind: 'primitive',
+      isReadonly: true,
+      literalValue: '1.2.3',
+    });
   });
 });

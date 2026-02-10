@@ -13,7 +13,7 @@ import {
   serializeJS,
   type JSExpression,
 } from '../builder';
-import { shouldSkipGetterWrapper } from '../type-hints';
+import { getStaticLiteralValue, shouldSkipGetterWrapper } from '../type-hints';
 
 /**
  * Serialize a SerializedValue to JavaScript code.
@@ -132,6 +132,11 @@ export function buildPathExpression(
       return B.reactiveGetter(maybeHelperCall, value.sourceRange);
     }
     return maybeHelperCall;
+  }
+
+  const staticLiteral = getStaticLiteralValue(ctx, value.expression, value.isArg);
+  if (staticLiteral !== undefined) {
+    return buildLiteral(staticLiteral, value.sourceRange);
   }
 
   const pathExpr = buildPathBase(ctx, value);
