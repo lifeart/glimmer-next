@@ -539,8 +539,8 @@ function addProperties(
 function _DOM(
   tag: string | (() => string),
   tagProps: Props,
-  children: (ComponentReturnType | string | Cell | MergedCell | Function)[],
   ctx: any,
+  children: (ComponentReturnType | string | Cell | MergedCell | Function)[] = [],
 ): Node {
   NODE_COUNTER++;
   const api = initDOM(ctx);
@@ -750,8 +750,8 @@ if (IS_DEV_MODE) {
       obj[name] = null;
       return obj;
     }
-    obj[name] = Array.from(children).map((child) => {
-      return buildGraph({}, child, new Set(CHILD.get(child) ?? []));
+    obj[name] = Array.from(children, (child) => {
+      return buildGraph({}, child, CHILD.get(child) ?? new Set());
     });
     return obj;
   }
@@ -767,7 +767,7 @@ if (IS_DEV_MODE) {
     const ref = buildGraph(
       {} as Record<string, unknown>,
       roots[0],
-      new Set(CHILD.get(roots[0]![COMPONENT_ID_PROPERTY]) ?? []),
+      CHILD.get(roots[0]![COMPONENT_ID_PROPERTY]) ?? new Set(),
     );
     console.log(JSON.stringify(ref, null, 2));
   }

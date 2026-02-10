@@ -621,9 +621,9 @@ export function elementHelperWrapper(
   //   const $fw = $_GET_FW(this, arguments);
   //   const $slots = $_GET_SLOTS(this, arguments);
   //   return $_fin([
-  //     $_tag(tagExpr, $fw, [
+  //     $_tag(tagExpr, $fw, this, [
   //       () => $_slot('default', () => [], $slots, this)
-  //     ], this)
+  //     ])
   //   ], this);
   // }
   const body: JSStatement[] = [
@@ -640,6 +640,7 @@ export function elementHelperWrapper(
           call(symbols.TAG, [
             tagExpr,
             id(symbols.LOCAL_FW),
+            id('this'),
             formattedArray([
               arrow([], call(symbols.SLOT, [
                 string('default'),
@@ -648,7 +649,6 @@ export function elementHelperWrapper(
                 id('this'),
               ])),
             ], true),
-            id('this'),
           ]),
         ], true),
         id('this'),

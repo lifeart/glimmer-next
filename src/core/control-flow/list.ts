@@ -147,6 +147,37 @@ export class BasicListComponent<T extends { id: number }> {
     }
     return set;
   }
+  /**
+   * Detach this list's child-id set before bulk destruction.
+   *
+   * This lets child destructors skip parent-sibling bookkeeping and avoids
+   * allocating a replacement empty Set on every fast cleanup.
+   */
+  protected detachTreeChildren(): void {
+    CHILD.delete(this[COMPONENT_ID_PROPERTY]);
+  }
+  /**
+   * Fast-path for updates that preserve all existing items and only append
+   * new ones at the end.
+   *
+   * We can safely skip the removal scan only when every old position still
+   * points to the same key in the incoming list prefix.
+   */
+  protected isAppendOnlySuperset(
+    items: T[],
+    amountOfKeys: number,
+    keyForItem: (item: T, index: number) => string,
+  ): boolean {
+    if (items.length < amountOfKeys) return false;
+    const { indexMap } = this;
+    for (let index = 0; index < amountOfKeys; index++) {
+      const key = keyForItem(items[index], index);
+      if (indexMap.get(key) !== index) {
+        return false;
+      }
+    }
+    return true;
+  }
   // Cached fragment reused across relocateItem calls to avoid allocating new ones
   private _relocateFragment!: DocumentFragment;
   declare api: DOMApi;
@@ -560,6 +591,8 @@ export class SyncListComponent<
       parent.lastChild === bottomMarker &&
       parent.firstChild === topMarker
     ) {
+      // Detach CHILD so item destructors skip parent-sibling deletes.
+      this.detachTreeChildren();
       for (const value of keyMap.values()) {
         destroyElementSync(value as ComponentLike, true, this.api);
       }
@@ -598,7 +631,10 @@ export class SyncListComponent<
     let amountOfKeys = keyMap.size;
     let removedCount = 0;
 
-    if (amountOfKeys > 0) {
+    if (
+      amountOfKeys > 0 &&
+      !this.isAppendOnlySuperset(items, amountOfKeys, keyForItem)
+    ) {
       const updatingKeys = this.keysForItems(items, keyForItem);
       const keysToRemove = this._keysToRemove;
       const rowsToRemove = this._rowsToRemove;
@@ -617,6 +653,10 @@ export class SyncListComponent<
           if (this.fastCleanup()) {
             amountOfKeys = 0;
             keysToRemove.length = 0;
+          } else {
+            // fastCleanup failed but removing all items — detach CHILD
+            // to skip parent-sibling delete work in each item's destructor.
+            this.detachTreeChildren();
           }
         }
         removedCount = keysToRemove.length;
@@ -692,6 +732,8 @@ export class AsyncListComponent<
       parent.lastChild === bottomMarker &&
       parent.firstChild === topMarker
     ) {
+      // Detach CHILD so item destructors skip parent-sibling deletes.
+      this.detachTreeChildren();
       const promises = new Array(keyMap.size);
       let i = 0;
       for (const value of keyMap.values()) {
@@ -735,7 +777,10 @@ export class AsyncListComponent<
     let amountOfKeys = keyMap.size;
     let removedCount = 0;
 
-    if (amountOfKeys > 0) {
+    if (
+      amountOfKeys > 0 &&
+      !this.isAppendOnlySuperset(items, amountOfKeys, keyForItem)
+    ) {
       const keysToRemove = this._keysToRemove;
       const rowsToRemove = this._rowsToRemove;
       keysToRemove.length = 0;
@@ -755,6 +800,10 @@ export class AsyncListComponent<
           if (await this.fastCleanup()) {
             amountOfKeys = 0;
             keysToRemove.length = 0;
+          } else {
+            // fastCleanup failed but removing all items — detach CHILD
+            // to skip parent-sibling delete work in each item's destructor.
+            this.detachTreeChildren();
           }
         }
         removedCount = keysToRemove.length;

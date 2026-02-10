@@ -181,7 +181,7 @@ function buildPathBase(
   let mappingStartIndex: number;
 
   if (value.isArg) {
-    expr = B.runtimeRef(`this[${SYMBOLS.ARGS_PROPERTY}]`, rootRange ?? value.sourceRange);
+    expr = B.runtimeRef(SYMBOLS.ARGS_ALIAS, rootRange ?? value.sourceRange);
     startIndex = 0;
     optionalStartIndex = 1;
     // Always map the first arg segment (e.g., @user.name -> map "user")
@@ -285,15 +285,15 @@ function buildHelper(
   }
 
   // Handle @arg-prefixed helper names (helper passed as argument)
-  // e.g., (@myHelper arg) -> this[$args].myHelper(arg)
+  // e.g., (@myHelper arg) -> $a.myHelper(arg)
   let resolvedName = name;
   if (name.startsWith('@')) {
     const argName = name.slice(1);
     // Use bracket notation for names with special characters (like hyphens)
     const needsBracket = !/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(argName);
     resolvedName = needsBracket
-      ? `this[${SYMBOLS.ARGS_PROPERTY}]["${argName}"]`
-      : `this[${SYMBOLS.ARGS_PROPERTY}].${argName}`;
+      ? `${SYMBOLS.ARGS_ALIAS}["${argName}"]`
+      : `${SYMBOLS.ARGS_ALIAS}.${argName}`;
   }
 
   // Check if it's a known binding (component/helper from scope)

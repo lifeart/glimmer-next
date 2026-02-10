@@ -514,7 +514,7 @@ describe('Per-Token Sourcemaps', () => {
       expect(valueMapping).toBeDefined();
 
       const genBase = result.code.slice(baseMapping!.generatedRange.start, baseMapping!.generatedRange.end);
-      expect(genBase).toBe('this[$args]');
+      expect(genBase).toBe('$a');
 
       const genValue = result.code.slice(valueMapping!.generatedRange.start, valueMapping!.generatedRange.end);
       expect(genValue).toBe('value');
@@ -554,10 +554,10 @@ describe('Per-Token Sourcemaps', () => {
       });
       expect(clickMapping).toBeDefined();
 
-      // Generated code should contain this[$args].input and this[$args].onClick
+      // Generated code should contain $a.input and $a.onClick
       const genText = result.code;
-      expect(genText).toContain('this[$args].input');
-      expect(genText).toContain('this[$args].onClick');
+      expect(genText).toContain('$a.input');
+      expect(genText).toContain('$a.onClick');
     });
 
     test('component @arg keys appear in sourcemap names', () => {
@@ -622,9 +622,9 @@ describe('Per-Token Sourcemaps', () => {
       });
       expect(onClickMapping).toBeDefined();
 
-      // Generated code should contain this[$args].onClick
+      // Generated code should contain $a.onClick
       const genText = result.code;
-      expect(genText).toContain('this[$args].onClick');
+      expect(genText).toContain('$a.onClick');
 
       // V3 sourcemap should map onClick to the generated onClick property
       expect(result.sourceMap).toBeDefined();
@@ -709,8 +709,8 @@ describe('Per-Token Sourcemaps', () => {
 
       // Generated code should contain both args
       const genText = result.code;
-      expect(genText).toContain('this[$args].firstName');
-      expect(genText).toContain('this[$args].lastName');
+      expect(genText).toContain('$a.firstName');
+      expect(genText).toContain('$a.lastName');
     });
 
     test('mixed this and @args in same template map correctly', () => {
@@ -750,8 +750,8 @@ describe('Per-Token Sourcemaps', () => {
       // Generated code should contain all three
       const genText = result.code;
       expect(genText).toContain('this.className');
-      expect(genText).toContain('this[$args].handler');
-      expect(genText).toContain('this[$args].title');
+      expect(genText).toContain('$a.handler');
+      expect(genText).toContain('$a.title');
     });
 
     test('component tag names map correctly', () => {
@@ -796,7 +796,7 @@ describe('Per-Token Sourcemaps', () => {
       expect(result.sourceMap).toBeDefined();
       const map = result.sourceMap!;
       const segments = parseMappings(map.mappings);
-      const baseIndex = map.names.indexOf('this[$args]');
+      const baseIndex = map.names.indexOf('$a');
       const valueIndex = map.names.indexOf('value');
       expect(baseIndex).toBeGreaterThanOrEqual(0);
       expect(valueIndex).toBeGreaterThanOrEqual(0);
@@ -808,8 +808,8 @@ describe('Per-Token Sourcemaps', () => {
       expect(valueSegment).toBeDefined();
 
       const baseGenOffset = lineColumnToOffset(result.code, baseSegment!.generatedLine, baseSegment!.generatedColumn);
-      const baseGenSlice = result.code.slice(baseGenOffset, baseGenOffset + 'this[$args]'.length);
-      expect(baseGenSlice).toBe('this[$args]');
+      const baseGenSlice = result.code.slice(baseGenOffset, baseGenOffset + '$a'.length);
+      expect(baseGenSlice).toBe('$a');
 
       const baseSrcOffset = lineColumnToOffset(template, baseSegment!.sourceLine, baseSegment!.sourceColumn);
       const baseSrcSlice = template.slice(baseSrcOffset, baseSrcOffset + '@name'.length);
@@ -824,7 +824,7 @@ describe('Per-Token Sourcemaps', () => {
       expect(valueSrcSlice).toBe('value');
     });
 
-    test('v3 sourcemap maps @onClick to this[$args].onClick tokens', () => {
+    test('v3 sourcemap maps @onClick to $a.onClick tokens', () => {
       const template = `<button {{on "click" @onClick}}></button>`;
       const result = compile(template, {
         sourceMap: { enabled: true },
@@ -835,7 +835,7 @@ describe('Per-Token Sourcemaps', () => {
       const map = result.sourceMap!;
       const segments = parseMappings(map.mappings);
 
-      const baseIndex = map.names.indexOf('this[$args]');
+      const baseIndex = map.names.indexOf('$a');
       const nameIndex = map.names.indexOf('onClick');
       expect(baseIndex).toBeGreaterThanOrEqual(0);
       expect(nameIndex).toBeGreaterThanOrEqual(0);
@@ -1011,8 +1011,8 @@ describe('Per-Token Sourcemaps', () => {
 
       // Generated code should contain modifier calls
       const genText = result.code;
-      expect(genText).toContain('($e, $n) => this[$args].handleClick');
-      expect(genText).toContain('tooltip($n, this[$args].text)');
+      expect(genText).toContain('($e, $n) => $a.handleClick');
+      expect(genText).toContain('tooltip($n, $a.text)');
     });
   });
 
@@ -1633,6 +1633,206 @@ describe('Multi-line source position accuracy', () => {
     // Should contain the maybe helper call
     expect(result.code).toContain('$_maybeHelper');
     expect(result.code).toContain('"originalValue"');
-    expect(result.code).toContain('this[$args].vanila');
+    expect(result.code).toContain('$a.vanila');
+  });
+
+  describe('bundle optimization sourcemap integrity', () => {
+    test('$_tag parameter reorder: element mappings still point to correct generated positions', () => {
+      // After reorder: $_tag(tag, props, ctx) or $_tag(tag, props, ctx, children)
+      const template = '<div><span>text</span></div>';
+      const result = compile(template, {
+        sourceMap: { enabled: true },
+        flags: { IS_GLIMMER_COMPAT_MODE: true },
+      });
+
+      expect(result.sourceMap).toBeDefined();
+      const map = result.sourceMap!;
+      const segments = parseMappings(map.mappings);
+
+      // Verify generated code contains $_tag calls
+      expect(result.code).toContain('$_tag');
+
+      // Every named mapping segment should point to valid positions in both source and generated
+      for (const segment of segments) {
+        expect(segment.generatedColumn).toBeGreaterThanOrEqual(0);
+        expect(segment.sourceColumn).toBeGreaterThanOrEqual(0);
+        expect(segment.sourceLine).toBeGreaterThanOrEqual(0);
+
+        // Generated offset must be within the code bounds
+        const genOffset = lineColumnToOffset(result.code, segment.generatedLine, segment.generatedColumn);
+        expect(genOffset).toBeLessThanOrEqual(result.code.length);
+
+        // Source offset must be within the template bounds
+        const srcOffset = lineColumnToOffset(template, segment.sourceLine, segment.sourceColumn);
+        expect(srcOffset).toBeLessThanOrEqual(template.length);
+      }
+
+      // Element mappings should still work
+      const elementMappings = findMappingsByType(result.mappingTree, 'ElementNode');
+      expect(elementMappings.length).toBeGreaterThanOrEqual(2);
+
+      for (const m of elementMappings) {
+        const genText = result.code.slice(m.generatedRange.start, m.generatedRange.end);
+        expect(genText).toContain('$_tag');
+      }
+    });
+
+    test('$a alias: multiple @arg references all map back to correct source positions', () => {
+      const template = '<div>{{@first}} {{@second}} {{@third}}</div>';
+      const result = compile(template, {
+        sourceMap: { enabled: true },
+        flags: { IS_GLIMMER_COMPAT_MODE: true },
+      });
+
+      expect(result.sourceMap).toBeDefined();
+      const map = result.sourceMap!;
+      const segments = parseMappings(map.mappings);
+
+      // All $a references should be in the names
+      const aliasIndex = map.names.indexOf('$a');
+      expect(aliasIndex).toBeGreaterThanOrEqual(0);
+
+      // Find all segments that use the $a name
+      const aliasSegments = segments.filter(s => s.nameIndex === aliasIndex);
+      expect(aliasSegments.length).toBeGreaterThanOrEqual(3);
+
+      // Each $a in generated code should map back to an @arg in the source
+      for (const seg of aliasSegments) {
+        const genOffset = lineColumnToOffset(result.code, seg.generatedLine, seg.generatedColumn);
+        const genSlice = result.code.slice(genOffset, genOffset + '$a'.length);
+        expect(genSlice).toBe('$a');
+
+        const srcOffset = lineColumnToOffset(template, seg.sourceLine, seg.sourceColumn);
+        const srcChar = template[srcOffset];
+        expect(srcChar).toBe('@');
+      }
+
+      // Verify the property names also map correctly
+      for (const argName of ['first', 'second', 'third']) {
+        const nameIdx = map.names.indexOf(argName);
+        expect(nameIdx).toBeGreaterThanOrEqual(0);
+
+        const nameSeg = segments.find(s => s.nameIndex === nameIdx);
+        expect(nameSeg).toBeDefined();
+
+        const genOffset = lineColumnToOffset(result.code, nameSeg!.generatedLine, nameSeg!.generatedColumn);
+        const genSlice = result.code.slice(genOffset, genOffset + argName.length);
+        expect(genSlice).toBe(argName);
+
+        const srcOffset = lineColumnToOffset(template, nameSeg!.sourceLine, nameSeg!.sourceColumn);
+        const srcSlice = template.slice(srcOffset, srcOffset + argName.length);
+        expect(srcSlice).toBe(argName);
+      }
+    });
+
+    test('$a alias in nested context: @arg inside #if block maps correctly', () => {
+      const template = '{{#if @show}}<div>{{@name}}</div>{{/if}}';
+      const result = compile(template, {
+        sourceMap: { enabled: true },
+        flags: { IS_GLIMMER_COMPAT_MODE: true },
+      });
+
+      expect(result.sourceMap).toBeDefined();
+      const map = result.sourceMap!;
+      const segments = parseMappings(map.mappings);
+
+      // $a should appear as a name
+      const aliasIndex = map.names.indexOf('$a');
+      expect(aliasIndex).toBeGreaterThanOrEqual(0);
+
+      // Find all $a segments - one for @show and one for @name
+      const aliasSegments = segments.filter(s => s.nameIndex === aliasIndex);
+      expect(aliasSegments.length).toBeGreaterThanOrEqual(2);
+
+      // Each should point back to @ in the source
+      for (const seg of aliasSegments) {
+        const srcOffset = lineColumnToOffset(template, seg.sourceLine, seg.sourceColumn);
+        expect(template[srcOffset]).toBe('@');
+
+        const genOffset = lineColumnToOffset(result.code, seg.generatedLine, seg.generatedColumn);
+        expect(result.code.slice(genOffset, genOffset + 2)).toBe('$a');
+      }
+
+      // Verify both 'show' and 'name' property names exist in map
+      expect(map.names).toContain('show');
+      expect(map.names).toContain('name');
+    });
+
+    test('leaf element without children: sourcemap positions still valid', () => {
+      // After optimization, leaf elements omit the children arg: $_tag('br', props, ctx)
+      const template = '<br /><hr />';
+      const result = compile(template, {
+        sourceMap: { enabled: true },
+        flags: { IS_GLIMMER_COMPAT_MODE: true },
+      });
+
+      expect(result.sourceMap).toBeDefined();
+      const map = result.sourceMap!;
+      const segments = parseMappings(map.mappings);
+
+      // All segments should have valid generated offsets
+      for (const seg of segments) {
+        const genOffset = lineColumnToOffset(result.code, seg.generatedLine, seg.generatedColumn);
+        expect(genOffset).toBeLessThanOrEqual(result.code.length);
+
+        const srcOffset = lineColumnToOffset(template, seg.sourceLine, seg.sourceColumn);
+        expect(srcOffset).toBeLessThanOrEqual(template.length);
+      }
+
+      // Element mappings should exist for both br and hr
+      const elementMappings = findMappingsByType(result.mappingTree, 'ElementNode');
+      expect(elementMappings.length).toBeGreaterThanOrEqual(2);
+    });
+
+    test('combined: @args + nested elements + control flow - all positions valid', () => {
+      const template = '<div>{{#if @visible}}<span class={{@cls}}>{{@label}}</span>{{/if}}</div>';
+      const result = compile(template, {
+        sourceMap: { enabled: true },
+        flags: { IS_GLIMMER_COMPAT_MODE: true },
+      });
+
+      expect(result.sourceMap).toBeDefined();
+      const map = result.sourceMap!;
+      const segments = parseMappings(map.mappings);
+
+      // Verify no segment points out-of-bounds
+      for (const seg of segments) {
+        const genOffset = lineColumnToOffset(result.code, seg.generatedLine, seg.generatedColumn);
+        expect(genOffset).toBeLessThanOrEqual(result.code.length);
+
+        const srcOffset = lineColumnToOffset(template, seg.sourceLine, seg.sourceColumn);
+        expect(srcOffset).toBeLessThanOrEqual(template.length);
+      }
+
+      // Verify @visible, @cls, @label all map correctly via $a
+      const aliasIndex = map.names.indexOf('$a');
+      expect(aliasIndex).toBeGreaterThanOrEqual(0);
+
+      const aliasSegments = segments.filter(s => s.nameIndex === aliasIndex);
+      expect(aliasSegments.length).toBeGreaterThanOrEqual(3);
+
+      for (const seg of aliasSegments) {
+        const srcOffset = lineColumnToOffset(template, seg.sourceLine, seg.sourceColumn);
+        expect(template[srcOffset]).toBe('@');
+
+        const genOffset = lineColumnToOffset(result.code, seg.generatedLine, seg.generatedColumn);
+        expect(result.code.slice(genOffset, genOffset + 2)).toBe('$a');
+      }
+
+      // All arg property names should be mapped
+      for (const propName of ['visible', 'cls', 'label']) {
+        const idx = map.names.indexOf(propName);
+        expect(idx).toBeGreaterThanOrEqual(0);
+
+        const propSeg = segments.find(s => s.nameIndex === idx);
+        expect(propSeg).toBeDefined();
+
+        const genOffset = lineColumnToOffset(result.code, propSeg!.generatedLine, propSeg!.generatedColumn);
+        expect(result.code.slice(genOffset, genOffset + propName.length)).toBe(propName);
+
+        const srcOffset = lineColumnToOffset(template, propSeg!.sourceLine, propSeg!.sourceColumn);
+        expect(template.slice(srcOffset, srcOffset + propName.length)).toBe(propName);
+      }
+    });
   });
 });

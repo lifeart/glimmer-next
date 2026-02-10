@@ -381,9 +381,9 @@ describe('Code Builder', () => {
           id('this'),
         ])
       );
-      // Both $_c and $_slot are PURE functions
+      // $_c gets PURE at root level; $_slot is inside arrow body so no PURE
       expect(code).toBe(
-        '/*#__PURE__*/$_c(MyComponent, { title: "Hello" }, [$slots => /*#__PURE__*/$_slot("default", () => [], $slots, this)], this)'
+        '/*#__PURE__*/$_c(MyComponent, { title: "Hello" }, [$slots => $_slot("default", () => [], $slots, this)], this)'
       );
     });
 

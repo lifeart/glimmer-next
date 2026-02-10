@@ -1,4 +1,4 @@
-import { describe, test, expect, vi } from 'vitest';
+import { describe, test, expect } from 'vitest';
 import {
   $_maybeHelper,
   $_unwrapHelperArg,
@@ -103,56 +103,76 @@ describe('$_unwrapHelperArg()', () => {
 describe('$_maybeHelper()', () => {
   describe('function helpers with unwrapped args', () => {
     test('calls function with unwrapped getter args', () => {
-      const myHelper = vi.fn((a: number, b: number) => a + b);
+      let receivedArgs: unknown[] = [];
+      const myHelper = (...args: [number, number]) => {
+        receivedArgs = args;
+        return args[0] + args[1];
+      };
       const result = $_maybeHelper(myHelper, [() => 10, () => 5], {});
 
-      expect(myHelper).toHaveBeenCalledWith(10, 5);
+      expect(receivedArgs).toEqual([10, 5]);
       expect(result).toBe(15);
     });
 
     test('calls function with unwrapped cell args', () => {
-      const myHelper = vi.fn((value: number) => value * 2);
+      let receivedArgs: unknown[] = [];
+      const myHelper = (...args: [number]) => {
+        receivedArgs = args;
+        return args[0] * 2;
+      };
       const c = cell(21);
       const result = $_maybeHelper(myHelper, [c], {});
 
-      expect(myHelper).toHaveBeenCalledWith(21);
+      expect(receivedArgs).toEqual([21]);
       expect(result).toBe(42);
     });
 
     test('passes primitive args through unchanged', () => {
-      const myHelper = vi.fn((a: string, b: number) => `${a}-${b}`);
+      let receivedArgs: unknown[] = [];
+      const myHelper = (...args: [string, number]) => {
+        receivedArgs = args;
+        return `${args[0]}-${args[1]}`;
+      };
       const result = $_maybeHelper(myHelper, ['hello', 42], {});
 
-      expect(myHelper).toHaveBeenCalledWith('hello', 42);
+      expect(receivedArgs).toEqual(['hello', 42]);
       expect(result).toBe('hello-42');
     });
 
     test('handles mixed args: getters, cells, and primitives', () => {
-      const myHelper = vi.fn((a: number, b: number, c: string) => `${a + b} ${c}`);
+      let receivedArgs: unknown[] = [];
+      const myHelper = (...args: [number, number, string]) => {
+        receivedArgs = args;
+        return `${args[0] + args[1]} ${args[2]}`;
+      };
       const cellValue = cell(5);
       const result = $_maybeHelper(myHelper, [() => 10, cellValue, 'items'], {});
 
-      expect(myHelper).toHaveBeenCalledWith(10, 5, 'items');
+      expect(receivedArgs).toEqual([10, 5, 'items']);
       expect(result).toBe('15 items');
     });
 
     test('handles empty args', () => {
-      const myHelper = vi.fn(() => 'no args');
+      let callCount = 0;
+      const myHelper = () => {
+        callCount++;
+        return 'no args';
+      };
       const result = $_maybeHelper(myHelper, [], {});
 
-      expect(myHelper).toHaveBeenCalledWith();
+      expect(callCount).toBe(1);
       expect(result).toBe('no args');
     });
 
     test('handles helper returning undefined', () => {
-      const myHelper = vi.fn(() => undefined);
+      const myHelper = () => undefined;
       const result = $_maybeHelper(myHelper, [], {});
 
       expect(result).toBe(undefined);
     });
 
     test('handles helper returning null', () => {
-      const myHelper = vi.fn(() => null);
+      const myHelper = () => null;
       const result = $_maybeHelper(myHelper, [], {});
 
       expect(result).toBe(null);
@@ -181,10 +201,14 @@ describe('$_maybeHelper()', () => {
     });
 
     test('helper receiving object from getter', () => {
-      const myHelper = vi.fn((obj: { name: string }) => obj.name);
+      let receivedArgs: unknown[] = [];
+      const myHelper = (...args: [{ name: string }]) => {
+        receivedArgs = args;
+        return args[0].name;
+      };
       const result = $_maybeHelper(myHelper, [() => ({ name: 'John' })], {});
 
-      expect(myHelper).toHaveBeenCalledWith({ name: 'John' });
+      expect(receivedArgs).toEqual([{ name: 'John' }]);
       expect(result).toBe('John');
     });
 
@@ -465,16 +489,20 @@ describe('$_maybeHelper with string value (eval resolution)', () => {
   });
 
   test('calls resolved function with unwrapped args when eval returns function', () => {
-    const mockFn = vi.fn((...args: any[]) => args.join('-'));
+    let callCount = 0;
+    const myFn = (...args: any[]) => {
+      callCount++;
+      return args.join('-');
+    };
     const ctx = {
       $_eval: (name: string) => {
-        if (name === 'myHelper') return mockFn;
+        if (name === 'myHelper') return myFn;
         throw new ReferenceError(`${name} is not defined`);
       },
       $args: {},
     };
     const result = $_maybeHelper('myHelper', ['a', 'b'], ctx);
-    expect(mockFn).toHaveBeenCalled();
+    expect(callCount).toBe(1);
     expect(result).toBe('a-b');
   });
 

@@ -164,7 +164,7 @@ describe('createCompiler', () => {
 
       expect(result.errors).toHaveLength(0);
       // @name should work in compat mode
-      expect(result.code).toContain('$args');
+      expect(result.code).toContain('$a.');
     });
 
     test('per-template options override base options', () => {

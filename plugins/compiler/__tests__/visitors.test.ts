@@ -386,9 +386,9 @@ describe('Visitor Pattern', () => {
   });
 
   describe('resolvePath()', () => {
-    test('resolves @arg to this[$args].arg', () => {
+    test('resolves @arg to $a.arg', () => {
       const result = resolvePath(ctx, '@myArg');
-      expect(result).toBe('this[$args].myArg');
+      expect(result).toBe('$a.myArg');
     });
 
     test('keeps this.x as is', () => {

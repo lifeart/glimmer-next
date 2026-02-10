@@ -1,8 +1,7 @@
 import { expect, test, describe, beforeEach, afterEach } from 'vitest';
-import { Window } from 'happy-dom';
 import { renderElement, destroyElementSync, Component, runDestructors } from './component';
 import { registerDestructor } from './glimmer/destroyable';
-import { HTMLBrowserDOMApi, DOMApi } from './dom-api';
+import { DOMApi } from './dom-api';
 import {
   RENDERED_NODES_PROPERTY,
   PARENT,
@@ -11,80 +10,60 @@ import {
   addToTree,
   COMPONENT_ID_PROPERTY,
 } from './shared';
-import { cleanupFastContext, provideContext, RENDERING_CONTEXT } from './context';
-import { Root } from './dom';
+import { provideContext, RENDERING_CONTEXT } from './context';
+import { createDOMFixture, type DOMFixture } from './__test-utils__';
 
 describe('renderElement', () => {
-  let window: Window;
-  let document: Document;
-  let api: DOMApi;
-  let root: Root;
-  let container: HTMLElement;
+  let fixture: DOMFixture;
 
-  beforeEach(() => {
-    window = new Window();
-    document = window.document as unknown as Document;
-    api = new HTMLBrowserDOMApi(document);
-    cleanupFastContext();
-    root = new Root(document);
-    provideContext(root, RENDERING_CONTEXT, api);
-    container = document.createElement('div');
-    document.body.appendChild(container);
-  });
-
-  afterEach(() => {
-    cleanupFastContext();
-    TREE.clear();
-    PARENT.clear();
-    CHILD.clear();
-    window.close();
-  });
+  beforeEach(() => { fixture = createDOMFixture(); });
+  afterEach(() => { fixture.cleanup(); });
 
   describe('primitive values', () => {
     test('renders string as text node', () => {
       const component = new Component({});
       component[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, component);
+      addToTree(fixture.root, component);
 
-      renderElement(api, component, container, 'hello');
-      expect(container.textContent).toBe('hello');
+      renderElement(fixture.api, component, fixture.container, 'hello');
+      expect(fixture.container.textContent).toBe('hello');
       expect(component[RENDERED_NODES_PROPERTY].length).toBe(1);
     });
 
     test('renders number as text node', () => {
       const component = new Component({});
       component[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, component);
+      addToTree(fixture.root, component);
 
-      renderElement(api, component, container, 42);
-      expect(container.textContent).toBe('42');
+      renderElement(fixture.api, component, fixture.container, 42);
+      expect(fixture.container.textContent).toBe('42');
     });
 
     test('skips empty string', () => {
       const component = new Component({});
       component[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, component);
+      addToTree(fixture.root, component);
 
-      renderElement(api, component, container, '');
-      expect(container.childNodes.length).toBe(0);
+      renderElement(fixture.api, component, fixture.container, '');
+      expect(fixture.container.childNodes.length).toBe(0);
     });
 
     test('skips null', () => {
       const component = new Component({});
       component[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, component);
+      addToTree(fixture.root, component);
 
-      renderElement(api, component, container, null);
-      expect(container.childNodes.length).toBe(0);
+      renderElement(fixture.api, component, fixture.container, null);
+      expect(fixture.container.childNodes.length).toBe(0);
     });
 
     test('skips undefined', () => {
       const component = new Component({});
       component[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, component);
+      addToTree(fixture.root, component);
 
-      renderElement(api, component, container, undefined);
-      expect(container.childNodes.length).toBe(0);
+      renderElement(fixture.api, component, fixture.container, undefined);
+      expect(fixture.container.childNodes.length).toBe(0);
     });
   });
 
@@ -92,48 +71,48 @@ describe('renderElement', () => {
     test('renders DOM element', () => {
       const component = new Component({});
       component[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, component);
+      addToTree(fixture.root, component);
 
-      const div = document.createElement('div');
+      const div = fixture.document.createElement('div');
       div.textContent = 'test';
-      renderElement(api, component, container, div);
-      expect(container.firstChild).toBe(div);
+      renderElement(fixture.api, component, fixture.container, div);
+      expect(fixture.container.firstChild).toBe(div);
       expect(component[RENDERED_NODES_PROPERTY]).toContain(div);
     });
 
     test('renders text node', () => {
       const component = new Component({});
       component[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, component);
+      addToTree(fixture.root, component);
 
-      const text = document.createTextNode('hello');
-      renderElement(api, component, container, text);
-      expect(container.firstChild).toBe(text);
+      const text = fixture.document.createTextNode('hello');
+      renderElement(fixture.api, component, fixture.container, text);
+      expect(fixture.container.firstChild).toBe(text);
     });
 
     test('renders comment node', () => {
       const component = new Component({});
       component[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, component);
+      addToTree(fixture.root, component);
 
-      const comment = document.createComment('test');
-      renderElement(api, component, container, comment);
-      expect(container.firstChild).toBe(comment);
+      const comment = fixture.document.createComment('test');
+      renderElement(fixture.api, component, fixture.container, comment);
+      expect(fixture.container.firstChild).toBe(comment);
     });
 
     test('inserts before placeholder when provided', () => {
       const component = new Component({});
       component[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, component);
+      addToTree(fixture.root, component);
 
-      const placeholder = document.createComment('placeholder');
-      container.appendChild(placeholder);
+      const placeholder = fixture.document.createComment('placeholder');
+      fixture.container.appendChild(placeholder);
 
-      const div = document.createElement('div');
-      renderElement(api, component, container, div, placeholder);
+      const div = fixture.document.createElement('div');
+      renderElement(fixture.api, component, fixture.container, div, placeholder);
 
-      expect(container.firstChild).toBe(div);
-      expect(container.lastChild).toBe(placeholder);
+      expect(fixture.container.firstChild).toBe(div);
+      expect(fixture.container.lastChild).toBe(placeholder);
     });
   });
 
@@ -141,35 +120,35 @@ describe('renderElement', () => {
     test('renders array of nodes', () => {
       const component = new Component({});
       component[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, component);
+      addToTree(fixture.root, component);
 
-      const div1 = document.createElement('div');
-      const div2 = document.createElement('div');
-      renderElement(api, component, container, [div1, div2]);
-      expect(container.childNodes.length).toBe(2);
-      expect(container.firstChild).toBe(div1);
-      expect(container.lastChild).toBe(div2);
+      const div1 = fixture.document.createElement('div');
+      const div2 = fixture.document.createElement('div');
+      renderElement(fixture.api, component, fixture.container, [div1, div2]);
+      expect(fixture.container.childNodes.length).toBe(2);
+      expect(fixture.container.firstChild).toBe(div1);
+      expect(fixture.container.lastChild).toBe(div2);
     });
 
     test('renders nested arrays', () => {
       const component = new Component({});
       component[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, component);
+      addToTree(fixture.root, component);
 
-      const div1 = document.createElement('div');
-      const div2 = document.createElement('div');
-      renderElement(api, component, container, [[div1], [div2]]);
-      expect(container.childNodes.length).toBe(2);
+      const div1 = fixture.document.createElement('div');
+      const div2 = fixture.document.createElement('div');
+      renderElement(fixture.api, component, fixture.container, [[div1], [div2]]);
+      expect(fixture.container.childNodes.length).toBe(2);
     });
 
     test('renders mixed array of strings and nodes', () => {
       const component = new Component({});
       component[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, component);
+      addToTree(fixture.root, component);
 
-      const div = document.createElement('div');
-      renderElement(api, component, container, ['text', div, 123]);
-      expect(container.childNodes.length).toBe(3);
+      const div = fixture.document.createElement('div');
+      renderElement(fixture.api, component, fixture.container, ['text', div, 123]);
+      expect(fixture.container.childNodes.length).toBe(3);
     });
   });
 
@@ -177,125 +156,105 @@ describe('renderElement', () => {
     test('does not add to rendered nodes when skipRegistration is true', () => {
       const component = new Component({});
       component[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, component);
+      addToTree(fixture.root, component);
 
-      const div = document.createElement('div');
-      renderElement(api, component, container, div, null, true);
-      expect(container.firstChild).toBe(div);
+      const div = fixture.document.createElement('div');
+      renderElement(fixture.api, component, fixture.container, div, null, true);
+      expect(fixture.container.firstChild).toBe(div);
       expect(component[RENDERED_NODES_PROPERTY]).not.toContain(div);
     });
 
     test('adds to rendered nodes when skipRegistration is false', () => {
       const component = new Component({});
       component[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, component);
+      addToTree(fixture.root, component);
 
-      const div = document.createElement('div');
-      renderElement(api, component, container, div, null, false);
+      const div = fixture.document.createElement('div');
+      renderElement(fixture.api, component, fixture.container, div, null, false);
       expect(component[RENDERED_NODES_PROPERTY]).toContain(div);
     });
   });
 });
 
 describe('destroyElementSync', () => {
-  let window: Window;
-  let document: Document;
-  let api: DOMApi;
-  let root: Root;
-  let container: HTMLElement;
+  let fixture: DOMFixture;
 
-  beforeEach(() => {
-    window = new Window();
-    document = window.document as unknown as Document;
-    api = new HTMLBrowserDOMApi(document);
-    cleanupFastContext();
-    root = new Root(document);
-    provideContext(root, RENDERING_CONTEXT, api);
-    container = document.createElement('div');
-    document.body.appendChild(container);
-  });
-
-  afterEach(() => {
-    cleanupFastContext();
-    TREE.clear();
-    PARENT.clear();
-    CHILD.clear();
-    window.close();
-  });
+  beforeEach(() => { fixture = createDOMFixture(); });
+  afterEach(() => { fixture.cleanup(); });
 
   test('removes connected node from DOM', () => {
-    const div = document.createElement('div');
-    container.appendChild(div);
+    const div = fixture.document.createElement('div');
+    fixture.container.appendChild(div);
     expect(div.isConnected).toBe(true);
 
     const component = new Component({});
     component[RENDERED_NODES_PROPERTY] = [div];
-    addToTree(root, component);
+    addToTree(fixture.root, component);
 
-    destroyElementSync(component, false, api);
+    destroyElementSync(component, false, fixture.api);
     expect(div.isConnected).toBe(false);
   });
 
   test('handles already detached nodes', () => {
-    const div = document.createElement('div');
+    const div = fixture.document.createElement('div');
     expect(div.isConnected).toBe(false);
 
     const component = new Component({});
     component[RENDERED_NODES_PROPERTY] = [div];
-    addToTree(root, component);
+    addToTree(fixture.root, component);
 
     // Should not throw
-    expect(() => destroyElementSync(component, false, api)).not.toThrow();
+    expect(() => destroyElementSync(component, false, fixture.api)).not.toThrow();
   });
 
   test('skips DOM removal when skipDom is true', () => {
-    const div = document.createElement('div');
-    container.appendChild(div);
+    const div = fixture.document.createElement('div');
+    fixture.container.appendChild(div);
 
     const component = new Component({});
     component[RENDERED_NODES_PROPERTY] = [div];
-    addToTree(root, component);
+    addToTree(fixture.root, component);
 
-    destroyElementSync(component, true, api);
+    destroyElementSync(component, true, fixture.api);
     // Node should still be connected since skipDom is true
     expect(div.isConnected).toBe(true);
   });
 
   test('destroys child components recursively', () => {
-    const parentDiv = document.createElement('div');
-    const childDiv = document.createElement('div');
-    container.appendChild(parentDiv);
-    container.appendChild(childDiv);
+    const parentDiv = fixture.document.createElement('div');
+    const childDiv = fixture.document.createElement('div');
+    fixture.container.appendChild(parentDiv);
+    fixture.container.appendChild(childDiv);
 
     const parent = new Component({});
     parent[RENDERED_NODES_PROPERTY] = [parentDiv];
-    addToTree(root, parent);
+    addToTree(fixture.root, parent);
 
     const child = new Component({});
     child[RENDERED_NODES_PROPERTY] = [childDiv];
     addToTree(parent, child);
 
-    destroyElementSync(parent, false, api);
+    destroyElementSync(parent, false, fixture.api);
 
     expect(parentDiv.isConnected).toBe(false);
     expect(childDiv.isConnected).toBe(false);
   });
 
   test('handles array of components', () => {
-    const div1 = document.createElement('div');
-    const div2 = document.createElement('div');
-    container.appendChild(div1);
-    container.appendChild(div2);
+    const div1 = fixture.document.createElement('div');
+    const div2 = fixture.document.createElement('div');
+    fixture.container.appendChild(div1);
+    fixture.container.appendChild(div2);
 
     const comp1 = new Component({});
     comp1[RENDERED_NODES_PROPERTY] = [div1];
-    addToTree(root, comp1);
+    addToTree(fixture.root, comp1);
 
     const comp2 = new Component({});
     comp2[RENDERED_NODES_PROPERTY] = [div2];
-    addToTree(root, comp2);
+    addToTree(fixture.root, comp2);
 
-    destroyElementSync([comp1, comp2], false, api);
+    destroyElementSync([comp1, comp2], false, fixture.api);
 
     expect(div1.isConnected).toBe(false);
     expect(div2.isConnected).toBe(false);
@@ -374,38 +333,23 @@ describe('Custom DOMApi integration', () => {
     }
   }
 
-  let window: Window;
-  let document: Document;
+  let fixture: DOMFixture;
   let customApi: MockCustomApi;
-  let root: Root;
-  let container: HTMLElement;
 
   beforeEach(() => {
-    window = new Window();
-    document = window.document as unknown as Document;
-    customApi = new MockCustomApi(document);
-    cleanupFastContext();
-    root = new Root(document);
-    provideContext(root, RENDERING_CONTEXT, customApi);
-    container = document.createElement('div');
-    document.body.appendChild(container);
+    fixture = createDOMFixture();
+    customApi = new MockCustomApi(fixture.document);
+    provideContext(fixture.root, RENDERING_CONTEXT, customApi);
   });
-
-  afterEach(() => {
-    cleanupFastContext();
-    TREE.clear();
-    PARENT.clear();
-    CHILD.clear();
-    window.close();
-  });
+  afterEach(() => { fixture.cleanup(); });
 
   test('uses custom API destroy method', () => {
-    const div = document.createElement('div');
-    container.appendChild(div);
+    const div = fixture.document.createElement('div');
+    fixture.container.appendChild(div);
 
     const component = new Component({});
     component[RENDERED_NODES_PROPERTY] = [div];
-    addToTree(root, component);
+    addToTree(fixture.root, component);
 
     destroyElementSync(component, false, customApi);
 
@@ -415,15 +359,15 @@ describe('Custom DOMApi integration', () => {
   test('renders using custom API methods', () => {
     const component = new Component({});
     component[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, component);
+    addToTree(fixture.root, component);
 
-    renderElement(customApi, component, container, 'test text');
+    renderElement(customApi, component, fixture.container, 'test text');
 
-    expect(container.textContent).toBe('test text');
+    expect(fixture.container.textContent).toBe('test text');
   });
 
   test('custom API isNode check works', () => {
-    const div = document.createElement('div');
+    const div = fixture.document.createElement('div');
     expect(customApi.isNode(div)).toBe(true);
 
     // Non-node object
@@ -436,103 +380,83 @@ describe('Custom DOMApi integration', () => {
 // ============================================
 
 describe('destroyNodes - nested components', () => {
-  let window: Window;
-  let document: Document;
-  let api: DOMApi;
-  let root: Root;
-  let container: HTMLElement;
+  let fixture: DOMFixture;
 
-  beforeEach(() => {
-    window = new Window();
-    document = window.document as unknown as Document;
-    api = new HTMLBrowserDOMApi(document);
-    cleanupFastContext();
-    root = new Root(document);
-    provideContext(root, RENDERING_CONTEXT, api);
-    container = document.createElement('div');
-    document.body.appendChild(container);
-  });
-
-  afterEach(() => {
-    cleanupFastContext();
-    TREE.clear();
-    PARENT.clear();
-    CHILD.clear();
-    window.close();
-  });
+  beforeEach(() => { fixture = createDOMFixture(); });
+  afterEach(() => { fixture.cleanup(); });
 
   test('destroys DOM nodes nested inside ComponentReturnType objects', () => {
     // Create nested structure: parent -> child component -> DOM nodes
-    const childDiv = document.createElement('div');
+    const childDiv = fixture.document.createElement('div');
     childDiv.textContent = 'child content';
-    container.appendChild(childDiv);
+    fixture.container.appendChild(childDiv);
 
     // Child component with actual DOM node
     const childComponent = new Component({});
     childComponent[RENDERED_NODES_PROPERTY] = [childDiv];
-    addToTree(root, childComponent);
+    addToTree(fixture.root, childComponent);
 
     // Parent component with child component in RENDERED_NODES_PROPERTY
     // This simulates what happens with $_fin([$_c(component, ...)], this)
     const parentComponent = new Component({});
     parentComponent[RENDERED_NODES_PROPERTY] = [childComponent as unknown as Node]; // Contains ComponentReturnType, not Node
-    addToTree(root, parentComponent);
+    addToTree(fixture.root, parentComponent);
 
     expect(childDiv.isConnected).toBe(true);
 
     // Destroy parent - should recursively destroy child's DOM nodes
-    destroyElementSync(parentComponent, false, api);
+    destroyElementSync(parentComponent, false, fixture.api);
 
     expect(childDiv.isConnected).toBe(false);
   });
 
   test('destroys deeply nested component structures', () => {
     // Create 3-level nesting: grandparent -> parent -> child -> DOM
-    const leafDiv = document.createElement('div');
+    const leafDiv = fixture.document.createElement('div');
     leafDiv.textContent = 'leaf';
-    container.appendChild(leafDiv);
+    fixture.container.appendChild(leafDiv);
 
     const childComponent = new Component({});
     childComponent[RENDERED_NODES_PROPERTY] = [leafDiv];
-    addToTree(root, childComponent);
+    addToTree(fixture.root, childComponent);
 
     const parentComponent = new Component({});
     parentComponent[RENDERED_NODES_PROPERTY] = [childComponent as unknown as Node];
-    addToTree(root, parentComponent);
+    addToTree(fixture.root, parentComponent);
 
     const grandparentComponent = new Component({});
     grandparentComponent[RENDERED_NODES_PROPERTY] = [parentComponent as unknown as Node];
-    addToTree(root, grandparentComponent);
+    addToTree(fixture.root, grandparentComponent);
 
     expect(leafDiv.isConnected).toBe(true);
 
-    destroyElementSync(grandparentComponent, false, api);
+    destroyElementSync(grandparentComponent, false, fixture.api);
 
     expect(leafDiv.isConnected).toBe(false);
   });
 
   test('destroys mixed array of nodes and components', () => {
-    const directDiv = document.createElement('div');
+    const directDiv = fixture.document.createElement('div');
     directDiv.textContent = 'direct';
-    container.appendChild(directDiv);
+    fixture.container.appendChild(directDiv);
 
-    const nestedDiv = document.createElement('div');
+    const nestedDiv = fixture.document.createElement('div');
     nestedDiv.textContent = 'nested';
-    container.appendChild(nestedDiv);
+    fixture.container.appendChild(nestedDiv);
 
     const childComponent = new Component({});
     childComponent[RENDERED_NODES_PROPERTY] = [nestedDiv];
-    addToTree(root, childComponent);
+    addToTree(fixture.root, childComponent);
 
     // Parent has both direct DOM nodes and nested components
     const parentComponent = new Component({});
     parentComponent[RENDERED_NODES_PROPERTY] = [directDiv, childComponent as unknown as Node];
-    addToTree(root, parentComponent);
+    addToTree(fixture.root, parentComponent);
 
     expect(directDiv.isConnected).toBe(true);
     expect(nestedDiv.isConnected).toBe(true);
 
-    destroyElementSync(parentComponent, false, api);
+    destroyElementSync(parentComponent, false, fixture.api);
 
     expect(directDiv.isConnected).toBe(false);
     expect(nestedDiv.isConnected).toBe(false);
@@ -541,68 +465,68 @@ describe('destroyNodes - nested components', () => {
   test('handles empty RENDERED_NODES_PROPERTY gracefully', () => {
     const component = new Component({});
     component[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, component);
+    addToTree(fixture.root, component);
 
     // Should not throw
-    expect(() => destroyElementSync(component, false, api)).not.toThrow();
+    expect(() => destroyElementSync(component, false, fixture.api)).not.toThrow();
   });
 
   test('handles undefined in RENDERED_NODES_PROPERTY array', () => {
-    const validDiv = document.createElement('div');
-    container.appendChild(validDiv);
+    const validDiv = fixture.document.createElement('div');
+    fixture.container.appendChild(validDiv);
 
     const component = new Component({});
     // Simulate corrupted array with undefined values
     component[RENDERED_NODES_PROPERTY] = [validDiv, undefined as any, null as any];
-    addToTree(root, component);
+    addToTree(fixture.root, component);
 
     // Should not throw and should still destroy valid nodes
-    expect(() => destroyElementSync(component, false, api)).not.toThrow();
+    expect(() => destroyElementSync(component, false, fixture.api)).not.toThrow();
     expect(validDiv.isConnected).toBe(false);
   });
 
   test('handles component with undefined RENDERED_NODES_PROPERTY', () => {
     const childComponent = new Component({});
     // Don't set RENDERED_NODES_PROPERTY - it will be undefined
-    addToTree(root, childComponent);
+    addToTree(fixture.root, childComponent);
 
     const parentComponent = new Component({});
     parentComponent[RENDERED_NODES_PROPERTY] = [childComponent as unknown as Node];
-    addToTree(root, parentComponent);
+    addToTree(fixture.root, parentComponent);
 
     // Should not throw
-    expect(() => destroyElementSync(parentComponent, false, api)).not.toThrow();
+    expect(() => destroyElementSync(parentComponent, false, fixture.api)).not.toThrow();
   });
 
   test('multiple sibling components are all destroyed', () => {
-    const div1 = document.createElement('div');
-    const div2 = document.createElement('div');
-    const div3 = document.createElement('div');
-    container.appendChild(div1);
-    container.appendChild(div2);
-    container.appendChild(div3);
+    const div1 = fixture.document.createElement('div');
+    const div2 = fixture.document.createElement('div');
+    const div3 = fixture.document.createElement('div');
+    fixture.container.appendChild(div1);
+    fixture.container.appendChild(div2);
+    fixture.container.appendChild(div3);
 
     const child1 = new Component({});
     child1[RENDERED_NODES_PROPERTY] = [div1];
-    addToTree(root, child1);
+    addToTree(fixture.root, child1);
 
     const child2 = new Component({});
     child2[RENDERED_NODES_PROPERTY] = [div2];
-    addToTree(root, child2);
+    addToTree(fixture.root, child2);
 
     const child3 = new Component({});
     child3[RENDERED_NODES_PROPERTY] = [div3];
-    addToTree(root, child3);
+    addToTree(fixture.root, child3);
 
     const parent = new Component({});
     parent[RENDERED_NODES_PROPERTY] = [child1 as unknown as Node, child2 as unknown as Node, child3 as unknown as Node];
-    addToTree(root, parent);
+    addToTree(fixture.root, parent);
 
     expect(div1.isConnected).toBe(true);
     expect(div2.isConnected).toBe(true);
     expect(div3.isConnected).toBe(true);
 
-    destroyElementSync(parent, false, api);
+    destroyElementSync(parent, false, fixture.api);
 
     expect(div1.isConnected).toBe(false);
     expect(div2.isConnected).toBe(false);
@@ -614,31 +538,31 @@ describe('destroyNodes - nested components', () => {
 
     // Create a custom API that tracks destruction order
     const trackingApi = {
-      ...api,
+      ...fixture.api,
       destroy(node: Node) {
         destructionOrder.push((node as HTMLElement).id || node.textContent || 'unknown');
-        api.destroy(node);
+        fixture.api.destroy(node);
       },
     } as DOMApi;
 
-    const div1 = document.createElement('div');
+    const div1 = fixture.document.createElement('div');
     div1.id = 'div1';
-    const div2 = document.createElement('div');
+    const div2 = fixture.document.createElement('div');
     div2.id = 'div2';
-    const div3 = document.createElement('div');
+    const div3 = fixture.document.createElement('div');
     div3.id = 'div3';
-    container.appendChild(div1);
-    container.appendChild(div2);
-    container.appendChild(div3);
+    fixture.container.appendChild(div1);
+    fixture.container.appendChild(div2);
+    fixture.container.appendChild(div3);
 
     // Nested structure: parent -> [div1, child -> [div2], div3]
     const child = new Component({});
     child[RENDERED_NODES_PROPERTY] = [div2];
-    addToTree(root, child);
+    addToTree(fixture.root, child);
 
     const parent = new Component({});
     parent[RENDERED_NODES_PROPERTY] = [div1, child as unknown as Node, div3];
-    addToTree(root, parent);
+    addToTree(fixture.root, parent);
 
     destroyElementSync(parent, false, trackingApi);
 
@@ -649,23 +573,23 @@ describe('destroyNodes - nested components', () => {
   test('empty array RENDERED_NODES_PROPERTY is handled (not undefined)', () => {
     const component = new Component({});
     component[RENDERED_NODES_PROPERTY] = []; // Empty array, not undefined
-    addToTree(root, component);
+    addToTree(fixture.root, component);
 
     // Should recognize this as a component (has property) and not throw
-    expect(() => destroyElementSync(component, false, api)).not.toThrow();
+    expect(() => destroyElementSync(component, false, fixture.api)).not.toThrow();
   });
 
   test('skipDom=true prevents DOM node removal but still processes components', () => {
-    const div = document.createElement('div');
-    container.appendChild(div);
+    const div = fixture.document.createElement('div');
+    fixture.container.appendChild(div);
 
     const component = new Component({});
     component[RENDERED_NODES_PROPERTY] = [div];
-    addToTree(root, component);
+    addToTree(fixture.root, component);
 
     expect(div.isConnected).toBe(true);
 
-    destroyElementSync(component, true, api); // skipDom = true
+    destroyElementSync(component, true, fixture.api); // skipDom = true
 
     // Node should still be connected since skipDom is true
     expect(div.isConnected).toBe(true);
@@ -676,39 +600,39 @@ describe('destroyNodes - nested components', () => {
 
     // Create a tracking API that logs destroy calls
     const trackingApi = {
-      ...api,
+      ...fixture.api,
       destroy(node: Node) {
         const id = (node as HTMLElement).id || 'unknown';
         destroyCalls.push(id);
-        api.destroy(node);
+        fixture.api.destroy(node);
       },
     } as DOMApi;
 
     // Create DOM structure: parentDiv > childDiv > grandchildDiv
-    const parentDiv = document.createElement('div');
+    const parentDiv = fixture.document.createElement('div');
     parentDiv.id = 'parent';
-    const childDiv = document.createElement('div');
+    const childDiv = fixture.document.createElement('div');
     childDiv.id = 'child';
-    const grandchildDiv = document.createElement('div');
+    const grandchildDiv = fixture.document.createElement('div');
     grandchildDiv.id = 'grandchild';
 
     parentDiv.appendChild(childDiv);
     childDiv.appendChild(grandchildDiv);
-    container.appendChild(parentDiv);
+    fixture.container.appendChild(parentDiv);
 
     // Create component structure that references these nodes in order
     // parent -> [parentDiv], child -> [childDiv], grandchild -> [grandchildDiv]
     const grandchildComponent = new Component({});
     grandchildComponent[RENDERED_NODES_PROPERTY] = [grandchildDiv];
-    addToTree(root, grandchildComponent);
+    addToTree(fixture.root, grandchildComponent);
 
     const childComponent = new Component({});
     childComponent[RENDERED_NODES_PROPERTY] = [childDiv, grandchildComponent as unknown as Node];
-    addToTree(root, childComponent);
+    addToTree(fixture.root, childComponent);
 
     const parentComponent = new Component({});
     parentComponent[RENDERED_NODES_PROPERTY] = [parentDiv, childComponent as unknown as Node];
-    addToTree(root, parentComponent);
+    addToTree(fixture.root, parentComponent);
 
     expect(parentDiv.isConnected).toBe(true);
     expect(childDiv.isConnected).toBe(true);
@@ -730,26 +654,26 @@ describe('destroyNodes - nested components', () => {
     const destroyCalls: string[] = [];
 
     const trackingApi = {
-      ...api,
+      ...fixture.api,
       destroy(node: Node) {
         const id = (node as HTMLElement).id || 'unknown';
         destroyCalls.push(id);
-        api.destroy(node);
+        fixture.api.destroy(node);
       },
     } as DOMApi;
 
     // Create two separate DOM trees (siblings, not parent-child)
-    const div1 = document.createElement('div');
+    const div1 = fixture.document.createElement('div');
     div1.id = 'div1';
-    const div2 = document.createElement('div');
+    const div2 = fixture.document.createElement('div');
     div2.id = 'div2';
 
-    container.appendChild(div1);
-    container.appendChild(div2);
+    fixture.container.appendChild(div1);
+    fixture.container.appendChild(div2);
 
     const component = new Component({});
     component[RENDERED_NODES_PROPERTY] = [div1, div2];
-    addToTree(root, component);
+    addToTree(fixture.root, component);
 
     destroyElementSync(component, false, trackingApi);
 
@@ -761,21 +685,21 @@ describe('destroyNodes - nested components', () => {
     const destructorCalls: string[] = [];
 
     // Create DOM structure: parentDiv > childDiv > grandchildDiv
-    const parentDiv = document.createElement('div');
+    const parentDiv = fixture.document.createElement('div');
     parentDiv.id = 'parent';
-    const childDiv = document.createElement('div');
+    const childDiv = fixture.document.createElement('div');
     childDiv.id = 'child';
-    const grandchildDiv = document.createElement('div');
+    const grandchildDiv = fixture.document.createElement('div');
     grandchildDiv.id = 'grandchild';
 
     parentDiv.appendChild(childDiv);
     childDiv.appendChild(grandchildDiv);
-    container.appendChild(parentDiv);
+    fixture.container.appendChild(parentDiv);
 
     // Create parent component first (root of our test tree)
     const parentComponent = new Component({});
     parentComponent[RENDERED_NODES_PROPERTY] = [parentDiv];
-    addToTree(root, parentComponent);
+    addToTree(fixture.root, parentComponent);
     registerDestructor(parentComponent, () => {
       destructorCalls.push('parent-destructor');
     });
@@ -799,7 +723,7 @@ describe('destroyNodes - nested components', () => {
     expect(destructorCalls).toEqual([]);
 
     // Destroy using runDestructors (which is what cleanupRender uses)
-    runDestructors(parentComponent, [], false, api);
+    runDestructors(parentComponent, [], false, fixture.api);
 
     // ALL destructors should have been called, even though child DOM nodes were skipped
     expect(destructorCalls).toContain('parent-destructor');
@@ -816,15 +740,15 @@ describe('destroyNodes - nested components', () => {
   test('async destructors still run for child components', async () => {
     const destructorCalls: string[] = [];
 
-    const parentDiv = document.createElement('div');
-    const childDiv = document.createElement('div');
+    const parentDiv = fixture.document.createElement('div');
+    const childDiv = fixture.document.createElement('div');
     parentDiv.appendChild(childDiv);
-    container.appendChild(parentDiv);
+    fixture.container.appendChild(parentDiv);
 
     // Create parent component first
     const parentComponent = new Component({});
     parentComponent[RENDERED_NODES_PROPERTY] = [parentDiv];
-    addToTree(root, parentComponent);
+    addToTree(fixture.root, parentComponent);
     registerDestructor(parentComponent, () => {
       destructorCalls.push('parent-destructor');
     });
@@ -840,11 +764,111 @@ describe('destroyNodes - nested components', () => {
 
     // Use async destroyElement
     const { destroyElement } = await import('./component');
-    await destroyElement(parentComponent, false, api);
+    await destroyElement(parentComponent, false, fixture.api);
 
     // Both destructors should have been called
     expect(destructorCalls).toContain('parent-destructor');
     expect(destructorCalls).toContain('child-async-destructor');
+  });
+
+  test('runDestructors returns one completion promise for nested async teardown', async () => {
+    const steps: string[] = [];
+    const destroyCalls: string[] = [];
+
+    const parentDiv = fixture.document.createElement('div');
+    parentDiv.id = 'parent';
+    const childDiv = fixture.document.createElement('div');
+    childDiv.id = 'child';
+    parentDiv.appendChild(childDiv);
+    fixture.container.appendChild(parentDiv);
+
+    const trackingApi = {
+      ...fixture.api,
+      destroy(node: Node) {
+        destroyCalls.push((node as HTMLElement).id || 'unknown');
+        fixture.api.destroy(node);
+      },
+    } as DOMApi;
+
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [parentDiv];
+    addToTree(fixture.root, parentComponent);
+
+    const childComponent = new Component({});
+    childComponent[RENDERED_NODES_PROPERTY] = [childDiv];
+    addToTree(parentComponent, childComponent);
+
+    let releaseChildDestructor!: () => void;
+    const childDestructorGate = new Promise<void>((resolve) => {
+      releaseChildDestructor = resolve;
+    });
+
+    registerDestructor(parentComponent, async () => {
+      steps.push('parent-start');
+      await Promise.resolve();
+      steps.push('parent-end');
+    });
+
+    registerDestructor(childComponent, async () => {
+      steps.push('child-start');
+      await childDestructorGate;
+      steps.push('child-end');
+    });
+
+    const pending = runDestructors(parentComponent, [], false, trackingApi);
+
+    // New implementation aggregates to a single subtree completion promise.
+    expect(pending.length).toBe(1);
+
+    // DOM should not be removed while a child async destructor is still pending.
+    expect(parentDiv.isConnected).toBe(true);
+    expect(childDiv.isConnected).toBe(true);
+
+    await Promise.resolve();
+    expect(parentDiv.isConnected).toBe(true);
+    expect(childDiv.isConnected).toBe(true);
+
+    releaseChildDestructor();
+    await Promise.all(pending);
+
+    expect(parentDiv.isConnected).toBe(false);
+    expect(childDiv.isConnected).toBe(false);
+    expect(steps).toContain('parent-end');
+    expect(steps).toContain('child-end');
+    expect(destroyCalls).toContain('parent');
+  });
+
+  test('runDestructors with skipDom=true still waits async destructors', async () => {
+    const calls: string[] = [];
+    const node = fixture.document.createElement('div');
+    fixture.container.appendChild(node);
+
+    const component = new Component({});
+    component[RENDERED_NODES_PROPERTY] = [node];
+    addToTree(fixture.root, component);
+
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    registerDestructor(component, async () => {
+      calls.push('start');
+      await gate;
+      calls.push('end');
+    });
+
+    const pending = runDestructors(component, [], true, fixture.api);
+    expect(pending.length).toBe(1);
+    expect(node.isConnected).toBe(true);
+    expect(calls).toEqual(['start']);
+
+    release();
+    await Promise.all(pending);
+
+    expect(calls).toEqual(['start', 'end']);
+    // skipDom=true should preserve DOM nodes
+    expect(node.isConnected).toBe(true);
   });
 
   test('isConnected is checked only once per node (no double check regression)', () => {
@@ -854,9 +878,9 @@ describe('destroyNodes - nested components', () => {
     const destroyCalls: string[] = [];
 
     // Create a node with tracked isConnected getter
-    const div = document.createElement('div');
+    const div = fixture.document.createElement('div');
     div.id = 'tracked-div';
-    container.appendChild(div);
+    fixture.container.appendChild(div);
 
     // Track isConnected access using a proxy-like approach
     let realIsConnected = true;
@@ -870,18 +894,18 @@ describe('destroyNodes - nested components', () => {
 
     // Create a tracking API
     const trackingApi = {
-      ...api,
+      ...fixture.api,
       destroy(node: Node) {
         destroyCalls.push((node as HTMLElement).id || 'unknown');
         // Simulate what happens when remove() is called - node becomes disconnected
         realIsConnected = false;
-        api.destroy(node);
+        fixture.api.destroy(node);
       },
     } as DOMApi;
 
     const component = new Component({});
     component[RENDERED_NODES_PROPERTY] = [div];
-    addToTree(root, component);
+    addToTree(fixture.root, component);
 
     destroyElementSync(component, false, trackingApi);
 
@@ -900,9 +924,9 @@ describe('destroyNodes - nested components', () => {
 
     // Create many sibling divs
     for (let i = 0; i < ITEM_COUNT; i++) {
-      const div = document.createElement('div');
+      const div = fixture.document.createElement('div');
       div.id = `item-${i}`;
-      container.appendChild(div);
+      fixture.container.appendChild(div);
 
       // Track isConnected checks per div
       let realIsConnected = true;
@@ -926,17 +950,17 @@ describe('destroyNodes - nested components', () => {
     for (let i = 0; i < ITEM_COUNT; i++) {
       const comp = new Component({});
       comp[RENDERED_NODES_PROPERTY] = [divs[i]];
-      addToTree(root, comp);
+      addToTree(fixture.root, comp);
       components.push(comp);
     }
 
     // Create a parent that holds all components
     const parent = new Component({});
     parent[RENDERED_NODES_PROPERTY] = components.map(c => c as unknown as Node);
-    addToTree(root, parent);
+    addToTree(fixture.root, parent);
 
     // Destroy all
-    destroyElementSync(parent, false, api);
+    destroyElementSync(parent, false, fixture.api);
 
     // Each div should have isConnected checked exactly once
     for (let i = 0; i < ITEM_COUNT; i++) {
@@ -955,53 +979,35 @@ import { cell, formula, opsForTag, relatedTags, tagsToRevalidate } from './react
 import { opcodeFor } from './vm';
 
 describe('If Component Destruction', () => {
-  let window: Window;
-  let document: Document;
-  let api: DOMApi;
-  let root: Root;
-  let container: HTMLElement;
+  let fixture: DOMFixture;
 
-  beforeEach(() => {
-    window = new Window();
-    document = window.document as unknown as Document;
-    api = new HTMLBrowserDOMApi(document);
-    cleanupFastContext();
-    root = new Root(document);
-    provideContext(root, RENDERING_CONTEXT, api);
-    container = document.createElement('div');
-    document.body.appendChild(container);
-  });
-
+  beforeEach(() => { fixture = createDOMFixture(); });
   afterEach(() => {
-    cleanupFastContext();
-    TREE.clear();
-    PARENT.clear();
-    CHILD.clear();
+    fixture.cleanup();
     tagsToRevalidate.clear();
-    window.close();
   });
 
   test('opcodes are removed when if branch is destroyed', async () => {
     const parentComponent = new Component({});
     parentComponent[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, parentComponent);
+    addToTree(fixture.root, parentComponent);
 
     const condition = cell(true);
     const reactiveValue = cell(42);
     let opcodeCallCount = 0;
 
     // Create an if condition
-    const placeholder = document.createComment('if');
-    container.appendChild(placeholder);
+    const placeholder = fixture.document.createComment('if');
+    fixture.container.appendChild(placeholder);
 
     const ifInstance = new IfCondition(
       parentComponent,
       condition,
-      container,
+      fixture.container,
       placeholder,
       (ctx) => {
         // True branch: register an opcode for reactiveValue
-        const div = document.createElement('div');
+        const div = fixture.document.createElement('div');
         const destructor = opcodeFor(reactiveValue, (value) => {
           opcodeCallCount++;
           div.textContent = String(value);
@@ -1030,24 +1036,24 @@ describe('If Component Destruction', () => {
   test('relatedTags are cleaned up when MergedCells are destroyed', async () => {
     const parentComponent = new Component({});
     parentComponent[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, parentComponent);
+    addToTree(fixture.root, parentComponent);
 
     const condition = cell(true);
     const baseCell = cell(10);
 
-    const placeholder = document.createComment('if');
-    container.appendChild(placeholder);
+    const placeholder = fixture.document.createComment('if');
+    fixture.container.appendChild(placeholder);
 
     const ifInstance = new IfCondition(
       parentComponent,
       condition,
-      container,
+      fixture.container,
       placeholder,
       (ctx) => {
         // True branch: create a formula that depends on baseCell
         const derivedCell = formula(() => baseCell.value * 2, 'test-derived');
 
-        const div = document.createElement('div');
+        const div = fixture.document.createElement('div');
         const destructor = opcodeFor(derivedCell, (value) => {
           div.textContent = String(value);
         });
@@ -1076,22 +1082,22 @@ describe('If Component Destruction', () => {
   test('updating destroyed cell does not trigger opcodes', async () => {
     const parentComponent = new Component({});
     parentComponent[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, parentComponent);
+    addToTree(fixture.root, parentComponent);
 
     const condition = cell(true);
     const reactiveValue = cell(1);
     let opcodeCallCount = 0;
 
-    const placeholder = document.createComment('if');
-    container.appendChild(placeholder);
+    const placeholder = fixture.document.createComment('if');
+    fixture.container.appendChild(placeholder);
 
     const ifInstance = new IfCondition(
       parentComponent,
       condition,
-      container,
+      fixture.container,
       placeholder,
       (ctx) => {
-        const div = document.createElement('div');
+        const div = fixture.document.createElement('div');
         const destructor = opcodeFor(reactiveValue, () => {
           opcodeCallCount++;
         });
@@ -1134,20 +1140,20 @@ describe('If Component Destruction', () => {
 
     const parentComponent = new Component({});
     parentComponent[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, parentComponent);
+    addToTree(fixture.root, parentComponent);
 
     const condition = cell(true);
-    const placeholder = document.createComment('if');
-    container.appendChild(placeholder);
+    const placeholder = fixture.document.createComment('if');
+    fixture.container.appendChild(placeholder);
 
     const initialHmrSize = IFS_FOR_HMR.size;
 
     const ifInstance = new IfCondition(
       parentComponent,
       condition,
-      container,
+      fixture.container,
       placeholder,
-      () => [document.createElement('div')],
+      () => [fixture.document.createElement('div')],
       () => null,
     );
 
@@ -1167,18 +1173,18 @@ describe('If Component Destruction', () => {
   test('tree structure is cleaned up after destruction', async () => {
     const parentComponent = new Component({});
     parentComponent[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, parentComponent);
+    addToTree(fixture.root, parentComponent);
 
     const condition = cell(true);
-    const placeholder = document.createComment('if');
-    container.appendChild(placeholder);
+    const placeholder = fixture.document.createComment('if');
+    fixture.container.appendChild(placeholder);
 
     const ifInstance = new IfCondition(
       parentComponent,
       condition,
-      container,
+      fixture.container,
       placeholder,
-      () => [document.createElement('div')],
+      () => [fixture.document.createElement('div')],
       () => null,
     );
 
@@ -1203,25 +1209,25 @@ describe('If Component Destruction', () => {
   test('multiple create/destroy cycles do not leak (HMR simulation)', async () => {
     const parentComponent = new Component({});
     parentComponent[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, parentComponent);
+    addToTree(fixture.root, parentComponent);
 
     const initialTreeSize = TREE.size;
 
     // Simulate 5 HMR cycles
     for (let cycle = 0; cycle < 5; cycle++) {
       const condition = cell(true);
-      const placeholder = document.createComment('if');
-      container.appendChild(placeholder);
+      const placeholder = fixture.document.createComment('if');
+      fixture.container.appendChild(placeholder);
 
       const ifInstance = new IfCondition(
         parentComponent,
         condition,
-        container,
+        fixture.container,
         placeholder,
         (ctx) => {
           // Create nested component with reactive binding
           const reactiveValue = cell(cycle);
-          const div = document.createElement('div');
+          const div = fixture.document.createElement('div');
           const destructor = opcodeFor(reactiveValue, (value) => {
             div.textContent = String(value);
           });
@@ -1245,22 +1251,22 @@ describe('If Component Destruction', () => {
   test('complete destruction cleans up all branch opcodes', async () => {
     const parentComponent = new Component({});
     parentComponent[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, parentComponent);
+    addToTree(fixture.root, parentComponent);
 
     const condition = cell(true);
     const trueBranchValue = cell('true-value');
     let trueBranchOpcodeCount = 0;
 
-    const placeholder = document.createComment('if');
-    container.appendChild(placeholder);
+    const placeholder = fixture.document.createComment('if');
+    fixture.container.appendChild(placeholder);
 
     const ifInstance = new IfCondition(
       parentComponent,
       condition,
-      container,
+      fixture.container,
       placeholder,
       (ctx) => {
-        const div = document.createElement('div');
+        const div = fixture.document.createElement('div');
         const destructor = opcodeFor(trueBranchValue, () => {
           trueBranchOpcodeCount++;
         });
@@ -1289,35 +1295,15 @@ describe('If Component Destruction', () => {
 });
 
 describe('renderElement unknown types fallback', () => {
-  let window: Window;
-  let document: Document;
-  let api: DOMApi;
-  let root: Root;
-  let container: HTMLElement;
+  let fixture: DOMFixture;
 
-  beforeEach(() => {
-    window = new Window();
-    document = window.document as unknown as Document;
-    api = new HTMLBrowserDOMApi(document);
-    cleanupFastContext();
-    root = new Root(document);
-    provideContext(root, RENDERING_CONTEXT, api);
-    container = document.createElement('div');
-    document.body.appendChild(container);
-  });
-
-  afterEach(() => {
-    cleanupFastContext();
-    TREE.clear();
-    PARENT.clear();
-    CHILD.clear();
-    window.close();
-  });
+  beforeEach(() => { fixture = createDOMFixture(); });
+  afterEach(() => { fixture.cleanup(); });
 
   test('renders object with custom toString as text', () => {
     const component = new Component({});
     component[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, component);
+    addToTree(fixture.root, component);
 
     const customObj = {
       toString() {
@@ -1325,21 +1311,21 @@ describe('renderElement unknown types fallback', () => {
       },
     };
 
-    renderElement(api, component, container, customObj as any);
-    expect(container.textContent).toBe('custom-text');
+    renderElement(fixture.api, component, fixture.container, customObj as any);
+    expect(fixture.container.textContent).toBe('custom-text');
     expect(component[RENDERED_NODES_PROPERTY].length).toBe(1);
   });
 
   test('skips plain object with [object Object] toString', () => {
     const component = new Component({});
     component[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, component);
+    addToTree(fixture.root, component);
 
     const plainObj = { foo: 'bar' };
 
     // In dev mode this may warn but not throw, in prod it should skip silently
-    renderElement(api, component, container, plainObj as any);
+    renderElement(fixture.api, component, fixture.container, plainObj as any);
     // Should not render [object Object]
-    expect(container.textContent).not.toBe('[object Object]');
+    expect(fixture.container.textContent).not.toBe('[object Object]');
   });
 });

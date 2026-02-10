@@ -161,6 +161,17 @@ function shiftGeneratedTree(tree: MutableMappingTreeNode, transformedOffset: num
   }
 }
 
+/**
+ * Find the exact offset of the `[` in `const roots = [...]` inside a wrapper
+ * function string. Uses a regex anchored to `const roots` so it won't match
+ * brackets in preamble declarations like `const $a = this[$args]`.
+ */
+export function findRootsArrayOffset(wrapperCode: string): number {
+  const match = /\bconst\s+roots\s*=\s*/.exec(wrapperCode);
+  if (!match) return -1;
+  return match.index + match[0].length;
+}
+
 type ParsedTemplate = {
   contents: string;
   contentRange: { startUtf16Codepoint: number };
@@ -321,9 +332,11 @@ function processTransformedFiles(
     const finContext = template.flags.hasThisAccess ? 'this' : 'this';
     const hasFw = template.code.includes('$fw');
     const hasSlots = template.code.includes('$slots');
+    const hasArgs = /\$a[\.\[]/.test(template.code);
     const slotsResolution = `const $slots = ${SYMBOLS.$_GET_SLOTS}(this, arguments);`;
     const maybeFw = hasFw ? `const $fw = ${SYMBOLS.$_GET_FW}(this, arguments);` : '';
     const maybeSlots = hasSlots ? slotsResolution : '';
+    const maybeArgsAlias = hasArgs ? `const $a = this[${SYMBOLS.$args}];` : '';
     const declareRoots = `const roots = ${template.code};`;
     const declareReturn = `return ${SYMBOLS.FINALIZE_COMPONENT}(roots, ${finContext});`;
 
@@ -331,6 +344,7 @@ function processTransformedFiles(
       result = `function () {
       ${maybeFw}
       ${SYMBOLS.$_GET_ARGS}(this, arguments);
+      ${maybeArgsAlias}
       ${maybeSlots}
       ${declareRoots}
       ${declareReturn}
@@ -340,11 +354,13 @@ function processTransformedFiles(
         ? `() => {
       ${maybeSlots}
       ${maybeFw}
+      ${hasArgs ? `const $a = this[${SYMBOLS.$args}];` : ''}
       ${declareRoots}
       ${declareReturn}
     }`
         : `(() => {
       ${SYMBOLS.$_GET_ARGS}(this, arguments);
+      ${maybeArgsAlias}
       ${maybeSlots}
       ${maybeFw}
       ${declareRoots}
@@ -396,7 +412,7 @@ function processTransformedFiles(
         );
         if (remapped) {
           const generatedCode = programResults[index];
-          const rootsArrayStart = generatedCode.indexOf('[');
+          const rootsArrayStart = findRootsArrayOffset(generatedCode);
           if (rootsArrayStart !== -1) {
             shiftGeneratedTree(remapped, insertPos.start + rootsArrayStart);
             allMappings.push(remapped);
@@ -454,7 +470,7 @@ function processTransformedFiles(
         const shiftedMapping = JSON.parse(JSON.stringify(template.mapping)) as MutableMappingTreeNode;
 
         const generatedCode = programResults[index];
-        const rootsArrayStart = generatedCode.indexOf('[');
+        const rootsArrayStart = findRootsArrayOffset(generatedCode);
 
         if (rootsArrayStart !== -1) {
           shiftMappingTree(

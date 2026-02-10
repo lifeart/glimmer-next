@@ -553,7 +553,7 @@ export class PdfViewer extends Component<PdfViewerSignature> {
     const args = this.args;
 
     // Create container element
-    this.containerNode = $_tag('div', [[], [], []], [], this) as HTMLDivElement;
+    this.containerNode = $_tag('div', [[], [], []], this) as HTMLDivElement;
     this.containerNode.style.display = 'block';
     this.containerNode.style.width = args.width ?? '100%';
     this.containerNode.style.height = args.height ?? '600px';
@@ -655,7 +655,7 @@ export function PdfDownloadLink(this: Component<PdfDownloadLinkProps>) {
   const args = this.args as PdfDownloadLinkProps;
   const $slots = $_GET_SLOTS(this, arguments);
 
-  const linkNode = $_tag('a', [[], [], []], [], this) as HTMLAnchorElement;
+  const linkNode = $_tag('a', [[], [], []], this) as HTMLAnchorElement;
   linkNode.href = '#';
   linkNode.style.cursor = 'pointer';
   if (args.className) {

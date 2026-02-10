@@ -7,13 +7,19 @@ import { scheduleRevalidate } from '@/core/runtime';
 import { isFn, isTag, isTagLike, debugContext } from '@/core/shared';
 import { AdaptivePool, config } from '@/core/config';
 
-export const asyncOpcodes = new WeakSet<tagOp>();
-// Fast path: skip WeakSet checks when no async opcodes have ever been registered
+// Async opcode support — tree-shaken when ASYNC_COMPILE_TRANSFORMS is false
+const asyncOpcodes = new WeakSet<tagOp>();
 let hasAnyAsyncOpcodes = false;
 
+export function hasAsyncOpcodes() {
+  return ASYNC_COMPILE_TRANSFORMS && hasAnyAsyncOpcodes;
+}
+
 export function markOpcodeAsync(op: tagOp) {
-  asyncOpcodes.add(op);
-  hasAnyAsyncOpcodes = true;
+  if (ASYNC_COMPILE_TRANSFORMS) {
+    asyncOpcodes.add(op);
+    hasAnyAsyncOpcodes = true;
+  }
 }
 // List of DOM operations for each tag
 export const opsForTag: Map<
@@ -306,46 +312,45 @@ export class MergedCell {
 // this function is called when we need to update DOM, values represented by tags are changed
 export type tagOp = (...values: unknown[]) => Promise<void> | void;
 
-// this is runtime function, it's called when we need to update DOM for a specific tag
-export async function executeTag(tag: Cell | MergedCell) {
-  let opcode: null | tagOp = null;
-  const ops = opsFor(tag);
-  const value = tag.value;
-
-  // Fast path: when no async opcodes exist, skip all WeakSet lookups
-  if (!hasAnyAsyncOpcodes) {
-    if (TRY_CATCH_ERROR_HANDLING) {
-      try {
-        for (let i = 0; i < ops.length; i++) {
-          opcode = ops[i];
-          opcode(value);
-        }
-      } catch (e: any) {
-        if (IS_DEV_MODE) {
-          console.error({
-            message: 'Error executing tag',
-            error: e,
-            tag,
-            opcode: opcode?.toString(),
-          });
-        }
-        if (opcode) {
-          const index = ops.indexOf(opcode);
-          if (index > -1) {
-            ops.splice(index, 1);
-          }
-        }
-      }
-    } else {
-      for (let i = 0; i < ops.length; i++) {
-        ops[i](value);
-      }
-    }
-    return;
+// Shared error handler for executeTag variants — avoids code duplication
+function handleOpcodeError(e: any, tag: Cell | MergedCell, opcode: tagOp | null, ops: tagOp[]) {
+  if (IS_DEV_MODE) {
+    console.error({
+      message: 'Error executing tag',
+      error: e,
+      tag,
+      opcode: opcode?.toString(),
+    });
   }
+  if (opcode) {
+    const index = ops.indexOf(opcode);
+    if (index > -1) {
+      ops.splice(index, 1);
+    }
+  }
+}
 
-  // Slow path: check async status for each opcode
+function executeTagSyncOps(tag: Cell | MergedCell, ops: tagOp[], value: unknown) {
   if (TRY_CATCH_ERROR_HANDLING) {
+    let opcode: tagOp | null = null;
+    try {
+      for (let i = 0; i < ops.length; i++) {
+        opcode = ops[i];
+        opcode(value);
+      }
+    } catch (e: any) {
+      handleOpcodeError(e, tag, opcode, ops);
+    }
+  } else {
+    for (let i = 0; i < ops.length; i++) {
+      ops[i](value);
+    }
+  }
+}
+
+async function executeTagAsyncOps(tag: Cell | MergedCell, ops: tagOp[], value: unknown) {
+  if (TRY_CATCH_ERROR_HANDLING) {
+    let opcode: tagOp | null = null;
     try {
       for (let i = 0; i < ops.length; i++) {
         opcode = ops[i];
@@ -356,22 +361,10 @@ export async function executeTag(tag: Cell | MergedCell) {
         }
       }
     } catch (e: any) {
-      if (IS_DEV_MODE) {
-        console.error({
-          message: 'Error executing tag',
-          error: e,
-          tag,
-          opcode: opcode?.toString(),
-        });
-      }
-      if (opcode) {
-        const index = ops.indexOf(opcode);
-        if (index > -1) {
-          ops.splice(index, 1);
-        }
-      }
+      handleOpcodeError(e, tag, opcode, ops);
     }
   } else {
+    let opcode: tagOp | null = null;
     for (let i = 0; i < ops.length; i++) {
       opcode = ops[i];
       if (asyncOpcodes.has(opcode)) {
@@ -381,6 +374,29 @@ export async function executeTag(tag: Cell | MergedCell) {
       }
     }
   }
+}
+
+/**
+ * Executes all opcodes for a tag.
+ *
+ * `awaitAsync = false` is the synchronous fast path with no Promise allocation.
+ * `awaitAsync = true` preserves async opcode semantics and awaits marked async ops.
+ */
+export function executeTag(tag: Cell | MergedCell, awaitAsync: true): Promise<void>;
+export function executeTag(tag: Cell | MergedCell, awaitAsync: false): void;
+export function executeTag(tag: Cell | MergedCell, awaitAsync?: boolean): Promise<void> | void;
+export function executeTag(tag: Cell | MergedCell, awaitAsync = true): Promise<void> | void {
+  const ops = opsFor(tag);
+  const value = tag.value;
+  if (awaitAsync) {
+    return executeTagAsyncOps(tag, ops, value);
+  }
+  executeTagSyncOps(tag, ops, value);
+}
+
+// Backward-compatible alias. Kept so existing imports continue to work.
+export function executeTagSync(tag: Cell | MergedCell) {
+  executeTag(tag, false);
 }
 export function lazyRawCellFor<T extends object, K extends keyof T>(
   obj: T,
@@ -446,7 +462,7 @@ export function cellFor<T extends object, K extends keyof T>(
 type Fn = () => unknown;
 
 export function formula(fn: Function | Fn, debugName?: string) {
-  return new MergedCell(fn, `formula:${debugName ?? 'unknown'}`);
+  return new MergedCell(fn, IS_DEV_MODE ? `formula:${debugName ?? 'unknown'}` : undefined);
 }
 
 export function deepFnValue(fn: Function | Fn) {

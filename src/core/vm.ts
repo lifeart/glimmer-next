@@ -7,7 +7,8 @@ import {
   isRendering,
   formula,
   opsFor,
-  inNewTrackingFrame,
+  getTracker,
+  setTracker,
   releaseOpArray,
 } from './reactive';
 import { isFn } from './shared';
@@ -61,42 +62,38 @@ export function effect(cb: () => void): () => void {
   };
 }
 
-function trackingTransaction(cb: () => void) {
-  if (isRendering()) {
-    cb();
-  } else {
-    setIsRendering(true);
-    try {
-      cb();
-    } finally {
-      setIsRendering(false);
-    }
-  }
-}
-
-const executeOpcode = (tag: AnyCell, op: tagOp) => {
-  const value = op(tag.value) as unknown as void | Promise<void>;
-  if (value !== undefined) {
-    // console.info(`Adding Async Updating Opcode for ${tag._debugName}`);
-    markOpcodeAsync(op);
-  }
-};
-
 /**
  * Evaluates an opcode in an isolated tracking context.
  *
- * Uses `inNewTrackingFrame` to ensure that formulas created during opcode
- * evaluation get their own independent dependency tracking. Without this,
- * nested formulas (e.g., reactive attribute bindings created inside slot
- * content wrapped by resolveRenderable) would have their dependencies merged
- * into the parent formula's tracking, causing reactive updates to fail.
+ * Combines trackingTransaction + inNewTrackingFrame + executeOpcode inline
+ * to avoid allocating 2 closures per opcode evaluation. The semantics are:
+ * 1. Ensure we're in a rendering transaction
+ * 2. Save and null the current tracker (isolation)
+ * 3. Execute the opcode
+ * 4. Restore tracker and rendering state
  */
 export function evaluateOpcode(tag: AnyCell, op: tagOp) {
-  trackingTransaction(() => {
-    inNewTrackingFrame(() => {
-      executeOpcode(tag, op);
-    });
-  });
+  const wasRendering = isRendering();
+  const previousTracker = getTracker();
+  if (!wasRendering) {
+    setIsRendering(true);
+  }
+  setTracker(null);
+  try {
+    if (ASYNC_COMPILE_TRANSFORMS) {
+      const value = op(tag.value) as unknown as void | Promise<void>;
+      if (value !== undefined) {
+        markOpcodeAsync(op);
+      }
+    } else {
+      op(tag.value);
+    }
+  } finally {
+    setTracker(previousTracker);
+    if (!wasRendering) {
+      setIsRendering(false);
+    }
+  }
 }
 
 /**
@@ -110,14 +107,13 @@ export function opcodeFor(tag: AnyCell, op: tagOp) {
   const ops = opsFor(tag)!;
   ops.push(op);
   return () => {
-    // console.info(`Removing Updating Opcode for ${tag._debugName}`, tag);
     const index = ops.indexOf(op);
     if (index > -1) {
       ops.splice(index, 1);
     }
     if (ops.length === 0) {
       opsForTag.delete(tag.id);
-      releaseOpArray(ops); // Return to pool for reuse
+      releaseOpArray(ops);
       if ('destroy' in tag) {
         tag.destroy();
       }

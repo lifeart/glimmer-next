@@ -24,6 +24,7 @@ declare global {
   const WITH_EMBER_INTEGRATION: boolean;
   const WITH_CONTEXT_API: boolean;
   const WITH_DYNAMIC_EVAL: boolean;
+  const ASYNC_COMPILE_TRANSFORMS: boolean;
 }
 
 declare module 'glint-environment-gxt/globals' {

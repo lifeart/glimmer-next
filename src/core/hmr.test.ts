@@ -1,62 +1,40 @@
-import { expect, test, describe, beforeEach, afterEach, vi } from 'vitest';
-import { Window } from 'happy-dom';
+import { expect, test, describe, beforeEach, afterEach } from 'vitest';
 import { createHotReload } from './hmr';
 import { Component } from './component';
-import { HTMLBrowserDOMApi, DOMApi } from './dom-api';
 import {
   RENDERED_NODES_PROPERTY,
-  PARENT,
-  TREE,
-  CHILD,
   addToTree,
   COMPONENTS_HMR,
   IFS_FOR_HMR,
   LISTS_FOR_HMR,
 } from './shared';
-import { cleanupFastContext, provideContext, RENDERING_CONTEXT } from './context';
-import { Root } from './dom';
+import { createDOMFixture, type DOMFixture } from './__test-utils__';
 
 describe('createHotReload', () => {
-  let window: Window;
-  let document: Document;
-  let api: DOMApi;
-  let root: Root;
-  let container: HTMLElement;
+  let fixture: DOMFixture;
 
   beforeEach(() => {
-    window = new Window();
-    document = window.document as unknown as Document;
-    api = new HTMLBrowserDOMApi(document);
-    cleanupFastContext();
-    root = new Root(document);
-    provideContext(root, RENDERING_CONTEXT, api);
-    container = document.createElement('div');
-    document.body.appendChild(container);
+    fixture = createDOMFixture();
     // Clear HMR structures
-    COMPONENTS_HMR.delete = vi.fn(COMPONENTS_HMR.delete.bind(COMPONENTS_HMR));
     IFS_FOR_HMR.clear();
     LISTS_FOR_HMR.clear();
   });
 
   afterEach(() => {
-    cleanupFastContext();
-    TREE.clear();
-    PARENT.clear();
-    CHILD.clear();
+    fixture.cleanup();
     IFS_FOR_HMR.clear();
     LISTS_FOR_HMR.clear();
-    window.close();
   });
 
   describe('factory function', () => {
     test('returns a hotReload function', () => {
-      const componentFn = vi.fn();
+      const componentFn = () => new Component({});
       const hotReload = createHotReload(componentFn);
       expect(typeof hotReload).toBe('function');
     });
 
     test('returned function has correct signature', () => {
-      const componentFn = vi.fn();
+      const componentFn = () => new Component({});
       const hotReload = createHotReload(componentFn);
       expect(hotReload.length).toBe(2); // takes oldKlass and newKlass
     });
@@ -64,7 +42,11 @@ describe('createHotReload', () => {
 
   describe('hotReload function', () => {
     test('returns early when no rendered instances exist', () => {
-      const componentFn = vi.fn();
+      let componentFnCalls = 0;
+      const componentFn = () => {
+        componentFnCalls++;
+        return new Component({});
+      };
       const hotReload = createHotReload(componentFn);
 
       class OldComponent {}
@@ -74,20 +56,20 @@ describe('createHotReload', () => {
       hotReload(OldComponent as any, NewComponent as any);
 
       // componentFn should not be called since there are no instances
-      expect(componentFn).not.toHaveBeenCalled();
+      expect(componentFnCalls).toBe(0);
     });
 
     test('creates new component for each rendered instance', () => {
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       class OldComponent {}
       class NewComponent {}
 
       const instance = new Component({});
-      instance[RENDERED_NODES_PROPERTY] = [document.createElement('div')];
-      container.appendChild(instance[RENDERED_NODES_PROPERTY][0] as Node);
+      instance[RENDERED_NODES_PROPERTY] = [fixture.document.createElement('div')];
+      fixture.container.appendChild(instance[RENDERED_NODES_PROPERTY][0] as Node);
       addToTree(parentComponent, instance);
 
       // Register the instance in COMPONENTS_HMR
@@ -102,29 +84,33 @@ describe('createHotReload', () => {
       const newInstance = new Component({});
       newInstance[RENDERED_NODES_PROPERTY] = [];
 
-      const componentFn = vi.fn().mockReturnValue(newInstance);
+      let receivedArgs: unknown[] = [];
+      const componentFn = (...args: unknown[]) => {
+        receivedArgs = args;
+        return newInstance;
+      };
       const hotReload = createHotReload(componentFn);
 
       hotReload(OldComponent as any, NewComponent as any);
 
-      expect(componentFn).toHaveBeenCalledWith(
+      expect(receivedArgs).toEqual([
         NewComponent,
         { foo: 'bar' },
-        parentComponent
-      );
+        parentComponent,
+      ]);
     });
 
     test('cleans up COMPONENTS_HMR entry after reload', () => {
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       class OldComponent {}
       class NewComponent {}
 
       const instance = new Component({});
-      instance[RENDERED_NODES_PROPERTY] = [document.createElement('div')];
-      container.appendChild(instance[RENDERED_NODES_PROPERTY][0] as Node);
+      instance[RENDERED_NODES_PROPERTY] = [fixture.document.createElement('div')];
+      fixture.container.appendChild(instance[RENDERED_NODES_PROPERTY][0] as Node);
       addToTree(parentComponent, instance);
 
       const instanceSet = new Set([{
@@ -135,34 +121,36 @@ describe('createHotReload', () => {
       }]);
       COMPONENTS_HMR.set(OldComponent as any, instanceSet);
 
+      expect(COMPONENTS_HMR.has(OldComponent as any)).toBe(true);
+
       const newInstance = new Component({});
       newInstance[RENDERED_NODES_PROPERTY] = [];
 
-      const componentFn = vi.fn().mockReturnValue(newInstance);
+      const componentFn = () => newInstance;
       const hotReload = createHotReload(componentFn);
 
       hotReload(OldComponent as any, NewComponent as any);
 
-      // The delete should have been called
-      expect(COMPONENTS_HMR.delete).toHaveBeenCalledWith(OldComponent);
+      // The entry should have been deleted
+      expect(COMPONENTS_HMR.has(OldComponent as any)).toBe(false);
     });
 
     test('handles multiple instances of the same component', () => {
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       class OldComponent {}
       class NewComponent {}
 
       const instance1 = new Component({});
-      instance1[RENDERED_NODES_PROPERTY] = [document.createElement('div')];
-      container.appendChild(instance1[RENDERED_NODES_PROPERTY][0] as Node);
+      instance1[RENDERED_NODES_PROPERTY] = [fixture.document.createElement('div')];
+      fixture.container.appendChild(instance1[RENDERED_NODES_PROPERTY][0] as Node);
       addToTree(parentComponent, instance1);
 
       const instance2 = new Component({});
-      instance2[RENDERED_NODES_PROPERTY] = [document.createElement('span')];
-      container.appendChild(instance2[RENDERED_NODES_PROPERTY][0] as Node);
+      instance2[RENDERED_NODES_PROPERTY] = [fixture.document.createElement('span')];
+      fixture.container.appendChild(instance2[RENDERED_NODES_PROPERTY][0] as Node);
       addToTree(parentComponent, instance2);
 
       const instanceSet = new Set([
@@ -172,17 +160,17 @@ describe('createHotReload', () => {
       COMPONENTS_HMR.set(OldComponent as any, instanceSet);
 
       let callCount = 0;
-      const componentFn = vi.fn().mockImplementation(() => {
+      const componentFn = () => {
         const newInst = new Component({});
         newInst[RENDERED_NODES_PROPERTY] = [];
         callCount++;
         return newInst;
-      });
+      };
 
       const hotReload = createHotReload(componentFn);
       hotReload(OldComponent as any, NewComponent as any);
 
-      expect(componentFn).toHaveBeenCalledTimes(2);
+      expect(callCount).toBe(2);
     });
   });
 
@@ -190,14 +178,14 @@ describe('createHotReload', () => {
     test('updates IFS_FOR_HMR when instance matches directly', () => {
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       class OldComponent {}
       class NewComponent {}
 
       const instance = new Component({});
-      instance[RENDERED_NODES_PROPERTY] = [document.createElement('div')];
-      container.appendChild(instance[RENDERED_NODES_PROPERTY][0] as Node);
+      instance[RENDERED_NODES_PROPERTY] = [fixture.document.createElement('div')];
+      fixture.container.appendChild(instance[RENDERED_NODES_PROPERTY][0] as Node);
       addToTree(parentComponent, instance);
 
       const instanceSet = new Set([{
@@ -208,31 +196,32 @@ describe('createHotReload', () => {
       }]);
       COMPONENTS_HMR.set(OldComponent as any, instanceSet);
 
-      const setFn = vi.fn();
+      let setFnCalledWith: unknown = undefined;
+      const setFn = (value: unknown) => { setFnCalledWith = value; };
       IFS_FOR_HMR.add(() => ({ item: instance, set: setFn }));
 
       const newInstance = new Component({});
       newInstance[RENDERED_NODES_PROPERTY] = [];
 
-      const componentFn = vi.fn().mockReturnValue(newInstance);
+      const componentFn = () => newInstance;
       const hotReload = createHotReload(componentFn);
 
       hotReload(OldComponent as any, NewComponent as any);
 
-      expect(setFn).toHaveBeenCalledWith(newInstance);
+      expect(setFnCalledWith).toBe(newInstance);
     });
 
     test('updates IFS_FOR_HMR when instance is in array', () => {
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       class OldComponent {}
       class NewComponent {}
 
       const instance = new Component({});
-      instance[RENDERED_NODES_PROPERTY] = [document.createElement('div')];
-      container.appendChild(instance[RENDERED_NODES_PROPERTY][0] as Node);
+      instance[RENDERED_NODES_PROPERTY] = [fixture.document.createElement('div')];
+      fixture.container.appendChild(instance[RENDERED_NODES_PROPERTY][0] as Node);
       addToTree(parentComponent, instance);
 
       const otherComponent = new Component({});
@@ -246,20 +235,21 @@ describe('createHotReload', () => {
       }]);
       COMPONENTS_HMR.set(OldComponent as any, instanceSet);
 
-      const setFn = vi.fn();
+      let setFnCalledWith: unknown = undefined;
+      const setFn = (value: unknown) => { setFnCalledWith = value; };
       IFS_FOR_HMR.add(() => ({ item: scopesArray, set: setFn }));
 
       const newInstance = new Component({});
       newInstance[RENDERED_NODES_PROPERTY] = [];
 
-      const componentFn = vi.fn().mockReturnValue(newInstance);
+      const componentFn = () => newInstance;
       const hotReload = createHotReload(componentFn);
 
       hotReload(OldComponent as any, NewComponent as any);
 
       // The array should have been modified in place
       expect(scopesArray[1]).toBe(newInstance);
-      expect(setFn).toHaveBeenCalledWith(scopesArray);
+      expect(setFnCalledWith).toBe(scopesArray);
     });
   });
 
@@ -267,14 +257,14 @@ describe('createHotReload', () => {
     test('updates LISTS_FOR_HMR when instance is in keyMap array', () => {
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       class OldComponent {}
       class NewComponent {}
 
       const instance = new Component({});
-      instance[RENDERED_NODES_PROPERTY] = [document.createElement('div')];
-      container.appendChild(instance[RENDERED_NODES_PROPERTY][0] as Node);
+      instance[RENDERED_NODES_PROPERTY] = [fixture.document.createElement('div')];
+      fixture.container.appendChild(instance[RENDERED_NODES_PROPERTY][0] as Node);
       addToTree(parentComponent, instance);
 
       const instanceSet = new Set([{
@@ -294,7 +284,7 @@ describe('createHotReload', () => {
       const newInstance = new Component({});
       newInstance[RENDERED_NODES_PROPERTY] = [];
 
-      const componentFn = vi.fn().mockReturnValue(newInstance);
+      const componentFn = () => newInstance;
       const hotReload = createHotReload(componentFn);
 
       hotReload(OldComponent as any, NewComponent as any);
@@ -306,14 +296,14 @@ describe('createHotReload', () => {
     test('updates LISTS_FOR_HMR when instance is single item in keyMap', () => {
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       class OldComponent {}
       class NewComponent {}
 
       const instance = new Component({});
-      instance[RENDERED_NODES_PROPERTY] = [document.createElement('div')];
-      container.appendChild(instance[RENDERED_NODES_PROPERTY][0] as Node);
+      instance[RENDERED_NODES_PROPERTY] = [fixture.document.createElement('div')];
+      fixture.container.appendChild(instance[RENDERED_NODES_PROPERTY][0] as Node);
       addToTree(parentComponent, instance);
 
       const instanceSet = new Set([{
@@ -332,7 +322,7 @@ describe('createHotReload', () => {
       const newInstance = new Component({});
       newInstance[RENDERED_NODES_PROPERTY] = [];
 
-      const componentFn = vi.fn().mockReturnValue(newInstance);
+      const componentFn = () => newInstance;
       const hotReload = createHotReload(componentFn);
 
       hotReload(OldComponent as any, NewComponent as any);
@@ -346,14 +336,14 @@ describe('createHotReload', () => {
     test('preserves tag values when tag counts match', () => {
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       class OldComponent {}
       class NewComponent {}
 
       const instance = new Component({});
-      instance[RENDERED_NODES_PROPERTY] = [document.createElement('div')];
-      container.appendChild(instance[RENDERED_NODES_PROPERTY][0] as Node);
+      instance[RENDERED_NODES_PROPERTY] = [fixture.document.createElement('div')];
+      fixture.container.appendChild(instance[RENDERED_NODES_PROPERTY][0] as Node);
       addToTree(parentComponent, instance);
 
       const oldTag = { _debugName: 'count', _value: 42, value: 42 };
@@ -370,7 +360,7 @@ describe('createHotReload', () => {
 
       const newTag = { _debugName: 'count', _value: 0, value: 0 };
 
-      const componentFn = vi.fn().mockReturnValue(newInstance);
+      const componentFn = () => newInstance;
       const hotReload = createHotReload(componentFn);
 
       // Register the new instance with its tag
@@ -396,25 +386,29 @@ describe('createHotReload', () => {
 
       COMPONENTS_HMR.set(OldComponent as any, new Set());
 
-      const componentFn = vi.fn();
+      let componentFnCalls = 0;
+      const componentFn = () => {
+        componentFnCalls++;
+        return new Component({});
+      };
       const hotReload = createHotReload(componentFn);
 
       // Should not throw
       expect(() => hotReload(OldComponent as any, NewComponent as any)).not.toThrow();
-      expect(componentFn).not.toHaveBeenCalled();
+      expect(componentFnCalls).toBe(0);
     });
 
     test('skips instance when parentElement is null', () => {
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       class OldComponent {}
       class NewComponent {}
 
       // Create instance with orphaned node (no parent)
       const instance = new Component({});
-      const orphanedNode = document.createElement('div');
+      const orphanedNode = fixture.document.createElement('div');
       // Don't append to container - it has no parent
       instance[RENDERED_NODES_PROPERTY] = [orphanedNode];
       addToTree(parentComponent, instance);
@@ -430,7 +424,7 @@ describe('createHotReload', () => {
       const newInstance = new Component({});
       newInstance[RENDERED_NODES_PROPERTY] = [];
 
-      const componentFn = vi.fn().mockReturnValue(newInstance);
+      const componentFn = () => newInstance;
       const hotReload = createHotReload(componentFn);
 
       // Should not throw even when parentElement is null
@@ -440,14 +434,14 @@ describe('createHotReload', () => {
     test('handles IFS_FOR_HMR with RENDERED_NODES_PROPERTY scope', () => {
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parentComponent);
+      addToTree(fixture.root, parentComponent);
 
       class OldComponent {}
       class NewComponent {}
 
       const instance = new Component({});
-      instance[RENDERED_NODES_PROPERTY] = [document.createElement('div')];
-      container.appendChild(instance[RENDERED_NODES_PROPERTY][0] as Node);
+      instance[RENDERED_NODES_PROPERTY] = [fixture.document.createElement('div')];
+      fixture.container.appendChild(instance[RENDERED_NODES_PROPERTY][0] as Node);
       addToTree(parentComponent, instance);
 
       const instanceSet = new Set([{
@@ -463,20 +457,21 @@ describe('createHotReload', () => {
       // In HMR, RENDERED_NODES_PROPERTY can contain Component instances
       scopeWithNodes[RENDERED_NODES_PROPERTY] = [instance as unknown as Node];
 
-      const setFn = vi.fn();
+      let setFnCalledWith: unknown = undefined;
+      const setFn = (value: unknown) => { setFnCalledWith = value; };
       IFS_FOR_HMR.add(() => ({ item: scopeWithNodes, set: setFn }));
 
       const newInstance = new Component({});
       newInstance[RENDERED_NODES_PROPERTY] = [];
 
-      const componentFn = vi.fn().mockReturnValue(newInstance);
+      const componentFn = () => newInstance;
       const hotReload = createHotReload(componentFn);
 
       hotReload(OldComponent as any, NewComponent as any);
 
       // The RENDERED_NODES_PROPERTY should have been updated
       expect(scopeWithNodes[RENDERED_NODES_PROPERTY][0]).toBe(newInstance);
-      expect(setFn).toHaveBeenCalledWith(scopeWithNodes);
+      expect(setFnCalledWith).toBe(scopeWithNodes);
     });
   });
 });

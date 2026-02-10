@@ -27,8 +27,11 @@ import type { MergedCell } from './reactive';
 // Import resolveRenderable from root.ts
 import { resolveRenderable } from './root';
 
-// Track which components have been rendered
-const RENDERED_COMPONENTS = new WeakSet();
+// Track which components have been rendered (dev-only: for HMR relocate)
+let RENDERED_COMPONENTS!: WeakSet<object>;
+if (IS_DEV_MODE) {
+  RENDERED_COMPONENTS = new WeakSet();
+}
 
 /**
  * Get the first DOM node from a component or array of components/nodes.
@@ -58,17 +61,17 @@ export function getFirstNode(
         selfNode = firstRendered as Node;
       }
     }
-    const childNode = Array.from(
-      CHILD.get(rawItem![COMPONENT_ID_PROPERTY]) ?? [],
-    ).reduce((acc: null | Node, item: number) => {
-      if (!acc) {
-        const child = TREE.get(item);
-        if (!child) return null;
-        return getFirstNode(api, child);
-      } else {
-        return acc;
+    const childIds = CHILD.get(rawItem![COMPONENT_ID_PROPERTY]);
+    let childNode: Node | null = null;
+    if (childIds) {
+      for (const cid of childIds) {
+        const child = TREE.get(cid);
+        if (child) {
+          childNode = getFirstNode(api, child);
+          break;
+        }
       }
-    }, null);
+    }
     if (selfNode && childNode) {
       const position = selfNode.compareDocumentPosition(childNode);
       if (position & Node.DOCUMENT_POSITION_FOLLOWING) {
@@ -118,11 +121,11 @@ export function renderElement(
     return;
   }
   if (RENDERED_NODES_PROPERTY in el) {
-    if (RENDERED_COMPONENTS.has(el)) {
-      // relocate case
+    if (IS_DEV_MODE && RENDERED_COMPONENTS.has(el)) {
+      // relocate case — dev-only (HMR)
       // move row case (node already rendered and re-located)
       const renderedNodes = el[RENDERED_NODES_PROPERTY];
-      const childs = CHILD.get(el[COMPONENT_ID_PROPERTY]) ?? [];
+      const childs = CHILD.get(el[COMPONENT_ID_PROPERTY]);
       // we need to do proper relocation, considering initial child position
       // Build list with proper first node for each item (renderedNodes may contain components)
       const list: Array<[Node | null, ComponentLike | Node]> = [];
@@ -140,18 +143,20 @@ export function renderElement(
           list.push([item, item]);
         }
       }
-      for (let i = 0; i < childs.length; i++) {
-        const child = TREE.get(childs[i]);
-        if (!child) continue; // Skip if child no longer exists
-        // Skip if this child is already in renderedNodes (avoid duplicates)
-        if (componentsInRenderedNodes.has(child)) continue;
-        const firstChildNode = getFirstNode(api, child);
-        // Skip child components whose nodes are already contained within parent's rendered nodes
-        const isContainedInParent = renderedNodes.some(
-          (parentNode) => parentNode && (parentNode as Node).contains && (parentNode as Node).contains(firstChildNode)
-        );
-        if (isContainedInParent) continue;
-        list.push([firstChildNode, child]);
+      if (childs) {
+        for (const childId of childs) {
+          const child = TREE.get(childId);
+          if (!child) continue; // Skip if child no longer exists
+          // Skip if this child is already in renderedNodes (avoid duplicates)
+          if (componentsInRenderedNodes.has(child)) continue;
+          const firstChildNode = getFirstNode(api, child);
+          // Skip child components whose nodes are already contained within parent's rendered nodes
+          const isContainedInParent = renderedNodes.some(
+            (parentNode) => parentNode && (parentNode as Node).contains && (parentNode as Node).contains(firstChildNode)
+          );
+          if (isContainedInParent) continue;
+          list.push([firstChildNode, child]);
+        }
       }
       list.sort(([node1], [node2]) => {
         if (!node1) {
@@ -204,7 +209,9 @@ export function renderElement(
           renderElement(api, el as ComponentLike, target, node as RenderableElement, placeholder, true);
         }
       }
-      RENDERED_COMPONENTS.add(el);
+      if (IS_DEV_MODE) {
+        RENDERED_COMPONENTS.add(el);
+      }
     }
     return;
   }

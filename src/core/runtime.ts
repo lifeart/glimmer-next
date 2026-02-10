@@ -1,8 +1,9 @@
 import {
   setIsRendering,
   type MergedCell,
-  tagsToRevalidate,
   executeTag,
+  hasAsyncOpcodes,
+  tagsToRevalidate,
   relatedTags,
 } from '@/core/reactive';
 import { isRehydrationScheduled } from './ssr/rehydration-state';
@@ -11,6 +12,25 @@ let revalidateScheduled = false;
 let hasExternalUpdate = false;
 type voidFn = () => void;
 let resolveRender: undefined | voidFn = undefined;
+let executionEpoch = 0;
+let executedTagEpoch: WeakMap<MergedCell, number> = new WeakMap();
+
+function nextExecutionEpoch() {
+  executionEpoch++;
+  if (executionEpoch === Number.MAX_SAFE_INTEGER) {
+    executionEpoch = 1;
+    executedTagEpoch = new WeakMap();
+  }
+  return executionEpoch;
+}
+
+function shouldExecuteSharedTag(tag: MergedCell, epoch: number) {
+  if (executedTagEpoch.get(tag) === epoch) {
+    return false;
+  }
+  executedTagEpoch.set(tag, epoch);
+  return true;
+}
 
 export function setResolveRender(value: () => void) {
   resolveRender = value;
@@ -33,55 +53,110 @@ export function scheduleRevalidate() {
       }
     }
     revalidateScheduled = true;
-    queueMicrotask(async () => {
-      try {
-        await syncDom();
-        if (resolveRender !== undefined) {
-          resolveRender();
-          resolveRender = undefined;
+    if (ASYNC_COMPILE_TRANSFORMS && hasAsyncOpcodes()) {
+      queueMicrotask(async () => {
+        try {
+          await syncDomAsync();
+          if (resolveRender !== undefined) {
+            resolveRender();
+            resolveRender = undefined;
+          }
+        } finally {
+          revalidateScheduled = false;
         }
-      } finally {
-        revalidateScheduled = false;
-      }
-    });
+      });
+    } else {
+      queueMicrotask(() => {
+        try {
+          syncDomSync();
+          if (resolveRender !== undefined) {
+            resolveRender();
+            resolveRender = undefined;
+          }
+        } finally {
+          revalidateScheduled = false;
+        }
+      });
+    }
   }
 }
-export async function syncDom() {
-  // Lazily create sharedTags only if needed - avoids allocation when no related tags exist
+
+/**
+ * Sort shared tags by creation order for deterministic evaluation.
+ */
+function sortSharedTags(sharedTags: MergedCell[]) {
+  if (sharedTags.length > 1) {
+    sharedTags.sort((a, b) => a.id - b.id);
+  }
+}
+
+/**
+ * Fully synchronous DOM sync — no Promise allocation, no async/await overhead.
+ */
+function syncDomSync() {
   let sharedTags: MergedCell[] | null = null;
   setIsRendering(true);
   for (const cell of tagsToRevalidate) {
-    await executeTag(cell);
-
+    executeTag(cell, false);
     const subTags = relatedTags.get(cell.id);
     if (subTags !== undefined) {
       relatedTags.delete(cell.id);
-      if (sharedTags === null) {
-        sharedTags = [];
-      }
-      // Direct iteration is faster than spread operator on Set.values()
-      for (const tag of subTags) {
-        sharedTags.push(tag);
-      }
+      if (sharedTags === null) sharedTags = [];
+      for (const tag of subTags) sharedTags.push(tag);
       subTags.clear();
     }
   }
-  // Only process sharedTags if we have any
   if (sharedTags !== null) {
-    // Only sort when necessary (more than 1 element)
-    if (sharedTags.length > 1) {
-      // sort tags in order of creation to avoid stale logic
-      sharedTags.sort((a, b) => a.id - b.id);
-    }
-    // Lazily create WeakSet only when needed
-    const executedTags: WeakSet<MergedCell> = new WeakSet();
+    sortSharedTags(sharedTags);
+    const epoch = nextExecutionEpoch();
     for (const tag of sharedTags) {
-      if (!executedTags.has(tag)) {
-        executedTags.add(tag);
-        await executeTag(tag);
+      if (shouldExecuteSharedTag(tag, epoch)) {
+        executeTag(tag, false);
       }
     }
   }
   tagsToRevalidate.clear();
   setIsRendering(false);
+}
+
+/**
+ * Async DOM sync — tree-shaken when ASYNC_COMPILE_TRANSFORMS is false
+ * because the only call site is gated by the flag.
+ */
+async function syncDomAsync() {
+  let sharedTags: MergedCell[] | null = null;
+  setIsRendering(true);
+  for (const cell of tagsToRevalidate) {
+    await executeTag(cell, true);
+    const subTags = relatedTags.get(cell.id);
+    if (subTags !== undefined) {
+      relatedTags.delete(cell.id);
+      if (sharedTags === null) sharedTags = [];
+      for (const tag of subTags) sharedTags.push(tag);
+      subTags.clear();
+    }
+  }
+  if (sharedTags !== null) {
+    sortSharedTags(sharedTags);
+    const epoch = nextExecutionEpoch();
+    for (const tag of sharedTags) {
+      if (shouldExecuteSharedTag(tag, epoch)) {
+        await executeTag(tag, true);
+      }
+    }
+  }
+  tagsToRevalidate.clear();
+  setIsRendering(false);
+}
+
+/**
+ * Public API — dispatches to sync or async path.
+ * When ASYNC_COMPILE_TRANSFORMS is false, the async branch and syncDomAsync
+ * are dead code and tree-shaken by the bundler.
+ */
+export function syncDom(): Promise<void> | void {
+  if (ASYNC_COMPILE_TRANSFORMS && hasAsyncOpcodes()) {
+    return syncDomAsync();
+  }
+  syncDomSync();
 }

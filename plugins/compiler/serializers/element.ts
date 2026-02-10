@@ -98,14 +98,18 @@ export function buildElement(
   // Build the $_tag call using builder pattern
   // Use raw string for tag name to preserve single-quote format
   // Use 'ElementNode' as the mapping source for proper sourcemap type
+  // Parameter order: $_tag(tag, props, ctx, children?) — children omitted when empty
+  const tagArgs: JSExpression[] = [
+    B.stringSingle(node.tag, node.tagRange),
+    tagPropsExpr,
+    B.id(ctxName),
+  ];
+  if (childExprs.length > 0) {
+    tagArgs.push(childrenExpr);
+  }
   return B.call(
     B.id(SYMBOLS.TAG),
-    [
-      B.stringSingle(node.tag, node.tagRange),
-      tagPropsExpr,
-      childrenExpr,
-      B.id(ctxName),
-    ],
+    tagArgs,
     node.sourceRange,
     useFormatted,
     'ElementNode'
@@ -418,8 +422,8 @@ function buildModifierExpr(
     const argName = modName.slice(1);
     const needsBracket = !/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(argName);
     modName = needsBracket
-      ? `this[${SYMBOLS.ARGS_PROPERTY}]["${argName}"]`
-      : `this[${SYMBOLS.ARGS_PROPERTY}].${argName}`;
+      ? `${SYMBOLS.ARGS_ALIAS}["${argName}"]`
+      : `${SYMBOLS.ARGS_ALIAS}.${argName}`;
   }
 
   // Build positional args with source ranges preserved.

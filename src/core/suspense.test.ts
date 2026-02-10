@@ -1,23 +1,21 @@
 import { expect, test, describe, beforeEach, afterEach, vi } from 'vitest';
-import { Window } from 'happy-dom';
 import { SUSPENSE_CONTEXT, followPromise } from './suspense-utils';
 import { lazy, Suspense, type SuspenseContext } from './suspense';
 import { Component } from './component';
 import {
   provideContext,
   getContext,
-  cleanupFastContext,
-  RENDERING_CONTEXT,
 } from './context';
 import { HTMLBrowserDOMApi } from './dom-api';
 import {
   RENDERED_NODES_PROPERTY,
-  TREE,
-  PARENT,
-  CHILD,
   addToTree,
 } from './shared';
-import { Root } from './dom';
+import {
+  createDOMFixture,
+  createTestSuspenseContext,
+  type DOMFixture,
+} from './__test-utils__';
 
 describe('Suspense API exports', () => {
   describe('SUSPENSE_CONTEXT', () => {
@@ -28,31 +26,15 @@ describe('Suspense API exports', () => {
   });
 
   describe('followPromise', () => {
-    let window: Window;
-    let document: Document;
-    let root: Root;
+    let fixture: DOMFixture;
 
-    beforeEach(() => {
-      window = new Window();
-      document = window.document as unknown as Document;
-      cleanupFastContext();
-      root = new Root(document);
-      const api = new HTMLBrowserDOMApi(document);
-      provideContext(root, RENDERING_CONTEXT, api);
-    });
-
-    afterEach(() => {
-      cleanupFastContext();
-      TREE.clear();
-      PARENT.clear();
-      CHILD.clear();
-      window.close();
-    });
+    beforeEach(() => { fixture = createDOMFixture(); });
+    afterEach(() => { fixture.cleanup(); });
 
     test('followPromise returns a promise that resolves to the same value', async () => {
       const child = new Component({});
       child[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, child);
+      addToTree(fixture.root, child);
 
       const promise = Promise.resolve('test');
       const result = followPromise(child, promise);
@@ -67,7 +49,7 @@ describe('Suspense API exports', () => {
       // Component without suspense context
       const child = new Component({});
       child[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, child);
+      addToTree(fixture.root, child);
 
       const promise = Promise.resolve('test');
       // Should not throw
@@ -77,37 +59,30 @@ describe('Suspense API exports', () => {
     test('followPromise calls start/end on suspense context', async () => {
       const child = new Component({});
       child[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, child);
+      addToTree(fixture.root, child);
 
-      // Create a mock suspense context
-      const mockSuspense = {
-        start: vi.fn(),
-        end: vi.fn(),
-      };
-      provideContext(child, SUSPENSE_CONTEXT, mockSuspense);
+      const { ctx: testSuspense, getStartCount, getEndCount } = createTestSuspenseContext();
+      provideContext(child, SUSPENSE_CONTEXT, testSuspense);
 
       const promise = Promise.resolve('test');
       followPromise(child, promise);
 
-      expect(mockSuspense.start).toHaveBeenCalled();
+      expect(getStartCount()).toBe(1);
 
       await promise;
       // Wait for microtask (Promise.resolve().then in followPromise)
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      expect(mockSuspense.end).toHaveBeenCalled();
+      expect(getEndCount()).toBe(1);
     });
 
     test('followPromise calls end even on rejection', async () => {
       const child = new Component({});
       child[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, child);
+      addToTree(fixture.root, child);
 
-      const mockSuspense = {
-        start: vi.fn(),
-        end: vi.fn(),
-      };
-      provideContext(child, SUSPENSE_CONTEXT, mockSuspense);
+      const { ctx: testSuspense, getStartCount, getEndCount } = createTestSuspenseContext();
+      provideContext(child, SUSPENSE_CONTEXT, testSuspense);
 
       // Create a deferred rejection
       let rejectFn: (error: Error) => void;
@@ -117,7 +92,7 @@ describe('Suspense API exports', () => {
 
       // followPromise now returns the .finally() chain
       const tracked = followPromise(child, promise);
-      expect(mockSuspense.start).toHaveBeenCalled();
+      expect(getStartCount()).toBe(1);
 
       // Reject the promise
       rejectFn!(new Error('test error'));
@@ -126,13 +101,13 @@ describe('Suspense API exports', () => {
       // end() is guaranteed to have been called when this resolves
       await tracked.catch(() => {});
 
-      expect(mockSuspense.end).toHaveBeenCalled();
+      expect(getEndCount()).toBe(1);
     });
 
     test('nested components find correct suspense context', () => {
       const parent = new Component({});
       parent[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, parent);
+      addToTree(fixture.root, parent);
 
       const child = new Component({});
       child[RENDERED_NODES_PROPERTY] = [];
@@ -143,18 +118,18 @@ describe('Suspense API exports', () => {
       addToTree(child, grandchild);
 
       // Provide context at parent level
-      const mockSuspense = { start: vi.fn(), end: vi.fn() };
-      provideContext(parent, SUSPENSE_CONTEXT, mockSuspense);
+      const { ctx: testSuspense } = createTestSuspenseContext();
+      provideContext(parent, SUSPENSE_CONTEXT, testSuspense);
 
       // Grandchild should find it
       const foundContext = getContext(grandchild, SUSPENSE_CONTEXT);
-      expect(foundContext).toBe(mockSuspense);
+      expect(foundContext).toBe(testSuspense);
     });
 
     test('inner suspense context shadows outer', () => {
       const outer = new Component({});
       outer[RENDERED_NODES_PROPERTY] = [];
-      addToTree(root, outer);
+      addToTree(fixture.root, outer);
 
       const inner = new Component({});
       inner[RENDERED_NODES_PROPERTY] = [];
@@ -164,8 +139,8 @@ describe('Suspense API exports', () => {
       child[RENDERED_NODES_PROPERTY] = [];
       addToTree(inner, child);
 
-      const outerSuspense = { start: vi.fn(), end: vi.fn() };
-      const innerSuspense = { start: vi.fn(), end: vi.fn() };
+      const { ctx: outerSuspense } = createTestSuspenseContext();
+      const { ctx: innerSuspense } = createTestSuspenseContext();
 
       provideContext(outer, SUSPENSE_CONTEXT, outerSuspense);
       provideContext(inner, SUSPENSE_CONTEXT, innerSuspense);
@@ -178,42 +153,22 @@ describe('Suspense API exports', () => {
 });
 
 describe('Suspense context protocol', () => {
-  let window: Window;
-  let document: Document;
-  let root: Root;
+  let fixture: DOMFixture;
 
-  beforeEach(() => {
-    window = new Window();
-    document = window.document as unknown as Document;
-    cleanupFastContext();
-    root = new Root(document);
-    const api = new HTMLBrowserDOMApi(document);
-    provideContext(root, RENDERING_CONTEXT, api);
-  });
-
-  afterEach(() => {
-    cleanupFastContext();
-    TREE.clear();
-    PARENT.clear();
-    CHILD.clear();
-    window.close();
-  });
+  beforeEach(() => { fixture = createDOMFixture(); });
+  afterEach(() => { fixture.cleanup(); });
 
   test('suspense context follows start/end protocol for tracking', async () => {
     const child = new Component({});
     child[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, child);
+    addToTree(fixture.root, child);
 
     let pendingCount = 0;
-    const mockSuspense = {
-      start: vi.fn(() => {
-        pendingCount++;
-      }),
-      end: vi.fn(() => {
-        pendingCount--;
-      }),
+    const testSuspense = {
+      start() { pendingCount++; },
+      end() { pendingCount--; },
     };
-    provideContext(child, SUSPENSE_CONTEXT, mockSuspense);
+    provideContext(child, SUSPENSE_CONTEXT, testSuspense);
 
     // Use controlled promises for deterministic behavior
     let resolve1!: () => void;
@@ -230,7 +185,6 @@ describe('Suspense context protocol', () => {
     const tracked1 = followPromise(child, promise1);
     const tracked2 = followPromise(child, promise2);
 
-    expect(mockSuspense.start).toHaveBeenCalledTimes(2);
     expect(pendingCount).toBe(2);
 
     // Resolve and await - end() is guaranteed to have run
@@ -246,13 +200,10 @@ describe('Suspense context protocol', () => {
   test('followPromise works with async/await pattern', async () => {
     const child = new Component({});
     child[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, child);
+    addToTree(fixture.root, child);
 
-    const mockSuspense = {
-      start: vi.fn(),
-      end: vi.fn(),
-    };
-    provideContext(child, SUSPENSE_CONTEXT, mockSuspense);
+    const { ctx: testSuspense, getStartCount, getEndCount } = createTestSuspenseContext();
+    provideContext(child, SUSPENSE_CONTEXT, testSuspense);
 
     // Simulate typical lazy loading pattern
     const loadData = async () => {
@@ -269,32 +220,16 @@ describe('Suspense context protocol', () => {
     // Wait for cleanup
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(mockSuspense.start).toHaveBeenCalledTimes(1);
-    expect(mockSuspense.end).toHaveBeenCalledTimes(1);
+    expect(getStartCount()).toBe(1);
+    expect(getEndCount()).toBe(1);
   });
 });
 
 describe('lazy() error handling', () => {
-  let window: Window;
-  let document: Document;
-  let root: Root;
+  let fixture: DOMFixture;
 
-  beforeEach(() => {
-    window = new Window();
-    document = window.document as unknown as Document;
-    cleanupFastContext();
-    root = new Root(document);
-    const api = new HTMLBrowserDOMApi(document);
-    provideContext(root, RENDERING_CONTEXT, api);
-  });
-
-  afterEach(() => {
-    cleanupFastContext();
-    TREE.clear();
-    PARENT.clear();
-    CHILD.clear();
-    window.close();
-  });
+  beforeEach(() => { fixture = createDOMFixture(); });
+  afterEach(() => { fixture.cleanup(); });
 
   type LazyStateValue = {
     loading: boolean;
@@ -315,7 +250,7 @@ describe('lazy() error handling', () => {
       params: Record<string, unknown>,
     ) => LazyComponentInstance)({});
     instance[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, instance);
+    addToTree(fixture.root, instance);
 
     // Wait for the factory promise to reject
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -336,7 +271,7 @@ describe('lazy() error handling', () => {
       params: Record<string, unknown>,
     ) => LazyComponentInstance)({});
     instance[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, instance);
+    addToTree(fixture.root, instance);
 
     // Wait for error to be caught
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -355,7 +290,7 @@ describe('lazy() error handling', () => {
       params: Record<string, unknown>,
     ) => LazyComponentInstance)({});
     instance[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, instance);
+    addToTree(fixture.root, instance);
 
     // Wait for the factory promise to resolve
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -367,9 +302,7 @@ describe('lazy() error handling', () => {
 });
 
 describe('Suspense.end() safety guard', () => {
-  let window: Window;
-  let document: Document;
-  let root: Root;
+  let fixture: DOMFixture;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let consoleWarnSpy: any;
 
@@ -379,28 +312,19 @@ describe('Suspense.end() safety guard', () => {
   ) => Suspense & SuspenseContext;
 
   beforeEach(() => {
-    window = new Window();
-    document = window.document as unknown as Document;
-    cleanupFastContext();
-    root = new Root(document);
-    const api = new HTMLBrowserDOMApi(document);
-    provideContext(root, RENDERING_CONTEXT, api);
+    fixture = createDOMFixture();
     consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
   });
 
   afterEach(() => {
-    cleanupFastContext();
-    TREE.clear();
-    PARENT.clear();
-    CHILD.clear();
-    window.close();
+    fixture.cleanup();
     consoleWarnSpy.mockRestore();
   });
 
   test('Suspense.start() increments pendingAmount', () => {
     const suspense = new SuspenseWithArgs({});
     suspense[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, suspense);
+    addToTree(fixture.root, suspense);
 
     expect(suspense.pendingAmount).toBe(0);
 
@@ -414,7 +338,7 @@ describe('Suspense.end() safety guard', () => {
   test('Suspense.end() decrements pendingAmount', () => {
     const suspense = new SuspenseWithArgs({});
     suspense[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, suspense);
+    addToTree(fixture.root, suspense);
 
     suspense.start();
     suspense.start();
@@ -430,7 +354,7 @@ describe('Suspense.end() safety guard', () => {
   test('Suspense.end() does not go below zero', () => {
     const suspense = new SuspenseWithArgs({});
     suspense[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, suspense);
+    addToTree(fixture.root, suspense);
 
     expect(suspense.pendingAmount).toBe(0);
 
@@ -447,7 +371,7 @@ describe('Suspense.end() safety guard', () => {
   test('Suspense.end() does not warn when IS_DEV_MODE is false', () => {
     const suspense = new SuspenseWithArgs({});
     suspense[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, suspense);
+    addToTree(fixture.root, suspense);
 
     // Call end without start
     suspense.end();
@@ -461,7 +385,7 @@ describe('Suspense.end() safety guard', () => {
   test('Suspense sets isReleased when pendingAmount reaches zero', () => {
     const suspense = new SuspenseWithArgs({});
     suspense[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, suspense);
+    addToTree(fixture.root, suspense);
 
     expect(suspense.isReleased).toBe(false);
 
@@ -479,7 +403,7 @@ describe('Suspense.end() safety guard', () => {
   test('Suspense ignores start/end after being released', () => {
     const suspense = new SuspenseWithArgs({});
     suspense[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, suspense);
+    addToTree(fixture.root, suspense);
 
     suspense.start();
     suspense.end();
@@ -496,7 +420,7 @@ describe('Suspense.end() safety guard', () => {
   test('Suspense ignores start/end calls after release without warnings in production', () => {
     const suspense = new SuspenseWithArgs({});
     suspense[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, suspense);
+    addToTree(fixture.root, suspense);
 
     suspense.start();
     suspense.end();
@@ -519,7 +443,7 @@ describe('Suspense.end() safety guard', () => {
   test('isReleasedCell is reactive and can be tracked', () => {
     const suspense = new SuspenseWithArgs({});
     suspense[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, suspense);
+    addToTree(fixture.root, suspense);
 
     // isReleasedCell should be a Cell
     expect(suspense.isReleasedCell).toBeDefined();
@@ -538,36 +462,20 @@ describe('Suspense.end() safety guard', () => {
 });
 
 describe('Suspense fast loading scenario', () => {
-  let window: Window;
-  let document: Document;
-  let root: Root;
+  let fixture: DOMFixture;
 
   // Cast Suspense to accept args
   const SuspenseWithArgs = Suspense as unknown as new (
     args: Record<string, unknown>,
   ) => Suspense & SuspenseContext;
 
-  beforeEach(() => {
-    window = new Window();
-    document = window.document as unknown as Document;
-    cleanupFastContext();
-    root = new Root(document);
-    const api = new HTMLBrowserDOMApi(document);
-    provideContext(root, RENDERING_CONTEXT, api);
-  });
-
-  afterEach(() => {
-    cleanupFastContext();
-    TREE.clear();
-    PARENT.clear();
-    CHILD.clear();
-    window.close();
-  });
+  beforeEach(() => { fixture = createDOMFixture(); });
+  afterEach(() => { fixture.cleanup(); });
 
   test('fast loading: start() and end() called synchronously still triggers isReleased', () => {
     const suspense = new SuspenseWithArgs({});
     suspense[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, suspense);
+    addToTree(fixture.root, suspense);
 
     // Initially not released
     expect(suspense.isReleased).toBe(false);
@@ -590,7 +498,7 @@ describe('Suspense fast loading scenario', () => {
   test('fast loading: isReleased changes even when pendingAmount returns to initial value', () => {
     const suspense = new SuspenseWithArgs({});
     suspense[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, suspense);
+    addToTree(fixture.root, suspense);
 
     // Record initial state
     const initialPendingAmount = suspense.pendingAmount;
@@ -614,7 +522,7 @@ describe('Suspense fast loading scenario', () => {
   test('multiple fast loading cycles: only first release matters', () => {
     const suspense = new SuspenseWithArgs({});
     suspense[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, suspense);
+    addToTree(fixture.root, suspense);
 
     // First cycle
     suspense.start();
@@ -633,7 +541,7 @@ describe('Suspense fast loading scenario', () => {
   test('isReleasedCell value changes can be observed for reactivity', async () => {
     const suspense = new SuspenseWithArgs({});
     suspense[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, suspense);
+    addToTree(fixture.root, suspense);
 
     // Track value changes
     const observedValues: boolean[] = [];
@@ -651,26 +559,10 @@ describe('Suspense fast loading scenario', () => {
 });
 
 describe('lazy() destructor tree integration', () => {
-  let window: Window;
-  let document: Document;
-  let root: Root;
+  let fixture: DOMFixture;
 
-  beforeEach(() => {
-    window = new Window();
-    document = window.document as unknown as Document;
-    cleanupFastContext();
-    root = new Root(document);
-    const api = new HTMLBrowserDOMApi(document);
-    provideContext(root, RENDERING_CONTEXT, api);
-  });
-
-  afterEach(() => {
-    cleanupFastContext();
-    TREE.clear();
-    PARENT.clear();
-    CHILD.clear();
-    window.close();
-  });
+  beforeEach(() => { fixture = createDOMFixture(); });
+  afterEach(() => { fixture.cleanup(); });
 
   type LazyComponentInstance = Component & {
     stateCell: { value: { loading: boolean; error: Error | null; component: unknown } };
@@ -688,7 +580,7 @@ describe('lazy() destructor tree integration', () => {
       params: Record<string, unknown>,
     ) => LazyComponentInstance)({});
     instance[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, instance);
+    addToTree(fixture.root, instance);
 
     // Verify loading promise exists
     expect(instance.loadingPromise).toBeInstanceOf(Promise);
@@ -713,7 +605,7 @@ describe('lazy() destructor tree integration', () => {
       params: Record<string, unknown>,
     ) => LazyComponentInstance)({});
     instance[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, instance);
+    addToTree(fixture.root, instance);
 
     // Get the loading promise
     const loadingPromise = instance.loadingPromise;
@@ -721,7 +613,7 @@ describe('lazy() destructor tree integration', () => {
 
     // Import destroyElement
     const { destroyElement } = await import('./component');
-    const api = new HTMLBrowserDOMApi(document);
+    const api = new HTMLBrowserDOMApi(fixture.document);
 
     // Start destruction - should collect loading promise
     const destructionPromise = destroyElement(instance, true, api);
@@ -748,12 +640,12 @@ describe('lazy() destructor tree integration', () => {
       params: Record<string, unknown>,
     ) => LazyComponentInstance)({});
     instance[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, instance);
+    addToTree(fixture.root, instance);
 
     // Import and destroy immediately
     const { destroyElement } = await import('./component');
     const { isDestroyed } = await import('./glimmer/destroyable');
-    const api = new HTMLBrowserDOMApi(document);
+    const api = new HTMLBrowserDOMApi(fixture.document);
 
     // Capture initial loading state
     expect(instance.stateCell.value.loading).toBe(true);
@@ -785,11 +677,11 @@ describe('lazy() destructor tree integration', () => {
       params: Record<string, unknown>,
     ) => LazyComponentInstance)({});
     instance[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, instance);
+    addToTree(fixture.root, instance);
 
     const { destroyElement } = await import('./component');
     const { isDestroyed } = await import('./glimmer/destroyable');
-    const api = new HTMLBrowserDOMApi(document);
+    const api = new HTMLBrowserDOMApi(fixture.document);
 
     // Start destruction
     const destructionPromise = destroyElement(instance, true, api);
@@ -806,7 +698,7 @@ describe('lazy() destructor tree integration', () => {
   test('multiple lazy components are all awaited during parent destruction', async () => {
     const parent = new Component({});
     parent[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, parent);
+    addToTree(fixture.root, parent);
 
     let resolveFactory1!: (value: { default: typeof Component }) => void;
     let resolveFactory2!: (value: { default: typeof Component }) => void;
@@ -832,7 +724,7 @@ describe('lazy() destructor tree integration', () => {
 
     const { destroyElement } = await import('./component');
     const { isDestroyed } = await import('./glimmer/destroyable');
-    const api = new HTMLBrowserDOMApi(document);
+    const api = new HTMLBrowserDOMApi(fixture.document);
 
     // Start parent destruction
     const destructionPromise = destroyElement(parent, true, api);
@@ -851,31 +743,15 @@ describe('lazy() destructor tree integration', () => {
 });
 
 describe('followPromise destructor tree integration', () => {
-  let window: Window;
-  let document: Document;
-  let root: Root;
+  let fixture: DOMFixture;
 
-  beforeEach(() => {
-    window = new Window();
-    document = window.document as unknown as Document;
-    cleanupFastContext();
-    root = new Root(document);
-    const api = new HTMLBrowserDOMApi(document);
-    provideContext(root, RENDERING_CONTEXT, api);
-  });
-
-  afterEach(() => {
-    cleanupFastContext();
-    TREE.clear();
-    PARENT.clear();
-    CHILD.clear();
-    window.close();
-  });
+  beforeEach(() => { fixture = createDOMFixture(); });
+  afterEach(() => { fixture.cleanup(); });
 
   test('followPromise returns tracked promise that resolves to same value', async () => {
     const child = new Component({});
     child[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, child);
+    addToTree(fixture.root, child);
 
     const result = await followPromise(child, Promise.resolve({ data: 'test' }));
     expect(result).toEqual({ data: 'test' });
@@ -884,13 +760,10 @@ describe('followPromise destructor tree integration', () => {
   test('followPromise calls suspense start/end correctly', async () => {
     const child = new Component({});
     child[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, child);
+    addToTree(fixture.root, child);
 
-    const mockSuspense = {
-      start: vi.fn(),
-      end: vi.fn(),
-    };
-    provideContext(child, SUSPENSE_CONTEXT, mockSuspense);
+    const { ctx: testSuspense, getStartCount, getEndCount } = createTestSuspenseContext();
+    provideContext(child, SUSPENSE_CONTEXT, testSuspense);
 
     let resolvePromise!: (value: string) => void;
     const promise = new Promise<string>((resolve) => {
@@ -898,19 +771,19 @@ describe('followPromise destructor tree integration', () => {
     });
 
     const tracked = followPromise(child, promise);
-    expect(mockSuspense.start).toHaveBeenCalledTimes(1);
-    expect(mockSuspense.end).not.toHaveBeenCalled();
+    expect(getStartCount()).toBe(1);
+    expect(getEndCount()).toBe(0);
 
     resolvePromise('done');
     await tracked;
 
-    expect(mockSuspense.end).toHaveBeenCalledTimes(1);
+    expect(getEndCount()).toBe(1);
   });
 
   test('followPromise gracefully handles component destruction during loading', async () => {
     const child = new Component({});
     child[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, child);
+    addToTree(fixture.root, child);
 
     const { isDestroyed } = await import('./glimmer/destroyable');
 
@@ -923,7 +796,7 @@ describe('followPromise destructor tree integration', () => {
 
     // Destroy the component - destruction now waits for the promise
     const { destroyElement } = await import('./component');
-    const api = new HTMLBrowserDOMApi(document);
+    const api = new HTMLBrowserDOMApi(fixture.document);
 
     // Start destruction (non-blocking) and resolve promise concurrently
     const destructionPromise = destroyElement(child, true, api);
@@ -941,16 +814,12 @@ describe('followPromise destructor tree integration', () => {
   test('followPromise still calls end on suspense after destruction', async () => {
     const child = new Component({});
     child[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, child);
+    addToTree(fixture.root, child);
 
     // Note: The Suspense component has isDestroyed checks in start/end,
-    // but our mock doesn't. This test verifies the .finally() always runs.
-    let endCallCount = 0;
-    const mockSuspense = {
-      start: vi.fn(),
-      end: vi.fn(() => { endCallCount++; }),
-    };
-    provideContext(child, SUSPENSE_CONTEXT, mockSuspense);
+    // but our test context doesn't. This test verifies the .finally() always runs.
+    const { ctx: testSuspense, getStartCount, getEndCount } = createTestSuspenseContext();
+    provideContext(child, SUSPENSE_CONTEXT, testSuspense);
 
     let resolvePromise!: (value: string) => void;
     const promise = new Promise<string>((resolve) => {
@@ -958,11 +827,11 @@ describe('followPromise destructor tree integration', () => {
     });
 
     const tracked = followPromise(child, promise);
-    expect(mockSuspense.start).toHaveBeenCalledTimes(1);
+    expect(getStartCount()).toBe(1);
 
     // Destroy the component - destruction now waits for the promise
     const { destroyElement } = await import('./component');
-    const api = new HTMLBrowserDOMApi(document);
+    const api = new HTMLBrowserDOMApi(fixture.document);
 
     // Start destruction (non-blocking) and resolve promise concurrently
     const destructionPromise = destroyElement(child, true, api);
@@ -974,13 +843,13 @@ describe('followPromise destructor tree integration', () => {
     await Promise.all([tracked, destructionPromise]);
 
     // end() should still be called via .finally()
-    expect(endCallCount).toBe(1);
+    expect(getEndCount()).toBe(1);
   });
 
   test('followPromise destruction waits for pending promise', async () => {
     const child = new Component({});
     child[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, child);
+    addToTree(fixture.root, child);
 
     let promiseSettled = false;
     let destructionComplete = false;
@@ -995,7 +864,7 @@ describe('followPromise destructor tree integration', () => {
     followPromise(child, promise);
 
     const { destroyElement } = await import('./component');
-    const api = new HTMLBrowserDOMApi(document);
+    const api = new HTMLBrowserDOMApi(fixture.document);
 
     // Start destruction - it will wait for the promise
     const destructionPromise = destroyElement(child, true, api).then(() => {
@@ -1023,7 +892,7 @@ describe('followPromise destructor tree integration', () => {
   test('followPromise rejected promise does not break destruction', async () => {
     const child = new Component({});
     child[RENDERED_NODES_PROPERTY] = [];
-    addToTree(root, child);
+    addToTree(fixture.root, child);
 
     let rejectPromise!: (error: Error) => void;
     const promise = new Promise<string>((_, reject) => {
@@ -1035,7 +904,7 @@ describe('followPromise destructor tree integration', () => {
 
     const { destroyElement } = await import('./component');
     const { isDestroyed } = await import('./glimmer/destroyable');
-    const api = new HTMLBrowserDOMApi(document);
+    const api = new HTMLBrowserDOMApi(fixture.document);
 
     // Start destruction
     const destructionPromise = destroyElement(child, true, api);

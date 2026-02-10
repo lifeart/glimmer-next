@@ -7,6 +7,8 @@ import {
   createDeferred,
   flushMicrotasks,
   waitFor,
+  createDOMFixture,
+  createTestSuspenseContext,
 } from './index';
 import { Cell } from '../reactive';
 
@@ -170,6 +172,57 @@ describe('Test Utilities', () => {
       await expect(waitFor(() => false, 50)).rejects.toThrow(
         'waitFor timeout exceeded'
       );
+    });
+  });
+
+  describe('createDOMFixture', () => {
+    test('returns all DOM primitives', () => {
+      const fixture = createDOMFixture();
+
+      expect(fixture.window).toBeDefined();
+      expect(fixture.document).toBeDefined();
+      expect(fixture.api).toBeDefined();
+      expect(fixture.root).toBeDefined();
+      expect(fixture.container).toBeDefined();
+      expect(fixture.container.parentNode).toBe(fixture.document.body);
+
+      fixture.cleanup();
+    });
+
+    test('cleanup does not throw', () => {
+      const fixture = createDOMFixture();
+      expect(() => fixture.cleanup()).not.toThrow();
+    });
+  });
+
+  describe('createTestSuspenseContext', () => {
+    test('tracks start and end calls', () => {
+      const { ctx, getStartCount, getEndCount } = createTestSuspenseContext();
+
+      expect(getStartCount()).toBe(0);
+      expect(getEndCount()).toBe(0);
+
+      ctx.start();
+      expect(getStartCount()).toBe(1);
+
+      ctx.start();
+      expect(getStartCount()).toBe(2);
+
+      ctx.end();
+      expect(getEndCount()).toBe(1);
+    });
+
+    test('reset clears counts', () => {
+      const { ctx, getStartCount, getEndCount, reset } = createTestSuspenseContext();
+
+      ctx.start();
+      ctx.end();
+      expect(getStartCount()).toBe(1);
+      expect(getEndCount()).toBe(1);
+
+      reset();
+      expect(getStartCount()).toBe(0);
+      expect(getEndCount()).toBe(0);
     });
   });
 });
