@@ -73,6 +73,8 @@ export interface CompilerFlags {
   readonly WITH_MODIFIER_MANAGER: boolean;
   /** Enable eval support - passes context to $_maybeHelper for $_eval access. Default: false */
   readonly WITH_EVAL_SUPPORT: boolean;
+  /** Enable type-directed optimization. Requires typeHints in CompileOptions. Default: false */
+  readonly WITH_TYPE_OPTIMIZATION: boolean;
 }
 
 /**
@@ -95,6 +97,7 @@ export const DEFAULT_FLAGS: CompilerFlags = Object.freeze({
   WITH_HELPER_MANAGER: false, // Must match runtime default (plugins/flags.ts)
   WITH_MODIFIER_MANAGER: false, // Must match runtime default (plugins/flags.ts)
   WITH_EVAL_SUPPORT: false, // Enable only when template uses eval option (reduces bundle size)
+  WITH_TYPE_OPTIMIZATION: false,
 });
 
 /**
@@ -442,6 +445,44 @@ export interface SourceMapOptions {
   readonly sourceRoot?: string;
 }
 
+// ============================================================================
+// Type Hint Types (for type-directed optimization)
+// ============================================================================
+
+/**
+ * Reactivity classification for a template expression.
+ * Used by type-directed optimization to select the code generation strategy.
+ */
+export type ReactivityHint = 'static' | 'reactive' | 'unknown';
+
+/**
+ * Type hint for a single property, argument, or helper return value.
+ * Provided by external analysis tools (e.g., TypeScript type extraction).
+ */
+export interface PropertyTypeHint {
+  /** General classification of the value type */
+  readonly kind: 'primitive' | 'object' | 'function' | 'cell' | 'unknown';
+  /** Whether the property is declared readonly */
+  readonly isReadonly?: boolean;
+  /** Whether the property has the @tracked decorator */
+  readonly isTracked?: boolean;
+  /** For literal types, the compile-time known value */
+  readonly literalValue?: string | number | boolean;
+}
+
+/**
+ * Type hints for template expressions.
+ * Passed through CompileOptions to guide optimization decisions.
+ */
+export interface TypeHints {
+  /** Maps "this.propertyName" -> type hint */
+  readonly properties?: Readonly<Record<string, PropertyTypeHint>>;
+  /** Maps "argName" (without @) -> type hint */
+  readonly args?: Readonly<Record<string, PropertyTypeHint>>;
+  /** Maps helper name -> return type hint */
+  readonly helperReturns?: Readonly<Record<string, PropertyTypeHint>>;
+}
+
 /**
  * Options for the compile() function.
  */
@@ -462,6 +503,8 @@ export interface CompileOptions {
   readonly customizeComponentName?: (input: string) => string;
   /** CALLBACK to determine if a variable is in the lexical scope of the template. */
   readonly lexicalScope?: (variable: string) => boolean;
+  /** Type hints for type-directed optimization. Only used when WITH_TYPE_OPTIMIZATION is true. */
+  readonly typeHints?: TypeHints;
 }
 
 // ============================================================================

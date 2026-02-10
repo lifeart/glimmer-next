@@ -319,6 +319,47 @@ describe('Transform Function', () => {
         expect(result.map.version).toBe(3);
       }
     });
+
+    test('keeps conservative getter wrappers when checker hints are disabled', async () => {
+      const source = `
+        function compute() { return 42; }
+        export default class MyComponent {
+          value = compute();
+          <template>{{this.value}}</template>
+        }
+      `;
+
+      const result = (await transform(
+        source,
+        'test.gts',
+        'development',
+        false,
+        { ...asyncFlags, WITH_TYPE_CHECKER_HINTS: false },
+      )) as TransformResult;
+
+      expect(result.code).toMatch(/\(\)\s*=>\s*this\.value/);
+    });
+
+    test('applies checker hints in async mode when enabled by flag', async () => {
+      const source = `
+        function compute() { return 42; }
+        export default class MyComponent {
+          value = compute();
+          <template>{{this.value}}</template>
+        }
+      `;
+
+      const result = (await transform(
+        source,
+        'test.gts',
+        'development',
+        false,
+        { ...asyncFlags, WITH_TYPE_CHECKER_HINTS: true },
+      )) as TransformResult;
+
+      expect(result.code).not.toMatch(/\(\)\s*=>\s*this\.value/);
+      expect(result.code).toContain('this.value');
+    });
   });
 
   describe('template compilation with block params', () => {

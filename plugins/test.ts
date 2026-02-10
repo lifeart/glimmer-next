@@ -10,6 +10,7 @@ import {
 import { Preprocessor } from 'content-tag';
 import { processTemplate, type ResolvedHBS } from './babel';
 import { compile, formatErrorForDisplay, generateSourceMap, type MappingTreeNode, type SourceMapV3 } from './compiler/index';
+import { resolveTemplateTypeHintsWithChecker, mergeTypeHints } from './type-checker-hints';
 
 import { SYMBOLS } from './symbols';
 import { defaultFlags, type Flags } from './flags';
@@ -293,11 +294,13 @@ function processTransformedFiles(
       lexicalScope: content.lexicalScope,
       flags: {
         IS_GLIMMER_COMPAT_MODE: globalFlags.IS_GLIMMER_COMPAT_MODE ?? true,
+        WITH_TYPE_OPTIMIZATION: !!content.typeHints,
       },
       format: format ? { enabled: true, baseIndent: '      ' } : false,
       diagnostics: {
         baseOffset: content.loc?.start.offset,
       },
+      typeHints: content.typeHints,
     });
 
     // Throw on compiler errors
@@ -566,9 +569,18 @@ export function transform(
   const sourceForMaps = originalGtsSource || rawTxt;
   const preprocessed = p.process(rawTxt, { filename: fileName });
   const intermediate = preprocessed.code;
+  const shouldUseTypeCheckerHints = flags.WITH_TYPE_CHECKER_HINTS === true;
+  const checkerTypeHints = shouldUseTypeCheckerHints && (fileName.endsWith('.gts') || fileName.endsWith('.gjs'))
+    ? resolveTemplateTypeHintsWithChecker(intermediate, replacedFileName)
+    : [];
 
   if (isAsync) {
     return transformAsync(intermediate, babelConfig).then((babelResult) => {
+      if (checkerTypeHints.length > 0) {
+        for (let i = 0; i < hbsToProcess.length && i < checkerTypeHints.length; i++) {
+          hbsToProcess[i].typeHints = mergeTypeHints(checkerTypeHints[i], hbsToProcess[i].typeHints);
+        }
+      }
       return processTransformedFiles(
         babelResult,
         hbsToProcess,
@@ -581,6 +593,11 @@ export function transform(
     });
   } else {
     const babelResult = transformSync(intermediate, babelConfig);
+    if (checkerTypeHints.length > 0) {
+      for (let i = 0; i < hbsToProcess.length && i < checkerTypeHints.length; i++) {
+        hbsToProcess[i].typeHints = mergeTypeHints(checkerTypeHints[i], hbsToProcess[i].typeHints);
+      }
+    }
     return processTransformedFiles(
       babelResult,
       hbsToProcess,
