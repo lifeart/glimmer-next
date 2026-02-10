@@ -2,7 +2,6 @@ import {
   setIsRendering,
   type MergedCell,
   executeTag,
-  executeTagSync,
   hasAsyncOpcodes,
   tagsToRevalidate,
   relatedTags,
@@ -13,6 +12,25 @@ let revalidateScheduled = false;
 let hasExternalUpdate = false;
 type voidFn = () => void;
 let resolveRender: undefined | voidFn = undefined;
+let executionEpoch = 0;
+let executedTagEpoch: WeakMap<MergedCell, number> = new WeakMap();
+
+function nextExecutionEpoch() {
+  executionEpoch++;
+  if (executionEpoch === Number.MAX_SAFE_INTEGER) {
+    executionEpoch = 1;
+    executedTagEpoch = new WeakMap();
+  }
+  return executionEpoch;
+}
+
+function shouldExecuteSharedTag(tag: MergedCell, epoch: number) {
+  if (executedTagEpoch.get(tag) === epoch) {
+    return false;
+  }
+  executedTagEpoch.set(tag, epoch);
+  return true;
+}
 
 export function setResolveRender(value: () => void) {
   resolveRender = value;
@@ -79,7 +97,7 @@ function syncDomSync() {
   let sharedTags: MergedCell[] | null = null;
   setIsRendering(true);
   for (const cell of tagsToRevalidate) {
-    executeTagSync(cell);
+    executeTag(cell, false);
     const subTags = relatedTags.get(cell.id);
     if (subTags !== undefined) {
       relatedTags.delete(cell.id);
@@ -90,11 +108,10 @@ function syncDomSync() {
   }
   if (sharedTags !== null) {
     sortSharedTags(sharedTags);
-    const executedTags: WeakSet<MergedCell> = new WeakSet();
+    const epoch = nextExecutionEpoch();
     for (const tag of sharedTags) {
-      if (!executedTags.has(tag)) {
-        executedTags.add(tag);
-        executeTagSync(tag);
+      if (shouldExecuteSharedTag(tag, epoch)) {
+        executeTag(tag, false);
       }
     }
   }
@@ -110,7 +127,7 @@ async function syncDomAsync() {
   let sharedTags: MergedCell[] | null = null;
   setIsRendering(true);
   for (const cell of tagsToRevalidate) {
-    await executeTag(cell);
+    await executeTag(cell, true);
     const subTags = relatedTags.get(cell.id);
     if (subTags !== undefined) {
       relatedTags.delete(cell.id);
@@ -121,11 +138,10 @@ async function syncDomAsync() {
   }
   if (sharedTags !== null) {
     sortSharedTags(sharedTags);
-    const executedTags: WeakSet<MergedCell> = new WeakSet();
+    const epoch = nextExecutionEpoch();
     for (const tag of sharedTags) {
-      if (!executedTags.has(tag)) {
-        executedTags.add(tag);
-        await executeTag(tag);
+      if (shouldExecuteSharedTag(tag, epoch)) {
+        await executeTag(tag, true);
       }
     }
   }

@@ -330,12 +330,7 @@ function handleOpcodeError(e: any, tag: Cell | MergedCell, opcode: tagOp | null,
   }
 }
 
-// Synchronous fast path — no Promise allocation, no async/await overhead.
-// Used when hasAnyAsyncOpcodes is false (the common case).
-export function executeTagSync(tag: Cell | MergedCell) {
-  const ops = opsFor(tag);
-  const value = tag.value;
-
+function executeTagSyncOps(tag: Cell | MergedCell, ops: tagOp[], value: unknown) {
   if (TRY_CATCH_ERROR_HANDLING) {
     let opcode: tagOp | null = null;
     try {
@@ -353,12 +348,7 @@ export function executeTagSync(tag: Cell | MergedCell) {
   }
 }
 
-// Async path — only called when ASYNC_COMPILE_TRANSFORMS is true and async opcodes exist.
-// Tree-shaken when no call site references it (syncDomAsync gated by ASYNC_COMPILE_TRANSFORMS).
-export async function executeTag(tag: Cell | MergedCell) {
-  const ops = opsFor(tag);
-  const value = tag.value;
-
+async function executeTagAsyncOps(tag: Cell | MergedCell, ops: tagOp[], value: unknown) {
   if (TRY_CATCH_ERROR_HANDLING) {
     let opcode: tagOp | null = null;
     try {
@@ -384,6 +374,29 @@ export async function executeTag(tag: Cell | MergedCell) {
       }
     }
   }
+}
+
+/**
+ * Executes all opcodes for a tag.
+ *
+ * `awaitAsync = false` is the synchronous fast path with no Promise allocation.
+ * `awaitAsync = true` preserves async opcode semantics and awaits marked async ops.
+ */
+export function executeTag(tag: Cell | MergedCell, awaitAsync: true): Promise<void>;
+export function executeTag(tag: Cell | MergedCell, awaitAsync: false): void;
+export function executeTag(tag: Cell | MergedCell, awaitAsync?: boolean): Promise<void> | void;
+export function executeTag(tag: Cell | MergedCell, awaitAsync = true): Promise<void> | void {
+  const ops = opsFor(tag);
+  const value = tag.value;
+  if (awaitAsync) {
+    return executeTagAsyncOps(tag, ops, value);
+  }
+  executeTagSyncOps(tag, ops, value);
+}
+
+// Backward-compatible alias. Kept so existing imports continue to work.
+export function executeTagSync(tag: Cell | MergedCell) {
+  executeTag(tag, false);
 }
 export function lazyRawCellFor<T extends object, K extends keyof T>(
   obj: T,
