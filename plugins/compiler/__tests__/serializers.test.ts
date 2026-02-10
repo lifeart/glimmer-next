@@ -815,6 +815,64 @@ describe('buildPathExpression optional chaining rootName extraction', () => {
     // Context should be passed for scope resolution
     expect(result).toMatch(/this\)/);
   });
+
+  test('preferCellValue appends optional .value for typed cell paths', () => {
+    const ctx = createContext('<div>test</div>', {
+      flags: { WITH_TYPE_OPTIMIZATION: true },
+      typeHints: {
+        properties: { 'this.state': { kind: 'cell' } },
+      },
+    });
+    const value = path('this.state');
+    const result = serializeJS(
+      buildPathExpression(ctx, value, true, 'this', { preferCellValue: true })
+    );
+    expect(result).toContain('() => this.state?.value');
+  });
+
+  test('preferCellValue does not affect non-cell paths', () => {
+    const ctx = createContext('<div>test</div>', {
+      flags: { WITH_TYPE_OPTIMIZATION: true },
+      typeHints: {
+        properties: { 'this.title': { kind: 'primitive' } },
+      },
+    });
+    const value = path('this.title');
+    const result = serializeJS(
+      buildPathExpression(ctx, value, true, 'this', { preferCellValue: true })
+    );
+    expect(result).toContain('this.title');
+    expect(result).not.toContain('.value');
+  });
+
+  test('preferCellValue does not unwrap arg paths', () => {
+    const ctx = createContext('<div>test</div>', {
+      flags: { WITH_TYPE_OPTIMIZATION: true },
+      typeHints: {
+        args: { state: { kind: 'cell' } },
+      },
+    });
+    const value = path('this[$args].state', true);
+    const result = serializeJS(
+      buildPathExpression(ctx, value, true, 'this', { preferCellValue: true })
+    );
+    expect(result).toContain('this[$args].state');
+    expect(result).not.toContain('.value');
+  });
+
+  test('preferCellValue does not unwrap when getter wrapping is disabled', () => {
+    const ctx = createContext('<div>test</div>', {
+      flags: { WITH_TYPE_OPTIMIZATION: true },
+      typeHints: {
+        properties: { 'this.state': { kind: 'cell' } },
+      },
+    });
+    const value = path('this.state');
+    const result = serializeJS(
+      buildPathExpression(ctx, value, false, 'this', { preferCellValue: true })
+    );
+    expect(result).toBe('this.state');
+  });
 });
 
 describe('buildMaybeHelper always passes context for unknown bindings', () => {

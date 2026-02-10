@@ -334,6 +334,29 @@ describe('Babel decorator extraction', () => {
     expect(code).not.toContain('this.VERSION');
   });
 
+  test('checker readonly literal folds built-in if helper', () => {
+    const code = transformGts(`
+      export default class MyComponent {
+        readonly FLAG = true;
+        <template>{{if this.FLAG "yes" "no"}}</template>
+      }
+    `, { WITH_TYPE_CHECKER_HINTS: true });
+    expect(code).toContain('"yes"');
+    expect(code).not.toMatch(/\$__if\s*\(/);
+  });
+
+  test('checker readonly literal folds and helper before unknown arg', () => {
+    const code = transformGts(`
+      export default class MyComponent {
+        readonly FLAG = false;
+        value = "x";
+        <template>{{and this.FLAG this.value}}</template>
+      }
+    `, { WITH_TYPE_CHECKER_HINTS: true });
+    expect(code).toContain('false');
+    expect(code).not.toMatch(/\$__and\s*\(/);
+  });
+
   test('hints do not leak from a template-less class to the next class', () => {
     const code = transformGts(`
       class Config {

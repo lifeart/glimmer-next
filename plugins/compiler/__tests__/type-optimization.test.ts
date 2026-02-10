@@ -117,8 +117,36 @@ describe('type-directed optimization in compile pipeline', () => {
     const code = compileWith('{{this.state}}', {
       properties: { 'this.state': { kind: 'cell' } },
     });
-    // Cell kind → reactive → keeps getter
-    expect(code).toMatch(/\(\)\s*=>\s*this\.state/);
+    // Cell kind in text rendering → keeps getter and accesses .value directly
+    expect(code).toMatch(/\(\)\s*=>\s*this\.state\?\.value/);
+  });
+
+  test('cell kind in helper args does not force .value unwrapping', () => {
+    const code = compileWith('{{myHelper this.state}}', {
+      properties: { 'this.state': { kind: 'cell' } },
+    });
+    // Helper args must preserve Cell reference semantics
+    expect(code).toContain('myHelper');
+    expect(code).toContain('this.state');
+    expect(code).not.toContain('this.state?.value');
+  });
+
+  test('textContent optimization path unwraps typed cell via .value', () => {
+    const code = compileWith('<div>{{this.state}}</div>', {
+      properties: { 'this.state': { kind: 'cell' } },
+    });
+    expect(code).toContain('"1"');
+    expect(code).toContain('this.state?.value');
+  });
+
+  test('cell text path with compat mode off keeps cell reference', () => {
+    const code = compileWith('{{this.state}}', {
+      properties: { 'this.state': { kind: 'cell' } },
+    }, {
+      IS_GLIMMER_COMPAT_MODE: false,
+    });
+    expect(code).toContain('this.state');
+    expect(code).not.toContain('.value');
   });
 
   test('tracked object kind keeps getter wrapper', () => {
@@ -227,6 +255,90 @@ describe('type-directed optimization in compile pipeline', () => {
     });
     // Tracked flag → reactive → keeps getter on the condition arg
     expect(code).toMatch(/\(\)\s*=>\s*this\.flag/);
+  });
+
+  test('built-in if helper folds when condition literal is known', () => {
+    const code = compileWith('{{if this.FLAG "yes" "no"}}', {
+      properties: {
+        'this.FLAG': { kind: 'primitive', isReadonly: true, literalValue: true },
+      },
+    });
+    expect(code).toContain('"yes"');
+    expect(code).not.toMatch(/\$__if\s*\(/);
+  });
+
+  test('built-in eq helper folds to boolean literal', () => {
+    const code = compileWith('{{eq this.A 1}}', {
+      properties: {
+        'this.A': { kind: 'primitive', isReadonly: true, literalValue: 1 },
+      },
+    });
+    expect(code).toContain('true');
+    expect(code).not.toMatch(/\$__eq\s*\(/);
+  });
+
+  test('built-in not helper folds to boolean literal', () => {
+    const code = compileWith('{{not this.FLAG}}', {
+      properties: {
+        'this.FLAG': { kind: 'primitive', isReadonly: true, literalValue: false },
+      },
+    });
+    expect(code).toContain('true');
+    expect(code).not.toMatch(/\$__not\s*\(/);
+  });
+
+  test('built-in and helper folds to boolean literal', () => {
+    const code = compileWith('{{and this.A this.B}}', {
+      properties: {
+        'this.A': { kind: 'primitive', isReadonly: true, literalValue: true },
+        'this.B': { kind: 'primitive', isReadonly: true, literalValue: 0 },
+      },
+    });
+    expect(code).toContain('false');
+    expect(code).not.toMatch(/\$__and\s*\(/);
+  });
+
+  test('built-in or helper folds to resulting literal value', () => {
+    const code = compileWith('{{or this.A this.B}}', {
+      properties: {
+        'this.A': { kind: 'primitive', isReadonly: true, literalValue: '' },
+        'this.B': { kind: 'primitive', isReadonly: true, literalValue: 'ok' },
+      },
+    });
+    expect(code).toContain('"ok"');
+    expect(code).not.toMatch(/\$__or\s*\(/);
+  });
+
+  test('built-in and folds to false before unknown trailing args', () => {
+    const code = compileWith('{{and this.FLAG this.dynamic}}', {
+      properties: {
+        'this.FLAG': { kind: 'primitive', isReadonly: true, literalValue: false },
+      },
+    });
+    expect(code).toContain('false');
+    expect(code).not.toMatch(/\$__and\s*\(/);
+    expect(code).not.toContain('this.dynamic');
+  });
+
+  test('built-in or folds to truthy hint before unknown trailing args', () => {
+    const code = compileWith('{{or this.FLAG this.dynamic}}', {
+      properties: {
+        'this.FLAG': { kind: 'primitive', isReadonly: true, literalValue: 'ready' },
+      },
+    });
+    expect(code).toContain('"ready"');
+    expect(code).not.toMatch(/\$__or\s*\(/);
+    expect(code).not.toContain('this.dynamic');
+  });
+
+  test('built-in eq folds to false on known mismatch even with unknown args', () => {
+    const code = compileWith('{{eq this.FLAG 2 this.dynamic}}', {
+      properties: {
+        'this.FLAG': { kind: 'primitive', isReadonly: true, literalValue: 1 },
+      },
+    });
+    expect(code).toContain('false');
+    expect(code).not.toMatch(/\$__eq\s*\(/);
   });
 
   test('deeply chained path falls back to unknown', () => {

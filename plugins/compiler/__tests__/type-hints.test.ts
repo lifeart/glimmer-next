@@ -3,6 +3,7 @@ import {
   lookupTypeHint,
   classifyReactivity,
   shouldSkipGetterWrapper,
+  shouldAccessCellValue,
   lookupHelperReturnHint,
   getStaticLiteralValue,
 } from '../type-hints';
@@ -262,6 +263,40 @@ describe('shouldSkipGetterWrapper', () => {
       typeHints: { properties: { 'this.state': { kind: 'cell' } } },
     });
     expect(shouldSkipGetterWrapper(ctx, 'this.state', false)).toBe(false);
+  });
+});
+
+describe('shouldAccessCellValue', () => {
+  test('returns true for typed cell property', () => {
+    const ctx = makeCtx({
+      withTypeOptimization: true,
+      typeHints: { properties: { 'this.state': { kind: 'cell' } } },
+    });
+    expect(shouldAccessCellValue(ctx, 'this.state', false)).toBe(true);
+  });
+
+  test('returns false for args even with cell hint', () => {
+    const ctx = makeCtx({
+      withTypeOptimization: true,
+      typeHints: { args: { state: { kind: 'cell' } } },
+    });
+    expect(shouldAccessCellValue(ctx, 'this[$args].state', true)).toBe(false);
+  });
+
+  test('returns false for non-cell hints', () => {
+    const ctx = makeCtx({
+      withTypeOptimization: true,
+      typeHints: { properties: { 'this.count': { kind: 'primitive', isTracked: true } } },
+    });
+    expect(shouldAccessCellValue(ctx, 'this.count', false)).toBe(false);
+  });
+
+  test('returns false when optimization is disabled', () => {
+    const ctx = makeCtx({
+      withTypeOptimization: false,
+      typeHints: { properties: { 'this.state': { kind: 'cell' } } },
+    });
+    expect(shouldAccessCellValue(ctx, 'this.state', false)).toBe(false);
   });
 });
 

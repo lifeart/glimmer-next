@@ -360,6 +360,14 @@ function buildEvents(
       // ($n) => modName($n, ...args, {hash}) or
       // ($n) => $__maybeModifier(modName, $n, [...args], {hash})
       handlerExpr = buildModifierExpr(ctx, handler as HelperValue, ctxName);
+    } else if (eventName === EVENT_TYPE.TEXT_CONTENT && handler.kind === 'path') {
+      handlerExpr = buildPathExpression(
+        ctx,
+        handler,
+        ctx.flags.IS_GLIMMER_COMPAT_MODE,
+        ctxName,
+        { preferCellValue: true }
+      );
     } else {
       // Use buildValue directly to preserve AST structure for better code generation
       handlerExpr = buildValue(ctx, handler, ctxName);

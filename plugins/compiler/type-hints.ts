@@ -132,6 +132,26 @@ export function shouldSkipGetterWrapper(
 }
 
 /**
+ * Determine if a path should access `.value` directly in text rendering contexts.
+ *
+ * Safety rules:
+ * - Never apply to @args (call-site value may intentionally be a Cell object)
+ * - Only apply when the expression is known to be Cell/MergedCell-like
+ */
+export function shouldAccessCellValue(
+  ctx: CompilerContext,
+  expression: string,
+  isArg: boolean
+): boolean {
+  if (isArg) {
+    return false;
+  }
+
+  const hint = lookupTypeHint(ctx, expression, isArg);
+  return hint?.kind === 'cell';
+}
+
+/**
  * Resolve a compile-time literal value for a path expression when it is safe
  * to inline directly into generated code.
  *

@@ -13,7 +13,15 @@ import {
   serializeJS,
   type JSExpression,
 } from '../builder';
-import { getStaticLiteralValue, shouldSkipGetterWrapper } from '../type-hints';
+import {
+  getStaticLiteralValue,
+  shouldAccessCellValue,
+  shouldSkipGetterWrapper,
+} from '../type-hints';
+
+export interface BuildPathExpressionOptions {
+  preferCellValue?: boolean;
+}
 
 /**
  * Serialize a SerializedValue to JavaScript code.
@@ -102,7 +110,8 @@ export function buildPathExpression(
   ctx: CompilerContext,
   value: PathValue,
   wrapInGetter = ctx.flags.IS_GLIMMER_COMPAT_MODE,
-  ctxName = 'this'
+  ctxName = 'this',
+  options: BuildPathExpressionOptions = {}
 ): JSExpression {
   const expression = value.expression;
 
@@ -139,7 +148,15 @@ export function buildPathExpression(
     return buildLiteral(staticLiteral, value.sourceRange);
   }
 
-  const pathExpr = buildPathBase(ctx, value);
+  let pathExpr = buildPathBase(ctx, value);
+
+  if (
+    options.preferCellValue &&
+    wrapInGetter &&
+    shouldAccessCellValue(ctx, value.expression, value.isArg)
+  ) {
+    pathExpr = B.optionalMember(pathExpr, 'value');
+  }
 
   // Type-directed optimization: skip getter wrapper for known-static values
   if (wrapInGetter && ctx.flags.IS_GLIMMER_COMPAT_MODE) {
@@ -488,6 +505,135 @@ const REACTIVE_HELPERS: Set<string> = new Set([
   SYMBOLS.AND,
 ]);
 
+type KnownLiteral = {
+  value: string | number | boolean | null | undefined;
+  source: 'hint' | 'literal';
+};
+
+function getKnownLiteral(
+  ctx: CompilerContext,
+  value: SerializedValue
+): KnownLiteral | undefined {
+  if (value.kind === 'literal') {
+    return { value: value.value, source: 'literal' };
+  }
+
+  if (value.kind === 'path') {
+    const literal = getStaticLiteralValue(ctx, value.expression, value.isArg);
+    if (literal !== undefined) {
+      return { value: literal, source: 'hint' };
+    }
+    return undefined;
+  }
+
+  if (value.kind === 'getter') {
+    return getKnownLiteral(ctx, value.value);
+  }
+
+  return undefined;
+}
+
+function tryFoldBuiltInHelper(
+  ctx: CompilerContext,
+  symbol: string,
+  positional: readonly SerializedValue[],
+  named: ReadonlyMap<string, SerializedValue>,
+  ctxName: string,
+  sourceRange?: SourceRange
+): JSExpression | undefined {
+  // Built-ins we fold do not use named arguments in GXT.
+  if (named.size > 0) {
+    return undefined;
+  }
+
+  if (symbol === SYMBOLS.IF_HELPER) {
+    if (positional.length === 0) return undefined;
+    const cond = getKnownLiteral(ctx, positional[0]);
+    if (!cond || cond.source !== 'hint') {
+      return undefined;
+    }
+    const branch = cond.value ? positional[1] : positional[2];
+    if (!branch) {
+      return B.string('', sourceRange);
+    }
+    return buildValue(ctx, branch, ctxName);
+  }
+
+  if (symbol === SYMBOLS.NOT) {
+    if (positional.length === 0) return undefined;
+    const arg = getKnownLiteral(ctx, positional[0]);
+    if (!arg || arg.source !== 'hint') {
+      return undefined;
+    }
+    return B.bool(!arg.value, sourceRange);
+  }
+
+  if (symbol === SYMBOLS.EQ) {
+    const literals = positional.map((arg) => getKnownLiteral(ctx, arg));
+    const known = literals.filter((entry): entry is KnownLiteral => !!entry);
+    if (!known.some((entry) => entry.source === 'hint')) {
+      return undefined;
+    }
+    if (known.length === 0) {
+      return undefined;
+    }
+    const first = known[0].value;
+    const hasMismatch = known.some((entry) => entry.value !== first);
+    if (hasMismatch) {
+      // Any mismatch among known values guarantees eq(...) is false,
+      // regardless of unresolved arguments.
+      return B.bool(false, sourceRange);
+    }
+    // If some args are unknown, equality is not provably true yet.
+    if (known.length !== literals.length) {
+      return undefined;
+    }
+    return B.bool(true, sourceRange);
+  }
+
+  if (symbol === SYMBOLS.AND) {
+    const literals = positional.map((arg) => getKnownLiteral(ctx, arg));
+    let sawHint = false;
+    for (const entry of literals) {
+      if (!entry) {
+        // Unknown encountered before a decisive false value.
+        return undefined;
+      }
+      if (entry.source === 'hint') {
+        sawHint = true;
+      }
+      if (!entry.value) {
+        return sawHint ? B.bool(false, sourceRange) : undefined;
+      }
+    }
+    return sawHint ? B.bool(true, sourceRange) : undefined;
+  }
+
+  if (symbol === SYMBOLS.OR) {
+    const literals = positional.map((arg) => getKnownLiteral(ctx, arg));
+    if (literals.length === 0) {
+      return undefined;
+    }
+    let sawHint = false;
+    for (const entry of literals) {
+      if (!entry) {
+        // Unknown encountered before a decisive truthy value.
+        return undefined;
+      }
+      if (entry.source === 'hint') {
+        sawHint = true;
+      }
+      if (entry.value) {
+        return sawHint ? buildLiteral(entry.value, sourceRange) : undefined;
+      }
+    }
+    const last = literals[literals.length - 1] as KnownLiteral;
+    return sawHint ? buildLiteral(last.value, sourceRange) : undefined;
+  }
+
+  return undefined;
+}
+
 /**
  * Build a built-in helper call.
  */
@@ -502,6 +648,18 @@ function buildBuiltInHelper(
   displayName?: string
 ): JSExpression {
   const helperId = nameRange ? B.id(symbol, nameRange, 'PathExpression', displayName ?? symbol) : symbol;
+
+  const folded = tryFoldBuiltInHelper(
+    ctx,
+    symbol,
+    positional,
+    named,
+    ctxName,
+    sourceRange
+  );
+  if (folded) {
+    return folded;
+  }
 
   // Special handling for hash helper - wrap values in getters so $__hash
   // can lazily evaluate them without auto-calling functions
