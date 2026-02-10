@@ -209,28 +209,58 @@ export function runDestructors(
   _api?: DOMApi,
 ): Array<Promise<void>> {
   const api = _api || initDOM(target);
+  const done = runDestructorsInternal(target, skipDom, api);
+  if (done) {
+    promises.push(done);
+  }
+  return promises;
+}
+
+function runDestructorsInternal(
+  target: ComponentLike,
+  skipDom: boolean,
+  api: DOMApi,
+): Promise<void> | null {
+  const pending: Array<Promise<void>> = [];
   const childComponents = CHILD.get(target[COMPONENT_ID_PROPERTY]);
-  destroy(target, promises);
+  destroy(target, pending);
+
   if (childComponents) {
     const childComponentsCopy = Array.from(childComponents);
     for (let i = 0; i < childComponentsCopy.length; i++) {
       const instance = TREE.get(childComponentsCopy[i]);
       // Skip if instance doesn't exist or destruction has already started
       if (instance && !isDestructionStarted(instance)) {
-        runDestructors(instance, promises, skipDom, api);
+        const childDone = runDestructorsInternal(instance, skipDom, api);
+        if (childDone) {
+          pending.push(childDone);
+        }
       }
     }
   }
-  if (skipDom !== true) {
-    if (promises.length) {
-      promises.push(
-        Promise.all(promises).then(() => {
-          destroyNodes(api, target[RENDERED_NODES_PROPERTY]);
-        }),
-      );
-    } else {
-      destroyNodes(api, target[RENDERED_NODES_PROPERTY]);
+
+  if (skipDom === true) {
+    if (pending.length === 0) {
+      return null;
     }
+    if (pending.length === 1) {
+      return pending[0]!;
+    }
+    return Promise.all(pending).then(() => void 0);
   }
-  return promises;
+
+  if (pending.length === 0) {
+    destroyNodes(api, target[RENDERED_NODES_PROPERTY]);
+    return null;
+  }
+
+  if (pending.length === 1) {
+    return pending[0]!.then(() => {
+      destroyNodes(api, target[RENDERED_NODES_PROPERTY]);
+    });
+  }
+
+  return Promise.all(pending).then(() => {
+    destroyNodes(api, target[RENDERED_NODES_PROPERTY]);
+  });
 }

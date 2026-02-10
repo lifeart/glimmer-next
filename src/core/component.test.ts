@@ -771,6 +771,106 @@ describe('destroyNodes - nested components', () => {
     expect(destructorCalls).toContain('child-async-destructor');
   });
 
+  test('runDestructors returns one completion promise for nested async teardown', async () => {
+    const steps: string[] = [];
+    const destroyCalls: string[] = [];
+
+    const parentDiv = fixture.document.createElement('div');
+    parentDiv.id = 'parent';
+    const childDiv = fixture.document.createElement('div');
+    childDiv.id = 'child';
+    parentDiv.appendChild(childDiv);
+    fixture.container.appendChild(parentDiv);
+
+    const trackingApi = {
+      ...fixture.api,
+      destroy(node: Node) {
+        destroyCalls.push((node as HTMLElement).id || 'unknown');
+        fixture.api.destroy(node);
+      },
+    } as DOMApi;
+
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [parentDiv];
+    addToTree(fixture.root, parentComponent);
+
+    const childComponent = new Component({});
+    childComponent[RENDERED_NODES_PROPERTY] = [childDiv];
+    addToTree(parentComponent, childComponent);
+
+    let releaseChildDestructor!: () => void;
+    const childDestructorGate = new Promise<void>((resolve) => {
+      releaseChildDestructor = resolve;
+    });
+
+    registerDestructor(parentComponent, async () => {
+      steps.push('parent-start');
+      await Promise.resolve();
+      steps.push('parent-end');
+    });
+
+    registerDestructor(childComponent, async () => {
+      steps.push('child-start');
+      await childDestructorGate;
+      steps.push('child-end');
+    });
+
+    const pending = runDestructors(parentComponent, [], false, trackingApi);
+
+    // New implementation aggregates to a single subtree completion promise.
+    expect(pending.length).toBe(1);
+
+    // DOM should not be removed while a child async destructor is still pending.
+    expect(parentDiv.isConnected).toBe(true);
+    expect(childDiv.isConnected).toBe(true);
+
+    await Promise.resolve();
+    expect(parentDiv.isConnected).toBe(true);
+    expect(childDiv.isConnected).toBe(true);
+
+    releaseChildDestructor();
+    await Promise.all(pending);
+
+    expect(parentDiv.isConnected).toBe(false);
+    expect(childDiv.isConnected).toBe(false);
+    expect(steps).toContain('parent-end');
+    expect(steps).toContain('child-end');
+    expect(destroyCalls).toContain('parent');
+  });
+
+  test('runDestructors with skipDom=true still waits async destructors', async () => {
+    const calls: string[] = [];
+    const node = fixture.document.createElement('div');
+    fixture.container.appendChild(node);
+
+    const component = new Component({});
+    component[RENDERED_NODES_PROPERTY] = [node];
+    addToTree(fixture.root, component);
+
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    registerDestructor(component, async () => {
+      calls.push('start');
+      await gate;
+      calls.push('end');
+    });
+
+    const pending = runDestructors(component, [], true, fixture.api);
+    expect(pending.length).toBe(1);
+    expect(node.isConnected).toBe(true);
+    expect(calls).toEqual(['start']);
+
+    release();
+    await Promise.all(pending);
+
+    expect(calls).toEqual(['start', 'end']);
+    // skipDom=true should preserve DOM nodes
+    expect(node.isConnected).toBe(true);
+  });
+
   test('isConnected is checked only once per node (no double check regression)', () => {
     // This test ensures we don't have double isConnected checks which cause performance regression
     // The isConnected check should happen in destroyNodes, NOT in api.destroy()

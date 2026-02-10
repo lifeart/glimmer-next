@@ -148,6 +148,15 @@ export class BasicListComponent<T extends { id: number }> {
     return set;
   }
   /**
+   * Detach this list's child-id set before bulk destruction.
+   *
+   * This lets child destructors skip parent-sibling bookkeeping and avoids
+   * allocating a replacement empty Set on every fast cleanup.
+   */
+  protected detachTreeChildren(): void {
+    CHILD.delete(this[COMPONENT_ID_PROPERTY]);
+  }
+  /**
    * Fast-path for updates that preserve all existing items and only append
    * new ones at the end.
    *
@@ -582,8 +591,8 @@ export class SyncListComponent<
       parent.lastChild === bottomMarker &&
       parent.firstChild === topMarker
     ) {
-      // Pre-clear CHILD so item destructors skip O(n) indexOf removal
-      CHILD.set(this[COMPONENT_ID_PROPERTY], new Set());
+      // Detach CHILD so item destructors skip parent-sibling deletes.
+      this.detachTreeChildren();
       for (const value of keyMap.values()) {
         destroyElementSync(value as ComponentLike, true, this.api);
       }
@@ -645,9 +654,9 @@ export class SyncListComponent<
             amountOfKeys = 0;
             keysToRemove.length = 0;
           } else {
-            // fastCleanup failed but removing all items — pre-clear CHILD
-            // to avoid O(n²) indexOf in each item's destructor
-            CHILD.set(this[COMPONENT_ID_PROPERTY], new Set());
+            // fastCleanup failed but removing all items — detach CHILD
+            // to skip parent-sibling delete work in each item's destructor.
+            this.detachTreeChildren();
           }
         }
         removedCount = keysToRemove.length;
@@ -723,8 +732,8 @@ export class AsyncListComponent<
       parent.lastChild === bottomMarker &&
       parent.firstChild === topMarker
     ) {
-      // Pre-clear CHILD so item destructors skip O(n) indexOf removal
-      CHILD.set(this[COMPONENT_ID_PROPERTY], new Set());
+      // Detach CHILD so item destructors skip parent-sibling deletes.
+      this.detachTreeChildren();
       const promises = new Array(keyMap.size);
       let i = 0;
       for (const value of keyMap.values()) {
@@ -792,9 +801,9 @@ export class AsyncListComponent<
             amountOfKeys = 0;
             keysToRemove.length = 0;
           } else {
-            // fastCleanup failed but removing all items — pre-clear CHILD
-            // to avoid O(n²) indexOf in each item's destructor
-            CHILD.set(this[COMPONENT_ID_PROPERTY], new Set());
+            // fastCleanup failed but removing all items — detach CHILD
+            // to skip parent-sibling delete work in each item's destructor.
+            this.detachTreeChildren();
           }
         }
         removedCount = keysToRemove.length;
