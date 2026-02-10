@@ -3,15 +3,15 @@ import { transformSync, type PluginItem } from '@babel/core';
 import { Preprocessor } from 'content-tag';
 import { transform } from '../test';
 import { processTemplate, type ResolvedHBS } from '../babel';
-import { defaultFlags } from '../flags';
+import { defaultFlags, type Flags } from '../flags';
 
-function transformGts(source: string): string {
+function transformGts(source: string, flags: Partial<Flags> = {}): string {
   const result = transform(
     source,
     'test.gts',
     'development',
     false,
-    { ...defaultFlags(), ASYNC_COMPILE_TRANSFORMS: false },
+    { ...defaultFlags(), ASYNC_COMPILE_TRANSFORMS: false, ...flags },
   );
   if (result instanceof Promise) {
     throw new Error('Expected sync transform');
@@ -280,28 +280,47 @@ describe('Babel decorator extraction', () => {
     expect(code).toContain('this.visible');
   });
 
-  test('property initialized from function call keeps getter wrapper (unknown)', () => {
+  test('property initialized from function call can skip getter with checker inference', () => {
     const code = transformGts(`
       function compute() { return 42; }
       export default class MyComponent {
         value = compute();
         <template>{{this.value}}</template>
       }
-    `);
-    // Unknown call expression (not cell/formula) → no hint → keeps getter
-    expect(code).toMatch(/\(\)\s*=>\s*this\.value/);
+    `, { WITH_TYPE_CHECKER_HINTS: true });
+    // Type-checker infers number result, so this can be emitted as static.
+    expect(code).not.toMatch(/\(\)\s*=>\s*this\.value/);
+    expect(code).toContain('this.value');
   });
 
-  test('property initialized from identifier keeps getter wrapper (unknown)', () => {
+  test('type-checker hints are opt-in via WITH_TYPE_CHECKER_HINTS', () => {
+    const source = `
+      function compute() { return 42; }
+      export default class MyComponent {
+        value = compute();
+        <template>{{this.value}}</template>
+      }
+    `;
+    const withoutChecker = transformGts(source);
+    const withChecker = transformGts(source, { WITH_TYPE_CHECKER_HINTS: true });
+
+    // Default path remains conservative.
+    expect(withoutChecker).toMatch(/\(\)\s*=>\s*this\.value/);
+    // Opt-in checker inference allows static emission.
+    expect(withChecker).not.toMatch(/\(\)\s*=>\s*this\.value/);
+  });
+
+  test('property initialized from identifier can skip getter with checker inference', () => {
     const code = transformGts(`
       const DEFAULT = "hello";
       export default class MyComponent {
         value = DEFAULT;
         <template>{{this.value}}</template>
       }
-    `);
-    // Identifier reference → unknown → keeps getter
-    expect(code).toMatch(/\(\)\s*=>\s*this\.value/);
+    `, { WITH_TYPE_CHECKER_HINTS: true });
+    // Type-checker resolves constant string type.
+    expect(code).not.toMatch(/\(\)\s*=>\s*this\.value/);
+    expect(code).toContain('this.value');
   });
 
   test('hints do not leak from a template-less class to the next class', () => {
@@ -539,37 +558,40 @@ describe('Babel decorator extraction', () => {
     expect(code).toContain('this.value');
   });
 
-  test('template literal with expressions keeps getter wrapper', () => {
+  test('template literal with expressions can skip getter with checker inference', () => {
     const code = transformGts(`
       export default class MyComponent {
         name = "world";
         greeting = ${'`'}hello ${'$'}{this.name}${'`'};
         <template>{{this.greeting}}</template>
       }
-    `);
-    // Template literal with expressions → not matched → no hint → keeps getter
-    expect(code).toMatch(/\(\)\s*=>\s*this\.greeting/);
+    `, { WITH_TYPE_CHECKER_HINTS: true });
+    // Type-checker infers string for greeting.
+    expect(code).not.toMatch(/\(\)\s*=>\s*this\.greeting/);
+    expect(code).toContain('this.greeting');
   });
 
-  test('binary expression initializer keeps getter wrapper', () => {
+  test('binary expression initializer can skip getter with checker inference', () => {
     const code = transformGts(`
       export default class MyComponent {
         sum = 1 + 2;
         <template>{{this.sum}}</template>
       }
-    `);
-    // BinaryExpression → no hint → keeps getter
-    expect(code).toMatch(/\(\)\s*=>\s*this\.sum/);
+    `, { WITH_TYPE_CHECKER_HINTS: true });
+    // Type-checker infers number for binary expression.
+    expect(code).not.toMatch(/\(\)\s*=>\s*this\.sum/);
+    expect(code).toContain('this.sum');
   });
 
-  test('conditional expression initializer keeps getter wrapper', () => {
+  test('conditional expression initializer can skip getter with checker inference', () => {
     const code = transformGts(`
       export default class MyComponent {
         value = true ? "a" : "b";
         <template>{{this.value}}</template>
       }
-    `);
-    // ConditionalExpression → no hint → keeps getter
-    expect(code).toMatch(/\(\)\s*=>\s*this\.value/);
+    `, { WITH_TYPE_CHECKER_HINTS: true });
+    // Type-checker infers primitive string union.
+    expect(code).not.toMatch(/\(\)\s*=>\s*this\.value/);
+    expect(code).toContain('this.value');
   });
 });
