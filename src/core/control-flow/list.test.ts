@@ -1980,6 +1980,30 @@ describe('AsyncListComponent markers', () => {
     expect(listInstance.itemMarkers.size).toBe(3);
   });
 
+  test('async append-only update skips removal scan', async () => {
+    const { listInstance, itemsCell } = await createAsyncList([{ id: 1 }, { id: 2 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    const listInstanceInternal = listInstance as unknown as {
+      keysForItems: (...args: unknown[]) => unknown;
+    };
+    const originalKeysForItems = listInstanceInternal.keysForItems.bind(
+      listInstanceInternal,
+    );
+    let removalScanCalls = 0;
+
+    listInstanceInternal.keysForItems = (...args: unknown[]) => {
+      removalScanCalls++;
+      return originalKeysForItems(...args);
+    };
+
+    itemsCell.update([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(getDivOrder(listInstance)).toEqual(['1', '2', '3', '4']);
+    expect(removalScanCalls).toBe(0);
+  });
+
   test('async list cleans up markers on item removal', async () => {
     const { listInstance, itemsCell } = await createAsyncList([{ id: 1 }, { id: 2 }, { id: 3 }]);
     await new Promise(resolve => setTimeout(resolve, 10));
@@ -2817,6 +2841,30 @@ describe('DOM mutation counting', () => {
     expect(getDestroyCount()).toBe(0);
     // Batch fragment insert: 1 container insert for all appended items
     expect(getInsertCount()).toBe(1);
+  });
+
+  test('append-only update skips removal scan', async () => {
+    const { itemsCell, listInstance } =
+      await createMutationTrackedList([{ id: 1 }, { id: 2 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    const listInstanceInternal = listInstance as unknown as {
+      keysForItems: (...args: unknown[]) => unknown;
+    };
+    const originalKeysForItems = listInstanceInternal.keysForItems.bind(
+      listInstanceInternal,
+    );
+    let removalScanCalls = 0;
+
+    listInstanceInternal.keysForItems = (...args: unknown[]) => {
+      removalScanCalls++;
+      return originalKeysForItems(...args);
+    };
+
+    itemsCell.update([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(removalScanCalls).toBe(0);
   });
 
   test('remove items from end — 0 container inserts, destroys equal to removed count', async () => {

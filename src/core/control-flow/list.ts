@@ -147,6 +147,28 @@ export class BasicListComponent<T extends { id: number }> {
     }
     return set;
   }
+  /**
+   * Fast-path for updates that preserve all existing items and only append
+   * new ones at the end.
+   *
+   * We can safely skip the removal scan only when every old position still
+   * points to the same key in the incoming list prefix.
+   */
+  protected isAppendOnlySuperset(
+    items: T[],
+    amountOfKeys: number,
+    keyForItem: (item: T, index: number) => string,
+  ): boolean {
+    if (items.length < amountOfKeys) return false;
+    const { indexMap } = this;
+    for (let index = 0; index < amountOfKeys; index++) {
+      const key = keyForItem(items[index], index);
+      if (indexMap.get(key) !== index) {
+        return false;
+      }
+    }
+    return true;
+  }
   // Cached fragment reused across relocateItem calls to avoid allocating new ones
   private _relocateFragment!: DocumentFragment;
   declare api: DOMApi;
@@ -600,7 +622,10 @@ export class SyncListComponent<
     let amountOfKeys = keyMap.size;
     let removedCount = 0;
 
-    if (amountOfKeys > 0) {
+    if (
+      amountOfKeys > 0 &&
+      !this.isAppendOnlySuperset(items, amountOfKeys, keyForItem)
+    ) {
       const updatingKeys = this.keysForItems(items, keyForItem);
       const keysToRemove = this._keysToRemove;
       const rowsToRemove = this._rowsToRemove;
@@ -743,7 +768,10 @@ export class AsyncListComponent<
     let amountOfKeys = keyMap.size;
     let removedCount = 0;
 
-    if (amountOfKeys > 0) {
+    if (
+      amountOfKeys > 0 &&
+      !this.isAppendOnlySuperset(items, amountOfKeys, keyForItem)
+    ) {
       const keysToRemove = this._keysToRemove;
       const rowsToRemove = this._rowsToRemove;
       keysToRemove.length = 0;
