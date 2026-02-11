@@ -33,7 +33,6 @@ import {
   methodBinding,
   iife,
   formattedArray,
-  styleSetter,
   elementHelperWrapper,
   varDecl,
   constDecl,
@@ -494,31 +493,6 @@ describe('Code Builder', () => {
       test('inline formatted array when multiline is false', () => {
         const code = serializeJS(formattedArray([string('a'), string('b')], false));
         expect(code).toBe('["a", "b"]');
-      });
-    });
-
-    describe('styleSetter', () => {
-      test('creates style setter binding', () => {
-        const code = serializeJS(styleSetter('color', string('red'), {
-          TO_VALUE: '$_TO_VALUE',
-          LOCAL_VALUE: '$v',
-          LOCAL_NODE: '$n',
-        }));
-        expect(code).toContain('style.setProperty');
-        expect(code).toContain('"color"');
-        expect(code).toContain('$_TO_VALUE("red")');
-        expect(code).toContain('.bind(null');
-      });
-
-      test('style setter with reactive getter', () => {
-        const code = serializeJS(styleSetter('width', reactiveGetter(path('this.width')), {
-          TO_VALUE: '$_TO_VALUE',
-          LOCAL_VALUE: '$v',
-          LOCAL_NODE: '$n',
-        }));
-        expect(code).toContain('style.setProperty');
-        expect(code).toContain('"width"');
-        expect(code).toContain('$_TO_VALUE(() => this.width)');
       });
     });
 

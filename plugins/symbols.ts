@@ -16,6 +16,7 @@ export const SYMBOLS = {
   $SLOTS_SYMBOL: '$SLOTS_SYMBOL',
   $PROPS_SYMBOL: '$PROPS_SYMBOL',
   $_TO_VALUE: '$_TO_VALUE',
+  $_style: '$_style',
   $_GET_SLOTS: '$_GET_SLOTS',
   $_GET_ARGS: '$_GET_ARGS',
   $_GET_FW: '$_GET_FW',

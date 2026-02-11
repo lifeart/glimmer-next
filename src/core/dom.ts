@@ -33,7 +33,7 @@ import {
   getTagId,
   tagsFromRange,
 } from '@/core/reactive';
-import { opcodeFor } from '@/core/vm';
+import { opcodeFor, effect } from '@/core/vm';
 import {
   SyncListComponent,
   AsyncListComponent,
@@ -135,6 +135,19 @@ export function $_unwrapHelperArg(value: unknown): unknown {
     return (value as { value: unknown }).value;
   }
   return value;
+}
+
+export function $_style(
+  element: HTMLElement,
+  propOrArgs: string | unknown[],
+  value?: unknown,
+  _hash?: Record<string, unknown>,
+) {
+  const isArrayArgs = Array.isArray(propOrArgs);
+  const prop = (isArrayArgs ? propOrArgs[0] : propOrArgs) as string;
+  const rawValue = isArrayArgs ? propOrArgs[1] : value;
+  const resolvedValue = isArrayArgs ? rawValue : $_unwrapHelperArg(rawValue);
+  element.style.setProperty(prop, resolvedValue as string);
 }
 
 /**
@@ -250,7 +263,7 @@ function resolveBindingValue(
     return { result: f, isReactive: true };
   }
 
-  const result = $_TO_VALUE(value);
+  const result = value;
   if (isTagLike(result)) {
     return { result, isReactive: true };
   }
@@ -403,38 +416,10 @@ function $ev(
     }
   } else if (eventName === EVENT_TYPE.ON_CREATED) {
     if (REACTIVE_MODIFIERS) {
-      let destructor = () => void 0;
-      let isDestroying = false;
-      const updatingCell = formula(() => {
-        if (isDestroying) {
-          return undefined;
-        }
-        destructor();
+      const destroyEffect = effect(() => {
         return (fn as ModifierFn)(element);
       }, `${element.tagName}.modifier`);
-      const opcodeDestructor = opcodeFor(updatingCell, (dest: any) => {
-        if (isFn(dest)) {
-          destructor = dest as any;
-        }
-      });
-      if (updatingCell.isConst) {
-        updatingCell.destroy();
-        opcodeDestructor();
-        destructors.push(() => {
-          return destructor();
-        });
-      } else {
-        destructors.push(
-          () => {
-            isDestroying = true;
-            updatingCell.destroy();
-          },
-          opcodeDestructor,
-          () => {
-            return destructor();
-          },
-        );
-      }
+      destructors.push(destroyEffect);
     } else {
       const destructor = (fn as ModifierFn)(element);
       if (isFn(destructor)) {
