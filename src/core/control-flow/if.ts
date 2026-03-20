@@ -75,6 +75,12 @@ export class IfCondition {
     // @ts-expect-error
     this.api = initDOM(this);
     this.destructors.push(opcodeFor(this.condition, this.syncState.bind(this)));
+    // Ensure initial branch renders synchronously even if opcodeFor deferred.
+    // If opcodeFor already fired syncState, checkStatement will short-circuit
+    // because lastValue matches and runNumber > 1.
+    if (this.runNumber === 0) {
+      this.syncState(this.condition.value);
+    }
     registerDestructor(parentContext, this.destroy.bind(this));
     if (IS_DEV_MODE) {
       const instance = () => {
