@@ -943,7 +943,6 @@ export function processTemplate(
           },
         },
         ClassProperty(path: Babel.NodePath<Babel.types.ClassProperty>, context: TemplateTransformContext) {
-
           // Static properties are not accessed via this.propName in templates
           if (path.node.static) return;
           const typeHints = getCurrentClassTypeHints(context);
@@ -962,36 +961,27 @@ export function processTemplate(
           }
         },
         ClassMethod(path: Babel.NodePath<Babel.types.ClassMethod>) {
-
           if (path.node.key.type === 'Identifier' && path.node.key.name === '$static') {
-            try {
-              const stmt = path.node.body.body[0] as any;
-              const arg = stmt.expression?.arguments?.[0];
-              // Only transform if the argument is a TemplateLiteral
-              if (arg.type === 'TemplateLiteral') {
-                path.replaceWith(
-                  t.classProperty(
-                    t.identifier(SYMBOLS.$template),
-                    t.taggedTemplateExpression(
-                      t.identifier('hbs'),
-                      arg,
-                    ),
-                    null,
-                    null,
-                    true,
-                  ),
-                );
-              }
-            } catch {
-              // Skip transformation if AST structure is unexpected
-            }
+            path.replaceWith(
+              t.classProperty(
+                t.identifier(SYMBOLS.$template),
+                // hbs literal
+                t.taggedTemplateExpression(
+                  t.identifier('hbs'),
+                  // @ts-expect-error expression type
+                  path.node.body.body[0].expression.arguments[0],
+                ),
+                null,
+                null,
+                true,
+              ),
+            );
           }
         },
         // Handle static block pattern from content-tag preprocessor
         // Converts: static { template(`...`, {...}) }
         // To: [$template] = hbs`...`
         StaticBlock(path: Babel.NodePath<Babel.types.StaticBlock>) {
-
           // Check if the static block contains a single template() call or hbs``
           const body = path.node.body;
           if (body.length === 1 && body[0].type === 'ExpressionStatement') {
@@ -1039,7 +1029,6 @@ export function processTemplate(
           }
         },
         CallExpression(path: Babel.NodePath<Babel.types.CallExpression>) {
-
           if (path.node.callee && path.node.callee.type === 'Identifier') {
             if (path.node.callee.name === 'scope') {
               path.remove();
@@ -1047,7 +1036,7 @@ export function processTemplate(
               const templateFnNames = getTemplateFunctionNames(path);
               const isTemplateCall = path.node.callee.name === 'template'
                 || templateFnNames.has(path.node.callee.name);
-              if (isTemplateCall && path.node.arguments[0]?.type === 'TemplateLiteral') {
+              if (isTemplateCall) {
                 path.replaceWith(
                   t.taggedTemplateExpression(
                     t.identifier('hbs'),
@@ -1099,46 +1088,12 @@ export function processTemplate(
           const state = (path.state ??= {}) as { templateFunctionNames?: Set<string> };
           state.templateFunctionNames = new Set<string>();
           const PUBLIC_API = Object.values(SYMBOLS);
-
-          // Collect symbols already declared/exported in this file to avoid duplicates
-          const existingSymbols = new Set<string>();
-          for (const node of path.node.body) {
-            if (t.isExportNamedDeclaration(node) && node.declaration) {
-              if (t.isVariableDeclaration(node.declaration)) {
-                for (const decl of node.declaration.declarations) {
-                  if (t.isIdentifier(decl.id)) {
-                    existingSymbols.add(decl.id.name);
-                  }
-                }
-              } else if (t.isFunctionDeclaration(node.declaration) && node.declaration.id) {
-                existingSymbols.add(node.declaration.id.name);
-              }
-            } else if (t.isVariableDeclaration(node)) {
-              for (const decl of node.declarations) {
-                if (t.isIdentifier(decl.id)) {
-                  existingSymbols.add(decl.id.name);
-                }
-              }
-            } else if (t.isFunctionDeclaration(node) && node.id) {
-              existingSymbols.add(node.id.name);
-            } else if (t.isImportDeclaration(node) && node.source.value === MAIN_IMPORT) {
-              for (const spec of node.specifiers) {
-                if (t.isImportSpecifier(spec) && t.isIdentifier(spec.local)) {
-                  existingSymbols.add(spec.local.name);
-                }
-              }
-            }
-          }
-
-          const symbolsToImport = PUBLIC_API.filter((name) => !existingSymbols.has(name));
-          if (symbolsToImport.length > 0) {
-            const IMPORTS = symbolsToImport.map((name) => {
-              return t.importSpecifier(t.identifier(name), t.identifier(name));
-            });
-            path.node.body.unshift(
-              t.importDeclaration(IMPORTS, t.stringLiteral(MAIN_IMPORT)),
-            );
-          }
+          const IMPORTS = PUBLIC_API.map((name) => {
+            return t.importSpecifier(t.identifier(name), t.identifier(name));
+          });
+          path.node.body.unshift(
+            t.importDeclaration(IMPORTS, t.stringLiteral(MAIN_IMPORT)),
+          );
         },
         ReturnStatement: {
           enter(_: Babel.NodePath<Babel.types.ReturnStatement>, context: TemplateTransformContext) {
