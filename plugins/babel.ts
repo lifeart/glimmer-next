@@ -943,6 +943,7 @@ export function processTemplate(
           },
         },
         ClassProperty(path: Babel.NodePath<Babel.types.ClassProperty>, context: TemplateTransformContext) {
+
           // Static properties are not accessed via this.propName in templates
           if (path.node.static) return;
           const typeHints = getCurrentClassTypeHints(context);
@@ -961,6 +962,7 @@ export function processTemplate(
           }
         },
         ClassMethod(path: Babel.NodePath<Babel.types.ClassMethod>) {
+
           if (path.node.key.type === 'Identifier' && path.node.key.name === '$static') {
             try {
               const stmt = path.node.body.body[0] as any;
@@ -989,6 +991,7 @@ export function processTemplate(
         // Converts: static { template(`...`, {...}) }
         // To: [$template] = hbs`...`
         StaticBlock(path: Babel.NodePath<Babel.types.StaticBlock>) {
+
           // Check if the static block contains a single template() call or hbs``
           const body = path.node.body;
           if (body.length === 1 && body[0].type === 'ExpressionStatement') {
@@ -1036,6 +1039,7 @@ export function processTemplate(
           }
         },
         CallExpression(path: Babel.NodePath<Babel.types.CallExpression>) {
+
           if (path.node.callee && path.node.callee.type === 'Identifier') {
             if (path.node.callee.name === 'scope') {
               path.remove();

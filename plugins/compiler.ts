@@ -98,14 +98,22 @@ export function compiler(mode: string, options: Options = {}): Plugin {
         return;
       }
       if (scriptFileRegex.test(file)) {
-        return toViteResult(transform(
-          code,
-          file,
-          mode as 'development' | 'production',
-          false,
-          flags,
-          code, // Pass original source for source maps (same as input for .ts/.js)
-        ));
+        try {
+          return toViteResult(transform(
+            code,
+            file,
+            mode as 'development' | 'production',
+            false,
+            flags,
+            code, // Pass original source for source maps (same as input for .ts/.js)
+          ));
+        } catch (e: any) {
+          // Gracefully skip files that fail to parse (e.g., Ember internal TS files
+          // with complex generics that newer @babel/parser can't handle).
+          // Return null to let Vite's other plugins handle the file.
+          // Return the original code so Vite's other plugins can handle it
+          return { code, map: null };
+        }
       }
       return;
     },
