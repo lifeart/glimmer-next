@@ -18,6 +18,9 @@ import { isTag, isGetter } from './-private';
  */
 export function $__fn(fn: Function, ...args: unknown[]) {
   return (...tail: unknown[]) => {
+    // Unwrap the function itself if it's a getter (e.g., () => this.myAction)
+    // The compiler wraps the first arg in a getter for reactivity
+    const resolvedFn = isGetter(fn) ? (fn as () => Function)() : fn;
     // Unwrap getter functions but preserve Cells and other values
     const unwrappedArgs = args.map((arg) => {
       // Explicitly preserve Cells - they need to be passed to callbacks
@@ -32,6 +35,6 @@ export function $__fn(fn: Function, ...args: unknown[]) {
       // Keep other values as-is
       return arg;
     });
-    return fn(...unwrappedArgs, ...tail);
+    return resolvedFn(...unwrappedArgs, ...tail);
   };
 }
