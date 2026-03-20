@@ -1,7 +1,6 @@
 import { type Plugin, type TransformResult as ViteTransformResult } from 'vite';
 import { Preprocessor } from 'content-tag';
 import { transform } from './test';
-import { MAIN_IMPORT } from './symbols';
 import { type Flags, defaultFlags } from './flags.ts';
 import { HMR, fixExportsForHMR, shouldHotReloadFile } from './hmr.ts';
 
@@ -91,10 +90,11 @@ export function compiler(mode: string, options: Options = {}): Plugin {
           ));
         }
       }
-      // Check if file contains @lifeart/gxt import or uses hbs tagged templates
-      const hasMainImport = code.includes(MAIN_IMPORT);
+      // Only process .ts/.js files that use hbs tagged templates.
+      // Files that merely import from @lifeart/gxt don't need the babel transform
+      // (which injects symbol imports that may conflict with existing declarations).
       const hasHbsTemplate = /hbs\s*`/.test(code);
-      if (!hasMainImport && !hasHbsTemplate) {
+      if (!hasHbsTemplate) {
         return;
       }
       if (scriptFileRegex.test(file)) {

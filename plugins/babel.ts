@@ -1087,13 +1087,26 @@ export function processTemplate(
           context.typeRegistry = buildTypeRegistry(path.node);
           const state = (path.state ??= {}) as { templateFunctionNames?: Set<string> };
           state.templateFunctionNames = new Set<string>();
+          // Collect already-imported names to avoid duplicate declarations
+          const existingImports = new Set<string>();
+          for (const node of path.node.body) {
+            if (node.type === 'ImportDeclaration') {
+              for (const spec of node.specifiers) {
+                existingImports.add(spec.local.name);
+              }
+            }
+          }
           const PUBLIC_API = Object.values(SYMBOLS);
-          const IMPORTS = PUBLIC_API.map((name) => {
-            return t.importSpecifier(t.identifier(name), t.identifier(name));
-          });
-          path.node.body.unshift(
-            t.importDeclaration(IMPORTS, t.stringLiteral(MAIN_IMPORT)),
-          );
+          const IMPORTS = PUBLIC_API
+            .filter((name) => !existingImports.has(name))
+            .map((name) => {
+              return t.importSpecifier(t.identifier(name), t.identifier(name));
+            });
+          if (IMPORTS.length > 0) {
+            path.node.body.unshift(
+              t.importDeclaration(IMPORTS, t.stringLiteral(MAIN_IMPORT)),
+            );
+          }
         },
         ReturnStatement: {
           enter(_: Babel.NodePath<Babel.types.ReturnStatement>, context: TemplateTransformContext) {
