@@ -43,6 +43,12 @@ export function takeRenderingControl() {
 }
 
 export function scheduleRevalidate() {
+  // External sync hook: allows Ember integration to bypass async scheduling
+  // When set, the hook is responsible for calling syncDom() at the right time
+  if ((globalThis as any).__gxtExternalSchedule) {
+    (globalThis as any).__gxtExternalSchedule();
+    return;
+  }
   if (hasExternalUpdate) {
     return;
   }

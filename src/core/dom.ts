@@ -101,8 +101,8 @@ type BranchCb = (ctx: IfCondition) => GenericReturnType | Node | null;
 export const $_edp = [[], [], []] as Props;
 export const $_emptySlot = Object.seal(Object.freeze({}));
 
-export const $SLOTS_SYMBOL = Symbol('slots');
-export const $PROPS_SYMBOL = Symbol('props');
+export const $SLOTS_SYMBOL = Symbol.for('gxt-slots');
+export const $PROPS_SYMBOL = Symbol.for('gxt-props');
 export const $_SVGProvider = SVGProvider;
 export const $_HTMLProvider = HTMLProvider;
 export const $_MathMLProvider = MathMLProvider;
