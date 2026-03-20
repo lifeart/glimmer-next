@@ -962,20 +962,27 @@ export function processTemplate(
         },
         ClassMethod(path: Babel.NodePath<Babel.types.ClassMethod>) {
           if (path.node.key.type === 'Identifier' && path.node.key.name === '$static') {
-            path.replaceWith(
-              t.classProperty(
-                t.identifier(SYMBOLS.$template),
-                // hbs literal
-                t.taggedTemplateExpression(
-                  t.identifier('hbs'),
-                  // @ts-expect-error expression type
-                  path.node.body.body[0].expression.arguments[0],
-                ),
-                null,
-                null,
-                true,
-              ),
-            );
+            try {
+              const stmt = path.node.body.body[0] as any;
+              const arg = stmt.expression?.arguments?.[0];
+              // Only transform if the argument is a TemplateLiteral
+              if (arg.type === 'TemplateLiteral') {
+                path.replaceWith(
+                  t.classProperty(
+                    t.identifier(SYMBOLS.$template),
+                    t.taggedTemplateExpression(
+                      t.identifier('hbs'),
+                      arg,
+                    ),
+                    null,
+                    null,
+                    true,
+                  ),
+                );
+              }
+            } catch {
+              // Skip transformation if AST structure is unexpected
+            }
           }
         },
         // Handle static block pattern from content-tag preprocessor
@@ -1036,7 +1043,7 @@ export function processTemplate(
               const templateFnNames = getTemplateFunctionNames(path);
               const isTemplateCall = path.node.callee.name === 'template'
                 || templateFnNames.has(path.node.callee.name);
-              if (isTemplateCall) {
+              if (isTemplateCall && path.node.arguments[0]?.type === 'TemplateLiteral') {
                 path.replaceWith(
                   t.taggedTemplateExpression(
                     t.identifier('hbs'),
