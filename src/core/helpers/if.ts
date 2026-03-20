@@ -6,5 +6,6 @@ export function $__if(
   ifFalse: unknown = '',
 ) {
   const cond = unwrap(condition);
-  return cond ? ifTrue : ifFalse;
+  const result = cond ? ifTrue : ifFalse;
+  return unwrap(result);
 }
