@@ -1099,12 +1099,46 @@ export function processTemplate(
           const state = (path.state ??= {}) as { templateFunctionNames?: Set<string> };
           state.templateFunctionNames = new Set<string>();
           const PUBLIC_API = Object.values(SYMBOLS);
-          const IMPORTS = PUBLIC_API.map((name) => {
-            return t.importSpecifier(t.identifier(name), t.identifier(name));
-          });
-          path.node.body.unshift(
-            t.importDeclaration(IMPORTS, t.stringLiteral(MAIN_IMPORT)),
-          );
+
+          // Collect symbols already declared/exported in this file to avoid duplicates
+          const existingSymbols = new Set<string>();
+          for (const node of path.node.body) {
+            if (t.isExportNamedDeclaration(node) && node.declaration) {
+              if (t.isVariableDeclaration(node.declaration)) {
+                for (const decl of node.declaration.declarations) {
+                  if (t.isIdentifier(decl.id)) {
+                    existingSymbols.add(decl.id.name);
+                  }
+                }
+              } else if (t.isFunctionDeclaration(node.declaration) && node.declaration.id) {
+                existingSymbols.add(node.declaration.id.name);
+              }
+            } else if (t.isVariableDeclaration(node)) {
+              for (const decl of node.declarations) {
+                if (t.isIdentifier(decl.id)) {
+                  existingSymbols.add(decl.id.name);
+                }
+              }
+            } else if (t.isFunctionDeclaration(node) && node.id) {
+              existingSymbols.add(node.id.name);
+            } else if (t.isImportDeclaration(node) && node.source.value === MAIN_IMPORT) {
+              for (const spec of node.specifiers) {
+                if (t.isImportSpecifier(spec) && t.isIdentifier(spec.local)) {
+                  existingSymbols.add(spec.local.name);
+                }
+              }
+            }
+          }
+
+          const symbolsToImport = PUBLIC_API.filter((name) => !existingSymbols.has(name));
+          if (symbolsToImport.length > 0) {
+            const IMPORTS = symbolsToImport.map((name) => {
+              return t.importSpecifier(t.identifier(name), t.identifier(name));
+            });
+            path.node.body.unshift(
+              t.importDeclaration(IMPORTS, t.stringLiteral(MAIN_IMPORT)),
+            );
+          }
         },
         ReturnStatement: {
           enter(_: Babel.NodePath<Babel.types.ReturnStatement>, context: TemplateTransformContext) {

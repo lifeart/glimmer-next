@@ -91,28 +91,41 @@ export function compiler(mode: string, options: Options = {}): Plugin {
           ));
         }
       }
-      // Check if file contains @lifeart/gxt import or uses hbs tagged templates
+      // Only process files that contain GXT template patterns.
+      // Files that merely import utilities from @lifeart/gxt should NOT be processed.
       const hasMainImport = code.includes(MAIN_IMPORT);
       const hasHbsTemplate = /hbs\s*`/.test(code);
+      const hasTemplateTag = code.includes('<template>') || code.includes('$template');
+      const hasStaticBlock = code.includes('$static');
+      // Need BOTH import and template patterns, or just hbs template
+      if (!hasHbsTemplate && !hasTemplateTag && !hasStaticBlock) {
+        // No template markers — skip even if it has @lifeart/gxt import
+        return;
+      }
       if (!hasMainImport && !hasHbsTemplate) {
         return;
       }
       if (scriptFileRegex.test(file)) {
         try {
-          return toViteResult(transform(
+          const result = transform(
             code,
             file,
             mode as 'development' | 'production',
             false,
             flags,
             code, // Pass original source for source maps (same as input for .ts/.js)
-          ));
-        } catch (e: any) {
-          // Gracefully skip files that fail to parse (e.g., Ember internal TS files
-          // with complex generics that newer @babel/parser can't handle).
-          // Return null to let Vite's other plugins handle the file.
-          // Return the original code so Vite's other plugins can handle it
-          return { code, map: null };
+          );
+          // Handle both sync and async transform results
+          if (result && typeof (result as any).then === 'function') {
+            return (result as Promise<any>).then(
+              (r) => toViteResult(r),
+              () => undefined,
+            );
+          }
+          return toViteResult(result);
+        } catch {
+          // Skip files that fail to parse — let Vite's other plugins handle them
+          return;
         }
       }
       return;
