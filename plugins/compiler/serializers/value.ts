@@ -124,12 +124,20 @@ export function buildPathExpression(
     expression === 'this' ||
     ctx.scopeTracker.hasBinding(rootName);
 
-  // For unknown bindings in compat mode, use $_maybeHelper for dynamic resolution
-  // This enables eval/scope-based lookup for unknown references
+  // For unknown bindings in compat mode with Ember integration,
+  // treat bare names as this.name since Ember templates have implicit this.
+  // This ensures reactive tracking works — this.cond1 goes through the cell
+  // getter and GXT's formula tracking picks it up.
   if (!isKnown && ctx.flags.IS_GLIMMER_COMPAT_MODE) {
-    // Build $_maybeHelper("name", [], ctx) or $_maybeHelper("name", [])
-    // Pass ctx only when WITH_EVAL_SUPPORT is enabled (for $_eval access)
-    // This avoids creating closure functions on every reactive update
+    if (ctx.flags.WITH_EMBER_INTEGRATION) {
+      // Treat as this.expression — Ember's implicit this
+      const thisPath = `${ctxName}.${expression}`;
+      if (wrapInGetter) {
+        return B.reactiveGetter(B.id(thisPath), value.sourceRange);
+      }
+      return B.id(thisPath);
+    }
+    // Non-Ember compat: use $_maybeHelper for dynamic resolution
     const maybeHelperArgs: JSExpression[] = [
       B.string(expression, value.sourceRange),
       B.array([]),

@@ -75,6 +75,8 @@ export interface CompilerFlags {
   readonly WITH_EVAL_SUPPORT: boolean;
   /** Enable type-directed optimization. Requires typeHints in CompileOptions. Default: false */
   readonly WITH_TYPE_OPTIMIZATION: boolean;
+  /** Ember integration mode — bare names compile to this.name instead of $_maybeHelper. Default: false */
+  readonly WITH_EMBER_INTEGRATION?: boolean;
 }
 
 /**
