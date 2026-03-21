@@ -106,10 +106,17 @@ function syncDomSync() {
     executeTag(cell, false);
     const subTags = relatedTags.get(cell.id);
     if (subTags !== undefined) {
+      if (IS_DEV_MODE && (globalThis as any).__gxtDebugSync) {
+        const names: string[] = [];
+        subTags.forEach(t => names.push(t._debugName || '?'));
+        console.log('[SYNC] cell.id=' + cell.id + ' DELETE relatedTags, had: [' + names.join(',') + ']');
+      }
       relatedTags.delete(cell.id);
       if (sharedTags === null) sharedTags = [];
       for (const tag of subTags) sharedTags.push(tag);
       subTags.clear();
+    } else if (IS_DEV_MODE && (globalThis as any).__gxtDebugSync) {
+      console.log('[SYNC] cell.id=' + cell.id + ' no relatedTags');
     }
   }
   if (sharedTags !== null) {
@@ -117,6 +124,9 @@ function syncDomSync() {
     const epoch = nextExecutionEpoch();
     for (const tag of sharedTags) {
       if (shouldExecuteSharedTag(tag, epoch)) {
+        if (IS_DEV_MODE && (globalThis as any).__gxtDebugSync) {
+          console.log('[SYNC] executeTag formula.id=' + tag.id + ' name=' + tag._debugName);
+        }
         executeTag(tag, false);
       }
     }

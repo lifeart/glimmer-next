@@ -229,6 +229,9 @@ function bindAllCellsToTag(cells: Set<Cell>, tag: MergedCell) {
   cells.forEach((cell) => {
     const tags = relatedTagsForCell(cell);
     tags.add(tag);
+    if (IS_DEV_MODE && (globalThis as any).__gxtDebugSync && tag._debugName?.includes('if-condition')) {
+      console.log('[BIND] cell.id=' + cell.id + ' → formula=' + tag._debugName + ' (id=' + tag.id + ')');
+    }
   });
 }
 
@@ -292,6 +295,10 @@ export class MergedCell {
     }
 
     if (this.isConst || !_isRendering || currentTracker !== null) {
+      // @ts-ignore debug
+      if (IS_DEV_MODE && this._debugName?.includes('if-condition') && currentTracker !== null) {
+        console.warn('[GXT-TRACK] if-condition formula short-circuited: currentTracker is SET, isRendering=' + _isRendering);
+      }
       return this.fn();
     }
 
@@ -305,6 +312,10 @@ export class MergedCell {
       this.isConst = $tracker.size === 0;
       this.relatedCells = $tracker;
       setTracker(null);
+      // @ts-ignore debug
+      if (IS_DEV_MODE && this._debugName?.includes('if-condition')) {
+        console.log('[GXT-TRACK] if-condition formula tracked ' + $tracker.size + ' cells');
+      }
     }
   }
 }
@@ -447,15 +458,22 @@ export function cellFor<T extends object, K extends keyof T>(
   if (skipDefine) {
     return cellValue;
   }
-  // remove below for ember
-  Object.defineProperty(obj, key, {
-    get() {
-      return cellValue.value;
-    },
-    set(val) {
-      cellValue.update(val);
-    },
-  });
+  try {
+    Object.defineProperty(obj, key, {
+      get() {
+        return cellValue.value;
+      },
+      set(val) {
+        cellValue.update(val);
+      },
+      enumerable: true,
+      configurable: true,
+    });
+  } catch (e) {
+    if (IS_DEV_MODE && (globalThis as any).__gxtDebugSync) {
+      console.error('[CELLFOR] defineProperty failed for ' + String(key) + ':', (e as Error).message);
+    }
+  }
   return cellValue;
 }
 
