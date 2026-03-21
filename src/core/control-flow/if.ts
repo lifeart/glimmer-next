@@ -271,6 +271,11 @@ export class IfCondition {
     if (isFn(maybeCondition)) {
       this.condition = formula(() => {
         const v = maybeCondition();
+        // Allow external truthiness override (e.g., Ember's special rules)
+        const externalToBool = (globalThis as any).__gxtToBool;
+        if (externalToBool) {
+          return externalToBool(v);
+        }
         if (isPrimitive(v) || isEmpty(v)) {
           return !!v;
         } else if (isTagLike(v)) {
