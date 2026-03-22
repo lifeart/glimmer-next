@@ -113,8 +113,9 @@ export function addToTree(
   TREE.set(ID, node);
   if (WITH_CONTEXT_API) {
     if (IS_DEV_MODE) {
-      if (!PARENT_ID) {
-        throw new Error("unknown parent");
+      if (PARENT_ID === undefined || PARENT_ID === null) {
+        // Don't throw — Ember compat layer may pass contexts without IDs
+        return;
       }
     }
     PARENT.set(ID, PARENT_ID);
