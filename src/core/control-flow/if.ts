@@ -10,7 +10,7 @@ import type { ComponentLike, DOMApi, GenericReturnType } from '@/core/types';
 
 // Import render/destroy functions directly (no late-binding needed)
 import { renderElement } from '@/core/render-core';
-import { destroyElement, unregisterFromParent } from '@/core/destroy';
+import { destroyElement, destroyElementSync, unregisterFromParent } from '@/core/destroy';
 
 import { Destructors, registerDestructor, destroy, markAsDestroyed } from '@/core/glimmer/destroyable';
 import { formula, type Cell, type MergedCell } from '@/core/reactive';
@@ -153,29 +153,29 @@ export class IfCondition {
     if (this.destroyPromise) {
       this.destroyPromise.then(() => {
         this.destroyPromise = null;
-        // Re-validate epoch after async wait - condition may have changed again
         if (!this.validateEpoch(runNumber)) {
           return;
         }
         this.renderBranch(nextBranch, runNumber);
       }).catch(() => {
-        // Destruction was interrupted or failed - reset state
         this.destroyPromise = null;
       });
       return;
     } else if (this.prevComponent && !(Array.isArray(this.prevComponent) && this.prevComponent.length === 0)) {
-      // Track the destroy promise to prevent race conditions
-      // Note: Empty arrays should be treated as no component (skip async destroy)
+      // In Ember integration mode, use synchronous destroy for immediate DOM updates
+      if ((globalThis as any).__GXT_MODE__) {
+        this.destroyBranchSync();
+        this.renderState(nextBranch);
+        return;
+      }
       this.destroyPromise = this.destroyBranch();
       this.destroyPromise.then(() => {
         this.destroyPromise = null;
-        // Re-validate epoch after async destroy
         if (!this.validateEpoch(runNumber)) {
           return;
         }
         this.renderBranch(nextBranch, runNumber);
       }).catch(() => {
-        // Destruction failed - reset state
         this.destroyPromise = null;
       });
       return;
@@ -204,6 +204,15 @@ export class IfCondition {
       return false;
     }
     return true;
+  }
+
+  destroyBranchSync() {
+    const branch = this.prevComponent;
+    if (branch === null) {
+      return;
+    }
+    this.prevComponent = null;
+    destroyElementSync(branch as ComponentLike, false, this.api);
   }
 
   async destroyBranch() {
