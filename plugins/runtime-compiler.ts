@@ -84,6 +84,7 @@ import {
 // Import reactive primitives for Ember integration
 import { cellFor, formula, cell } from '../src/core/reactive';
 import { effect } from '../src/core/vm';
+import { syncDom } from '../src/core/runtime';
 
 // Import helper functions
 import {
@@ -168,6 +169,7 @@ export function setupGlobalScope(): void {
   g.__gxtFormula = formula;
   g.__gxtCell = cell;
   g.__gxtEffect = effect;
+  g.__gxtSyncDom = syncDom;
 
   // Mark that global scope is set up
   g.__GXT_RUNTIME_INITIALIZED__ = true;
