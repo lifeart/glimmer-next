@@ -81,6 +81,10 @@ import {
   $PROPS_SYMBOL,
 } from '../src/core/dom';
 
+// Import reactive primitives for Ember integration
+import { cellFor, formula, cell } from '../src/core/reactive';
+import { effect } from '../src/core/vm';
+
 // Import helper functions
 import {
   $__if,
@@ -156,6 +160,14 @@ export function setupGlobalScope(): void {
   g.$PROPS_SYMBOL = $PROPS_SYMBOL;
   // $args is a string constant 'args', not a Symbol - must match shared.ts
   g.$args = 'args';
+
+  // Expose reactive primitives for Ember integration.
+  // These MUST come from the same module instance as GXT's runtime
+  // to share the same currentTracker (formula tracking context).
+  g.__gxtCellFor = cellFor;
+  g.__gxtFormula = formula;
+  g.__gxtCell = cell;
+  g.__gxtEffect = effect;
 
   // Mark that global scope is set up
   g.__GXT_RUNTIME_INITIALIZED__ = true;
