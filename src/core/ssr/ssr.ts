@@ -3,10 +3,23 @@ import { renderComponent } from '@/core/dom';
 import { runDestructors } from '@/core/destroy';
 import { createRoot, resetNodeCounter, Root } from '@/core/dom';
 import { takeRenderingControl } from '@/core/runtime';
+import {
+  defaultHappyDomProvider,
+  type SsrDomProvider,
+} from '@/core/ssr/dom-provider';
 
 type EnvironmentParams = {
   url: string;
+  /**
+   * Optional DOM provider. When omitted, happy-dom is used (default
+   * behavior, unchanged). Hosts like FastBoot can inject SimpleDOM
+   * by supplying their own provider.
+   */
+  domProvider?: SsrDomProvider;
 };
+
+export type { SsrDomProvider } from '@/core/ssr/dom-provider';
+export { defaultHappyDomProvider } from '@/core/ssr/dom-provider';
 
 export async function renderInBrowser(
   componentRenderFn: typeof Component,
@@ -36,9 +49,11 @@ export async function render(
   params: EnvironmentParams,
   root: Root = createRoot(),
 ) {
-  const { Window, XMLSerializer } = await import('happy-dom');
-  const win = new Window({ url: params.url });
-  const doc = win.document;
+  const provider =
+    params.domProvider ?? (await defaultHappyDomProvider());
+  const instance = provider.createDocument({ url: params.url });
+  const doc = instance.document;
+  const Serializer = instance.XMLSerializer;
   root.document = doc as unknown as Document;
 
   const rootNode = doc.createElement('div');
@@ -52,10 +67,10 @@ export async function render(
   });
   resetNodeCounter();
 
-  const s = new XMLSerializer();
+  const s = new Serializer();
 
-  const html = Array.from(rootNode.childNodes)
-    .map((n) => s.serializeToString(n))
+  const html = Array.from(rootNode.childNodes as ArrayLike<any>)
+    .map((n: any) => s.serializeToString(n))
     .join('');
 
   // Suppress reactive updates during destruction to prevent
@@ -68,8 +83,7 @@ export async function render(
   } finally {
     releaseControl();
   }
-  // Cancel any pending async operations before closing
-  win.happyDOM.cancelAsync();
-  win.close();
+  // Release provider resources (for happy-dom: cancelAsync + close).
+  instance.dispose();
   return html;
 }
