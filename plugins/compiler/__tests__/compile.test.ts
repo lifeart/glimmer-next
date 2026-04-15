@@ -4119,4 +4119,70 @@ describe('Block-mode component invocations', () => {
     expect(w005!.message).toContain('Positional parameters');
     expect(w005!.message).toContain('MyComponent');
   });
+
+  describe('scope-shadowed built-in block keywords', () => {
+    // Strict-mode templates can pass a scope to the compiler (e.g. via
+    // `renderComponent(tpl, { scope: { if: Component } })`). When the user
+    // binds a name that collides with a GXT built-in block keyword, the
+    // binding MUST win: the compiler should invoke the user-provided
+    // component instead of emitting `$_if(...)` / `$_each(...)` / ...
+    test('{{#if}} with `if` in scope compiles to component call, not $_if', () => {
+      const result = compile(
+        '{{#if some.thing}}X{{/if}}',
+        { bindings: new Set(['if']) }
+      );
+      expect(result.errors).toHaveLength(0);
+      // Uses component-call path, not the built-in if helper
+      expect(result.code).toContain(SYMBOLS.COMPONENT);
+      expect(result.code).not.toContain(`${SYMBOLS.IF}(`);
+      // `if` is a JS reserved word, so the bare identifier is aliased to
+      // `__scope_if` (matching the Ember compat scope-injection naming).
+      expect(result.code).toContain('__scope_if');
+      // The positional condition must be forwarded as __pos0__ so the
+      // component actually receives the argument.
+      expect(result.code).toContain('__pos0__');
+      expect(result.code).toContain('__posCount__');
+    });
+
+    test('{{#if}} with `if` in lexical scope compiles to component call', () => {
+      const result = compile(
+        '{{#if some.thing}}X{{/if}}',
+        { lexicalScope: (v) => v === 'if' }
+      );
+      expect(result.errors).toHaveLength(0);
+      expect(result.code).not.toContain(`${SYMBOLS.IF}(`);
+      expect(result.code).toContain('__scope_if');
+    });
+
+    test('{{#each}} with `each` in scope compiles to component call, not $_each', () => {
+      const result = compile(
+        '{{#each items as |item|}}{{item}}{{/each}}',
+        { bindings: new Set(['each']) }
+      );
+      expect(result.errors).toHaveLength(0);
+      expect(result.code).toContain(SYMBOLS.COMPONENT);
+      expect(result.code).not.toContain(`${SYMBOLS.EACH}(`);
+      expect(result.code).toContain('__pos0__');
+    });
+
+    test('{{#if}} without scope binding still uses built-in $_if', () => {
+      const result = compile('{{#if this.show}}X{{/if}}');
+      expect(result.errors).toHaveLength(0);
+      expect(result.code).toContain(SYMBOLS.IF);
+      expect(result.code).not.toContain('__scope_if');
+    });
+
+    test('non-reserved shadowed built-in emits bare identifier (no aliasing)', () => {
+      // `each` is not a JS reserved word, so it should appear bare in the
+      // component call — confirming that aliasing is applied only when
+      // strictly necessary.
+      const result = compile(
+        '{{#each items as |i|}}{{i}}{{/each}}',
+        { bindings: new Set(['each']) }
+      );
+      expect(result.errors).toHaveLength(0);
+      expect(result.code).not.toContain('__scope_each');
+      expect(result.code).toMatch(/\$_c\(\s*each\b/);
+    });
+  });
 });

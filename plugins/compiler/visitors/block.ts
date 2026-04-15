@@ -7,7 +7,7 @@
 import type { ASTv1 } from '@glimmer/syntax';
 import type { CompilerContext, VisitFn } from '../context';
 import type { SerializedValue, HBSControlExpression, HBSChild, HBSNode, AttributeTuple, SourceRange } from '../types';
-import { literal, raw, isSerializedValue, isHBSNode, isHBSControlExpression } from '../types';
+import { literal, raw, getter, isSerializedValue, isHBSNode, isHBSControlExpression } from '../types';
 import { getNodeRange, serializeValueToString, getBlockParamRanges, getPathExpressionString } from './utils';
 import { addWarning } from '../context';
 
@@ -68,15 +68,25 @@ const BUILTIN_BLOCK_KEYWORDS = new Set([
 
 /**
  * Check if a block statement is a component invocation.
- * A block is a component invocation when the name is NOT a built-in keyword
- * AND is either a known binding or contains a dot (path-based component).
+ * A block is a component invocation when the name is either a known binding
+ * (including user-provided scope bindings that shadow built-in keywords) or
+ * contains a dot (path-based component).
+ *
+ * Note: a user binding that SHADOWS a built-in keyword (e.g.
+ * `renderComponent(tpl, { scope: { if: Component } })`) wins over the
+ * built-in. Only fall back to the built-in resolution if there is no
+ * binding in scope for the name.
  */
 function isComponentBlock(ctx: CompilerContext, node: ASTv1.BlockStatement): boolean {
   if (node.path.type !== 'PathExpression') return false;
   const name = getPathExpressionString(node.path);
+  // Scope-value / lexical-scope bindings shadow built-in keywords.
+  // Check bindings BEFORE the built-in keyword list so that
+  // `{{#if}}` resolves to the user-provided `if` component when present.
+  if (ctx.scopeTracker.hasBinding(name)) return true;
   if (BUILTIN_BLOCK_KEYWORDS.has(name)) return false;
-  // Known binding or dotted path
-  return ctx.scopeTracker.hasBinding(name) || name.includes('.');
+  // Dotted path
+  return name.includes('.');
 }
 
 /**
@@ -93,22 +103,36 @@ function convertComponentBlock(
   const tag = getPathExpressionString(pathExpr);
   const tagRange = getNodeRange(pathExpr);
 
-  // Positional params are not supported on component blocks (angle-bracket
-  // components have no positional param syntax). Emit a warning if present.
-  if (node.params.length > 0) {
-    addWarning(
-      ctx,
-      `Positional parameters are not supported on component block "{{#${tag}}}" and will be ignored`,
-      'W005'
-    );
-  }
-
   // Convert hash pairs to @-prefixed attribute tuples
   const attributes: AttributeTuple[] = node.hash.pairs.map((pair) => {
     const value = getVisit(ctx)(ctx, pair.value, false);
     const serializedValue = value !== null && isSerializedValue(value) ? value : literal(null);
     return [`@${pair.key}`, serializedValue] as const;
   });
+
+  // Positional params on component blocks are normally unsupported (W005),
+  // but when a user scope binding shadows a built-in block keyword (e.g.
+  // `{{#if some.thing}}...{{/if}}` with `if` in scope), we forward the
+  // positional params as @__pos0__, @__pos1__, ... so the shadowing
+  // component actually receives the condition/item/etc. Without this,
+  // `{{#if}}` would silently drop the argument.
+  const isShadowedKeyword = BUILTIN_BLOCK_KEYWORDS.has(tag);
+  if (isShadowedKeyword && node.params.length > 0) {
+    for (let i = 0; i < node.params.length; i++) {
+      const param = node.params[i];
+      const value = getVisit(ctx)(ctx, param, false);
+      if (value !== null && isSerializedValue(value)) {
+        attributes.push([`@__pos${i}__`, getter(value, range)]);
+      }
+    }
+    attributes.push(['@__posCount__', literal(node.params.length)]);
+  } else if (node.params.length > 0) {
+    addWarning(
+      ctx,
+      `Positional parameters are not supported on component block "{{#${tag}}}" and will be ignored`,
+      'W005'
+    );
+  }
 
   // Add block params to scope before visiting children
   const blockParams = node.program.blockParams;

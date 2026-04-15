@@ -26,6 +26,33 @@ let buildChildrenExprs: (ctx: CompilerContext, children: readonly HBSChild[], ct
 let nextCtxName: (ctx: CompilerContext) => string;
 
 /**
+ * JavaScript reserved words that cannot be used as bare identifiers.
+ * Used when a template scope binding shadows a GXT built-in keyword
+ * (e.g. `renderComponent(tpl, { scope: { if: Component } })`) — we must
+ * emit a safe alias (`__scope_if`) instead of the bare reserved word.
+ */
+const JS_RESERVED_WORDS = new Set([
+  'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger',
+  'default', 'delete', 'do', 'else', 'enum', 'export', 'extends',
+  'false', 'finally', 'for', 'function', 'if', 'implements', 'import',
+  'in', 'instanceof', 'interface', 'let', 'new', 'null', 'package',
+  'private', 'protected', 'public', 'return', 'static', 'super',
+  'switch', 'this', 'throw', 'true', 'try', 'typeof', 'var', 'void',
+  'while', 'with', 'yield', 'await',
+]);
+
+/**
+ * Produce a JS-safe identifier name for a template binding.
+ * If the name is a JS reserved word, prefix with `__scope_` so it can be
+ * used as a bare identifier. This matches the Ember compat layer's
+ * `__scope_<name>` aliasing convention, so scope injection and bare-ref
+ * emission agree on the symbol.
+ */
+function jsSafeBindingId(name: string): string {
+  return JS_RESERVED_WORDS.has(name) ? `__scope_${name}` : name;
+}
+
+/**
  * Set dependencies from index.ts to break circular dependency.
  */
 export function setElementDependencies(
@@ -665,5 +692,8 @@ function buildComponentCall(
     return B.call(SYMBOLS.DYNAMIC_COMPONENT, [tagGetter, argsExpr, B.id(ctxName)], sourceRange, formatted, 'ElementNode');
   }
 
-  return B.call(SYMBOLS.COMPONENT, [B.id(tag, tagRange, 'ElementNode'), argsExpr, B.id(ctxName)], sourceRange, formatted, 'ComponentNode');
+  // Rewrite reserved words (e.g. `if`, `let`, `class`) to their safe alias
+  // so template scope bindings that shadow GXT built-ins emit valid JS.
+  const safeTag = jsSafeBindingId(tag);
+  return B.call(SYMBOLS.COMPONENT, [B.id(safeTag, tagRange, 'ElementNode'), argsExpr, B.id(ctxName)], sourceRange, formatted, 'ComponentNode');
 }
