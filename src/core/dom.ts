@@ -722,6 +722,28 @@ export function $_ucw(
         // @ts-ignore $_eval may exist on ctx
         if (ctx?.$_eval) { this.$_eval = ctx.$_eval; }
       }
+      // Seed the wrapper's rendering context from the outer ctx *before* the
+      // body runs. Otherwise raw <tag>s emitted directly in an each-body (e.g.
+      // `{{#each list as |x|}}<li>...</li>{{/each}}`) call `initDOM(this)`
+      // while `this` is not yet in PARENT/TREE (the wrapper is only added to
+      // the tree by _component *after* its body returns), so getContext
+      // walks an empty parent chain and returns null, crashing in `$_tag`.
+      //
+      // Resolving via `ctx` (the outer, already-tree-attached component)
+      // short-circuits the lookup for all tag children inside the wrapper.
+      if (!this[RENDERING_CONTEXT_PROPERTY] && ctx) {
+        const resolved = (ctx as any)[RENDERING_CONTEXT_PROPERTY];
+        if (resolved) {
+          this[RENDERING_CONTEXT_PROPERTY] = resolved as DOMApi;
+        } else {
+          // Fall back to initDOM on the outer ctx, which walks its own tree.
+          try {
+            this[RENDERING_CONTEXT_PROPERTY] = initDOM(ctx);
+          } catch {
+            /* noop — leave unset; body may still succeed */
+          }
+        }
+      }
       try {
         setParentContext(this);
         return $_fin(roots(this), this);
@@ -837,7 +859,35 @@ export const $_maybeHelper = (
         return value($_unwrapArgs(runtimeArgs), hash);
       };
     }
-    return value(...$_unwrapArgs(args));
+    // ES6 class-based helpers (e.g. `class Custom extends Helper {}` in strict mode)
+    // cannot be invoked without `new`. Route them through the helper manager so
+    // classic Ember helper lifecycle (recompute, compute with positional/named)
+    // is honored. Detection: `isHelperFactory` is declared statically on Ember's
+    // `Helper` class and inherited by all subclasses. Only engage this path when
+    // WITH_EMBER_INTEGRATION is enabled and a manager claims the value, so plain
+    // function helpers continue through the direct-call fallback below.
+    if (WITH_EMBER_INTEGRATION && value.isHelperFactory === true) {
+      if ($_MANAGERS.helper.canHandle(value)) {
+        return $_MANAGERS.helper.handle(value, args, _hash);
+      }
+    }
+    try {
+      return value(...$_unwrapArgs(args));
+    } catch (e) {
+      // Fallback for classes without `isHelperFactory` (custom manager-registered
+      // classes). Detect the specific "Class constructor X cannot be invoked
+      // without 'new'" TypeError and attempt the helper manager route.
+      if (
+        WITH_EMBER_INTEGRATION &&
+        e instanceof TypeError &&
+        typeof e.message === 'string' &&
+        e.message.indexOf('Class constructor') !== -1 &&
+        $_MANAGERS.helper.canHandle(value)
+      ) {
+        return $_MANAGERS.helper.handle(value, args, _hash);
+      }
+      throw e;
+    }
   }
 
   if (WITH_EMBER_INTEGRATION) {
@@ -1003,6 +1053,23 @@ function _component(
     }
   }
   if (IS_GLIMMER_COMPAT_MODE) {
+    // The compat manager's handle() returns a rendering closure for string
+    // component names (e.g., $_c('FooBar', ...)). This closure returns DOM
+    // nodes directly — it's NOT a constructible class. Detect this case and
+    // invoke the closure immediately, returning its result as the component
+    // output. Without this, _component tries to construct the closure as a
+    // class, which crashes on `$template in instance`.
+    if (typeof comp === 'function' && comp !== _comp && comp.prototype === undefined) {
+      const result = (comp as any)();
+      if (result !== null && result !== undefined && (result instanceof Node || Array.isArray(result) || typeof result !== 'function')) {
+        if (IS_DEV_MODE) {
+          if (!COMPONENTS_HMR.has(comp as any)) {
+            COMPONENTS_HMR.set(comp as any, new Set());
+          }
+        }
+        return result;
+      }
+    }
   } else {
     if (isTagLike(comp)) {
       comp = comp.value;

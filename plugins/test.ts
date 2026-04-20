@@ -288,11 +288,21 @@ function processTransformedFiles(
     // Compile template with the new compiler
     // Pass format option for dev mode pretty-printing (happens during serialization so sourcemaps are preserved)
     // Use baseIndent of 6 spaces to match the function wrapper's indentation
+    //
+    // Propagate the user-configured plugin flags (e.g. WITH_HELPER_MANAGER,
+    // WITH_EMBER_INTEGRATION) through to the compile pipeline. Previously
+    // only IS_GLIMMER_COMPAT_MODE leaked through, which caused known-binding
+    // helpers like `{{ (Custom 'arg') }}` — where `Custom` is a class in
+    // scope — to emit a direct `Custom("arg")` call instead of routing
+    // through `$_maybeHelper`. ES6 classes cannot be invoked without `new`,
+    // so the direct call throws at runtime. Surfacing the flags ensures the
+    // compiler picks the helper-manager-aware path.
     const result = compile(content.template, {
       bindings,
       filename: fileName,
       lexicalScope: content.lexicalScope,
       flags: {
+        ...globalFlags,
         IS_GLIMMER_COMPAT_MODE: globalFlags.IS_GLIMMER_COMPAT_MODE ?? true,
         WITH_TYPE_OPTIMIZATION: !!content.typeHints,
       },
