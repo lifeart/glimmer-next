@@ -29,8 +29,8 @@ import {
 import { TREE, CHILD, PARENT, cId, addToTree } from '@/core/tree';
 import { isRehydrationScheduled } from '@/core/ssr/rehydration';
 import { initDOM } from '@/core/context';
-import { registerDestructor } from '../glimmer/destroyable';
-import { setParentContext } from '../tracking';
+import { registerDestructor, isDestructionStarted } from '../glimmer/destroyable';
+import { setParentContext, getParentContext } from '../tracking';
 
 // Re-export getFirstNode for backward compatibility
 export { getFirstNode };
@@ -139,11 +139,11 @@ export class BasicListComponent<T extends { id: number }> {
   get ctx() {
     return this;
   }
-  protected keysForItems(items: T[], keyForItem: (item: T, index: number) => string): Set<string> {
+  protected keysForItems(items: T[], keyForItem: (item: T, index: number, items: T[]) => string): Set<string> {
     const set = this._updatingKeys;
     set.clear();
     for (let i = 0; i < items.length; i++) {
-      set.add(keyForItem(items[i], i));
+      set.add(keyForItem(items[i], i, items));
     }
     return set;
   }
@@ -166,12 +166,12 @@ export class BasicListComponent<T extends { id: number }> {
   protected isAppendOnlySuperset(
     items: T[],
     amountOfKeys: number,
-    keyForItem: (item: T, index: number) => string,
+    keyForItem: (item: T, index: number, items: T[]) => string,
   ): boolean {
     if (items.length < amountOfKeys) return false;
     const { indexMap } = this;
     for (let index = 0; index < amountOfKeys; index++) {
-      const key = keyForItem(items[index], index);
+      const key = keyForItem(items[index], index, items);
       if (indexMap.get(key) !== index) {
         return false;
       }
@@ -200,16 +200,27 @@ export class BasicListComponent<T extends { id: number }> {
         this.$_eval = ctx.$_eval;
       }
     }
+    // Prefer the current parent context (set by $_ucw / block wrappers)
+    // over the lexical `ctx` passed by the compiler. For nested lists
+    // inside an {{#each}} body, the compiled code emits the outer
+    // component `this` as ctx, but the *actual* parent in the render
+    // tree is the UnstableChildWrapper created per-iteration. Linking
+    // the list to that wrapper (rather than the top-level component)
+    // ensures the list is destroyed when its enclosing iteration is
+    // torn down, so its opcode on the source cell is unregistered.
+    const parentCtx = (getParentContext() as Component<any> | null) || ctx;
     // @ts-expect-error typings error
-    addToTree(ctx, this, 'from list constructor');
+    addToTree(parentCtx, this, 'from list constructor');
     this[RENDERED_NODES_PROPERTY] = [];
     if (key) {
       this.key = key;
     }
     this.setupKeyForItem();
-    // Register destructor to clean up the list's own TREE/PARENT/CHILD entries
+    // Register destructor to clean up the list's own TREE/PARENT/CHILD entries.
+    // Attach to `this` so it fires when this list instance is destroyed as
+    // part of its parent's child teardown (see parentCtx handling above).
     const listId = this[COMPONENT_ID_PROPERTY];
-    registerDestructor(ctx, () => {
+    registerDestructor(this, () => {
       CHILD.delete(listId);
       TREE.delete(listId);
       PARENT.delete(listId);
@@ -226,7 +237,7 @@ export class BasicListComponent<T extends { id: number }> {
         },
       });
       LISTS_FOR_HMR.add(this);
-      registerDestructor(ctx, () => {
+      registerDestructor(this, () => {
         LISTS_FOR_HMR.delete(this);
       });
     }
@@ -261,6 +272,11 @@ export class BasicListComponent<T extends { id: number }> {
     this.tag = tag;
   }
   private relocateItem(marker: Comment, anchor: Node, parent: Node) {
+    // Defensive: anchor is the same marker we're about to move. This can
+    // happen under duplicate-key lists where the same DOM subtree is the
+    // anchor for itself. Moving would attempt to re-insert the marker
+    // before itself AFTER extracting it, which throws NotFoundError.
+    if (marker === anchor) return;
     const { markerSet, bottomMarker, _relocateFragment: fragment } = this;
     // Find end boundary: next item marker or bottomMarker
     let end: Node = bottomMarker;
@@ -296,21 +312,37 @@ export class BasicListComponent<T extends { id: number }> {
   private setupKeyForItem() {
     if (this.key === '@identity') {
       let cnt = 0;
-      const map: WeakMap<T, string> = new WeakMap();
-      this.keyForItem = (item: T, i: number) => {
+      const map: WeakMap<T & object, string> = new WeakMap();
+      this.keyForItem = (item: T, i: number, items?: T[]) => {
         if (isPrimitive(item) || isEmpty(item)) {
           return `${String(item)}:${i}`;
         }
-        const existing = map.get(item);
+        const existing = map.get(item as T & object);
+        let baseKey: string;
         if (existing !== undefined) {
-          return existing;
+          baseKey = existing;
+        } else {
+          baseKey = ++cnt as unknown as string;
+          map.set(item as T & object, baseKey);
         }
-        const key = ++cnt as unknown as string;
-        map.set(item, key);
-        return key;
+        // Duplicate-reference support: when the same object ref appears more
+        // than once in the current items array, the first occurrence uses
+        // the stable identity key; every subsequent occurrence gets a
+        // position-qualified key so that the diff algorithm treats it as a
+        // distinct row. This preserves identity stability for the common
+        // (no-duplicates) case.
+        if (items !== undefined) {
+          // Find the first index in items[] where this same reference lives.
+          // If it's < i, we're a subsequent occurrence.
+          const firstIdx = items.indexOf(item);
+          if (firstIdx !== -1 && firstIdx < i) {
+            return `${baseKey}:${i}` as unknown as string;
+          }
+        }
+        return baseKey;
       };
     } else {
-      this.keyForItem = (item: T) => {
+      const resolveRawKey = (item: T): string => {
         if (IS_DEV_MODE) {
           if (this.key.split('.').length > 1) {
             console.warn(
@@ -333,6 +365,22 @@ export class BasicListComponent<T extends { id: number }> {
         // @ts-expect-error unknown key
         return item[this.key] as unknown as string;
       };
+      this.keyForItem = (item: T, i: number, items?: T[]) => {
+        const baseKey = resolveRawKey(item);
+        // Duplicate-key support: when multiple items produce the same
+        // key (e.g. `{{#each list key="text"}}` with several items having
+        // the same text), each subsequent occurrence gets a position-
+        // qualified key so they're rendered as distinct rows. Preserves
+        // stable identity for the common (no-duplicates) case.
+        if (items !== undefined) {
+          for (let j = 0; j < i; j++) {
+            if (resolveRawKey(items[j]) === baseKey) {
+              return `${baseKey}:${i}`;
+            }
+          }
+        }
+        return baseKey;
+      };
     }
   }
   renderInverse() {
@@ -348,16 +396,40 @@ export class BasicListComponent<T extends { id: number }> {
     if (this.inverseContent === null) return;
     const content = this.inverseContent;
     this.inverseContent = null;
-    destroyElementSync(content as ComponentLike, false, this.api);
+    // Run destructors on the inverse content component (cleans up reactivity, etc.)
+    // Use skipDom=true because we manually remove DOM nodes below.
+    // The inverse content's RENDERED_NODES_PROPERTY can become stale/corrupted
+    // in compat mode, so relying on destroyElementSync for DOM removal is unreliable.
+    destroyElementSync(content as ComponentLike, true, this.api);
+    // Manually remove all DOM nodes between topMarker and bottomMarker.
+    // This is the definitive cleanup — any inverse content nodes live in this range.
+    this.clearInverseNodes();
+  }
+  /**
+   * Remove all DOM nodes between topMarker and bottomMarker.
+   * Used by destroyInverseSync/Async to ensure inverse content is fully cleaned up
+   * regardless of RENDERED_NODES_PROPERTY state.
+   */
+  protected clearInverseNodes() {
+    const { topMarker, bottomMarker, api } = this;
+    let node = topMarker.nextSibling;
+    while (node && node !== bottomMarker) {
+      const next = node.nextSibling;
+      api.destroy(node);
+      node = next;
+    }
   }
   async destroyInverseAsync() {
     if (this.inverseContent === null) return;
     const content = this.inverseContent;
     this.inverseContent = null;
-    await destroyElement(content as ComponentLike, false, this.api);
+    // Run destructors with skipDom=true, then manually remove DOM nodes
+    // (same approach as destroyInverseSync — see comment there)
+    await destroyElement(content as ComponentLike, true, this.api);
+    this.clearInverseNodes();
   }
   // @ts-expect-error non-string return type
-  keyForItem(item: T, index: number): string {
+  keyForItem(item: T, index: number, items?: T[]): string {
     if (IS_DEV_MODE) {
       throw new Error(`Key for item not implemented, ${JSON.stringify(item)}`);
     }
@@ -426,7 +498,7 @@ export class BasicListComponent<T extends { id: number }> {
         }
       }
 
-      const key = keyForItem(item, index);
+      const key = keyForItem(item, index, items);
       itemKeys[index] = key;
       if (!keyMap.has(key)) {
         let marker = itemMarkers.get(key);
@@ -449,8 +521,18 @@ export class BasicListComponent<T extends { id: number }> {
             const itemIndex = values.indexOf(item);
             if (itemIndex === -1) {
               return values.findIndex((value: T, i) => {
-                return keyForItem(value, i) === key;
+                return keyForItem(value, i, values) === key;
               });
+            }
+            // For the common (non-duplicate) case, indexOf is correct. When
+            // the item appears multiple times in `values`, compute the key
+            // at each occurrence and return the one that matches.
+            const firstKey = keyForItem(item, itemIndex, values);
+            if (firstKey === key) return itemIndex;
+            for (let j = itemIndex + 1; j < values.length; j++) {
+              if (values[j] === item && keyForItem(values[j], j, values) === key) {
+                return j;
+              }
             }
             return itemIndex;
           }, `each.index[${index}]`);
@@ -462,19 +544,32 @@ export class BasicListComponent<T extends { id: number }> {
 
         const row = ItemComponent(item, idx, self as unknown as Component<any>);
 
+        if (IS_DEV_MODE) {
+          if (row === undefined || row === null) {
+            console.log('[GXT-list] ItemComponent returned null/undefined for item:', item, 'key:', key);
+          }
+        }
+
         keyMap.set(key, row);
         indexMap.set(key, index);
         if (isAppendOnly) {
           // TODO: in ssr parentNode may not exist
           const parent = api.parent(targetNode)!;
           api.insert(parent, marker, targetNode);
-          renderElement(
-            api,
-            self,
-            parent,
-            row,
-            targetNode,
-          );
+          // Skip renderElement when ItemComponent produced no output.
+          // This can happen during destroy cascades when the item's
+          // body expression evaluates against a torn-down context
+          // (e.g., primitive-key rows where every shift invalidates
+          // every key and triggers a mid-sync teardown).
+          if (row !== undefined && row !== null) {
+            renderElement(
+              api,
+              self,
+              parent,
+              row,
+              targetNode,
+            );
+          }
         } else {
           moveSet.add(key);
           freshMoveKeys.add(key);
@@ -526,23 +621,42 @@ export class BasicListComponent<T extends { id: number }> {
     // Move phase: iterate right-to-left through the new item list,
     // maintaining a running anchor.  Stable (LIS) items just update the
     // anchor; moved/new items are inserted before it.
+    //
+    // Duplicate-key handling: when the same item reference appears more
+    // than once in the list (e.g. @identity key on a list containing the
+    // same object ref multiple times) we only have ONE rendered DOM
+    // subtree for that key. We must move it at most once per sync pass —
+    // otherwise the second "move" tries to relocate the marker to itself
+    // (or past an anchor that IS the marker), which throws in the browser
+    // and corrupts the tree. The rightmost occurrence wins (first visited
+    // in right-to-left order); subsequent duplicates are treated as
+    // stable and simply update the anchor.
     if (moveSet.size > 0) {
       const moveParent = api.parent(bottomMarker)!;
       let anchor: Node = bottomMarker;
+      const processedKeys: Set<string> = new Set();
       for (let idx = items.length - 1; idx >= 0; idx--) {
         const key = itemKeys[idx];
-        if (!moveSet.has(key)) {
-          // Stable item (LIS or already-appended) — use its marker as anchor
+        const alreadyProcessed = processedKeys.has(key);
+        if (!moveSet.has(key) || alreadyProcessed) {
+          // Stable item (LIS or already-appended, or a duplicate whose
+          // single DOM subtree was already handled). Use its marker as
+          // the running anchor.
           const marker = itemMarkers.get(key);
           if (marker) anchor = marker;
           continue;
         }
+        processedKeys.add(key);
         const marker = itemMarkers.get(key);
         if (!marker) continue;
 
         if (freshMoveKeys.has(key)) {
+          const row = keyMap.get(key);
           api.insert(moveParent, marker, anchor);
-          renderElement(api, self, moveParent, keyMap.get(key)!, anchor);
+          // Skip renderElement if ItemComponent produced no output.
+          if (row !== undefined && row !== null) {
+            renderElement(api, self, moveParent, row, anchor);
+          }
         } else {
           this.relocateItem(marker, anchor, moveParent);
         }
@@ -558,20 +672,58 @@ export class BasicListComponent<T extends { id: number }> {
 export class SyncListComponent<
   T extends { id: number },
 > extends BasicListComponent<T> {
+  // Re-entry guard: true while syncList is actively running on this instance.
+  // Prevents destructor-triggered syncList([]) from re-entering during item
+  // removal cascades (e.g., when @identity keys include index and every key
+  // changes after a shiftObject on a primitive-item array). Without this,
+  // a child destroy cascade can call back into a destructor that runs
+  // `this.syncList([])` mid-update, corrupting keyMap/indexMap state and
+  // causing the outer updateItems to throw and skip re-rendering new items.
+  private _syncInProgress = false;
   constructor(
     params: ListComponentArgs<T>,
     outlet: RenderTarget,
     topMarker: Comment,
   ) {
     super(params, outlet, topMarker);
+    // Register destructors on `this` (the list instance) rather than
+    // `params.ctx`. The list instance is added to the destruction tree
+    // as a child of the parent context via addToTree in the base
+    // constructor, so it gets destroyed when the parent tears down.
+    //
+    // Registering on `params.ctx` breaks nested lists: a nested
+    // {{#each}} inside a parent {{#each}}'s item body captures the
+    // top-level test component as params.ctx (because that's what
+    // GXT emits for the compiled fn). When the parent each removes an
+    // item, its DOM is torn down, but because the inner list's
+    // destructors were attached to the top-level component (not the
+    // item), the inner list's opcode on its tag cell is NEVER removed.
+    // Later, when the cell value changes, the orphaned opcode fires and
+    // creates new item components (triggering their init hooks), even
+    // though the inner list's DOM has been reparented/removed.
+    //
+    // Attaching the destructors to `this` (the list instance, which
+    // sits under the parent item in the TREE/CHILD map) means the
+    // inner list's opcode is correctly cleaned up when its parent
+    // item is destroyed, matching Ember's expected teardown order.
     registerDestructor(
-      params.ctx,
+      this,
       () => {
+        // If syncList is already running (destructor cascade fired during an
+        // active sync), skip — the in-progress sync will tear items down
+        // according to the new value; running another syncList([]) here
+        // would corrupt keyMap state and throw inside updateItems.
+        if (this._syncInProgress) return;
         this.inverseFn = null;
         this.destroyInverseSync();
         this.syncList([]);
       },
       opcodeFor(this.tag, (value) => {
+        if (isDestructionStarted(this)) return;
+        // Same re-entry guard: if an outer syncList on this instance is
+        // active, drop this opcode invocation. The outer call already sees
+        // the current tag value.
+        if (this._syncInProgress) return;
         this.syncList(value as T[]);
       }),
     );
@@ -616,6 +768,14 @@ export class SyncListComponent<
     }
   }
   syncList(items: T[]) {
+    // Re-entry guard: during an item-destroy cascade, Ember's KVO/backtracking
+    // layer can synchronously fire a destructor that re-invokes syncList on
+    // this same instance. A nested call observes half-destroyed keyMap state
+    // and corrupts it. Skip nested calls — the outer one is already applying
+    // `items`, which is either the final desired state or `[]` (teardown).
+    if (this._syncInProgress) return;
+    this._syncInProgress = true;
+    try {
     const { keyMap, keyForItem } = this;
 
     if (items.length > 0 && this.inverseContent !== null) {
@@ -672,6 +832,9 @@ export class SyncListComponent<
     if (items.length === 0 && this.inverseFn) {
       this.renderInverse();
     }
+    } finally {
+      this._syncInProgress = false;
+    }
   }
   destroyItem(row: GenericReturnType, key: string) {
     const { keyMap, indexMap, indexFormulaMap } = this;
@@ -685,7 +848,50 @@ export class SyncListComponent<
         indexFormulaMap.delete(key);
       }
     }
-    destroyElementSync(row as ComponentLike, false, this.api);
+    // Defensive tree-scoping: under some compat-mode wrappers a row object
+    // can point at a shared/root-level ComponentLike (COMPONENT_ID_PROPERTY=1)
+    // whose CHILD set is the tree-root's own children. Passing that row to
+    // destroyElementSync would cascade through every sibling subtree (other
+    // #each regions, layouts, etc.) and wipe anchors mid-sync.
+    //
+    // Only walk the CHILD tree when `row` is registered as OUR direct child
+    // (PARENT[rowId] === listId). Otherwise restrict destruction to the row's
+    // own rendered nodes without traversing CHILD — the real subtree owner
+    // will tear itself down when its scope ends.
+    const rowAny = row as unknown as { [COMPONENT_ID_PROPERTY]?: number };
+    const rowId =
+      rowAny && typeof rowAny === 'object' && !Array.isArray(row)
+        ? rowAny[COMPONENT_ID_PROPERTY]
+        : undefined;
+    const listId = this[COMPONENT_ID_PROPERTY];
+    const parentOfRow = rowId !== undefined ? PARENT.get(rowId) : undefined;
+    const isOurChild = rowId !== undefined && parentOfRow === listId;
+    if (rowId === undefined || isOurChild || Array.isArray(row)) {
+      // Normal path: safe to cascade.
+      destroyElementSync(row as ComponentLike, false, this.api);
+    } else {
+      // Shared/root row — scope DOM cleanup to this row's rendered nodes only.
+      try {
+        const rendered = (row as any)?.[RENDERED_NODES_PROPERTY];
+        if (Array.isArray(rendered)) {
+          for (let i = 0; i < rendered.length; i++) {
+            const node = rendered[i];
+            if (node && typeof node === 'object' && 'nodeType' in node) {
+              const n = node as Node;
+              if (n.isConnected) {
+                try {
+                  this.api.destroy(n);
+                } catch {
+                  /* best-effort */
+                }
+              }
+            }
+          }
+        }
+      } catch {
+        /* noop */
+      }
+    }
     this.removeMarker(key);
   }
 }
@@ -700,8 +906,11 @@ export class AsyncListComponent<
     topMarker: Comment,
   ) {
     super(params, outlet, topMarker);
+    // See SyncListComponent constructor for rationale: attach destructors
+    // to `this` so a nested list's opcode is correctly unregistered when
+    // its enclosing iteration is torn down.
     registerDestructor(
-      params.ctx,
+      this,
       () => {
         if (this.destroyPromise) {
           return this.destroyPromise;
@@ -713,6 +922,7 @@ export class AsyncListComponent<
         await this.syncList([]);
       },
       opcodeFor(this.tag, async (value) => {
+        if (isDestructionStarted(this)) return;
         await this.syncList(value as T[]);
       }),
     );
