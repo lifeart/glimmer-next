@@ -8,9 +8,13 @@ export {
   cell,
   cellFor,
   tracked,
+  getTracker,
+  setTracker,
   type Cell,
   type MergedCell,
   formula,
+  cached,
+  type CachedCell,
 } from '@/core/reactive';
 
 // Component class and types
