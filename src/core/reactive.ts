@@ -515,6 +515,11 @@ export function formula(fn: Function | Fn, debugName?: string) {
  * the last compute. When the observed deps are dirty, the underlying fn() is
  * re-executed exactly once, freshly collecting deps.
  *
+ * Both `cached.value` (public) and the inner MergedCell's `value` (invoked by
+ * `executeTag` during DOM sync) route through the same memoized path, so the
+ * user getter runs at most once per dep-revision epoch even when the sync
+ * pipeline re-executes the tag directly.
+ *
  * The returned object is tag-like: it participates in GXT's tracker frames, so
  * a parent formula that reads `cached.value` still records a dependency on the
  * underlying cells (we re-add them to the ambient tracker on every read).
@@ -526,7 +531,6 @@ export interface CachedCell<T = unknown> {
   [isTag]: true;
 }
 export function cached<T>(fn: () => T, debugName?: string): CachedCell<T> {
-  const tag = new MergedCell(fn as Fn, IS_DEV_MODE ? `cached:${debugName ?? 'unknown'}` : undefined);
   let hasValue = false;
   let lastValue: T;
   let lastDeps: Set<Cell> | null = null;
@@ -539,15 +543,21 @@ export function cached<T>(fn: () => T, debugName?: string): CachedCell<T> {
   // as potentially-stale keeps semantics correct while still suppressing
   // same-epoch (no-update) repeats — exactly what fixes VM priming spikes.
   let lastGlobalRevisionAtCompute = -1;
+  // The inner MergedCell's fn is a THUNK through readCached() so that if
+  // the sync-DOM path invokes tag.value directly (executeTag during
+  // scheduleRevalidate), we still go through our cache instead of running
+  // the user getter an extra time. The thunk is created after readCached
+  // is declared; we use `readThunk` as a late binding.
+  let readThunk!: () => T;
+  const tag = new MergedCell(() => readThunk(), IS_DEV_MODE ? `cached:${debugName ?? 'unknown'}` : undefined);
 
   function isClean(): boolean {
     if (!hasValue || lastDeps === null || lastDepRevisions === null) return false;
     // Fast path: nothing in the whole system has updated since compute.
     if (_globalRevision === lastGlobalRevisionAtCompute) return true;
-    // Some cell updated — be conservative unless we can prove our deps
-    // are all unchanged. When the tracker captured nothing (lastDeps empty)
-    // we cannot prove correctness for getters reading raw (non-tracked)
-    // state; recompute.
+    // Something moved — if any captured dep's per-cell revision has advanced,
+    // the cached value may be stale. Treating zero-dep captures as stale is
+    // a safety net for getters that read raw (non-tracked) state.
     if (lastDeps.size === 0) return false;
     for (const cell of lastDeps) {
       const prev = lastDepRevisions.get(cell.id);
@@ -567,7 +577,7 @@ export function cached<T>(fn: () => T, debugName?: string): CachedCell<T> {
     setTracker(localTracker);
     let value: T;
     try {
-      value = (tag.fn as () => T)();
+      value = fn();
     } finally {
       setTracker(priorTracker);
       if (priorTracker !== null) {
@@ -592,6 +602,16 @@ export function cached<T>(fn: () => T, debugName?: string): CachedCell<T> {
     return value;
   }
 
+  // Called both by self.value (cached read) and by the MergedCell's
+  // own value getter (via executeTag during syncDom). Routing both through
+  // a single cache-first function prevents the user getter from running
+  // an extra time when the sync path invokes tag.value directly.
+  function readCached(): T {
+    if (isClean()) return lastValue;
+    return recompute();
+  }
+  readThunk = readCached;
+
   const self: CachedCell<T> = {
     // marker so isTagLike() treats this like a cell-ish thing if needed
     [isTag]: true,
@@ -610,10 +630,7 @@ export function cached<T>(fn: () => T, debugName?: string): CachedCell<T> {
       if (currentTracker !== null && lastDeps !== null && lastDeps.size > 0) {
         lastDeps.forEach((cell) => currentTracker!.add(cell));
       }
-      if (isClean()) {
-        return lastValue;
-      }
-      return recompute();
+      return readCached();
     },
   };
   return self;
