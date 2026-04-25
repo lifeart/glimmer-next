@@ -1733,4 +1733,138 @@ describe('Runtime Compiler Integration', () => {
       expect(fixture.container.querySelector('.after')?.textContent).toBe('outer');
     });
   });
+
+  /**
+   * End-to-end runtime coverage for the `__gxtGetCellOrFormula` `typeof === 'function'`
+   * guard injected by plugins/compiler/serializers/control.ts (commit a128135).
+   *
+   * Generated code shape, simplified:
+   *   $_if(
+   *     ((__r) => typeof __r === 'function' ? __r : (() => this.X))(
+   *       globalThis.__gxtGetCellOrFormula?.(this, "X")
+   *     ),
+   *     trueBranch,
+   *     falseBranch,
+   *     this,
+   *   );
+   *
+   * The contract: when the host hook returns a falsy-but-defined value
+   * (`0`, `""`, `null`), the `typeof === 'function'` test fails and the
+   * if falls back to a plain `() => this.X` getter. The previous `??`
+   * form caught only `null`/`undefined`, so a hook returning `0` would
+   * leak through and be passed to `$_if` as the condition itself
+   * (always falsy → wrong branch).
+   */
+  describe('__gxtGetCellOrFormula runtime guard (a128135)', () => {
+    let savedHook: unknown;
+
+    beforeEach(() => {
+      savedHook = (globalThis as any).__gxtGetCellOrFormula;
+    });
+
+    afterEach(() => {
+      if (savedHook === undefined) {
+        delete (globalThis as any).__gxtGetCellOrFormula;
+      } else {
+        (globalThis as any).__gxtGetCellOrFormula = savedHook;
+      }
+    });
+
+    test('hook returning 0 (falsy but defined) falls through to plain getter — TRUE branch renders', () => {
+      // Hook returns the literal 0, NOT a function. Without the typeof guard
+      // this would be passed to $_if as the condition, producing the FALSE
+      // branch. With the guard, $_if sees `() => this.show`, this.show is
+      // true, so the TRUE branch must render.
+      (globalThis as any).__gxtGetCellOrFormula = () => 0;
+
+      class FalsyHookComponent extends Component {
+        show = true;
+        [$template] = template(`
+          {{#if this.show}}
+            <span class="yes">YES</span>
+          {{else}}
+            <span class="no">NO</span>
+          {{/if}}
+        `);
+      }
+
+      render(FalsyHookComponent);
+
+      expect(fixture.container.querySelector('.yes')).not.toBeNull();
+      expect(fixture.container.querySelector('.no')).toBeNull();
+    });
+
+    test('hook returning empty string falls through to plain getter', () => {
+      (globalThis as any).__gxtGetCellOrFormula = () => '';
+
+      class EmptyStringHookComponent extends Component {
+        flag = true;
+        [$template] = template(`
+          {{#if this.flag}}
+            <span class="branch-true">A</span>
+          {{else}}
+            <span class="branch-false">B</span>
+          {{/if}}
+        `);
+      }
+
+      render(EmptyStringHookComponent);
+
+      expect(fixture.container.querySelector('.branch-true')?.textContent).toBe('A');
+      expect(fixture.container.querySelector('.branch-false')).toBeNull();
+    });
+
+    test('hook returning a function is honored and used as the condition', () => {
+      // Sanity: when the hook returns a real function, the guard is a
+      // no-op and the function IS used. Use a function that always returns
+      // the OPPOSITE of this.show — that proves the hook value flowed through.
+      class HookComponent extends Component {
+        show = true; // would render YES via the fallback
+      }
+      // Hook returns a function — its return value should drive the if
+      // (rendering NO branch even though this.show is true).
+      (globalThis as any).__gxtGetCellOrFormula = (_self: unknown, _name: string) => {
+        return () => false;
+      };
+
+      class HookComponentImpl extends HookComponent {
+        [$template] = template(`
+          {{#if this.show}}
+            <span class="yes-from-hook">YES</span>
+          {{else}}
+            <span class="no-from-hook">NO</span>
+          {{/if}}
+        `);
+      }
+
+      render(HookComponentImpl);
+
+      // The hook-supplied function returned false → ELSE branch.
+      expect(fixture.container.querySelector('.no-from-hook')).not.toBeNull();
+      expect(fixture.container.querySelector('.yes-from-hook')).toBeNull();
+    });
+
+    test('hook absent (typeof undefined): fallback getter wins, true branch renders normally', () => {
+      // Explicit delete forces the optional-call (`?.`) to be a no-op,
+      // and __r becomes undefined — the typeof guard still falls through
+      // to the plain getter.
+      delete (globalThis as any).__gxtGetCellOrFormula;
+
+      class NoHookComponent extends Component {
+        ready = true;
+        [$template] = template(`
+          {{#if this.ready}}
+            <em class="ready-yes">ready</em>
+          {{else}}
+            <em class="ready-no">not</em>
+          {{/if}}
+        `);
+      }
+
+      render(NoHookComponent);
+
+      expect(fixture.container.querySelector('.ready-yes')?.textContent).toBe('ready');
+      expect(fixture.container.querySelector('.ready-no')).toBeNull();
+    });
+  });
 });

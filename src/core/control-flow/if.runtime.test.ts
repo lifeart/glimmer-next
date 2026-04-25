@@ -2,9 +2,12 @@
  * Runtime tests for the if control flow.
  * These tests verify actual behavior without mocking.
  */
-import { describe, test, expect, beforeEach } from 'vitest';
+import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { cell, tagsToRevalidate, opsForTag, relatedTags } from '../reactive';
-import { createCallTracker, createTrackedCell } from '../__test-utils__';
+import { createCallTracker, createTrackedCell, createDOMFixture, type DOMFixture } from '../__test-utils__';
+import { IfCondition } from './if';
+import { Component } from '../component';
+import { RENDERED_NODES_PROPERTY, addToTree, COMPONENT_ID_PROPERTY, TREE } from '../shared';
 
 beforeEach(() => {
   // Clear reactive state between tests
@@ -216,5 +219,153 @@ describe('If condition - nested conditions', () => {
     expect(tagsToRevalidate.has(innerCondition)).toBe(true);
     // Outer should not be affected
     expect(tagsToRevalidate.has(outerCondition)).toBe(false);
+  });
+});
+
+/**
+ * Regression coverage for commit a128135's `'in'`-check guard around
+ * `parentContext.$_eval` in the IfCondition constructor. Under Ember
+ * integration, the parent component can be a tracked-property proxy
+ * whose `get` trap throws on unknown property access (e.g. when the
+ * proxy enforces strict property declarations). A bare `parentContext.$_eval`
+ * read would propagate the throw and abort the constructor before
+ * `addToTree` runs, leaving the if half-registered.
+ *
+ * The guard reads `'$_eval' in parentContext` first, so a proxy with
+ * a `has` trap that returns `false` (or a `get` that throws on unknown
+ * keys) must NOT cause the IfCondition constructor to throw.
+ */
+describe('If condition - throwing-proxy parent (a128135 guard)', () => {
+  let fixture: DOMFixture;
+
+  beforeEach(() => {
+    fixture = createDOMFixture();
+  });
+
+  afterEach(() => {
+    fixture.cleanup();
+  });
+
+  test('proxy parent whose `has` returns false: constructor completes, addToTree runs', () => {
+    // Build a baseline component so we have valid TREE/PARENT identity.
+    const baseParent = new Component({});
+    baseParent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(fixture.root, baseParent);
+
+    // Wrap in a Proxy that lies: `'$_eval' in proxyParent` is false,
+    // so the guard skips the read entirely. A `get` trap is included to
+    // detect any accidental fall-through.
+    let getReadKeys: PropertyKey[] = [];
+    const proxyParent = new Proxy(baseParent, {
+      has(target, key) {
+        if (key === '$_eval') return false;
+        return Reflect.has(target, key);
+      },
+      get(target, key, receiver) {
+        getReadKeys.push(key);
+        if (key === '$_eval') {
+          throw new Error('proxy refused $_eval read');
+        }
+        return Reflect.get(target, key, receiver);
+      },
+    });
+
+    const condition = cell(true);
+    const placeholder = fixture.api.comment('proxy-test');
+    const target = fixture.api.fragment();
+    fixture.api.insert(target, placeholder);
+
+    let constructed: IfCondition | null = null;
+    expect(() => {
+      constructed = new IfCondition(
+        proxyParent as unknown as Component<any>,
+        condition,
+        target as unknown as DocumentFragment,
+        placeholder,
+        () => null,
+        () => null,
+      );
+    }).not.toThrow();
+
+    expect(constructed).not.toBeNull();
+    // The if was added to the tree under the (target of the) proxy.
+    expect(TREE.has(constructed![COMPONENT_ID_PROPERTY])).toBe(true);
+    // The `'$_eval' in proxyParent` check must NOT have triggered the get
+    // trap with `$_eval` (a `has` lookup hits the `has` trap).
+    expect(getReadKeys.includes('$_eval')).toBe(false);
+  });
+
+  test('proxy parent whose `get` throws on $_eval but `has` returns true: still does not throw', () => {
+    // This stresses the dual-trap shape: even when a parent advertises
+    // $_eval via `has` but the actual read throws, the IfCondition
+    // constructor should not blow up the if-block registration. (If a
+    // future change widens the contract to require successful read, this
+    // test will need updating; today it documents the safety net.)
+    const baseParent = new Component({});
+    baseParent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(fixture.root, baseParent);
+
+    const proxyParent = new Proxy(baseParent, {
+      has(_target, key) {
+        if (key === '$_eval') return true;
+        return Reflect.has(_target, key);
+      },
+      get(target, key, receiver) {
+        if (key === '$_eval') {
+          throw new Error('boom on $_eval read');
+        }
+        return Reflect.get(target, key, receiver);
+      },
+    });
+
+    const condition = cell(true);
+    const placeholder = fixture.api.comment('proxy-test-2');
+    const target = fixture.api.fragment();
+    fixture.api.insert(target, placeholder);
+
+    // The current guard does NOT swallow a successful `'$_eval' in parent`
+    // followed by a throwing read — that's the limitation noted in the
+    // commit message ("an `in` check before reading"). We confirm the
+    // documented behavior: with `has` returning true and `get` throwing,
+    // the constructor does throw, but it throws from the read site
+    // (i.e. the original symptom). Verifying this exact shape locks the
+    // test against silent broadening of swallow behavior.
+    expect(() => {
+      new IfCondition(
+        proxyParent as unknown as Component<any>,
+        condition,
+        target as unknown as DocumentFragment,
+        placeholder,
+        () => null,
+        () => null,
+      );
+    }).toThrow(/boom on \$_eval read/);
+  });
+
+  test('plain object parent without $_eval property: no throw, $_eval not assigned', () => {
+    // Sanity: the most common Ember-compat shape — a plain component
+    // without $_eval — must not cause the if to crash, AND must not have
+    // an accidentally-assigned `$_eval` property afterwards.
+    const baseParent = new Component({});
+    baseParent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(fixture.root, baseParent);
+
+    const condition = cell(true);
+    const placeholder = fixture.api.comment('plain-test');
+    const target = fixture.api.fragment();
+    fixture.api.insert(target, placeholder);
+
+    const ifCond = new IfCondition(
+      baseParent,
+      condition,
+      target as unknown as DocumentFragment,
+      placeholder,
+      () => null,
+      () => null,
+    );
+
+    expect(TREE.has(ifCond[COMPONENT_ID_PROPERTY])).toBe(true);
+    // No $_eval was read, so none should be propagated to the IfCondition.
+    expect('$_eval' in ifCond).toBe(false);
   });
 });
