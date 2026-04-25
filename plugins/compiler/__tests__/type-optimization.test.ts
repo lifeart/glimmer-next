@@ -353,8 +353,9 @@ describe('type-directed optimization in compile pipeline', () => {
     const code = compileWith('{{this}}', {
       properties: { 'this.title': { kind: 'primitive' } },
     });
-    // Bare "this" is not a property path → no hint → keeps getter
-    expect(code).toMatch(/\(\)\s*=>\s*this(?![.\[])/);
+    // In compat mode, bare {{this}} is transformed to this.__gxtSelfString__
+    // so Ember's toString() behavior works correctly.
+    expect(code).toMatch(/this\.__gxtSelfString__/);
   });
 
   test('unknown kind property keeps getter wrapper', () => {

@@ -50,7 +50,11 @@ export function compiler(mode: string, options: Options = {}): Plugin {
       if (!isLibBuild) {
         defineValues['IS_DEV_MODE'] = mode.mode === 'development';
       } else {
-        defineValues = {};
+        // For lib builds, define IS_DEV_MODE as false so Rollup can
+        // tree-shake debug-only code. Previously this was left undefined,
+        // but with the single-chunk build, the core module gets loaded
+        // by Node during Vite config resolution.
+        defineValues = { IS_DEV_MODE: false };
       }
 
       return {

@@ -126,7 +126,8 @@ export type BindingKind =
   | 'block-param'  // Block parameter (e.g., |item| in {{#each}})
   | 'let-binding'  // Let block binding
   | 'arg'          // Component argument (@arg)
-  | 'this';        // this context
+  | 'this'         // this context
+  | 'compat-component';  // Synthetic binding for compat-mode curly component blocks
 
 /**
  * Information about a binding in a scope.
@@ -300,7 +301,17 @@ export interface HBSNode {
 /**
  * Control flow expression types.
  */
-export type ControlType = 'if' | 'each' | 'yield' | 'in-element';
+export type ControlType = 'if' | 'each' | 'yield' | 'in-element' | 'let';
+
+/**
+ * A single binding in a let block: name, value expression, and whether
+ * the value is a compile-time primitive (no getter wrapper needed).
+ */
+export interface LetBinding {
+  readonly name: string;
+  readonly value: SerializedValue;
+  readonly isPrimitive: boolean;
+}
 
 /**
  * Represents a control flow expression (if, each, yield, etc.).
@@ -318,6 +329,8 @@ export interface HBSControlExpression {
   readonly key: string | null;
   readonly isSync: boolean;
   readonly sourceRange?: SourceRange;
+  /** Let block bindings (only present when type === 'let') */
+  readonly letBindings?: readonly LetBinding[];
 }
 
 /**

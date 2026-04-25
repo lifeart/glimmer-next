@@ -383,7 +383,11 @@ function serializeCallStreaming(node: JSCallExpression, ctx: SerializeContext): 
     emitter.pushScope(node.sourceRange, node.mappingSource || 'SubExpression');
   }
 
+  // Arrow function IIFEs need parentheses: (() => { ... })() not () => { ... }()
+  const needsParens = node.callee.type === 'arrow';
+  if (needsParens) emitter.emit('(');
   serializeNodeStreaming(node.callee, ctx);
+  if (needsParens) emitter.emit(')');
 
   // Use formatted output with newlines between arguments when formatted flag is set
   if (node.formatted && node.arguments.length > 1) {
@@ -925,7 +929,10 @@ function serializeCall(node: JSCallExpression, ctx: SerializeContext): string {
   }
 
   const args = node.arguments.map(arg => serializeNode(arg, ctx)).join(', ');
-  const code = `${prefix}${callee}(${args})`;
+  // Arrow function IIFEs need parentheses: (() => { ... })() not () => { ... }()
+  const needsParens = node.callee.type === 'arrow';
+  const wrappedCallee = needsParens ? `(${callee})` : callee;
+  const code = `${prefix}${wrappedCallee}(${args})`;
 
   return emit(code, ctx, node.sourceRange);
 }

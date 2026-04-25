@@ -67,6 +67,9 @@ export function buildControl(
     case 'if':
       return buildIf(ctx, control, ctxName);
 
+    case 'let':
+      return buildLet(ctx, control, ctxName);
+
     default:
       return B.nil();
   }
@@ -179,7 +182,8 @@ function buildEach(
   const eachKey = normalizeEachKey(ctx, control);
 
   // Choose sync or async each
-  const fnName = control.isSync ? SYMBOLS.EACH_SYNC : SYMBOLS.EACH;
+  // In compat mode, always use synchronous iteration
+  const fnName = (control.isSync || ctx.flags.IS_GLIMMER_COMPAT_MODE) ? SYMBOLS.EACH_SYNC : SYMBOLS.EACH;
 
   // Check for stable children
   const hasStable = hasStableChildsForControlNode(control.children);
@@ -202,7 +206,11 @@ function buildEach(
   const keyArg = eachKey !== null ? B.string(eachKey) : B.nil();
 
   // Build inverse (else) branch if present
-  const eachArgs: JSExpression[] = [conditionExpr, callback, keyArg, B.id(ctxName)];
+  // In compat mode, always use `this` as the component context (4th arg)
+  // for the same reason as $_if — nested blocks have UcW contexts that
+  // are NOT the component instance.
+  const eachComponentCtx = ctx.flags.IS_GLIMMER_COMPAT_MODE ? 'this' : ctxName;
+  const eachArgs: JSExpression[] = [conditionExpr, callback, keyArg, B.id(eachComponentCtx)];
 
   if (control.inverse && control.inverse.length > 0) {
     const inverseCtxName = nextCtxName(ctx);
@@ -271,8 +279,9 @@ function buildEachBody(
   const indexParam = paramNames[1] ?? '$index';
   const usesIndex = childrenUseIndex(children, indexParam);
 
-  // Add block params to scope tracker during serialization
-  // This ensures that references to block params (e.g., `item`) are recognized as known bindings
+  // Add block params in a dedicated scope frame so nested each/if blocks with
+  // matching block-param names shadow rather than clobber outer bindings.
+  ctx.scopeTracker.enterScope('control-block');
   for (const param of paramNames) {
     ctx.scopeTracker.addBinding(param, { kind: 'block-param', name: param });
   }
@@ -280,10 +289,8 @@ function buildEachBody(
   const childCtxName = hasStable ? ctxName : nextCtxName(ctx);
   const childExprs = buildChildrenExprs(ctx, children, childCtxName);
 
-  // Remove block params from scope after serialization
-  for (const param of paramNames) {
-    ctx.scopeTracker.removeBinding(param);
-  }
+  // Exit scope, restoring outer bindings.
+  ctx.scopeTracker.exitScope();
 
   const rewrittenExprs = usesIndex
     ? childExprs.map((expr) => replaceIndexRefsInExpr(expr, indexParam))
@@ -538,13 +545,39 @@ function buildIf(
   const newCtxName = nextCtxName(ctx);
 
   // Build condition expression
-  const conditionExpr = buildValue(ctx, control.condition, ctxName);
+  let conditionExpr = buildValue(ctx, control.condition, ctxName);
+
+  // In compat mode, when the condition is a simple this.PROP path,
+  // wrap with __gxtGetCellOrFormula for cross-module-instance notification.
+  // This tags the condition getter so the patched $_if can register manual watchers.
+  // Uses optional call ?.() to gracefully degrade when the function is not defined.
+  // IMPORTANT: Always use `this` (not ctxName) for this.X paths because `this`
+  // refers to the component instance, while ctxName may refer to a nested
+  // block context (e.g., inside {{#each}}) that doesn't have the property.
+  if (ctx.flags.IS_GLIMMER_COMPAT_MODE && ctx.flags.WITH_EMBER_INTEGRATION && control.condition.kind === 'path') {
+    const expr = control.condition.expression;
+    const thisMatch = expr.match(/^this\.([a-zA-Z_$][a-zA-Z0-9_$]*)$/);
+    if (thisMatch) {
+      const propName = thisMatch[1];
+      // Emit: globalThis.__gxtGetCellOrFormula?.(this, "prop") ?? (() => this.prop)
+      // Falls back to a plain getter if __gxtGetCellOrFormula is not available
+      conditionExpr = B.raw(
+        `globalThis.__gxtGetCellOrFormula?.(this, "${propName}") ?? (() => this.${propName})`,
+        control.condition.sourceRange
+      );
+    }
+  }
 
   // Build branches
   const trueBranch = buildIfBranch(ctx, control.children, newCtxName, ctxName);
   const falseBranch = buildIfBranch(ctx, control.inverse, newCtxName, ctxName);
 
   // $_if(condition, trueBranch, falseBranch, ctx)
+  // In compat mode, always use `this` as the component context (4th arg)
+  // because templates are rendered as functions where `this` is the component.
+  // Inside nested blocks (e.g., {{#each}}), ctxName is the UcW context which
+  // is NOT the component — using it would break initDOM() in GXT.
+  const componentCtx = ctx.flags.IS_GLIMMER_COMPAT_MODE ? 'this' : ctxName;
   // Use formatted call when formatting is enabled for better readability
   return B.call(
     B.id(SYMBOLS.IF),
@@ -552,7 +585,7 @@ function buildIf(
       conditionExpr,
       trueBranch,
       falseBranch,
-      B.id(ctxName),
+      B.id(componentCtx),
     ],
     control.sourceRange,
     ctx.formatter.options.enabled,
@@ -596,6 +629,266 @@ function buildIfBranch(
   );
 
   return B.arrow([branchCtxName], ucwCall);
+}
+
+// ============================================================================
+
+// ============================================================================
+// Let
+// ============================================================================
+
+/**
+ * Build a let block as a spread IIFE.
+ *
+ * Generates:
+ *   ...(() => {
+ *     let foo = () => expr;    // non-primitive: getter for reactivity
+ *     let bar = "literal";     // primitive: direct value
+ *     return [children];
+ *   })()
+ *
+ * Arrow functions inherit `this` from the enclosing scope, so
+ * `this.xxx` references in both declarations and children work correctly.
+ * JavaScript `let` scoping inside the IIFE handles shadowing of nested
+ * let blocks with the same variable names.
+ *
+ * For non-primitive getters, the child expression tree is walked to replace
+ * identifier references with call expressions (e.g., `foo` -> `foo()`),
+ * similar to how `replaceIndexRefsInExpr` works for each-block indices.
+ */
+function buildLet(
+  ctx: CompilerContext,
+  control: HBSControlExpression,
+  ctxName: string
+): JSExpression {
+  const bindings = control.letBindings ?? [];
+
+  // Collect non-primitive binding names (these are getters that need calling)
+  const getterNames = new Set<string>();
+  for (const binding of bindings) {
+    if (!binding.isPrimitive) {
+      getterNames.add(binding.name);
+    }
+  }
+
+  // Build variable declarations
+  const varDecls: JSStatement[] = bindings.map((binding) => {
+    const valueExpr = buildValue(ctx, binding.value, ctxName);
+    if (binding.isPrimitive) {
+      return B.varDecl('let', binding.name, valueExpr);
+    } else {
+      // If buildValue already produced a reactive getter (arrow function),
+      // use it directly — don't double-wrap with another arrow.
+      const isAlreadyGetter = valueExpr.type === 'reactiveGetter' || valueExpr.type === 'arrow';
+      const getterExpr = isAlreadyGetter ? valueExpr : B.arrow([], valueExpr);
+      return B.varDecl('let', binding.name, getterExpr);
+    }
+  });
+
+  // Add let bindings in a fresh scope frame so nested `{{#let}}` blocks
+  // shadow rather than clobber the outer binding.
+  ctx.scopeTracker.enterScope('let');
+  for (const binding of bindings) {
+    ctx.scopeTracker.addBinding(binding.name, { kind: 'let-binding', name: binding.name });
+  }
+
+  // Build children as JSExpressions
+  const childExprs = buildChildrenExprs(ctx, control.children, ctxName);
+
+  // Exit let scope, restoring outer bindings.
+  ctx.scopeTracker.exitScope();
+
+  // For non-primitive getters, replace identifier references with calls
+  const rewrittenExprs = getterNames.size > 0
+    ? childExprs.map((expr) => replaceLetGetterRefsInExpr(expr, getterNames))
+    : childExprs;
+
+  // Build return array
+  const childArrayExpr = ctx.formatter.options.enabled && rewrittenExprs.length > 0
+    ? B.formattedArray(rewrittenExprs, true)
+    : B.array(rewrittenExprs);
+
+  // Build arrow-function IIFE: ...(() => { declarations; return [children]; })()
+  // Arrow function preserves this from the enclosing scope.
+  const body: JSStatement[] = [
+    ...varDecls,
+    B.ret(childArrayExpr),
+  ];
+
+  const arrowFn = B.arrowBlock([], body, control.sourceRange);
+  return B.spread(B.call(arrowFn, [], control.sourceRange));
+}
+
+/**
+ * Replace identifier references to let-binding getters with call expressions.
+ * For a getter foo, transforms foo -> foo() and () => foo -> () => foo().
+ */
+function replaceLetGetterRefsInExpr(expr: JSExpression, getterNames: Set<string>): JSExpression {
+  switch (expr.type) {
+    case 'identifier': {
+      if (getterNames.has(expr.name)) {
+        return B.call(expr, [], expr.sourceRange);
+      }
+      return expr;
+    }
+    case 'runtimeRef': {
+      const rootName = expr.symbol.split(/[?.\[]/)[0];
+      if (rootName && getterNames.has(rootName)) {
+        const rest = expr.symbol.slice(rootName.length);
+        if (rest) {
+          return B.raw(`${rootName}()${rest}`, expr.sourceRange);
+        }
+        return B.call(B.id(rootName, expr.sourceRange), [], expr.sourceRange);
+      }
+      return expr;
+    }
+    case 'member': {
+      const nextObject = replaceLetGetterRefsInExpr(expr.object, getterNames);
+      const nextProp = expr.computed
+        ? replaceLetGetterRefsInExpr(expr.property as JSExpression, getterNames)
+        : expr.property;
+      if (nextObject === expr.object && nextProp === expr.property) return expr;
+      return { ...expr, object: nextObject, property: nextProp };
+    }
+    case 'call': {
+      const nextCallee = replaceLetGetterRefsInExpr(expr.callee, getterNames);
+      const nextArgs = expr.arguments.map(arg => replaceLetGetterRefsInExpr(arg, getterNames));
+      return nextCallee === expr.callee && nextArgs.every((arg, i) => arg === expr.arguments[i])
+        ? expr
+        : { ...expr, callee: nextCallee, arguments: nextArgs };
+    }
+    case 'methodCall': {
+      const nextObject = replaceLetGetterRefsInExpr(expr.object, getterNames);
+      const nextArgs = expr.arguments.map(arg => replaceLetGetterRefsInExpr(arg, getterNames));
+      return nextObject === expr.object && nextArgs.every((arg, i) => arg === expr.arguments[i])
+        ? expr
+        : { ...expr, object: nextObject, arguments: nextArgs };
+    }
+    case 'arrow': {
+      if (expr.expression) {
+        const nextBody = replaceLetGetterRefsInExpr(expr.body as JSExpression, getterNames);
+        return nextBody === expr.body ? expr : { ...expr, body: nextBody };
+      }
+      // For block-body arrows, check if any varDecl shadows getter names
+      const arrowScopedNames = reduceShadowedNames(getterNames, expr.body as JSStatement[]);
+      if (arrowScopedNames.size === 0) return expr;
+      const nextBody = (expr.body as JSStatement[]).map(stmt => replaceLetGetterRefsInStmt(stmt, arrowScopedNames));
+      return nextBody.every((stmt, i) => stmt === (expr.body as JSStatement[])[i])
+        ? expr
+        : { ...expr, body: nextBody };
+    }
+    case 'function': {
+      const funcScopedNames = reduceShadowedNames(getterNames, expr.body);
+      if (funcScopedNames.size === 0) return expr;
+      const nextBody = expr.body.map(stmt => replaceLetGetterRefsInStmt(stmt, funcScopedNames));
+      return nextBody.every((stmt, i) => stmt === expr.body[i]) ? expr : { ...expr, body: nextBody };
+    }
+    case 'array': {
+      const nextElements = expr.elements.map(el => replaceLetGetterRefsInExpr(el, getterNames));
+      return nextElements.every((el, i) => el === expr.elements[i]) ? expr : { ...expr, elements: nextElements };
+    }
+    case 'formattedArray': {
+      const nextElements = expr.elements.map(el => replaceLetGetterRefsInExpr(el, getterNames));
+      return nextElements.every((el, i) => el === expr.elements[i]) ? expr : { ...expr, elements: nextElements };
+    }
+    case 'object': {
+      const nextProps = expr.properties.map(prop => {
+        const nextVal = replaceLetGetterRefsInExpr(prop.value, getterNames);
+        return nextVal === prop.value ? prop : { ...prop, value: nextVal };
+      });
+      return nextProps.every((prop, i) => prop === expr.properties[i]) ? expr : { ...expr, properties: nextProps };
+    }
+    case 'spread': {
+      const nextArg = replaceLetGetterRefsInExpr(expr.argument, getterNames);
+      return nextArg === expr.argument ? expr : { ...expr, argument: nextArg };
+    }
+    case 'binary': {
+      const nextLeft = replaceLetGetterRefsInExpr(expr.left, getterNames);
+      const nextRight = replaceLetGetterRefsInExpr(expr.right, getterNames);
+      return nextLeft === expr.left && nextRight === expr.right ? expr : { ...expr, left: nextLeft, right: nextRight };
+    }
+    case 'conditional': {
+      const nextTest = replaceLetGetterRefsInExpr(expr.test, getterNames);
+      const nextCons = replaceLetGetterRefsInExpr(expr.consequent, getterNames);
+      const nextAlt = replaceLetGetterRefsInExpr(expr.alternate, getterNames);
+      return nextTest === expr.test && nextCons === expr.consequent && nextAlt === expr.alternate
+        ? expr
+        : { ...expr, test: nextTest, consequent: nextCons, alternate: nextAlt };
+    }
+    case 'template': {
+      const nextExprs = expr.expressions.map(e => replaceLetGetterRefsInExpr(e, getterNames));
+      return nextExprs.every((e, i) => e === expr.expressions[i]) ? expr : { ...expr, expressions: nextExprs };
+    }
+    case 'reactiveGetter': {
+      const nextExpr = replaceLetGetterRefsInExpr(expr.expression, getterNames);
+      return nextExpr === expr.expression ? expr : { ...expr, expression: nextExpr };
+    }
+    case 'methodBinding': {
+      const nextFn = replaceLetGetterRefsInExpr(expr.fn, getterNames);
+      const nextThis = replaceLetGetterRefsInExpr(expr.thisArg, getterNames);
+      const nextArgs = expr.boundArgs.map(arg => replaceLetGetterRefsInExpr(arg, getterNames));
+      return nextFn === expr.fn && nextThis === expr.thisArg && nextArgs.every((arg, i) => arg === expr.boundArgs[i])
+        ? expr
+        : { ...expr, fn: nextFn, thisArg: nextThis, boundArgs: nextArgs };
+    }
+    case 'iife': {
+      // Check if any varDecl in the IIFE body shadows getter names
+      const iifeScopedNames = reduceShadowedNames(getterNames, expr.body);
+      const nextBody = iifeScopedNames.size > 0
+        ? expr.body.map(stmt => replaceLetGetterRefsInStmt(stmt, iifeScopedNames))
+        : expr.body;
+      const nextArgs = expr.args.map(arg => replaceLetGetterRefsInExpr(arg, getterNames));
+      return nextBody.every((stmt, i) => stmt === expr.body[i]) && nextArgs.every((arg, i) => arg === expr.args[i])
+        ? expr
+        : { ...expr, body: nextBody, args: nextArgs };
+    }
+    case 'raw':
+      return expr;
+    default:
+      return expr;
+  }
+}
+
+/**
+ * Given a set of getter names and a list of statements, return a new set
+ * with any names that are re-declared (shadowed) by varDecl statements removed.
+ * This prevents the getter-call rewrite from modifying references to
+ * inner-scoped variables that shadow outer let bindings.
+ */
+function reduceShadowedNames(getterNames: Set<string>, stmts: readonly JSStatement[]): Set<string> {
+  const shadowed = new Set<string>();
+  for (const stmt of stmts) {
+    if (stmt.type === 'varDecl' && getterNames.has(stmt.name)) {
+      shadowed.add(stmt.name);
+    }
+  }
+  if (shadowed.size === 0) return getterNames;
+  const reduced = new Set(getterNames);
+  for (const name of shadowed) {
+    reduced.delete(name);
+  }
+  return reduced;
+}
+
+function replaceLetGetterRefsInStmt(stmt: JSStatement, getterNames: Set<string>): JSStatement {
+  switch (stmt.type) {
+    case 'varDecl': {
+      if (!stmt.init) return stmt;
+      const nextInit = replaceLetGetterRefsInExpr(stmt.init, getterNames);
+      return nextInit === stmt.init ? stmt : { ...stmt, init: nextInit };
+    }
+    case 'return': {
+      if (!stmt.argument) return stmt;
+      const nextArg = replaceLetGetterRefsInExpr(stmt.argument, getterNames);
+      return nextArg === stmt.argument ? stmt : { ...stmt, argument: nextArg };
+    }
+    case 'exprStmt': {
+      const nextExpr = replaceLetGetterRefsInExpr(stmt.expression, getterNames);
+      return nextExpr === stmt.expression ? stmt : { ...stmt, expression: nextExpr };
+    }
+    default:
+      return stmt;
+  }
 }
 
 // ============================================================================

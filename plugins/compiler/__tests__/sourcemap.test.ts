@@ -1388,8 +1388,8 @@ describe('Formatted Calls', () => {
       const lines = result.code.split('\n');
       expect(lines.length).toBeGreaterThan(3);
 
-      // Should have $_each
-      expect(result.code).toContain('$_each(');
+      // Should have $_eachSync (compat mode uses synchronous iteration)
+      expect(result.code).toContain('$_eachSync(');
     });
   });
 

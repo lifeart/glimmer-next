@@ -18,9 +18,17 @@ import { isTag, isGetter } from './-private';
  */
 export function $__fn(fn: Function, ...args: unknown[]) {
   return (...tail: unknown[]) => {
-    // Unwrap the function itself if it's a getter (e.g., () => this.myAction)
-    // The compiler wraps the first arg in a getter for reactivity
-    const resolvedFn = isGetter(fn) ? (fn as () => Function)() : fn;
+    // Unwrap the function itself if it's a compiler-generated getter (e.g., () => this.myAction)
+    // Compiler getters are zero-arg arrow functions that return functions.
+    // We check: is it a getter? If so, call it — if the result is a function, use it.
+    // Otherwise use the original (it was a real function, not a getter).
+    let resolvedFn: Function = fn as Function;
+    if (isGetter(fn) && fn.length === 0) {
+      const maybeResolved = (fn as () => unknown)();
+      if (typeof maybeResolved === 'function') {
+        resolvedFn = maybeResolved;
+      }
+    }
     // Unwrap getter functions but preserve Cells and other values
     const unwrappedArgs = args.map((arg) => {
       // Explicitly preserve Cells - they need to be passed to callbacks

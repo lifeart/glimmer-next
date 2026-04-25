@@ -165,6 +165,57 @@ describe('Destruction Flow Tests', () => {
       expect(CHILD.has(ifId)).toBe(false);
     });
 
+    test('IfCondition cleans up DOM inserted by orphan branches (yield-only branch case)', async () => {
+      // Regression test for the bug where a true branch that returns an empty
+      // array (e.g. `{{#if cond}}{{yield}}{{/if}}` when the slot inserts DOM
+      // out-of-band) leaves stale nodes behind on toggle-off.
+      const parentComponent = new Component({});
+      parentComponent[RENDERED_NODES_PROPERTY] = [];
+      addToTree(fixture.root, parentComponent);
+
+      // Build a host element that will hold the if's placeholder.
+      const host = fixture.document.createElement('div');
+      const placeholder = fixture.api.comment('orphan-test');
+      host.appendChild(placeholder);
+
+      const condition = cell(true);
+
+      // The "true" branch simulates a sub-runtime (slot/yield) that inserts a
+      // DOM node directly next to the placeholder but returns an EMPTY array
+      // — i.e. nothing is threaded back through prevComponent.
+      const orphanText = 'orphan-yield-content';
+      const trueBranch = () => {
+        const textNode = fixture.document.createTextNode(orphanText);
+        host.insertBefore(textNode, placeholder);
+        return [] as any;
+      };
+      const falseBranch = () => [] as any;
+
+      const ifCondition = new IfCondition(
+        parentComponent,
+        condition,
+        host as unknown as DocumentFragment,
+        placeholder,
+        trueBranch as any,
+        falseBranch as any,
+      );
+
+      // Wait for initial render.
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      // The orphan text node should be visible inside the host.
+      expect(host.textContent).toContain(orphanText);
+
+      // Flip the condition off.
+      condition.value = false;
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      // The orphan text MUST be gone from the host.
+      expect(host.textContent).not.toContain(orphanText);
+
+      await ifCondition.destroy();
+    });
+
     test('rapid condition toggling does not cause race conditions', async () => {
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];

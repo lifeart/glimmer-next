@@ -2147,6 +2147,28 @@ describe('Component slots', () => {
     expect(result.code).toContain(SYMBOLS.COMPONENT);
   });
 
+  test('block component with {{else}} emits default AND inverse slots', () => {
+    const result = compile(
+      '{{#my-block}}hello{{else}}bye{{/my-block}}',
+      { bindings: new Set(['my-block']), flags: { IS_GLIMMER_COMPAT_MODE: true } }
+    );
+    expect(result.errors).toHaveLength(0);
+    expect(result.code).toContain('default:');
+    expect(result.code).toContain('inverse:');
+    expect(result.code).toContain('"hello"');
+    expect(result.code).toContain('"bye"');
+  });
+
+  test('block component without {{else}} does NOT emit inverse slot', () => {
+    const result = compile(
+      '{{#my-block}}hello{{/my-block}}',
+      { bindings: new Set(['my-block']), flags: { IS_GLIMMER_COMPAT_MODE: true } }
+    );
+    expect(result.errors).toHaveLength(0);
+    expect(result.code).toContain('default:');
+    expect(result.code).not.toContain('inverse:');
+  });
+
   test('block param shadowing outer binding', () => {
     const result = compile(
       '<Outer as |item|><Inner as |item|>{{item}}</Inner></Outer>',
@@ -2173,6 +2195,81 @@ describe('Component slots', () => {
     );
     expect(result.code).toContain('item.class');
     expect(result.code).not.toContain('$_maybeHelper');
+  });
+
+  test('nested {{#each}} blocks with the same block-param name shadow correctly', () => {
+    // Inner `ring` shadows outer `ring`; after the inner block closes, the
+    // outer `ring` must still resolve (regression guard for the flat-scope
+    // `removeBinding` bug where the inner cleanup deleted the outer binding).
+    const result = compile(
+      '{{#each this.first as |ring|}}{{ring}}-{{#each this.second as |ring|}}{{ring}}-{{/each}}{{ring}}-{{/each}}',
+    );
+    expect(result.errors).toHaveLength(0);
+    // All three `ring` references must be resolved as block-param getters,
+    // NOT as literal-name helper lookups. If the scope stack is broken, the
+    // post-inner-close reference falls through to `$_maybeHelper("ring", ...)`.
+    expect(result.code).not.toContain('$_maybeHelper("ring"');
+    expect(result.code).not.toContain("$_maybeHelper('ring'");
+  });
+
+  test('triply nested {{#each}} blocks with the same block-param name shadow correctly', () => {
+    const result = compile(
+      '{{#each this.first as |ring|}}{{ring}}-' +
+        '{{#each this.fifth as |ring|}}{{ring}}-' +
+        '{{#each this.ninth as |ring|}}{{ring}}-{{/each}}' +
+        '{{ring}}-{{/each}}' +
+        '{{ring}}-{{/each}}',
+    );
+    expect(result.errors).toHaveLength(0);
+    // Inside any `ring` scope, ALL references must resolve to block-param
+    // getters, not literal-name helper lookups. In particular, the two
+    // "after inner close" references (right-hand side of the middle and
+    // outer blocks) must read the outer block's `ring`, not fall through
+    // to `$_maybeHelper("ring", ...)`.
+    expect(result.code).not.toContain('$_maybeHelper("ring"');
+    expect(result.code).not.toContain("$_maybeHelper('ring'");
+  });
+
+  test('references after an inner {{#each}} closes read the outer scope', () => {
+    const result = compile(
+      '{{#each this.outer as |x|}}{{#each this.inner as |x|}}{{/each}}{{x}}{{/each}}',
+    );
+    expect(result.errors).toHaveLength(0);
+    // The trailing `{{x}}` lives in the OUTER scope and must be resolved.
+    expect(result.code).not.toContain('$_maybeHelper("x"');
+    expect(result.code).not.toContain("$_maybeHelper('x'");
+  });
+
+  test('nested {{#if}} with block param name reuse does not leak', () => {
+    // {{#if}} doesn't typically take block params but `{{#each}}` around an
+    // `{{#if}}` should still preserve the outer `x` after the if closes.
+    const result = compile(
+      '{{#each this.items as |x|}}{{#if x.flag}}<span>{{x.name}}</span>{{/if}}{{x.id}}{{/each}}',
+    );
+    expect(result.errors).toHaveLength(0);
+    expect(result.code).not.toContain('$_maybeHelper("x"');
+    expect(result.code).not.toContain("$_maybeHelper('x'");
+  });
+
+  test('nested {{#let}} with same name shadows and restores', () => {
+    const result = compile(
+      '{{#let this.a as |v|}}{{v}}-{{#let this.b as |v|}}{{v}}-{{/let}}{{v}}{{/let}}',
+    );
+    expect(result.errors).toHaveLength(0);
+    expect(result.code).not.toContain('$_maybeHelper("v"');
+    expect(result.code).not.toContain("$_maybeHelper('v'");
+  });
+
+  test('nested angle-bracket blocks with same block-param name shadow correctly', () => {
+    const result = compile(
+      '<Outer as |item|>{{item}}<Inner as |item|>{{item}}</Inner>{{item}}</Outer>',
+      { bindings: new Set(['Outer', 'Inner']) },
+    );
+    expect(result.errors).toHaveLength(0);
+    // After the inner `</Inner>` closes, the trailing `{{item}}` must still
+    // resolve to the outer block param, not a literal helper lookup.
+    expect(result.code).not.toContain('$_maybeHelper("item"');
+    expect(result.code).not.toContain("$_maybeHelper('item'");
   });
 });
 
@@ -2674,15 +2771,25 @@ describe('Hash helper advanced', () => {
 describe('SubExpression wrap parameter', () => {
   test('has-block is not wrapped in getter', () => {
     // has-block returns a bound function, not a value that needs wrapping
-    const result = compile('{{#if (has-block)}}has block{{/if}}');
+    const result = compile('{{#if (has-block)}}has block{{/if}}', { flags: { IS_GLIMMER_COMPAT_MODE: false } });
     expect(result.code).toContain(SYMBOLS.HAS_BLOCK);
     expect(result.code).toContain('.bind(');
   });
 
   test('has-block-params is not wrapped in getter', () => {
-    const result = compile('{{#if (has-block-params)}}has params{{/if}}');
+    const result = compile('{{#if (has-block-params)}}has params{{/if}}', { flags: { IS_GLIMMER_COMPAT_MODE: false } });
     expect(result.code).toContain(SYMBOLS.HAS_BLOCK_PARAMS);
     expect(result.code).toContain('.bind(');
+  });
+
+  test('has-block rewrites to this.$_hasBlock in compat mode', () => {
+    const result = compile('{{#if (has-block)}}has block{{/if}}', { flags: { IS_GLIMMER_COMPAT_MODE: true } });
+    expect(result.code).toContain('$_hasBlock("default")');
+  });
+
+  test('has-block-params rewrites to this.$_hasBlockParams in compat mode', () => {
+    const result = compile('{{#if (has-block-params)}}has params{{/if}}', { flags: { IS_GLIMMER_COMPAT_MODE: true } });
+    expect(result.code).toContain('$_hasBlockParams("default")');
   });
 
   test('regular helper in if condition is wrapped', () => {
@@ -3571,14 +3678,13 @@ describe('Path expression optional chaining with known bindings', () => {
     expect(result.code).toMatch(/,\s*this\)/);
   });
 
-  test('unknown dashed helper without args gets context', () => {
+  test('unknown dashed helper without args becomes component in compat mode', () => {
     const template = '{{x-borf}}';
     const result = compile(template);
 
     expect(result.errors).toHaveLength(0);
-    expect(result.code).toContain(SYMBOLS.MAYBE_HELPER);
-    expect(result.code).toContain('"x-borf"');
-    expect(result.code).toMatch(/,\s*this\)/);
+    // In compat mode (default), hyphenated names are treated as component invocations
+    expect(result.code).toContain('XBorf');
   });
 
   test('known binding used as helper arg gets direct path, not $_maybeHelper', () => {
@@ -4091,9 +4197,19 @@ describe('Block-mode component invocations', () => {
     expect(result.code).toContain('item.name');
   });
 
-  test('unknown block name without binding returns null', () => {
+  test('hyphenated block name in compat mode is treated as component', () => {
     const result = compile('{{#unknown-thing}}content{{/unknown-thing}}');
-    // Unknown block name with no params and no binding — should be dropped
+    // In compat mode (default), hyphenated names are component invocations (Ember convention)
+    // The tag is converted to PascalCase: unknown-thing → UnknownThing
+    expect(result.code).toContain('UnknownThing');
+    expect(result.errors).toHaveLength(0);
+  });
+
+  test('unknown block name without binding in non-compat mode returns null', () => {
+    const result = compile('{{#unknown-thing}}content{{/unknown-thing}}', {
+      flags: { IS_GLIMMER_COMPAT_MODE: false },
+    });
+    // Without compat mode, unknown block name with no params and no binding — should be dropped
     expect(result.code).not.toContain('unknown-thing');
   });
 
@@ -4182,6 +4298,577 @@ describe('Block-mode component invocations', () => {
       );
       expect(result.errors).toHaveLength(0);
       expect(result.code).not.toContain('__scope_each');
+      expect(result.code).toMatch(/\$_c\(\s*each\b/);
+    });
+  });
+});
+
+// ============================================================================
+// Compat mode AST transforms
+// ============================================================================
+
+describe('Compat mode AST transforms', () => {
+  const compatFlags = { IS_GLIMMER_COMPAT_MODE: true };
+  const defaultFlags = { IS_GLIMMER_COMPAT_MODE: false };
+
+  // --------------------------------------------------------------------------
+  // Mustache transforms
+  // --------------------------------------------------------------------------
+  describe('Mustache transforms', () => {
+    test('{{outlet}} produces yield with "default" slot', () => {
+      const result = compile('{{outlet}}', { flags: compatFlags });
+      // outlet is treated as a yield in the compiler
+      expect(result.code).toContain(SYMBOLS.SLOT);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('{{mount "engine-name"}} produces ember-mount element', () => {
+      const result = compile('{{mount "my-engine"}}', { flags: compatFlags });
+      expect(result.code).toContain("'ember-mount'");
+      expect(result.code).toContain('my-engine');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('{{mount "engine" model=this.foo}} passes model as data-engine attr', () => {
+      const result = compile('{{mount "my-engine" model=this.foo}}', { flags: compatFlags });
+      expect(result.code).toContain("'ember-mount'");
+      expect(result.code).toContain('my-engine');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('bare {{this}} transforms to __gxtSelfString__', () => {
+      const result = compile('{{this}}', { flags: compatFlags });
+      expect(result.code).toContain('__gxtSelfString__');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('bare {{this}} does NOT transform in non-compat mode', () => {
+      const result = compile('{{this}}', { flags: defaultFlags });
+      expect(result.code).not.toContain('__gxtSelfString__');
+    });
+
+    test('{{this.foo}} does NOT transform to __gxtSelfString__', () => {
+      const result = compile('{{this.foo}}', { flags: compatFlags });
+      expect(result.code).not.toContain('__gxtSelfString__');
+      expect(result.code).toContain('this.foo');
+    });
+
+    test('{{input type="text"}} transforms to Input component', () => {
+      const result = compile('{{input type="text"}}', { flags: compatFlags });
+      expect(result.code).toContain('Input');
+      expect(result.code).toContain('@type');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('{{textarea}} transforms to Textarea component', () => {
+      const result = compile('{{textarea value=this.text}}', { flags: compatFlags });
+      expect(result.code).toContain('Textarea');
+      expect(result.code).toContain('@value');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('{{input}} does NOT transform in non-compat mode', () => {
+      const result = compile('{{input type="text"}}', { flags: defaultFlags });
+      expect(result.code).not.toContain('Input');
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Block transforms
+  // --------------------------------------------------------------------------
+  describe('Block transforms', () => {
+    test('{{#if}}{{else}}content{{/if}} with empty true branch compiles without error', () => {
+      const result = compile('{{#if this.show}}{{else}}fallback content{{/if}}', { flags: compatFlags });
+      expect(result.errors).toHaveLength(0);
+      expect(result.code).toContain('fallback content');
+    });
+
+    test('{{#each}} uses $_eachSync in compat mode', () => {
+      const result = compile('{{#each this.items as |item|}}{{item}}{{/each}}', { flags: compatFlags });
+      expect(result.code).toContain(SYMBOLS.EACH_SYNC);
+      expect(result.code).not.toContain(SYMBOLS.EACH + '(');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('{{#each}} uses $_each in non-compat mode', () => {
+      const result = compile('{{#each this.items as |item|}}{{item}}{{/each}}', { flags: defaultFlags });
+      expect(result.code).toContain(SYMBOLS.EACH + '(');
+      expect(result.code).not.toContain(SYMBOLS.EACH_SYNC);
+    });
+
+    test('let block uses plain variable names', () => {
+      const result = compile('{{#let this.name as |v|}}{{v}}{{/let}}', { flags: compatFlags });
+      expect(result.errors).toHaveLength(0);
+      // The let block should compile and reference the variable
+      expect(result.code).toContain('v');
+    });
+
+    test('let block with string literal', () => {
+      const result = compile('{{#let "hello" as |greeting|}}{{greeting}}{{/let}}', { flags: compatFlags });
+      expect(result.errors).toHaveLength(0);
+      expect(result.code).toContain('"hello"');
+    });
+
+    test('builtin block keywords are treated as control flow when NOT shadowed', () => {
+      // Without an `if` binding in scope, `{{#if}}` is the GXT built-in.
+      const result = compile('{{#if this.show}}content{{/if}}', {
+        flags: compatFlags,
+      });
+      expect(result.code).toContain(SYMBOLS.IF);
+      expect(result.code).not.toContain(SYMBOLS.COMPONENT);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('scope binding SHADOWS built-in block keyword', () => {
+      // When the user passes `if` as a template binding (e.g. strict-mode
+      // scope), the binding must win over the built-in keyword so that
+      // `renderComponent(tpl, { scope: { if: Component } })` works.
+      const result = compile('{{#if this.show}}content{{/if}}', {
+        flags: compatFlags,
+        bindings: new Set(['if']),
+      });
+      expect(result.code).toContain(SYMBOLS.COMPONENT);
+      expect(result.code).not.toContain(`${SYMBOLS.IF}(`);
+      // `if` is reserved, so the bare identifier is emitted as __scope_if.
+      expect(result.code).toContain('__scope_if');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('non-builtin block name with binding IS treated as component block', () => {
+      const result = compile('{{#MyBlock}}content{{/MyBlock}}', {
+        flags: compatFlags,
+        bindings: new Set(['MyBlock']),
+      });
+      expect(result.code).toContain(SYMBOLS.COMPONENT);
+      expect(result.errors).toHaveLength(0);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Element transforms
+  // --------------------------------------------------------------------------
+  describe('Element transforms', () => {
+    test('onclick={{this.handler}} transforms to on modifier', () => {
+      const result = compile('<button onclick={{this.handler}}>click</button>', { flags: compatFlags });
+      // Should contain an event binding for "click"
+      expect(result.code).toContain('"click"');
+      // Should NOT contain "onclick" as an attribute
+      expect(result.code).not.toContain('"onclick"');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('onclick={{this.handler}} is kept as attribute in non-compat mode', () => {
+      const result = compile('<button onclick={{this.handler}}>click</button>', { flags: defaultFlags });
+      // In non-compat mode, onclick stays as an attribute (not rewritten)
+      expect(result.code).toContain('onclick');
+    });
+
+    test('onsubmit={{this.handler}} transforms to on modifier in compat mode', () => {
+      const result = compile('<form onsubmit={{this.handler}}>form</form>', { flags: compatFlags });
+      expect(result.code).toContain('"submit"');
+      expect(result.code).not.toContain('"onsubmit"');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('Foo::Bar namespaced component transforms to foo--bar', () => {
+      const result = compile('<Foo::Bar />', { flags: compatFlags });
+      expect(result.code).toContain('foo--bar');
+      expect(result.code).not.toContain('Foo::Bar');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('Foo::Bar::Baz transforms to foo--bar--baz', () => {
+      const result = compile('<Foo::Bar::Baz>content</Foo::Bar::Baz>', { flags: compatFlags });
+      expect(result.code).toContain('foo--bar--baz');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('...attributes with local overrides adds __splatLocal__ marker', () => {
+      const result = compile('<div ...attributes class="local">text</div>', { flags: compatFlags });
+      expect(result.code).toContain('__splatLocal__');
+      expect(result.code).toContain('__class__');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('...attributes without local overrides does NOT add __splatLocal__', () => {
+      const result = compile('<div class="before" ...attributes>text</div>', { flags: compatFlags });
+      expect(result.code).not.toContain('__splatLocal__');
+    });
+
+    test('...attributes with non-class local override', () => {
+      const result = compile('<div ...attributes data-test="local">text</div>', { flags: compatFlags });
+      expect(result.code).toContain('__splatLocal__');
+      expect(result.code).toContain('data-test');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('...attributes local override not added in non-compat mode', () => {
+      const result = compile('<div ...attributes class="local">text</div>', { flags: defaultFlags });
+      expect(result.code).not.toContain('__splatLocal__');
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // SubExpression transforms
+  // --------------------------------------------------------------------------
+  describe('SubExpression transforms', () => {
+    test('(mut this.foo) adds path string as second arg', () => {
+      const result = compile('<Btn @click={{(mut this.foo)}} />', {
+        flags: compatFlags,
+        bindings: new Set(['Btn']),
+      });
+      expect(result.code).toContain('"this.foo"');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('(mut @bar) adds path string as second arg', () => {
+      const result = compile('<Btn @click={{(mut @bar)}} />', {
+        flags: compatFlags,
+        bindings: new Set(['Btn']),
+      });
+      expect(result.code).toContain('"@bar"');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('(mut this.foo) does NOT add path string in non-compat mode', () => {
+      const result = compile('<Btn @click={{(mut this.foo)}} />', {
+        flags: defaultFlags,
+        bindings: new Set(['Btn']),
+      });
+      expect(result.code).not.toContain('"this.foo"');
+    });
+
+    test('(has-block) transforms to $_hasBlock("default") in compat mode', () => {
+      const result = compile('{{#if (has-block)}}has block{{/if}}', { flags: compatFlags });
+      expect(result.code).toContain('$_hasBlock');
+      expect(result.code).toContain('"default"');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('(has-block "inverse") transforms to $_hasBlock("inverse") in compat mode', () => {
+      const result = compile('{{#if (has-block "inverse")}}has inverse{{/if}}', { flags: compatFlags });
+      expect(result.code).toContain('$_hasBlock');
+      expect(result.code).toContain('"inverse"');
+    });
+
+    test('(has-block-params) transforms to $_hasBlockParams in compat mode', () => {
+      const result = compile('{{#if (has-block-params)}}has params{{/if}}', { flags: compatFlags });
+      expect(result.code).toContain('$_hasBlockParams');
+      expect(result.code).toContain('"default"');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('(has-block) in non-compat mode does NOT rewrite to this.$_hasBlock', () => {
+      const result = compile('{{#if (has-block)}}has block{{/if}}', { flags: defaultFlags });
+      // Non-compat mode uses $_hasBlock.bind(this, $slots) - no "this.$_hasBlock" prefix
+      expect(result.code).not.toContain('this.$_hasBlock');
+      expect(result.code).toContain('$_hasBlock');
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Path transforms
+  // --------------------------------------------------------------------------
+  describe('Path transforms', () => {
+    test('this.attrs.foo is treated as arg in compat mode', () => {
+      const result = compile('{{this.attrs.foo}}', { flags: compatFlags });
+      // In compat mode, this.attrs.foo is treated as an @-arg reference
+      // The $a prefix indicates it is going through the args path
+      expect(result.code).toContain('$a');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('this.attrs.foo is NOT rewritten in non-compat mode', () => {
+      const result = compile('{{this.attrs.foo}}', { flags: defaultFlags });
+      expect(result.code).toContain('this');
+      expect(result.code).toContain('attrs');
+    });
+
+    test('this.attrs.foo.bar is treated as arg in compat mode', () => {
+      const result = compile('{{this.attrs.foo.bar}}', { flags: compatFlags });
+      // The $a prefix indicates args path
+      expect(result.code).toContain('$a');
+    });
+
+    test('paths are wrapped in reactive getters in compat mode', () => {
+      const result = compile('{{this.value}}', { flags: compatFlags });
+      expect(result.code).toContain('() =>');
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Pre-processor transforms
+  // --------------------------------------------------------------------------
+  describe('Pre-processor transforms', () => {
+    test('<LinkTo> is transformed to <link-to> in compat mode', () => {
+      const result = compile('<LinkTo @route="home">Go</LinkTo>', { flags: compatFlags });
+      expect(result.code).toContain("'link-to'");
+      expect(result.code).not.toContain('LinkTo');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('<Outlet> is transformed to <outlet> in compat mode', () => {
+      const result = compile('<Outlet />', { flags: compatFlags });
+      // Outlet should be lowered to kebab-case
+      expect(result.code).not.toContain('Outlet');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('{{component "foo-bar"}} is transformed to <FooBar /> in compat mode', () => {
+      const result = compile('{{component "foo-bar"}}', { flags: compatFlags });
+      expect(result.code).toContain('FooBar');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('{{#component "foo-bar"}}content{{/component}} block form in compat mode', () => {
+      const result = compile('{{#component "foo-bar"}}content{{/component}}', { flags: compatFlags });
+      expect(result.code).toContain('FooBar');
+      expect(result.code).toContain('content');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('{{component "foo-bar"}} with args transforms attrs to @-prefixed', () => {
+      const result = compile('{{component "foo-bar" name="val"}}', { flags: compatFlags });
+      expect(result.code).toContain('FooBar');
+      expect(result.code).toContain('name');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('inline curly component {{my-comp}} transforms to <MyComp /> in compat mode', () => {
+      const result = compile('{{my-comp}}', { flags: compatFlags });
+      expect(result.code).toContain('MyComp');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('inline curly component with args {{my-comp name="val"}} transforms', () => {
+      const result = compile('{{my-comp name="val"}}', { flags: compatFlags });
+      expect(result.code).toContain('MyComp');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('each-in is NOT transformed to component (builtin hyphenated helper)', () => {
+      // each-in should be kept as a helper call, not transformed to a component
+      const result = compile('{{each-in this.obj}}', { flags: compatFlags });
+      expect(result.code).not.toContain('EachIn');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('unique-id is NOT transformed to component (builtin hyphenated helper)', () => {
+      const result = compile('{{unique-id}}', { flags: compatFlags });
+      expect(result.code).not.toContain('UniqueId');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('<Foo></Foo> empty component gets @__hasBlock__ marker in compat mode', () => {
+      const result = compile('<Foo></Foo>', {
+        flags: compatFlags,
+        bindings: new Set(['Foo']),
+      });
+      expect(result.code).toContain('__hasBlock__');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('<Foo /> self-closing does NOT get @__hasBlock__ marker', () => {
+      const result = compile('<Foo />', {
+        flags: compatFlags,
+        bindings: new Set(['Foo']),
+      });
+      expect(result.code).not.toContain('__hasBlock__');
+    });
+
+    test('{{#in-element el insertBefore=null}} strips insertBefore in compat mode', () => {
+      const result = compile('{{#in-element this.el insertBefore=null}}content{{/in-element}}', { flags: compatFlags });
+      // Should compile without error — insertBefore is stripped
+      expect(result.errors).toHaveLength(0);
+      expect(result.code).toContain(SYMBOLS.IN_ELEMENT);
+    });
+
+    test('let block param dot-path invocations transform in compat mode', () => {
+      const result = compile(
+        '{{#let this.component as |comp|}}{{comp.sub name="val"}}{{/let}}',
+        { flags: compatFlags }
+      );
+      expect(result.errors).toHaveLength(0);
+      // The dot-path should be treated as a dynamic component
+      expect(result.code).toContain(SYMBOLS.DYNAMIC_COMPONENT);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Serializer transforms
+  // --------------------------------------------------------------------------
+  describe('Serializer transforms', () => {
+    test('unknown paths use $_maybeHelper in compat mode without ember integration', () => {
+      const result = compile('{{unknownHelper}}', { flags: compatFlags });
+      expect(result.code).toContain(SYMBOLS.MAYBE_HELPER);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('unknown path expressions use this.path in compat mode WITH ember integration', () => {
+      // WITH_EMBER_INTEGRATION affects path values (like {{this.someValue}})
+      // but bare {{unknownHelper}} with no params is treated as a helper call.
+      // To get path treatment, use it in a position where the parser produces a path.
+      const result = compile('<div>{{this.unknownValue}}</div>', {
+        flags: { IS_GLIMMER_COMPAT_MODE: true, WITH_EMBER_INTEGRATION: true },
+      });
+      // Known this. paths are treated as direct paths
+      expect(result.code).toContain('this.unknownValue');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('{{log}} in compat mode does not wrap in reactive getter', () => {
+      const result = compile('{{log "hello"}}', { flags: compatFlags });
+      // log in compat mode should use comma expression pattern, not reactive getter
+      expect(result.code).toContain('$__log');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('component children with hyphens are wrapped in arrows in compat mode', () => {
+      // Components whose tag contains a hyphen (custom element) get lazy-wrapped children
+      const result = compile('<my-widget><div>inner</div></my-widget>', { flags: compatFlags });
+      expect(result.errors).toHaveLength(0);
+      // The output should compile successfully — the wrapping is internal
+    });
+
+    test('modifier SubExpression unwrapping in compat mode', () => {
+      // {{(modifier "my-mod" arg)}} on element should unwrap the SubExpression
+      const result = compile('<div {{(modifier "my-mod" this.val)}}></div>', { flags: compatFlags });
+      expect(result.code).toContain('my-mod');
+      expect(result.errors).toHaveLength(0);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Combined / regression tests
+  // --------------------------------------------------------------------------
+  describe('Combined scenarios', () => {
+    test('compat mode compiles a complex template without errors', () => {
+      const result = compile(
+        `<div class="app" ...attributes>
+          {{#if this.show}}
+            <MyComp @name={{this.name}} as |item|>
+              {{item.label}}
+            </MyComp>
+          {{else}}
+            <p>Nothing</p>
+          {{/if}}
+        </div>`,
+        {
+          flags: compatFlags,
+          bindings: new Set(['MyComp']),
+        }
+      );
+      expect(result.errors).toHaveLength(0);
+      expect(result.code).toContain(SYMBOLS.IF);
+      expect(result.code).toContain(SYMBOLS.COMPONENT);
+    });
+
+    test('(has-block) in attribute position wraps in if/true/false in compat mode', () => {
+      const result = compile('<Foo @has={{(has-block)}} />', {
+        flags: compatFlags,
+        bindings: new Set(['Foo']),
+      });
+      // In compat mode, has-block in attribute position should be wrapped
+      // in (if (has-block) "true" "false") to produce string attribute values
+      expect(result.code).toContain('$_hasBlock');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('{{#each}} with key option in compat mode uses $_eachSync', () => {
+      const result = compile(
+        '{{#each this.items key="id" as |item|}}{{item.name}}{{/each}}',
+        { flags: compatFlags }
+      );
+      expect(result.code).toContain(SYMBOLS.EACH_SYNC);
+      expect(result.code).toContain('"id"');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('{{component this.dynamicName}} with dynamic name in compat mode', () => {
+      const result = compile('{{component this.currentComponent}}', { flags: compatFlags });
+      expect(result.errors).toHaveLength(0);
+      // Should compile as dynamic component
+      expect(result.code).toContain(SYMBOLS.DYNAMIC_COMPONENT);
+    });
+
+    test('unless block is inverted if in compat mode', () => {
+      const result = compile(
+        '{{#unless this.hidden}}visible{{else}}hidden{{/unless}}',
+        { flags: compatFlags }
+      );
+      expect(result.errors).toHaveLength(0);
+      // unless is compiled as an inverted if
+      expect(result.code).toContain(SYMBOLS.IF);
+    });
+  });
+
+  describe('scope-shadowed built-in keywords', () => {
+    // Strict-mode templates can pass a scope to the compiler (e.g. via
+    // renderComponent(tpl, { scope: { if: Component } })). When the user
+    // binds a name that collides with a GXT built-in keyword, the binding
+    // MUST win: the compiler should invoke the user-provided component
+    // instead of emitting `$_if(...)` / `$_each(...)` / ...
+    test('{{#if}} with `if` in scope compiles to component call, not $_if', () => {
+      const result = compile(
+        '{{#if some.thing}}X{{/if}}',
+        { bindings: new Set(['if']) }
+      );
+      expect(result.errors).toHaveLength(0);
+      // Uses component-call path, not the built-in if helper
+      expect(result.code).toContain(SYMBOLS.COMPONENT);
+      expect(result.code).not.toContain(`${SYMBOLS.IF}(`);
+      // `if` is a JS reserved word, so the bare identifier must be aliased
+      // to `__scope_if` (matching the Ember compat scope-injection naming).
+      expect(result.code).toContain('__scope_if');
+      // The positional condition must be forwarded as __pos0__ so the
+      // component actually receives the argument.
+      expect(result.code).toContain('__pos0__');
+      expect(result.code).toContain('__posCount__');
+    });
+
+    test('{{#if}} with `if` in lexical scope and {{else}} forwards both slots', () => {
+      const result = compile(
+        '{{#if some.thing}}X{{else}}Y{{/if}}',
+        { lexicalScope: (v) => v === 'if' }
+      );
+      expect(result.errors).toHaveLength(0);
+      expect(result.code).not.toContain(`${SYMBOLS.IF}(`);
+      expect(result.code).toContain('__scope_if');
+      expect(result.code).toContain('default:');
+      expect(result.code).toContain('inverse:');
+    });
+
+    test('{{#each}} with `each` in scope compiles to component call, not $_each', () => {
+      const result = compile(
+        '{{#each items as |item|}}{{item}}{{/each}}',
+        { bindings: new Set(['each']) }
+      );
+      expect(result.errors).toHaveLength(0);
+      // Should use component call, not built-in each
+      expect(result.code).toContain(SYMBOLS.COMPONENT);
+      expect(result.code).not.toContain(`${SYMBOLS.EACH}(`);
+      expect(result.code).toContain('__pos0__');
+    });
+
+    test('{{#if}} without scope binding still uses built-in $_if', () => {
+      const result = compile('{{#if this.show}}X{{/if}}');
+      expect(result.errors).toHaveLength(0);
+      // Built-in path preserved when no shadowing binding exists
+      expect(result.code).toContain(SYMBOLS.IF);
+      expect(result.code).not.toContain('__scope_if');
+    });
+
+    test('{{#let}} shadowed by a non-reserved binding emits bare identifier', () => {
+      // `let` is reserved, so a `let` binding would still be aliased to
+      // `__scope_let` — the reserved-word pathway is covered. Here we check
+      // that non-reserved built-ins (e.g. `each`) emit the unmangled id.
+      const result = compile(
+        '{{#each items as |i|}}{{i}}{{/each}}',
+        { bindings: new Set(['each']) }
+      );
+      expect(result.errors).toHaveLength(0);
+      expect(result.code).not.toContain('__scope_each');
+      // The bare `each` identifier should appear as the component reference
       expect(result.code).toMatch(/\$_c\(\s*each\b/);
     });
   });

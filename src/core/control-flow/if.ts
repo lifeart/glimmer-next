@@ -45,6 +45,12 @@ export class IfCondition {
   destroyPromise: Promise<any> | null = null;
   [RENDERED_NODES_PROPERTY]: Array<Node> = [];
   [COMPONENT_ID_PROPERTY] = cId();
+  // Snapshot of DOM nodes inserted by the most recent branch render. We track
+  // these so we can clean them up even when the branch's `prevComponent` is
+  // empty (e.g. when the true branch is just `{{yield}}` and the slot runtime
+  // inserts nodes directly into the parent without threading them back into
+  // the IfCondition's component tree).
+  branchDomNodes: Array<Node> = [];
   trueBranch: (ifContext: IfCondition) => GenericReturnType;
   falseBranch: (ifContext: IfCondition) => GenericReturnType;
   declare api: DOMApi;
@@ -161,10 +167,21 @@ export class IfCondition {
         this.destroyPromise = null;
       });
       return;
-    } else if (this.prevComponent && !(Array.isArray(this.prevComponent) && this.prevComponent.length === 0)) {
+    } else if (this.prevComponent || this.branchDomNodes.length > 0) {
+      const isEmptyArray = Array.isArray(this.prevComponent) && this.prevComponent.length === 0;
       // In Ember integration mode, use synchronous destroy for immediate DOM updates
       if ((globalThis as any).__GXT_MODE__) {
         this.destroyBranchSync();
+        this.renderState(nextBranch);
+        return;
+      }
+      // Fast path: nothing meaningful to async-destroy and no orphan DOM —
+      // just render the next branch synchronously.
+      if (isEmptyArray && this.branchDomNodes.length === 0) {
+        this.prevComponent = null;
+        if (!this.validateEpoch(runNumber)) {
+          return;
+        }
         this.renderState(nextBranch);
         return;
       }
@@ -206,29 +223,67 @@ export class IfCondition {
     return true;
   }
 
-  destroyBranchSync() {
-    const branch = this.prevComponent;
-    if (branch === null) {
+  /**
+   * Remove any DOM nodes that the previous branch render inserted between
+   * its first node and the IfCondition placeholder. Used as a fallback for
+   * branches whose render function does not thread results back through
+   * `prevComponent` (e.g. yield-only true branches in slot mode).
+   */
+  removeOrphanBranchDom() {
+    const nodes = this.branchDomNodes;
+    if (nodes.length === 0) {
       return;
     }
+    for (let i = 0; i < nodes.length; i++) {
+      const node = nodes[i];
+      // Skip nodes that were already torn down (e.g. they were owned by
+      // prevComponent and destroyElementSync already removed them) or that
+      // are no longer attached anywhere.
+      if (node && (node as Node).parentNode) {
+        try {
+          (node as Node).parentNode!.removeChild(node as Node);
+        } catch {
+          // Defensive: a parent may have been removed in the same tick.
+          // Re-throw any unexpected error so it surfaces in dev.
+          if (IS_DEV_MODE) {
+            throw new Error('IfCondition: failed to remove orphan branch node');
+          }
+        }
+      }
+    }
+    this.branchDomNodes = [];
+  }
+
+  destroyBranchSync() {
+    const branch = this.prevComponent;
     this.prevComponent = null;
-    destroyElementSync(branch as ComponentLike, false, this.api);
+    if (branch !== null) {
+      destroyElementSync(branch as ComponentLike, false, this.api);
+    }
+    this.removeOrphanBranchDom();
   }
 
   async destroyBranch() {
     const branch = this.prevComponent;
-    if (branch === null) {
-      return;
-    } else {
-      this.prevComponent = null;
+    this.prevComponent = null;
+    if (branch !== null) {
+      await destroyElement(branch as ComponentLike, false, this.api);
     }
-    await destroyElement(branch as ComponentLike, false, this.api);
+    this.removeOrphanBranchDom();
   }
 
   renderState(nextBranch: (ifContext: IfCondition) => GenericReturnType) {
     if (IS_DEV_MODE) {
       $DEBUG_REACTIVE_CONTEXTS.push(`if:${String(this.lastValue)}`);
     }
+    // Capture the sibling immediately before the placeholder so that, after
+    // the branch renders, we can identify which DOM nodes are "owned" by
+    // this branch — including nodes inserted by sub-runtimes (slots, dynamic
+    // components) that don't thread their roots through `prevComponent`.
+    const placeholderParent = this.api.parent(this.placeholder) as Node | null;
+    const anchorBefore: Node | null = placeholderParent
+      ? (this.placeholder as Node).previousSibling
+      : null;
     try {
       setParentContext(this as unknown as ComponentLike);
       this.prevComponent = nextBranch(this);
@@ -243,6 +298,22 @@ export class IfCondition {
       this.prevComponent,
       this.placeholder,
     );
+    // Snapshot all nodes between the pre-render anchor and the placeholder.
+    // These are the DOM nodes the branch ended up inserting into the parent.
+    const livingParent = this.api.parent(this.placeholder) as Node | null;
+    if (livingParent) {
+      const captured: Node[] = [];
+      let cursor: Node | null = anchorBefore
+        ? anchorBefore.nextSibling
+        : livingParent.firstChild;
+      while (cursor && cursor !== this.placeholder) {
+        captured.push(cursor);
+        cursor = cursor.nextSibling;
+      }
+      this.branchDomNodes = captured;
+    } else {
+      this.branchDomNodes = [];
+    }
     if (IS_DEV_MODE) {
       // HMR logic
       if (this.runNumber === 1) {

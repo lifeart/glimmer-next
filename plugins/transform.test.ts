@@ -387,7 +387,7 @@ export class MyList extends Component {
       ) as TransformResult;
 
       // Should only have ONE $_each call in roots
-      const eachMatches = result.code.match(/\$_each\(/g);
+      const eachMatches = result.code.match(/\$_eachSync\(/g);
       expect(eachMatches).toHaveLength(1);
 
       // item.name should be inside the $_each callback, not as a separate element
@@ -424,7 +424,7 @@ export class NestedList extends Component {
       ) as TransformResult;
 
       // Should have exactly TWO $_each calls (outer and inner)
-      const eachMatches = result.code.match(/\$_each\(/g);
+      const eachMatches = result.code.match(/\$_eachSync\(/g);
       expect(eachMatches).toHaveLength(2);
 
       // Both block params should be properly scoped
@@ -459,7 +459,7 @@ export class FilteredList extends Component {
       ) as TransformResult;
 
       // Should have ONE $_each and ONE $_if
-      const eachMatches = result.code.match(/\$_each\(/g);
+      const eachMatches = result.code.match(/\$_eachSync\(/g);
       const ifMatches = result.code.match(/\$_if\(/g);
       expect(eachMatches).toHaveLength(1);
       expect(ifMatches).toHaveLength(1);
@@ -494,7 +494,7 @@ export class ClickableList extends Component {
       ) as TransformResult;
 
       // Should have ONE $_each
-      const eachMatches = result.code.match(/\$_each\(/g);
+      const eachMatches = result.code.match(/\$_eachSync\(/g);
       expect(eachMatches).toHaveLength(1);
 
       // fn helper should reference item.id correctly

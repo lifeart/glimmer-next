@@ -275,9 +275,14 @@ describe('Visitor Pattern', () => {
       const node = parseFirst('{{#let "value" as |x|}}{{x}}{{/let}}');
       if (node.type === 'BlockStatement') {
         const result = visitBlock(ctx, node);
-        expect(isSerializedValue(result)).toBe(true);
-        if (isSerializedValue(result)) {
-          expect(result.kind).toBe('raw');
+        expect(isHBSControlExpression(result)).toBe(true);
+        if (isHBSControlExpression(result)) {
+          expect(result.type).toBe('let');
+          expect(result.letBindings).toBeDefined();
+          expect(result.letBindings!.length).toBe(1);
+          expect(result.letBindings![0].name).toBe('x');
+          expect(result.letBindings![0].isPrimitive).toBe(true);
+          expect(result.children.length).toBeGreaterThan(0);
         }
       }
     });

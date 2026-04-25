@@ -25,11 +25,11 @@ describe('Element helper - compiler integration', () => {
       {{/let}}
     `);
 
-    // Should reference the block param in the getter
-    expect(result.code).toContain('Let_tagName_scope');
+    // Should contain the tag and $_tag call
+    expect(result.code).toContain('tagName');
     expect(result.code).toContain('$_tag');
     // Tag should be wrapped in a getter for reactivity
-    expect(result.code).toContain('() => Let_tagName_scope');
+    expect(result.code).toContain('() => tagName');
   });
 
   test('element helper ignores extra arguments', () => {
@@ -54,9 +54,9 @@ describe('Element helper - compiler integration', () => {
       {{/let}}
     `);
 
-    // Should generate a getter that references self.tagName
-    // The compiler uses 'self' instead of 'this' in closures
-    expect(result.code).toContain('self.tagName');
+    // Should generate a getter that references this.tagName
+    // Arrow function IIFEs preserve `this` from enclosing scope
+    expect(result.code).toContain('this.tagName');
     expect(result.code).toContain('$_tag');
   });
 
@@ -68,7 +68,7 @@ describe('Element helper - compiler integration', () => {
     `);
 
     // Should generate a getter that references args
-    expect(result.code).toContain('self.args');
+    expect(result.code).toContain('this.args');
     expect(result.code).toContain('$_tag');
   });
 });
@@ -135,7 +135,7 @@ describe('Element helper - _DOM tag resolution', () => {
     `);
 
     // The tag should be accessed via a getter for reactivity
-    expect(result.code).toContain('() => Let_tagName_scope');
+    expect(result.code).toContain('() => tagName');
     // The wrapper function should use $_tag
     expect(result.code).toContain('$_tag(');
   });

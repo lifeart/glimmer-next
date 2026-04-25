@@ -380,6 +380,16 @@ export function resolvePath(ctx: CompilerContext, pathStr: string): string {
     return toOptionalChaining(resolved);
   }
 
+  // In compat mode, rewrite `this.attrs.X` → `@X` (deprecated Ember pattern).
+  // This must be checked before the generic `this.` handler so that
+  // this.attrs.foo resolves through the @-args path ($a.foo) instead of
+  // being emitted as `this?.attrs?.foo`.
+  if (ctx.flags.IS_GLIMMER_COMPAT_MODE && pathStr.startsWith('this.attrs.')) {
+    const argPath = pathStr.slice('this.attrs.'.length); // e.g., "foo" or "foo.bar"
+    // Delegate to the @-args handler by recursing with `@argPath`
+    return resolvePath(ctx, `@${argPath}`);
+  }
+
   // Handle explicit this
   if (pathStr.startsWith('this.') || pathStr === 'this') {
     return toOptionalChaining(pathStr);

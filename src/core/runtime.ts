@@ -102,7 +102,18 @@ function sortSharedTags(sharedTags: MergedCell[]) {
 function syncDomSync() {
   let sharedTags: MergedCell[] | null = null;
   setIsRendering(true);
-  for (const cell of tagsToRevalidate) {
+  // Process primary cells in creation (id) order so that parent opcodes
+  // run before child opcodes. Without this, when two cells are dirtied
+  // in the same batch (e.g., outer each source + inner each source),
+  // iteration order follows insertion order, which can cause a child
+  // effect (e.g., a nested {{#each}}'s syncList) to create items just
+  // before its parent tears it down. Sorting by tag.id gives parent-first
+  // ordering because parent cells are allocated first during render.
+  const primaryCells =
+    tagsToRevalidate.size > 1
+      ? Array.from(tagsToRevalidate).sort((a, b) => a.id - b.id)
+      : tagsToRevalidate;
+  for (const cell of primaryCells) {
     executeTag(cell, false);
     const subTags = relatedTags.get(cell.id);
     if (subTags !== undefined) {
@@ -142,7 +153,12 @@ function syncDomSync() {
 async function syncDomAsync() {
   let sharedTags: MergedCell[] | null = null;
   setIsRendering(true);
-  for (const cell of tagsToRevalidate) {
+  // See syncDomSync for rationale: parent-first ordering by tag.id.
+  const primaryCells =
+    tagsToRevalidate.size > 1
+      ? Array.from(tagsToRevalidate).sort((a, b) => a.id - b.id)
+      : tagsToRevalidate;
+  for (const cell of primaryCells) {
     await executeTag(cell, true);
     const subTags = relatedTags.get(cell.id);
     if (subTags !== undefined) {

@@ -266,7 +266,7 @@ describe('Element helper - compiled template execution', () => {
     `);
 
     // Verify the getter wraps the block param
-    expect(result.code).toContain('() => Let_tagName_scope');
+    expect(result.code).toContain('() => tagName');
     expect(result.code).toContain('$_tag(');
   });
 });

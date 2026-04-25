@@ -74,8 +74,25 @@ export function buildValue(
       return buildHelper(ctx, value.name, value.positional, value.named, ctxName, value.sourceRange, value.pathRange);
 
     case 'getter':
+      // In compat mode, $__log should not be wrapped in a reactive getter.
+      // Ember's {{log}} fires once, not on every re-evaluation.
+      // Transform: () => $__log(args) → ($__log("__logSite:N", args), "")
+      if (ctx.flags.IS_GLIMMER_COMPAT_MODE &&
+          value.value.kind === 'helper' && value.value.name === 'log') {
+        const siteId = `__logSite:${ctx.logSiteCounter++}`;
+        const innerHelper = value.value;
+        const siteIdExpr = B.string(siteId);
+        const originalArgs = innerHelper.positional.map(arg => buildValue(ctx, arg, ctxName));
+        const logSymbol = getBuiltInHelperSymbol('log')!;
+        const logCallWithId = B.call(logSymbol, [siteIdExpr, ...originalArgs], innerHelper.sourceRange);
+        // Comma expression: ($__log("siteId", args), "") — evaluates log, returns empty string
+        // Must be "" not undefined, because GXT renders undefined as text node
+        return B.raw(`(${serializeJS(logCallWithId)}, "")`, value.sourceRange);
+      }
       // Wrap the inner value in an arrow function: () => innerValue
-      return B.getter(buildValue(ctx, value.value, ctxName), value.sourceRange);
+      // Use buildValueNoGetter to avoid double-wrapping: getter(path) should
+      // produce () => this.x, NOT () => () => this.x
+      return B.getter(buildValueNoGetter(ctx, value.value, ctxName), value.sourceRange);
 
     case 'concat':
       // Build [part1, part2, ...].join('') with source mapping for paths.
@@ -83,6 +100,23 @@ export function buildValue(
       // outer getter already provides reactivity.
       return buildConcat(ctx, value.parts, ctxName, value.sourceRange);
   }
+}
+
+/**
+ * Build a value WITHOUT getter wrapping for path expressions.
+ * Used inside getter(value) to prevent double-wrapping:
+ * getter(path) should produce () => this.x, NOT () => () => this.x
+ */
+function buildValueNoGetter(
+  ctx: CompilerContext,
+  value: SerializedValue,
+  ctxName: string
+): JSExpression {
+  if (value.kind === 'path') {
+    return buildPathExpression(ctx, value, false, ctxName);
+  }
+  // For non-path types, buildValue doesn't double-wrap
+  return buildValue(ctx, value, ctxName);
 }
 
 /**
@@ -128,8 +162,10 @@ export function buildPathExpression(
   // treat bare names as this.name since Ember templates have implicit this.
   // This ensures reactive tracking works — this.cond1 goes through the cell
   // getter and GXT's formula tracking picks it up.
+  // Exception: when WITH_EVAL_SUPPORT is true, unknown bindings should use
+  // $_maybeHelper for dynamic resolution via eval().
   if (!isKnown && ctx.flags.IS_GLIMMER_COMPAT_MODE) {
-    if (ctx.flags.WITH_EMBER_INTEGRATION) {
+    if (ctx.flags.WITH_EMBER_INTEGRATION && !ctx.flags.WITH_EVAL_SUPPORT) {
       // Treat as this.expression — Ember's implicit this
       const thisPath = `${ctxName}.${expression}`;
       if (wrapInGetter) {
@@ -137,7 +173,7 @@ export function buildPathExpression(
       }
       return B.id(thisPath);
     }
-    // Non-Ember compat: use $_maybeHelper for dynamic resolution
+    // Non-Ember compat or eval mode: use $_maybeHelper for dynamic resolution
     const maybeHelperArgs: JSExpression[] = [
       B.string(expression, value.sourceRange),
       B.array([]),
@@ -397,7 +433,21 @@ function buildHelper(
   }
 
   // Unknown helper - use maybe helper wrapper with $scope for resolution
-  return buildMaybeHelper(ctx, name, positional, named, ctxName, sourceRange, undefined, pathRange);
+  const maybeHelperExpr = buildMaybeHelper(ctx, name, positional, named, ctxName, sourceRange, undefined, pathRange);
+
+  // In compat mode, wrap {{unbound expr}} calls with caching logic.
+  // The unbound helper should snapshot the value once and never update.
+  // Wrap: $_maybeHelper("unbound", ...) → globalThis.__gxtUnboundEval(__ubCache, "id", () => (call))
+  if (ctx.flags.IS_GLIMMER_COMPAT_MODE && name === 'unbound') {
+    const ubId = `__ub${ctx.unboundCounter++}`;
+    const serialized = serializeJS(maybeHelperExpr);
+    return B.raw(
+      `globalThis.__gxtUnboundEval(__ubCache,"${ubId}",()=>(${serialized}))`,
+      sourceRange
+    );
+  }
+
+  return maybeHelperExpr;
 }
 
 /**
@@ -413,8 +463,18 @@ function buildSpecialHelper(
   pathRange?: SourceRange
 ): JSExpression {
   const posArgs = positional.map(arg => buildValue(ctx, arg, ctxName));
-  const namedObj = buildNamedArgsObject(ctx, named, ctxName);
   const callee = pathRange ? B.id(name, pathRange, 'PathExpression', name) : name;
+
+  // In compat mode, wrap $_componentHelper hash values in getter functions
+  // for reactivity. This preserves reactivity so curried component args
+  // update when dependencies change.
+  // Transform: $_componentHelper([params], {key: expr}) → $_componentHelper([params], {key: () => (expr)})
+  if (ctx.flags.IS_GLIMMER_COMPAT_MODE && name === SYMBOLS.COMPONENT_HELPER) {
+    const namedObj = buildComponentHelperNamedArgs(ctx, named, ctxName);
+    return B.call(callee, [B.array(posArgs), namedObj], sourceRange);
+  }
+
+  const namedObj = buildNamedArgsObject(ctx, named, ctxName);
   return B.call(callee, [B.array(posArgs), namedObj], sourceRange);
 }
 
@@ -495,6 +555,28 @@ function buildNamedArgsObject(
   const props = [];
   for (const [key, val] of named) {
     props.push(B.prop(key, buildValue(ctx, val, ctxName), false, val.sourceRange));
+  }
+  return B.object(props);
+}
+
+/**
+ * Build named args for $_componentHelper with getter-wrapped values.
+ * In compat mode, each hash value is wrapped in () => (expr) for reactivity,
+ * so curried component args update when dependencies change.
+ */
+function buildComponentHelperNamedArgs(
+  ctx: CompilerContext,
+  named: ReadonlyMap<string, SerializedValue>,
+  ctxName: string
+): JSExpression {
+  if (named.size === 0) return B.emptyObject();
+
+  const props = [];
+  for (const [key, val] of named) {
+    const builtVal = buildValue(ctx, val, ctxName);
+    // Wrap in getter for reactivity, but don't double-wrap if already a function
+    const wrappedVal = B.getter(builtVal, val.sourceRange);
+    props.push(B.prop(key, wrappedVal, false, val.sourceRange));
   }
   return B.object(props);
 }
@@ -861,7 +943,15 @@ function buildFnHelperArgs(
       // First arg is function reference - don't wrap in getter
       // For paths, use raw output instead of reactiveGetter
       if (arg.kind === 'path') {
-        args.push(buildPathExpression(ctx, arg, false, ctxName));
+        const pathExpr = buildPathExpression(ctx, arg, false, ctxName);
+        // In compat mode, when the first arg is a this.X path, wrap in a
+        // getter () => this.X so $__fn_ember can resolve it lazily at call
+        // time, supporting reactive function swaps via set().
+        if (ctx.flags.IS_GLIMMER_COMPAT_MODE && ctx.flags.WITH_EMBER_INTEGRATION && /^this\.[a-zA-Z_$][a-zA-Z0-9_$.?]*$/.test(arg.expression)) {
+          args.push(B.getter(pathExpr, arg.sourceRange));
+        } else {
+          args.push(pathExpr);
+        }
       } else {
         args.push(buildValue(ctx, arg, ctxName));
       }

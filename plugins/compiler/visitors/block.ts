@@ -6,22 +6,10 @@
 
 import type { ASTv1 } from '@glimmer/syntax';
 import type { CompilerContext, VisitFn } from '../context';
-import type { SerializedValue, HBSControlExpression, HBSChild, HBSNode, AttributeTuple, SourceRange } from '../types';
-import { literal, raw, getter, isSerializedValue, isHBSNode, isHBSControlExpression } from '../types';
+import type { SerializedValue, HBSControlExpression, HBSChild, HBSNode, AttributeTuple, SourceRange, LetBinding } from '../types';
+import { literal, getter, isSerializedValue, isHBSNode } from '../types';
 import { getNodeRange, serializeValueToString, getBlockParamRanges, getPathExpressionString } from './utils';
 import { addWarning } from '../context';
-
-// Forward declaration for full serialization (set from compile.ts to avoid circular dependency)
-let serializeChildFn: ((ctx: CompilerContext, child: HBSChild, ctxName: string) => string | null) | null = null;
-
-/**
- * Set the serialize function for let block children (called from compile.ts).
- */
-export function setBlockSerializeFunction(
-  fn: (ctx: CompilerContext, child: HBSChild, ctxName: string) => string | null
-): void {
-  serializeChildFn = fn;
-}
 
 /**
  * Get the visit function from context.
@@ -43,16 +31,6 @@ function getVisitChildren(ctx: CompilerContext): (ctx: CompilerContext, children
     return ctx.visitors.visitChildren;
   }
   throw new Error('No visitChildren function available. Call initializeVisitors first.');
-}
-
-/**
- * Get the serialize child function - from ctx.visitors or legacy serializeChildFn.
- */
-function getSerializeChild(ctx: CompilerContext): ((ctx: CompilerContext, child: HBSChild, ctxName: string) => string | null) | null {
-  if (ctx.visitors?.serializeChild) {
-    return ctx.visitors.serializeChild;
-  }
-  return serializeChildFn;
 }
 
 /**
@@ -86,7 +64,11 @@ function isComponentBlock(ctx: CompilerContext, node: ASTv1.BlockStatement): boo
   if (ctx.scopeTracker.hasBinding(name)) return true;
   if (BUILTIN_BLOCK_KEYWORDS.has(name)) return false;
   // Dotted path
-  return name.includes('.');
+  if (name.includes('.')) return true;
+  // In compat mode, hyphenated names are component invocations (Ember convention).
+  // E.g., {{#foo-bar}}...{{/foo-bar}} is a component block.
+  if (ctx.flags.IS_GLIMMER_COMPAT_MODE && name.includes('-')) return true;
+  return false;
 }
 
 /**
@@ -100,8 +82,22 @@ function convertComponentBlock(
 ): HBSNode {
   // isComponentBlock already verified node.path.type === 'PathExpression'
   const pathExpr = node.path as ASTv1.PathExpression;
-  const tag = getPathExpressionString(pathExpr);
+  const rawTag = getPathExpressionString(pathExpr);
   const tagRange = getNodeRange(pathExpr);
+
+  // In compat mode, convert hyphenated block names to PascalCase so the
+  // serializer recognizes them as component-like tags (via isLikelyComponent).
+  // E.g., {{#foo-bar}} → tag 'FooBar', matching how inline curlies work.
+  // Also register the PascalCase tag as a temporary binding so the serializer's
+  // isComponentTag() recognizes it and uses $_c (component call) with proper slots
+  // instead of $_tag (element call) with flat children.
+  const tag = (ctx.flags.IS_GLIMMER_COMPAT_MODE && rawTag.includes('-'))
+    ? toPascalCase(rawTag)
+    : rawTag;
+  const needsTagBinding = ctx.flags.IS_GLIMMER_COMPAT_MODE && rawTag.includes('-') && !ctx.scopeTracker.hasBinding(tag);
+  if (needsTagBinding) {
+    ctx.scopeTracker.addBinding(tag, { kind: 'compat-component', name: tag });
+  }
 
   // Convert hash pairs to @-prefixed attribute tuples
   const attributes: AttributeTuple[] = node.hash.pairs.map((pair) => {
@@ -110,14 +106,16 @@ function convertComponentBlock(
     return [`@${pair.key}`, serializedValue] as const;
   });
 
-  // Positional params on component blocks are normally unsupported (W005),
-  // but when a user scope binding shadows a built-in block keyword (e.g.
-  // `{{#if some.thing}}...{{/if}}` with `if` in scope), we forward the
-  // positional params as @__pos0__, @__pos1__, ... so the shadowing
-  // component actually receives the condition/item/etc. Without this,
-  // `{{#if}}` would silently drop the argument.
-  const isShadowedKeyword = BUILTIN_BLOCK_KEYWORDS.has(tag);
-  if (isShadowedKeyword && node.params.length > 0) {
+  // Forward positional params as @__pos0__, @__pos1__, etc. when:
+  //   a) Compat mode + hyphenated curly component (Ember convention), OR
+  //   b) The block name is a built-in keyword shadowed by a user scope
+  //      binding (e.g. `{{#if some.thing}}` where `if` is in scope). The
+  //      condition/item/etc. would otherwise be silently dropped.
+  const isShadowedKeyword = BUILTIN_BLOCK_KEYWORDS.has(rawTag);
+  const forwardPositional =
+    (ctx.flags.IS_GLIMMER_COMPAT_MODE && rawTag.includes('-')) ||
+    isShadowedKeyword;
+  if (forwardPositional && node.params.length > 0) {
     for (let i = 0; i < node.params.length; i++) {
       const param = node.params[i];
       const value = getVisit(ctx)(ctx, param, false);
@@ -134,23 +132,75 @@ function convertComponentBlock(
     );
   }
 
-  // Add block params to scope before visiting children
+  // Add block params to scope before visiting children.
+  // Enter a new scope frame so that inner blocks using the same block-param
+  // name do not permanently clobber an outer block's binding (e.g. nested
+  // `{{#each ... as |x|}}{{#each ... as |x|}}...{{/each}}{{x}}{{/each}}`).
   const blockParams = node.program.blockParams;
   const blockParamRanges = getBlockParamRanges(node);
+  ctx.scopeTracker.enterScope('component-block');
   for (const param of blockParams) {
     warnOnReservedBinding(ctx, param);
     ctx.scopeTracker.addBinding(param, { kind: 'block-param', name: param });
   }
 
-  // Note: node.inverse ({{else}} branch) is intentionally not handled here.
-  // Angle-bracket components don't support else blocks.
+  // Visit children (default block body)
+  const defaultChildren = getVisitChildren(ctx)(ctx, node.program.body);
 
-  // Visit children
-  const children = getVisitChildren(ctx)(ctx, node.program.body);
+  // Exit the default-block scope, restoring any shadowed outer bindings.
+  ctx.scopeTracker.exitScope();
 
-  // Remove block params from scope
-  for (const param of blockParams) {
-    ctx.scopeTracker.removeBinding(param);
+  // Visit inverse ({{else}} branch) if present. The inverse block has its own
+  // (usually empty) block params; we emit it as a synthesized `:inverse` named
+  // slot so the runtime sees `slots.inverse` and `(has-block 'inverse')` works.
+  let inverseSlotNode: HBSNode | null = null;
+  if (node.inverse?.body) {
+    const inverseBlockParams = node.inverse.blockParams ?? [];
+    ctx.scopeTracker.enterScope('component-inverse');
+    for (const param of inverseBlockParams) {
+      warnOnReservedBinding(ctx, param);
+      ctx.scopeTracker.addBinding(param, { kind: 'block-param', name: param });
+    }
+    const inverseChildren = getVisitChildren(ctx)(ctx, node.inverse.body);
+    ctx.scopeTracker.exitScope();
+    inverseSlotNode = {
+      _nodeType: 'element',
+      tag: ':inverse',
+      attributes: [],
+      properties: [],
+      events: [],
+      children: inverseChildren,
+      blockParams: inverseBlockParams,
+      blockParamRanges: undefined,
+      selfClosing: false,
+      hasStableChild: inverseChildren.some(
+        (child) => typeof child === 'string' || isHBSNode(child)
+      ),
+    };
+  }
+
+  // If we have an inverse slot, wrap the default children in a synthesized
+  // `:default` named slot so buildSlots (which emits ONLY named slots when any
+  // exist) still receives the default block body.
+  let children: HBSChild[];
+  if (inverseSlotNode) {
+    const defaultSlotNode: HBSNode = {
+      _nodeType: 'element',
+      tag: ':default',
+      attributes: [],
+      properties: [],
+      events: [],
+      children: defaultChildren,
+      blockParams,
+      blockParamRanges: blockParamRanges ?? undefined,
+      selfClosing: false,
+      hasStableChild: defaultChildren.some(
+        (child) => typeof child === 'string' || isHBSNode(child)
+      ),
+    };
+    children = [defaultSlotNode, inverseSlotNode];
+  } else {
+    children = defaultChildren;
   }
 
   // Check for stable children (text or element nodes)
@@ -175,6 +225,92 @@ function convertComponentBlock(
 }
 
 /**
+ * Convert kebab-case to PascalCase.
+ */
+function toPascalCase(name: string): string {
+  return name.split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join('');
+}
+
+/**
+ * Convert {{#component "name" arg=val}}...{{/component}} block to an HBSNode.
+ *
+ * First param is the component name (string literal or path expression).
+ * Hash pairs become @-prefixed attributes.
+ * Block body becomes children.
+ */
+function convertComponentHelperBlock(
+  ctx: CompilerContext,
+  node: ASTv1.BlockStatement,
+  range?: SourceRange
+): HBSNode | null {
+  const firstParam = node.params[0];
+  let tag: string;
+
+  if (firstParam.type === 'StringLiteral') {
+    tag = toPascalCase(firstParam.value);
+  } else if (firstParam.type === 'PathExpression') {
+    tag = getPathExpressionString(firstParam);
+  } else {
+    return null;
+  }
+
+  // Convert hash pairs to @-prefixed attributes
+  const attributes: AttributeTuple[] = node.hash.pairs.map((pair) => {
+    const value = getVisit(ctx)(ctx, pair.value, false);
+    const serializedValue = value !== null && isSerializedValue(value) ? value : literal(null);
+    return [`@${pair.key}`, getter(serializedValue, range)] as const;
+  });
+
+  // Remaining positional params (after the component name)
+  const positionalParams = node.params.slice(1);
+  for (let i = 0; i < positionalParams.length; i++) {
+    const param = positionalParams[i];
+    const value = getVisit(ctx)(ctx, param, false);
+    if (value !== null && isSerializedValue(value)) {
+      attributes.push([`@__pos${i}__`, getter(value, range)]);
+    }
+  }
+  if (positionalParams.length > 0) {
+    attributes.push(['@__posCount__', literal(positionalParams.length)]);
+  }
+
+  // Add block params to scope before visiting children.
+  // Use a dedicated scope frame so nested blocks with matching names shadow
+  // instead of overwriting the parent's binding.
+  const blockParams = node.program.blockParams;
+  const blockParamRanges = getBlockParamRanges(node);
+  ctx.scopeTracker.enterScope('component-helper-block');
+  for (const param of blockParams) {
+    warnOnReservedBinding(ctx, param);
+    ctx.scopeTracker.addBinding(param, { kind: 'block-param', name: param });
+  }
+
+  // Visit children
+  const children = getVisitChildren(ctx)(ctx, node.program.body);
+
+  // Exit block scope, restoring outer bindings.
+  ctx.scopeTracker.exitScope();
+
+  const hasStable = children.some(
+    (child) => typeof child === 'string' || isHBSNode(child)
+  );
+
+  return {
+    _nodeType: 'element',
+    tag,
+    attributes,
+    properties: [],
+    events: [],
+    children,
+    blockParams,
+    blockParamRanges: blockParamRanges ?? undefined,
+    selfClosing: false,
+    hasStableChild: hasStable,
+    sourceRange: range,
+  };
+}
+
+/**
  * Visit a BlockStatement node.
  *
  * @param ctx - The compiler context
@@ -191,34 +327,16 @@ export function visitBlock(
     return convertComponentBlock(ctx, node, range);
   }
 
+  // In compat mode, handle {{#component "name" ...}}...{{/component}} block form
+  if (ctx.flags.IS_GLIMMER_COMPAT_MODE && node.path.type === 'PathExpression') {
+    const pathName = getPathExpressionString(node.path);
+    if (pathName === 'component' && node.params.length > 0) {
+      return convertComponentHelperBlock(ctx, node, range);
+    }
+  }
+
   // Blocks must have at least one param
   if (!node.params.length) {
-    return null;
-  }
-
-  // Add block params to scope
-  const blockParams = node.program.blockParams;
-  const blockParamRanges = getBlockParamRanges(node);
-  for (const param of blockParams) {
-    warnOnReservedBinding(ctx, param);
-    ctx.scopeTracker.addBinding(param, { kind: 'block-param', name: param });
-  }
-
-  // Get children
-  const childElements = getVisitChildren(ctx)(ctx, node.program.body);
-
-  // Get inverse (else) children
-  const inverseElements = node.inverse?.body
-    ? getVisitChildren(ctx)(ctx, node.inverse.body)
-    : null;
-
-  // Remove block params from scope
-  for (const param of blockParams) {
-    ctx.scopeTracker.removeBinding(param);
-  }
-
-  // Empty block - skip
-  if (!childElements.length) {
     return null;
   }
 
@@ -228,6 +346,52 @@ export function visitBlock(
   }
 
   const name = getPathExpressionString(node.path);
+
+  // Let blocks manage their own scope and children because they need
+  // to visit binding values BEFORE adding block params to scope, and
+  // the bindings use 'let-binding' kind (not 'block-param').
+  if (name === 'let') {
+    return createLetBlock(ctx, node, range);
+  }
+
+  // Add block params to a fresh scope frame so nested blocks using the same
+  // block-param name (e.g. `{{#each ... as |x|}}{{#each ... as |x|}}`) shadow
+  // rather than clobber the outer binding. Exiting the scope cleanly restores
+  // any binding the inner block shadowed — this is what makes post-inner-close
+  // references read the outer scope instead of falling back to a literal lookup.
+  const blockParams = node.program.blockParams;
+  const blockParamRanges = getBlockParamRanges(node);
+  ctx.scopeTracker.enterScope(name);
+  for (const param of blockParams) {
+    warnOnReservedBinding(ctx, param);
+    ctx.scopeTracker.addBinding(param, { kind: 'block-param', name: param });
+  }
+
+  // Get children
+  const childElements = getVisitChildren(ctx)(ctx, node.program.body);
+
+  // Exit the default-block scope.
+  ctx.scopeTracker.exitScope();
+
+  // Visit the inverse ({{else}}) body in its own scope frame so its (usually
+  // empty) block params do not leak — and so any same-named inner block params
+  // shadow rather than overwrite.
+  let inverseElements: HBSChild[] | null = null;
+  if (node.inverse?.body) {
+    const inverseBlockParams = node.inverse.blockParams ?? [];
+    ctx.scopeTracker.enterScope(`${name}-inverse`);
+    for (const param of inverseBlockParams) {
+      warnOnReservedBinding(ctx, param);
+      ctx.scopeTracker.addBinding(param, { kind: 'block-param', name: param });
+    }
+    inverseElements = getVisitChildren(ctx)(ctx, node.inverse.body);
+    ctx.scopeTracker.exitScope();
+  }
+
+  // Empty block - skip (unless there's an inverse/else branch)
+  if (!childElements.length && !inverseElements?.length) {
+    return null;
+  }
 
   // Extract key and sync options
   const { keyValue, syncValue } = extractBlockOptions(ctx, node);
@@ -249,9 +413,6 @@ export function visitBlock(
         syncValue,
         range
       );
-
-    case 'let':
-      return createLetBlock(ctx, node, childElements, range);
 
     case 'if':
     case 'each':
@@ -398,23 +559,20 @@ function createUnlessBlock(
 
 /**
  * Create a let block (variable binding).
+ *
+ * Returns an HBSControlExpression with type 'let' and letBindings.
+ * The serializer (buildLet in control.ts) handles code generation.
  */
 function createLetBlock(
   ctx: CompilerContext,
   node: ASTv1.BlockStatement,
-  _children: HBSChild[],
   range?: SourceRange
-): SerializedValue {
-  const varScopeName = `scope${ctx.letBlockCounter++}`;
-  const namesToReplace: Record<string, string> = {};
-  const primitives = new Set<string>();
+): HBSControlExpression | null {
+  const blockParams = node.program.blockParams;
 
-  // Generate variable declarations
-  const vars = node.params.map((p, index) => {
-    const originalName = node.program.blockParams[index];
-    const newName = `Let_${originalName}_${varScopeName}`;
-    namesToReplace[originalName] = newName;
-
+  // Build let bindings: visit each param value BEFORE adding to scope
+  const letBindings: LetBinding[] = node.params.map((p, index) => {
+    const name = blockParams[index];
     const isPrimitive =
       p.type === 'StringLiteral' ||
       p.type === 'BooleanLiteral' ||
@@ -423,157 +581,48 @@ function createLetBlock(
       p.type === 'UndefinedLiteral';
 
     const paramValue = getVisit(ctx)(ctx, p, false);
-    const serialized =
+    const value: SerializedValue =
       paramValue !== null && isSerializedValue(paramValue)
-        ? serializeValueToString(paramValue)
-        : 'null';
+        ? paramValue
+        : literal(null);
 
-    if (isPrimitive) {
-      primitives.add(originalName);
-      return `let ${newName} = ${serialized};`;
-    } else {
-      return `let ${newName} = () => ${serialized};`;
-    }
+    return { name, value, isPrimitive };
   });
 
-  // Re-add block params for child serialization
-  for (const param of node.program.blockParams) {
+  // Add block params to scope as let-bindings for child resolution.
+  // Use a dedicated scope frame so nested `{{#let}}` bindings with the same
+  // name shadow, then cleanly restore, the outer binding.
+  ctx.scopeTracker.enterScope('let');
+  for (const param of blockParams) {
+    warnOnReservedBinding(ctx, param);
     ctx.scopeTracker.addBinding(param, { kind: 'let-binding', name: param });
   }
 
-  // Serialize children
+  // Visit children with bindings in scope
   const children = getVisitChildren(ctx)(ctx, node.program.body);
-  const serializedChildren = serializeChildrenToString(ctx, children, primitives, namesToReplace);
 
-  // Remove block params
-  for (const param of node.program.blockParams) {
-    ctx.scopeTracker.removeBinding(param);
+  // Exit the let scope, restoring outer bindings.
+  ctx.scopeTracker.exitScope();
+
+  // Empty let block — skip
+  if (!children.length) {
+    return null;
   }
 
-  // Generate the let block code
-  // Replace 'this.' with 'self.' in variable declarations
-  // Uses regex that avoids matching inside string literals
-  const varsCode = replaceThisWithSelf(vars.join(''));
-  const code = `...(() => {let self = this;${varsCode}return [${serializedChildren}]})()`;
-
-  return raw(code, range);
+  return {
+    _nodeType: 'control',
+    type: 'let',
+    condition: literal(null),
+    blockParams,
+    children,
+    inverse: null,
+    key: null,
+    isSync: false,
+    letBindings,
+    sourceRange: range,
+  };
 }
 
-/**
- * Replace 'this.' with 'self.' outside of string literals.
- * This is more robust than simple string.split().join() which would
- * incorrectly replace 'this.' inside quoted strings.
- */
-function replaceThisWithSelf(code: string): string {
-  // Match 'this.' that is:
-  // - Not preceded by a word character (to avoid matching 'othis.')
-  // - Not inside single or double quotes
-  // This regex splits on quotes to process segments separately
-  const segments: string[] = [];
-  let current = '';
-  let inString: string | null = null;
-
-  for (let i = 0; i < code.length; i++) {
-    const char = code[i];
-    const prevChar = i > 0 ? code[i - 1] : '';
-
-    // Handle string delimiters (accounting for escapes)
-    if ((char === '"' || char === "'") && prevChar !== '\\') {
-      if (inString === null) {
-        // Starting a string - process accumulated code first
-        if (current) {
-          segments.push(replaceThisInCode(current));
-          current = '';
-        }
-        inString = char;
-        current = char;
-      } else if (inString === char) {
-        // Ending a string - keep it as-is
-        current += char;
-        segments.push(current);
-        current = '';
-        inString = null;
-      } else {
-        // Different quote inside string - just accumulate
-        current += char;
-      }
-    } else {
-      current += char;
-    }
-  }
-
-  // Process any remaining code
-  if (current) {
-    segments.push(inString ? current : replaceThisInCode(current));
-  }
-
-  return segments.join('');
-}
-
-/**
- * Replace 'this.' with 'self.' in non-string code.
- */
-function replaceThisInCode(code: string): string {
-  // Match 'this.' not preceded by a word character
-  return code.replace(/(?<![a-zA-Z0-9_$])this\./g, 'self.');
-}
-
-/**
- * Serialize children for let block, applying variable replacements.
- */
-function serializeChildrenToString(
-  ctx: CompilerContext,
-  children: HBSChild[],
-  primitives: Set<string>,
-  namesToReplace: Record<string, string>
-): string {
-  const parts: string[] = [];
-
-  for (const child of children) {
-    if (typeof child === 'string') {
-      parts.push(JSON.stringify(child));
-    } else if (isSerializedValue(child)) {
-      let str = serializeValueToString(child);
-      str = applyVariableReplacements(str, primitives, namesToReplace);
-      parts.push(str);
-    } else if ((isHBSNode(child) || isHBSControlExpression(child)) && getSerializeChild(ctx)) {
-      // Use the full serialization for HBSNode/HBSControlExpression
-      let str = getSerializeChild(ctx)!(ctx, child, 'this');
-      if (str) {
-        str = applyVariableReplacements(str, primitives, namesToReplace);
-        parts.push(str);
-      }
-    } else {
-      // Fallback - shouldn't normally happen
-      parts.push('null');
-    }
-  }
-
-  return parts.join(', ');
-}
-
-/**
- * Apply variable name replacements for let blocks.
- */
-function applyVariableReplacements(
-  str: string,
-  primitives: Set<string>,
-  namesToReplace: Record<string, string>
-): string {
-  for (const [key, newName] of Object.entries(namesToReplace)) {
-    // Match variable names but not:
-    // - preceded by . (property access like foo.name)
-    // - followed by = or : (object keys/assignments)
-    const re = new RegExp(`(?<!\\.)\\b${key}\\b(?!(=|'|"|:)[^ ]*)`, 'g');
-
-    if (primitives.has(key)) {
-      str = str.replace(re, newName);
-    } else {
-      str = str.replace(re, `${newName}()`);
-    }
-  }
-  return str;
-}
 
 /**
  * Create a general control block (if, each, etc.).
