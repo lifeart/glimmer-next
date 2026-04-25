@@ -369,3 +369,182 @@ describe('If condition - throwing-proxy parent (a128135 guard)', () => {
     expect('$_eval' in ifCond).toBe(false);
   });
 });
+
+/**
+ * Regression coverage for the `validateEpoch` recheck in the
+ * Ember-mode synchronous destroy path of `IfCondition.renderBranch`.
+ *
+ * The flow is:
+ *
+ *   renderBranch(nextBranch, runNumber)
+ *     └─ if (__GXT_MODE__) {
+ *          this.destroyBranchSync();      // (A)
+ *          // (B) ← without the fix, no epoch check here
+ *          this.renderState(nextBranch);  // (C)
+ *        }
+ *
+ * `destroyBranchSync` runs destructors of the previous branch
+ * synchronously. A destructor can flip the condition again (and, under
+ * Ember integration, the external scheduler can synchronously re-enter
+ * `syncState`). That re-entry advances `runNumber` and renders the new
+ * branch. Once the inner re-entry returns, the *outer* `renderBranch`
+ * continues at point (B) and — without an epoch recheck — calls
+ * `renderState(nextBranch)` for its now-stale branch, clobbering the
+ * inner render.
+ *
+ * The async sibling path already does this recheck (see
+ * src/core/control-flow/if.ts inside the `destroyPromise.then(...)`
+ * branch, which calls `validateEpoch(runNumber)` before re-rendering).
+ * The sync path must match.
+ *
+ * The harness below avoids weaving real destructor side-effects (which
+ * would require a deeply set-up component subtree) by overriding the
+ * instance's `destroyBranchSync` to deterministically simulate a
+ * mid-destroy re-entry: it bumps `runNumber` past the captured one and
+ * mutates `prevComponent` to mimic what the inner re-entry would have
+ * produced. The OUTER call must then bail; if it doesn't, it overwrites
+ * `prevComponent` with the stale branch's return value.
+ */
+describe('If condition - sync destroy path validateEpoch (Ember mode)', () => {
+  let fixture: DOMFixture;
+  let prevGxtMode: unknown;
+
+  beforeEach(() => {
+    fixture = createDOMFixture();
+    prevGxtMode = (globalThis as any).__GXT_MODE__;
+    (globalThis as any).__GXT_MODE__ = true;
+  });
+
+  afterEach(() => {
+    (globalThis as any).__GXT_MODE__ = prevGxtMode;
+    fixture.cleanup();
+  });
+
+  test('stale outer renderBranch bails after sync destroy when runNumber advanced', () => {
+    const baseParent = new Component({});
+    baseParent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(fixture.root, baseParent);
+
+    const condition = cell(true);
+    const placeholder = fixture.api.comment('sync-epoch-test');
+    const target = fixture.api.fragment();
+    fixture.api.insert(target, placeholder);
+
+    let trueBranchCalls = 0;
+    let falseBranchCalls = 0;
+    const trueBranch = () => {
+      trueBranchCalls++;
+      return [{ __branch: 'true' }] as any;
+    };
+    const falseBranch = () => {
+      falseBranchCalls++;
+      return [{ __branch: 'false' }] as any;
+    };
+
+    const ifCond = new IfCondition(
+      baseParent,
+      condition,
+      target as unknown as DocumentFragment,
+      placeholder,
+      trueBranch,
+      falseBranch,
+    );
+
+    // Initial render fired in the constructor (condition=true).
+    expect(trueBranchCalls).toBe(1);
+    expect(falseBranchCalls).toBe(0);
+
+    // Capture the outer runNumber that the *next* syncState(false) call
+    // will pass into renderBranch. checkStatement increments runNumber
+    // FIRST and then renderBranch is called with the post-increment
+    // value, so after the constructor's run, runNumber is 1 and the
+    // upcoming syncState(false) will use runNumber=2.
+    const outerRunNumber = ifCond.runNumber + 1;
+
+    // Stub the renderState we observe and instrument destroyBranchSync
+    // to simulate a synchronous re-entry by advancing runNumber and
+    // rendering the OPPOSITE branch (true) before the OUTER
+    // renderBranch reaches its renderState(falseBranch) call.
+    const renderStateCalls: Array<unknown> = [];
+    const originalRenderState = ifCond.renderState.bind(ifCond);
+    ifCond.renderState = function (nextBranch: any) {
+      renderStateCalls.push(nextBranch);
+      // Don't actually run the real renderState (no DOM tree set up
+      // for branch content) — just record the call for assertion.
+    } as typeof ifCond.renderState;
+
+    const originalDestroyBranchSync = ifCond.destroyBranchSync.bind(ifCond);
+    ifCond.destroyBranchSync = function () {
+      originalDestroyBranchSync();
+      // Simulate the inner re-entry:
+      //   - advance runNumber past the outer's captured runNumber
+      //     (this is exactly what `checkStatement` would do in a
+      //     real re-entry triggered by a destructor)
+      //   - pretend the inner re-entry already re-rendered the true
+      //     branch (i.e. it called renderState(trueBranch) and set
+      //     prevComponent). The outer must NOT clobber this.
+      ifCond.runNumber = outerRunNumber + 1;
+      ifCond.prevComponent = [{ __branch: 'inner-true' }] as any;
+      renderStateCalls.push('<<inner re-entry simulated>>');
+    } as typeof ifCond.destroyBranchSync;
+
+    // Trigger the outer flip. checkStatement will advance runNumber
+    // from 1 → 2 and call renderBranch(falseBranch, 2).
+    ifCond.syncState(false);
+
+    // The instrumented destroyBranchSync ran and recorded its marker.
+    expect(renderStateCalls).toContain('<<inner re-entry simulated>>');
+
+    // The fix asserts the OUTER call must bail after destroyBranchSync
+    // because runNumber (now outerRunNumber+1) !== outerRunNumber. So
+    // the only renderState calls recorded should be the inner-re-entry
+    // marker — NOT the outer falseBranch.
+    const realRenderStateCalls = renderStateCalls.filter(
+      (c) => c !== '<<inner re-entry simulated>>'
+    );
+    expect(realRenderStateCalls).toHaveLength(0);
+
+    // And the inner-rendered branch state must be preserved.
+    expect((ifCond.prevComponent as any)?.[0]?.__branch).toBe('inner-true');
+
+    // Restore so the destroy path doesn't try to use our stub.
+    ifCond.renderState = originalRenderState as typeof ifCond.renderState;
+  });
+
+  test('non-stale path still renders normally (regression sanity)', () => {
+    // Symmetric control: when destroyBranchSync does NOT advance the
+    // runNumber, the outer renderBranch must proceed to renderState.
+    const baseParent = new Component({});
+    baseParent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(fixture.root, baseParent);
+
+    const condition = cell(true);
+    const placeholder = fixture.api.comment('sync-epoch-control');
+    const target = fixture.api.fragment();
+    fixture.api.insert(target, placeholder);
+
+    const trueBranch = () => [{ __branch: 'true' }] as any;
+    const falseBranch = () => [{ __branch: 'false' }] as any;
+
+    const ifCond = new IfCondition(
+      baseParent,
+      condition,
+      target as unknown as DocumentFragment,
+      placeholder,
+      trueBranch,
+      falseBranch,
+    );
+
+    const renderStateCalls: Array<unknown> = [];
+    ifCond.renderState = function (nextBranch: any) {
+      renderStateCalls.push(nextBranch);
+    } as typeof ifCond.renderState;
+
+    // Don't override destroyBranchSync — leave the real one in place.
+    ifCond.syncState(false);
+
+    // Exactly one call (the falseBranch render) should have been made.
+    expect(renderStateCalls).toHaveLength(1);
+    expect(renderStateCalls[0]).toBe(falseBranch);
+  });
+});

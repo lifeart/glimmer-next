@@ -1871,16 +1871,26 @@ describe('Runtime Compiler Integration', () => {
   /**
    * `(has-block)` and `(has-block-params)` regression coverage.
    *
-   * The compiler emits these in compat mode as `this.$_hasBlock(name)` /
-   * `this.$_hasBlockParams(name)` method calls (see
-   * plugins/compiler/visitors/index.ts). Class components answer them
-   * via the methods defined on `Component` in src/core/component-class.ts;
-   * template-only components answer them via the same helpers attached
-   * to the instance object built in plugins/runtime-compiler.ts.
+   * The compiler emits these as a bound call to the free runtime helper:
+   *   `$_hasBlock.bind(this, $slots)(name)`
+   *   `$_hasBlockParams.bind(this, $slots)(name)`
+   * (see plugins/compiler/serializers/value.ts:791 and
+   * plugins/compiler/visitors/index.ts:245). The locally-extracted
+   * `$slots` (declared by the wrapping template function) is passed
+   * positionally so the helper can introspect the slot map without
+   * touching `this` — which is critical for template-only components,
+   * whose `this` is a plain instance object built by `template()` and
+   * may be invoked with `new`.
    *
-   * Before this fix the runtime threw
-   *   `TypeError: this.$_hasBlock is not a function`
-   * for every template that used the `(has-block)` keyword.
+   * The tests below assert the rendered DOM, not the codegen shape;
+   * the regression intent is that any future refactor must keep
+   * (has-block) functional through the bound-call shape.
+   *
+   * Regression: a previous WIP commit emitted `this.$_hasBlock(name)`,
+   * which crashed with `TypeError: this.$_hasBlock is not a function`
+   * for template-only components compiled to plain functions invoked
+   * with `new` (the TOC instance object carries `[$template]`/`[$args]`
+   * but not the `$_hasBlock` method).
    */
   describe('(has-block) and (has-block-params) — class component', () => {
     test('renders the truthy branch when a default block IS provided', () => {
@@ -1946,10 +1956,16 @@ describe('Runtime Compiler Integration', () => {
   });
 
   describe('(has-block) — template-only component', () => {
-    test('TOC instance answers this.$_hasBlock without throwing', () => {
-      // template() returns a TOC factory whose instance must carry
-      // $_hasBlock/$_hasBlockParams or the template throws "is not a
-      // function" the moment it tries to evaluate (has-block) at render.
+    test('TOC renders correctly under the bound-call (has-block) shape', () => {
+      // template() returns a TOC factory; its instance is a plain object
+      // (no Component prototype, so no `$_hasBlock` method on `this`).
+      // The compiled template must therefore call the *free* helper
+      // bound to the locally-extracted `$slots`, i.e.
+      //   `$_hasBlock.bind(this, $slots)(name)`.
+      // Regression: a previous WIP commit emitted `this.$_hasBlock(name)`,
+      // which crashed here with `TypeError: this.$_hasBlock is not a
+      // function` the moment the template tried to evaluate (has-block)
+      // at render — the TOC instance had no such method.
       const Inner = template(
         `{{#if (has-block)}}<span class="yes">yes</span>{{else}}<span class="no">no</span>{{/if}}`,
       );

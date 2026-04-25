@@ -175,9 +175,17 @@ export class IfCondition {
       return;
     } else if (this.prevComponent || this.branchDomNodes.length > 0) {
       const isEmptyArray = Array.isArray(this.prevComponent) && this.prevComponent.length === 0;
-      // In Ember integration mode, use synchronous destroy for immediate DOM updates
+      // In Ember integration mode, use synchronous destroy for immediate DOM updates.
+      // Re-check the epoch between destroy and render: a destructor (or any side
+      // effect of `destroyBranchSync`) can synchronously flip the condition again
+      // and re-enter `syncState`, advancing `runNumber`. Without the recheck the
+      // outer (now-stale) call would still proceed to render its branch, clobbering
+      // the inner (newer) render. The async sibling path below uses the same guard.
       if ((globalThis as any).__GXT_MODE__) {
         this.destroyBranchSync();
+        if (!this.validateEpoch(runNumber)) {
+          return;
+        }
         this.renderState(nextBranch);
         return;
       }
