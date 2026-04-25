@@ -386,8 +386,12 @@ export class MyList extends Component {
         source,
       ) as TransformResult;
 
-      // Should only have ONE $_each call in roots
-      const eachMatches = result.code.match(/\$_eachSync\(/g);
+      // Should only have ONE $_each call in roots.
+      // PR https://github.com/lifeart/glimmer-next/pull/212: compat-mode
+      // {{#each}} now compiles to $_each (async) by default — sync
+      // iteration is opt-in via `sync=true`. See compile.test.ts
+      // "{{#each}} uses $_each (async) by default in compat mode".
+      const eachMatches = result.code.match(/\$_each\(/g);
       expect(eachMatches).toHaveLength(1);
 
       // item.name should be inside the $_each callback, not as a separate element
@@ -424,7 +428,7 @@ export class NestedList extends Component {
       ) as TransformResult;
 
       // Should have exactly TWO $_each calls (outer and inner)
-      const eachMatches = result.code.match(/\$_eachSync\(/g);
+      const eachMatches = result.code.match(/\$_each\(/g);
       expect(eachMatches).toHaveLength(2);
 
       // Both block params should be properly scoped
@@ -459,7 +463,7 @@ export class FilteredList extends Component {
       ) as TransformResult;
 
       // Should have ONE $_each and ONE $_if
-      const eachMatches = result.code.match(/\$_eachSync\(/g);
+      const eachMatches = result.code.match(/\$_each\(/g);
       const ifMatches = result.code.match(/\$_if\(/g);
       expect(eachMatches).toHaveLength(1);
       expect(ifMatches).toHaveLength(1);
@@ -494,7 +498,7 @@ export class ClickableList extends Component {
       ) as TransformResult;
 
       // Should have ONE $_each
-      const eachMatches = result.code.match(/\$_eachSync\(/g);
+      const eachMatches = result.code.match(/\$_each\(/g);
       expect(eachMatches).toHaveLength(1);
 
       // fn helper should reference item.id correctly

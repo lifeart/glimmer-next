@@ -181,9 +181,24 @@ function buildEach(
   // Validate and normalize key
   const eachKey = normalizeEachKey(ctx, control);
 
-  // Choose sync or async each
-  // In compat mode, always use synchronous iteration
-  const fnName = (control.isSync || ctx.flags.IS_GLIMMER_COMPAT_MODE) ? SYMBOLS.EACH_SYNC : SYMBOLS.EACH;
+  // Choose sync or async each.
+  // PR https://github.com/lifeart/glimmer-next/pull/212: previously this
+  // also force-routed every {{#each}} in IS_GLIMMER_COMPAT_MODE through
+  // `$_eachSync`. That broke async element destructors for the row's own
+  // subtree because `SyncListComponent.destroyItem` invokes
+  // `destroyElementSync(row, false, this.api)` synchronously — the modifier
+  // destructor's Promise is dropped on the floor and the DOM is removed
+  // before the animation/teardown finishes. Regression triple:
+  //   - Integration | InternalComponent | each >>
+  //       it runs async element destructors for Components with context
+  //   - Integration | InternalComponent | each >>
+  //       it runs async element destructors for unstable nodes
+  //   - Integration | InternalComponent | each >>
+  //       it wait for async element destructors before destroying
+  // Async iteration is the correct default; opt-in `sync=true` on the
+  // block (e.g. `{{#each items sync=true as |item|}}`) keeps the
+  // synchronous-teardown variant available for hosts that need it.
+  const fnName = control.isSync ? SYMBOLS.EACH_SYNC : SYMBOLS.EACH;
 
   // Check for stable children
   const hasStable = hasStableChildsForControlNode(control.children);

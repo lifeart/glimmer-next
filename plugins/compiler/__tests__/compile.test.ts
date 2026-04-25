@@ -3684,13 +3684,22 @@ describe('Path expression optional chaining with known bindings', () => {
     expect(result.code).toMatch(/,\s*this\)/);
   });
 
-  test('unknown dashed helper without args becomes component in compat mode', () => {
+  test('unknown dashed helper without args routes through $_maybeHelper for runtime scope resolution', () => {
+    // PR https://github.com/lifeart/glimmer-next/pull/212: hyphenated
+    // mustaches with no positional and no named args must reach
+    // `$_maybeHelper` so runtime scope/helper-manager dispatch can resolve
+    // dasherized helpers (e.g. `{{x-borf}}` registered via
+    // `args[$_scope]`). Synthesizing a self-closing `<XBorf />` here
+    // short-circuits that lookup. Self-closing component invocations are
+    // still reachable via explicit `<XBorf />` angle-bracket syntax.
     const template = '{{x-borf}}';
     const result = compile(template);
 
     expect(result.errors).toHaveLength(0);
-    // In compat mode (default), hyphenated names are treated as component invocations
-    expect(result.code).toContain('XBorf');
+    expect(result.code).toContain(SYMBOLS.MAYBE_HELPER);
+    expect(result.code).toContain('"x-borf"');
+    // Must NOT synthesize a component invocation
+    expect(result.code).not.toContain('XBorf');
   });
 
   test('known binding used as helper arg gets direct path, not $_maybeHelper', () => {
@@ -4389,10 +4398,26 @@ describe('Compat mode AST transforms', () => {
       expect(result.code).toContain('fallback content');
     });
 
-    test('{{#each}} uses $_eachSync in compat mode', () => {
+    test('{{#each}} uses $_each (async) by default in compat mode', () => {
+      // PR https://github.com/lifeart/glimmer-next/pull/212: compat mode no
+      // longer force-routes {{#each}} through $_eachSync. SyncListComponent's
+      // destroyItem is synchronous and drops async-modifier-destructor
+      // promises, so async element destructors (e.g. fade-out animations)
+      // could not block DOM removal — see the three "async element
+      // destructors" tests under Integration | InternalComponent | each.
       const result = compile('{{#each this.items as |item|}}{{item}}{{/each}}', { flags: compatFlags });
+      expect(result.code).toContain(SYMBOLS.EACH + '(');
+      expect(result.code).not.toContain(SYMBOLS.EACH_SYNC);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('{{#each items sync=true}} uses $_eachSync in compat mode', () => {
+      // Synchronous iteration is still available as opt-in via `sync=true`.
+      const result = compile(
+        '{{#each this.items sync=true as |item|}}{{item}}{{/each}}',
+        { flags: compatFlags }
+      );
       expect(result.code).toContain(SYMBOLS.EACH_SYNC);
-      expect(result.code).not.toContain(SYMBOLS.EACH + '(');
       expect(result.errors).toHaveLength(0);
     });
 
@@ -4639,10 +4664,20 @@ describe('Compat mode AST transforms', () => {
       expect(result.errors).toHaveLength(0);
     });
 
-    test('inline curly component {{my-comp}} transforms to <MyComp /> in compat mode', () => {
+    test('inline curly with no args {{my-comp}} routes through $_maybeHelper in compat mode', () => {
+      // PR https://github.com/lifeart/glimmer-next/pull/212: hyphenated
+      // mustaches with no positional and no named args are ambiguous between
+      // "dasherized helper resolved at runtime" and "self-closing component".
+      // Route them through $_maybeHelper so runtime scope/helper-manager
+      // dispatch wins; component invocations remain reachable via explicit
+      // <MyComp /> angle-bracket syntax. Regression: `Integration |
+      // DashHelpers | x-bar >> dashed hlpers without args wrapped with
+      // helper manager`.
       const result = compile('{{my-comp}}', { flags: compatFlags });
-      expect(result.code).toContain('MyComp');
       expect(result.errors).toHaveLength(0);
+      expect(result.code).toContain(SYMBOLS.MAYBE_HELPER);
+      expect(result.code).not.toContain('MyComp');
+      expect(result.code).not.toContain(`${SYMBOLS.TAG}('my-comp'`);
     });
 
     test('inline curly component with args {{my-comp name="val"}} transforms', () => {
@@ -4846,12 +4881,16 @@ describe('Compat mode AST transforms', () => {
       expect(result.errors).toHaveLength(0);
     });
 
-    test('{{#each}} with key option in compat mode uses $_eachSync', () => {
+    test('{{#each}} with key option in compat mode uses $_each (async) and threads key', () => {
+      // PR https://github.com/lifeart/glimmer-next/pull/212: see related
+      // "uses $_each (async) by default in compat mode" test above for the
+      // rationale (async-destructor regression).
       const result = compile(
         '{{#each this.items key="id" as |item|}}{{item.name}}{{/each}}',
         { flags: compatFlags }
       );
-      expect(result.code).toContain(SYMBOLS.EACH_SYNC);
+      expect(result.code).toContain(SYMBOLS.EACH + '(');
+      expect(result.code).not.toContain(SYMBOLS.EACH_SYNC);
       expect(result.code).toContain('"id"');
       expect(result.errors).toHaveLength(0);
     });

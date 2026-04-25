@@ -528,17 +528,6 @@ function isInlineCurlyComponent(
   node: ASTv1.MustacheStatement,
   pathName: string
 ): boolean {
-  // When the host opts into helper-manager lifecycle (compat mode +
-  // WITH_HELPER_MANAGER), unknown hyphenated mustaches with no positional
-  // args (e.g. `{{x-borf}}`) must reach `$_maybeHelper` so that runtime
-  // helper resolution can pick up dasherized helpers. Synthesizing a
-  // component invocation here would short-circuit that lookup and break
-  // the helper-manager contract — see PR
-  // https://github.com/lifeart/glimmer-next/pull/212 review (the
-  // `dashed hlpers without args wrapped with helper manager` case).
-  if (ctx.flags.IS_GLIMMER_COMPAT_MODE && ctx.flags.WITH_HELPER_MANAGER) {
-    return false;
-  }
   // Must contain a hyphen
   if (!pathName.includes('-')) return false;
   // Must be a simple VarHead path (not this.foo.bar-baz or @arg-name)
@@ -552,6 +541,17 @@ function isInlineCurlyComponent(
   if (BUILTIN_HYPHENATED_HELPERS.has(pathName)) return false;
   // Must not be a known binding (e.g., a let-block param or imported name)
   if (ctx.scopeTracker.hasBinding(pathName)) return false;
+  // Hyphenated mustaches with NO positional and NO named args are ambiguous
+  // — they could be a dasherized helper (e.g. `{{x-borf}}` resolved through
+  // a helper manager / runtime scope) or a self-closing component. Synthesizing
+  // a component invocation here short-circuits runtime helper resolution
+  // (e.g. component.args[$_scope]-based dispatch in `$_maybeHelper`), which
+  // breaks the `Integration | DashHelpers | x-bar >> dashed hlpers without
+  // args wrapped with helper manager` flow regardless of WITH_HELPER_MANAGER.
+  // Route to `$_maybeHelper` always when no args are provided; component
+  // invocations are reachable via explicit angle-bracket syntax `<XBorf />`.
+  // See PR https://github.com/lifeart/glimmer-next/pull/212.
+  if (node.hash.pairs.length === 0) return false;
   return true;
 }
 

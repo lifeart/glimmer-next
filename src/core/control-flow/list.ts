@@ -942,6 +942,21 @@ export class AsyncListComponent<
       parent.lastChild === bottomMarker &&
       parent.firstChild === topMarker
     ) {
+      // PR https://github.com/lifeart/glimmer-next/pull/212: when this list
+      // is itself being torn down by a parent destruction cascade
+      // (`isDestructionStarted(this) === true` while the LIST destructor is
+      // running) the row destructors have ALREADY been invoked synchronously
+      // by `runDestructorsInternal` when iterating LIST's CHILD set — and
+      // `runDestructorsInternal` parks the per-row DOM removal behind the
+      // row's pending modifier-destructor promises. Issuing
+      // `clearChildren(parent)` here would short-circuit those promises and
+      // wipe the row DOM before the async element destructors (e.g. fade-out
+      // animations) finish. Bail out of the bulk-DOM path; the parent cascade
+      // (and the per-row `destroyNodes(api, row[RENDERED_NODES_PROPERTY])`
+      // queued behind each modifier promise) will reclaim the DOM at the
+      // correct time. Regression: `Integration | InternalComponent | each >>
+      // it wait for async element destructors before destroying`.
+      const cascadeDestruction = isDestructionStarted(this);
       // Detach CHILD so item destructors skip parent-sibling deletes.
       this.detachTreeChildren();
       const promises = new Array(keyMap.size);
@@ -959,9 +974,13 @@ export class AsyncListComponent<
         }
         indexFormulaMap.clear();
       }
-      this.api.clearChildren(parent);
-      this.api.insert(parent, topMarker);
-      this.api.insert(parent, bottomMarker);
+      if (!cascadeDestruction) {
+        // Stand-alone teardown (e.g. `items.update([])` while the list is
+        // still alive) — bulk-remove between the markers.
+        this.api.clearChildren(parent);
+        this.api.insert(parent, topMarker);
+        this.api.insert(parent, bottomMarker);
+      }
       keyMap.clear();
       indexMap.clear();
       this.itemMarkers.clear();
