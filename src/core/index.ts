@@ -8,6 +8,8 @@ export {
   cell,
   cellFor,
   tracked,
+  getTracker,
+  setTracker,
   type Cell,
   type MergedCell,
   formula,
