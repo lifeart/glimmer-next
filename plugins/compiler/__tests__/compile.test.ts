@@ -4651,6 +4651,37 @@ describe('Compat mode AST transforms', () => {
       expect(result.errors).toHaveLength(0);
     });
 
+    // Regression: PR #212 review caught that hyphenated mustaches with NO
+    // positional args were being rewritten into synthetic component
+    // invocations even when WITH_HELPER_MANAGER is on. That short-circuited
+    // runtime helper-manager resolution (`x-borf` is a dasherized helper,
+    // not a component), so `Integration | DashHelpers | x-bar >> dashed
+    // hlpers without args wrapped with helper manager` was failing.
+    // The compiled output must reach `$_maybeHelper`, NOT a component.
+    test('inline curly with WITH_HELPER_MANAGER routes {{x-bar}} through $_maybeHelper (no args)', () => {
+      const result = compile('{{x-bar}}', {
+        flags: { IS_GLIMMER_COMPAT_MODE: true, WITH_HELPER_MANAGER: true },
+      });
+      expect(result.errors).toHaveLength(0);
+      // Goes through helper-manager-aware resolution.
+      expect(result.code).toContain(SYMBOLS.MAYBE_HELPER);
+      // Must NOT synthesize a component invocation.
+      expect(result.code).not.toContain('XBar');
+      expect(result.code).not.toContain(`${SYMBOLS.COMPONENT}(`);
+      expect(result.code).not.toContain(`${SYMBOLS.TAG}('x-bar'`);
+    });
+
+    test('inline curly with WITH_HELPER_MANAGER preserves args path for {{x-bar arg}}', () => {
+      // The args case never hit the inline-curly path (positional params
+      // disqualify it), so this should compile to a helper call regardless.
+      const result = compile('{{x-bar this.arg}}', {
+        flags: { IS_GLIMMER_COMPAT_MODE: true, WITH_HELPER_MANAGER: true },
+      });
+      expect(result.errors).toHaveLength(0);
+      expect(result.code).toContain(SYMBOLS.MAYBE_HELPER);
+      expect(result.code).not.toContain('XBar');
+    });
+
     test('each-in is NOT transformed to component (builtin hyphenated helper)', () => {
       // each-in should be kept as a helper call, not transformed to a component
       const result = compile('{{each-in this.obj}}', { flags: compatFlags });

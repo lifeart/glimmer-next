@@ -528,6 +528,17 @@ function isInlineCurlyComponent(
   node: ASTv1.MustacheStatement,
   pathName: string
 ): boolean {
+  // When the host opts into helper-manager lifecycle (compat mode +
+  // WITH_HELPER_MANAGER), unknown hyphenated mustaches with no positional
+  // args (e.g. `{{x-borf}}`) must reach `$_maybeHelper` so that runtime
+  // helper resolution can pick up dasherized helpers. Synthesizing a
+  // component invocation here would short-circuit that lookup and break
+  // the helper-manager contract — see PR
+  // https://github.com/lifeart/glimmer-next/pull/212 review (the
+  // `dashed hlpers without args wrapped with helper manager` case).
+  if (ctx.flags.IS_GLIMMER_COMPAT_MODE && ctx.flags.WITH_HELPER_MANAGER) {
+    return false;
+  }
   // Must contain a hyphen
   if (!pathName.includes('-')) return false;
   // Must be a simple VarHead path (not this.foo.bar-baz or @arg-name)

@@ -36,11 +36,11 @@ function softFail(message) {
   process.exit(0);
 }
 
-const srcDist = resolve(root, 'dist');
-if (!existsSync(srcDist)) {
-  softFail(`source dist not found at ${srcDist} (did build-lib run?)`);
-}
-
+// Order of preconditions, weakest target first, so the soft-fail message
+// names the *outermost* missing piece. CI runs vitest without `build-lib`,
+// so `dist/` is absent there too; we still want the message to read as
+// "@lifeart/gxt not installed" when the pnpm store is empty (the more
+// useful signal), not "source dist not found". See PR #212.
 const pnpmBase = resolve(emberRepo, 'node_modules/.pnpm');
 if (!existsSync(pnpmBase)) {
   softFail(`pnpm store not found at ${pnpmBase} (set GXT_COPY_DIST_REQUIRED=1 to enforce)`);
@@ -52,11 +52,21 @@ if (pnpmEntries.length === 0) {
 }
 
 const gxtPnpmDir = resolve(pnpmBase, pnpmEntries[0], 'node_modules/@lifeart/gxt');
-const destDist = resolve(gxtPnpmDir, 'dist');
 
 if (!existsSync(gxtPnpmDir)) {
   softFail(`GXT package dir not found at ${gxtPnpmDir}`);
 }
+
+// Now that the destination is confirmed, validate the source. This check
+// is last because on CI the dist/ build step is gated separately — bailing
+// here is the right semantics only once we know the user actually has a
+// place to copy *to*.
+const srcDist = resolve(root, 'dist');
+if (!existsSync(srcDist)) {
+  softFail(`source dist not found at ${srcDist} (did build-lib run?)`);
+}
+
+const destDist = resolve(gxtPnpmDir, 'dist');
 
 console.log(`[copy-dist] Copying ${srcDist} -> ${destDist}`);
 cpSync(srcDist, destDist, { recursive: true, force: true });
