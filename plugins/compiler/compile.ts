@@ -7,8 +7,14 @@
 
 import { preprocess, type ASTv1 } from '@glimmer/syntax';
 
-/** Find the index of the first whitespace character in a string, or -1 if none. */
-function findFirstWhitespace(str: string): number {
+/**
+ * Find the index of the first whitespace character in a string, or -1 if none.
+ * Whitespace = space (32), tab (9), LF (10), CR (13). Used by error-span
+ * refinement on the parser's "tag name" / "attribute name" reports.
+ *
+ * @internal
+ */
+export function findFirstWhitespace(str: string): number {
   for (let i = 0; i < str.length; i++) {
     const c = str.charCodeAt(i);
     if (c === 32 || c === 9 || c === 10 || c === 13) return i; // space, tab, LF, CR
@@ -16,8 +22,14 @@ function findFirstWhitespace(str: string): number {
   return -1;
 }
 
-/** Find the index of the first character that is NOT a valid identifier char (a-zA-Z0-9_-=@:). */
-function findFirstNonIdentChar(str: string): number {
+/**
+ * Find the index of the first character that is NOT a valid bare-attr-name
+ * character (a-zA-Z0-9 plus `_ - = @ :`). Used by error-span refinement to
+ * end the highlighted range at the first non-name char in the source line.
+ *
+ * @internal
+ */
+export function findFirstNonIdentChar(str: string): number {
   for (let i = 0; i < str.length; i++) {
     const c = str.charCodeAt(i);
     if (!((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) ||
