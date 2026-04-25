@@ -1705,4 +1705,32 @@ describe('Runtime Compiler Integration', () => {
       expect(tags[2].textContent).toBe('featured');
     });
   });
+
+  describe('let-block shadowing (runtime smoke)', () => {
+    // The buildLet IIFE rewrites `replaceLetGetterRefsInExpr` against ~13
+    // expression kinds. Compile-time string assertions don't catch a
+    // shadow regression where an inner `as |v|` accidentally bleeds out
+    // and an outer `{{v}}` resolves to the wrong binding.
+    test('inner let with the same param name shadows the outer binding', () => {
+      render(
+        `{{#let "outer" as |v|}}<span class="o">{{v}}</span>{{#let "inner" as |v|}}<span class="i">{{v}}</span>{{/let}}<span class="o2">{{v}}</span>{{/let}}`
+      );
+
+      expect(fixture.container.querySelector('.o')?.textContent).toBe('outer');
+      expect(fixture.container.querySelector('.i')?.textContent).toBe('inner');
+      // The `.o2` span sits *after* the inner `{{/let}}`, so it must see
+      // the outer scope, not the inner one.
+      expect(fixture.container.querySelector('.o2')?.textContent).toBe('outer');
+    });
+
+    test('inner let does not leak its binding into a sibling subtree', () => {
+      render(
+        `{{#let "outer" as |v|}}<span class="before">{{v}}</span>{{#let "inner" as |v|}}<span class="inside">{{v}}</span>{{/let}}<span class="after">{{v}}</span>{{/let}}`
+      );
+
+      expect(fixture.container.querySelector('.before')?.textContent).toBe('outer');
+      expect(fixture.container.querySelector('.inside')?.textContent).toBe('inner');
+      expect(fixture.container.querySelector('.after')?.textContent).toBe('outer');
+    });
+  });
 });

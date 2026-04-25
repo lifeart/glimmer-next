@@ -185,4 +185,98 @@ describe('reactive Map/Set collections', () => {
     expect(f.value).toBe(10);
     expect(runs).toBeGreaterThanOrEqual(2);
   });
+
+  describe('benign behavior on non-tracked instances', () => {
+    // These tests guard against the patch silently changing observable
+    // semantics of plain (non-reactive) Map/Set usage in vendor code.
+    test('Map.set returns the map (chainable, native contract)', () => {
+      ensureReactiveCollectionsPatched();
+      const m = new Map<string, number>();
+      const ret = m.set('a', 1).set('b', 2).set('c', 3);
+      expect(ret).toBe(m);
+      expect(m.size).toBe(3);
+    });
+
+    test('Set.add returns the set (chainable, native contract)', () => {
+      ensureReactiveCollectionsPatched();
+      const s = new Set<number>();
+      const ret = s.add(1).add(2).add(3);
+      expect(ret).toBe(s);
+      expect(s.size).toBe(3);
+    });
+
+    test('Map iteration order is insertion order, preserved across patched methods', () => {
+      ensureReactiveCollectionsPatched();
+      const m = new Map<string, number>();
+      m.set('z', 1);
+      m.set('a', 2);
+      m.set('m', 3);
+      expect(Array.from(m.keys())).toEqual(['z', 'a', 'm']);
+      expect(Array.from(m.values())).toEqual([1, 2, 3]);
+      expect(Array.from(m.entries())).toEqual([
+        ['z', 1],
+        ['a', 2],
+        ['m', 3],
+      ]);
+      const seen: string[] = [];
+      m.forEach((_v, k) => seen.push(k));
+      expect(seen).toEqual(['z', 'a', 'm']);
+    });
+
+    test('Set iteration order is insertion order, preserved across patched methods', () => {
+      ensureReactiveCollectionsPatched();
+      const s = new Set<string>();
+      s.add('z');
+      s.add('a');
+      s.add('m');
+      expect(Array.from(s.values())).toEqual(['z', 'a', 'm']);
+      const seen: string[] = [];
+      s.forEach((v) => seen.push(v));
+      expect(seen).toEqual(['z', 'a', 'm']);
+    });
+
+    test('Map subclass keeps its overridden methods (instanceof + custom .get)', () => {
+      ensureReactiveCollectionsPatched();
+      class CountingMap<K, V> extends Map<K, V> {
+        gets = 0;
+        override get(key: K): V | undefined {
+          this.gets++;
+          return super.get(key);
+        }
+      }
+      const m = new CountingMap<string, number>();
+      m.set('x', 1);
+      expect(m.get('x')).toBe(1);
+      expect(m.get('missing')).toBeUndefined();
+      expect(m.gets).toBe(2);
+      expect(m).toBeInstanceOf(Map);
+      expect(m).toBeInstanceOf(CountingMap);
+    });
+
+    test('Set subclass keeps its overridden methods', () => {
+      ensureReactiveCollectionsPatched();
+      class TrackedSet<T> extends Set<T> {
+        adds = 0;
+        override add(v: T): this {
+          this.adds++;
+          return super.add(v);
+        }
+      }
+      const s = new TrackedSet<number>();
+      s.add(1).add(2).add(2); // dedup at add level → still counts twice
+      expect(s.adds).toBe(3);
+      expect(s.size).toBe(2);
+    });
+
+    test('outside a tracking frame, reads do not register dependencies', () => {
+      ensureReactiveCollectionsPatched();
+      const m = new Map<string, number>();
+      m.set('a', 1);
+      // No setTracker — reads here are exactly like native reads.
+      expect(m.get('a')).toBe(1);
+      expect(m.has('a')).toBe(true);
+      expect(m.size).toBe(1);
+      expect(getTracker()).toBe(null);
+    });
+  });
 });

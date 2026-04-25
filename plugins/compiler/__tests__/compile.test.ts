@@ -4716,6 +4716,42 @@ describe('Compat mode AST transforms', () => {
       expect(result.errors).toHaveLength(0);
     });
 
+    test('{{#if this.X}} in compat+ember-integration mode injects __gxtGetCellOrFormula with a fn-typed fallback', () => {
+      const result = compile('{{#if this.show}}<div>x</div>{{/if}}', {
+        flags: { IS_GLIMMER_COMPAT_MODE: true, WITH_EMBER_INTEGRATION: true },
+      });
+      // The injection wraps the host hook in a typeof === 'function' guard
+      // so a falsy-but-defined return doesn't get passed straight to $_if.
+      expect(result.code).toContain('__gxtGetCellOrFormula?.(this, "show")');
+      expect(result.code).toContain("typeof __r === 'function'");
+      expect(result.code).toContain('() => this.show');
+      // Sanity: no `??` form, which only catches null/undefined.
+      expect(result.code).not.toMatch(/__gxtGetCellOrFormula\?\.\(this,\s*"show"\)\s*\?\?\s*\(\(\)\s*=>/);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('{{#if NON_THIS_PATH}} in compat+ember-integration mode falls through to plain buildValue (no injection)', () => {
+      // Block params and bare names are not `this.X` paths; the injection
+      // only fires for the simple `this.PROP` shape.
+      const result = compile(
+        '{{#let this.flag as |flag|}}{{#if flag}}<div>x</div>{{/if}}{{/let}}',
+        { flags: { IS_GLIMMER_COMPAT_MODE: true, WITH_EMBER_INTEGRATION: true } }
+      );
+      // The outer {{#let}} pulls `this.flag`, but the inner {{#if flag}}
+      // condition references the block param — no __gxtGetCellOrFormula
+      // wrapping should fire for that path.
+      expect(result.code).not.toContain('__gxtGetCellOrFormula?.(this, "flag")');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('{{#if this.X}} without WITH_EMBER_INTEGRATION does not inject __gxtGetCellOrFormula', () => {
+      const result = compile('{{#if this.show}}<div>x</div>{{/if}}', {
+        flags: compatFlags,
+      });
+      expect(result.code).not.toContain('__gxtGetCellOrFormula');
+      expect(result.errors).toHaveLength(0);
+    });
+
     test('{{log}} in compat mode does not wrap in reactive getter', () => {
       const result = compile('{{log "hello"}}', { flags: compatFlags });
       // log in compat mode should use comma expression pattern, not reactive getter

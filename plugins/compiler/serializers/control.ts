@@ -559,10 +559,12 @@ function buildIf(
     const thisMatch = expr.match(/^this\.([a-zA-Z_$][a-zA-Z0-9_$]*)$/);
     if (thisMatch) {
       const propName = thisMatch[1];
-      // Emit: globalThis.__gxtGetCellOrFormula?.(this, "prop") ?? (() => this.prop)
-      // Falls back to a plain getter if __gxtGetCellOrFormula is not available
+      // Emit a `typeof === 'function'` guard rather than `??` so a buggy
+      // host hook that returns a falsy-but-defined value (`0`, `""`, etc.)
+      // still falls through to the plain getter instead of being passed
+      // straight to `$_if` as the condition.
       conditionExpr = B.raw(
-        `globalThis.__gxtGetCellOrFormula?.(this, "${propName}") ?? (() => this.${propName})`,
+        `((__r) => typeof __r === 'function' ? __r : (() => this.${propName}))(globalThis.__gxtGetCellOrFormula?.(this, "${propName}"))`,
         control.condition.sourceRange
       );
     }
@@ -630,8 +632,6 @@ function buildIfBranch(
 
   return B.arrow([branchCtxName], ucwCall);
 }
-
-// ============================================================================
 
 // ============================================================================
 // Let

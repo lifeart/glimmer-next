@@ -85,6 +85,7 @@ import {
 import { cellFor, formula, cell, tagsToRevalidate, cellsMap } from '../src/core/reactive';
 import { effect } from '../src/core/vm';
 import { syncDom } from '../src/core/runtime';
+import { ensureReactiveCollectionsPatched } from '../src/core/reactive-collections';
 
 // Import helper functions
 import {
@@ -172,6 +173,12 @@ export function setupGlobalScope(): void {
   g.__gxtSyncDom = syncDom;
   g.__gxtClearTagsToRevalidate = () => tagsToRevalidate.clear();
   g.__gxtCellsMap = cellsMap;
+
+  // Opt in to reactive Map/Set tracking. The patch is process-wide and
+  // observable to vendor code, so it is *not* applied as an import side-
+  // effect — initializing the global scope is the explicit signal that
+  // the host wants GXT semantics.
+  ensureReactiveCollectionsPatched();
 
   // Mark that global scope is set up
   g.__GXT_RUNTIME_INITIALIZED__ = true;

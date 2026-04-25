@@ -23,6 +23,11 @@ export function $__fn(fn: Function, ...args: unknown[]) {
     // We check: is it a getter? If so, call it — if the result is a function, use it.
     // Otherwise use the original (it was a real function, not a getter).
     let resolvedFn: Function = fn as Function;
+    // Re-evaluate the wrapper getter on every invocation: in compat mode
+    // `fn` is `() => this.action`, and we want each call to resolve the
+    // current `this.action` value (which may have been replaced) and to
+    // register a fresh tracking-frame dependency. Memoizing across calls
+    // would cause stale-action and dropped-dependency bugs.
     if (isGetter(fn) && fn.length === 0) {
       const maybeResolved = (fn as () => unknown)();
       if (typeof maybeResolved === 'function') {

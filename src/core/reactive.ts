@@ -668,11 +668,9 @@ export function setTracker(tracker: Set<Cell> | null) {
   currentTracker = tracker;
 }
 
-// Side-effect: patch Map/Set prototypes so iteration and mutation
-// participate in reactive tracking. Imported here (rather than from a
-// top-level entry file) so that *any* module which reaches reactive.ts
-// automatically gets Map/Set reactivity. Idempotent — safe under HMR
-// and multiple realm entry points.
-// Placed at the bottom to avoid temporal-dead-zone issues with
-// `cell` / `getTracker`, which reactive-collections.ts depends on.
-import '@/core/reactive-collections';
+// Map/Set prototype patching used to be applied here as an import side-
+// effect, but that affects every consumer — including vendor code that
+// subclasses Map/Set or relies on the identity of unpatched method
+// references. The patch is now opt-in via
+// `ensureReactiveCollectionsPatched()` from `@/core/reactive-collections`,
+// which `setupGlobalScope` (plugins/runtime-compiler.ts) calls.

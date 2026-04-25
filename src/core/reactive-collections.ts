@@ -212,5 +212,7 @@ export function ensureReactiveCollectionsPatched(): void {
   };
 }
 
-// Apply the patch at module load. Idempotent.
-ensureReactiveCollectionsPatched();
+// The patch is opt-in: callers (typically `setupGlobalScope`) must invoke
+// `ensureReactiveCollectionsPatched()` explicitly. Touching `Map.prototype`
+// and `Set.prototype` is observable to vendor code (subclasses, code that
+// memoizes method references), so we don't apply it as an import side-effect.

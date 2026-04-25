@@ -68,13 +68,19 @@ export class IfCondition {
     this.setupCondition(maybeCondition);
     this.trueBranch = trueBranch;
     this.falseBranch = falseBranch;
-    // Propagate $_eval from parent context for deferred rendering
-    if (WITH_DYNAMIC_EVAL) {
-      // @ts-expect-error $_eval may exist on parentContext
-      if (parentContext?.$_eval) {
-        // @ts-expect-error $_eval may exist
-        this.$_eval = parentContext.$_eval;
-      }
+    // Propagate $_eval from parent context for deferred rendering.
+    // Use an `in` check before reading: under Ember integration the
+    // parent can be a tracked-property proxy that throws on unknown
+    // property access. A throw here aborts the constructor before
+    // `addToTree` runs, leaving the if half-registered.
+    if (
+      WITH_DYNAMIC_EVAL &&
+      parentContext != null &&
+      typeof parentContext === 'object' &&
+      '$_eval' in parentContext
+    ) {
+      // @ts-expect-error $_eval is host-extension state, untyped on the parent.
+      this.$_eval = parentContext.$_eval;
     }
     // @ts-expect-error typings error
     addToTree(parentContext, this, 'from if constructor');
