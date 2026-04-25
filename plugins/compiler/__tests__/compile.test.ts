@@ -2782,14 +2782,20 @@ describe('SubExpression wrap parameter', () => {
     expect(result.code).toContain('.bind(');
   });
 
-  test('has-block rewrites to this.$_hasBlock in compat mode', () => {
+  test('has-block compiles to $_hasBlock.bind(this, $slots) in compat mode', () => {
     const result = compile('{{#if (has-block)}}has block{{/if}}', { flags: { IS_GLIMMER_COMPAT_MODE: true } });
-    expect(result.code).toContain('$_hasBlock("default")');
+    // The free `$_hasBlock(slots, name)` function is bound to the local
+    // `$slots` (extracted by the wrapper from `$_GET_SLOTS(this, arguments)`).
+    // When called with no positional args the bound function itself is
+    // passed to `$_if`; with `(has-block "name")` it gets called.
+    expect(result.code).toContain('$_hasBlock.bind(this, $slots)');
+    expect(result.code).not.toContain('this.$_hasBlock(');
   });
 
-  test('has-block-params rewrites to this.$_hasBlockParams in compat mode', () => {
+  test('has-block-params compiles to $_hasBlockParams.bind(this, $slots) in compat mode', () => {
     const result = compile('{{#if (has-block-params)}}has params{{/if}}', { flags: { IS_GLIMMER_COMPAT_MODE: true } });
-    expect(result.code).toContain('$_hasBlockParams("default")');
+    expect(result.code).toContain('$_hasBlockParams.bind(this, $slots)');
+    expect(result.code).not.toContain('this.$_hasBlockParams(');
   });
 
   test('regular helper in if condition is wrapped', () => {
@@ -4538,31 +4544,30 @@ describe('Compat mode AST transforms', () => {
       expect(result.code).not.toContain('"this.foo"');
     });
 
-    test('(has-block) transforms to $_hasBlock("default") in compat mode', () => {
+    test('(has-block) compiles to $_hasBlock.bind(this, $slots) in compat mode', () => {
       const result = compile('{{#if (has-block)}}has block{{/if}}', { flags: compatFlags });
-      expect(result.code).toContain('$_hasBlock');
-      expect(result.code).toContain('"default"');
+      expect(result.code).toContain('$_hasBlock.bind(this, $slots)');
       expect(result.errors).toHaveLength(0);
     });
 
-    test('(has-block "inverse") transforms to $_hasBlock("inverse") in compat mode', () => {
+    test('(has-block "inverse") binds and then calls $_hasBlock with the named slot', () => {
       const result = compile('{{#if (has-block "inverse")}}has inverse{{/if}}', { flags: compatFlags });
-      expect(result.code).toContain('$_hasBlock');
+      expect(result.code).toContain('$_hasBlock.bind(this, $slots)');
       expect(result.code).toContain('"inverse"');
     });
 
-    test('(has-block-params) transforms to $_hasBlockParams in compat mode', () => {
+    test('(has-block-params) compiles to $_hasBlockParams.bind(this, $slots) in compat mode', () => {
       const result = compile('{{#if (has-block-params)}}has params{{/if}}', { flags: compatFlags });
-      expect(result.code).toContain('$_hasBlockParams');
-      expect(result.code).toContain('"default"');
+      expect(result.code).toContain('$_hasBlockParams.bind(this, $slots)');
       expect(result.errors).toHaveLength(0);
     });
 
-    test('(has-block) in non-compat mode does NOT rewrite to this.$_hasBlock', () => {
-      const result = compile('{{#if (has-block)}}has block{{/if}}', { flags: defaultFlags });
-      // Non-compat mode uses $_hasBlock.bind(this, $slots) - no "this.$_hasBlock" prefix
-      expect(result.code).not.toContain('this.$_hasBlock');
-      expect(result.code).toContain('$_hasBlock');
+    test('(has-block) does NOT emit a method call on `this`', () => {
+      // Regression: emitting `this.$_hasBlock(name)` broke template-only
+      // components, which compile to plain `function () { ... }` invoked
+      // with `new`, leaving `this` without the method.
+      const result = compile('{{#if (has-block)}}has block{{/if}}', { flags: compatFlags });
+      expect(result.code).not.toContain('this.$_hasBlock(');
     });
   });
 

@@ -240,28 +240,14 @@ function visitSubExpression(
     }
   }
 
-  // In compat mode, transform (has-block) and (has-block-params) to use
-  // this.$_hasBlock / this.$_hasBlockParams with a default block name.
-  // (has-block)           → (this.$_hasBlock "default")
-  // (has-block "inverse") → (this.$_hasBlock "inverse")
-  // (has-block-params)    → (this.$_hasBlockParams "default")
-  if (ctx.flags.IS_GLIMMER_COMPAT_MODE && (name === 'has-block' || name === 'has-block-params')) {
-    const newName = name === 'has-block' ? 'this.$_hasBlock' : 'this.$_hasBlockParams';
-    const blockNameParam = node.params[0];
-    let blockName: SerializedValue;
-    if (blockNameParam && blockNameParam.type === 'StringLiteral') {
-      blockName = literal(blockNameParam.value);
-    } else if (blockNameParam) {
-      const visitResult = visit(ctx, blockNameParam, false);
-      blockName = visitResult && isSerializedValue(visitResult) ? visitResult : literal('default');
-    } else {
-      blockName = literal('default');
-    }
-    const pathRange = getNodeRange(node.path);
-    const hasBlockResult = helper(newName, [blockName], new Map(), range, pathRange);
-    // has-block / has-block-params return bound functions — don't wrap in getter
-    return hasBlockResult;
-  }
+  // `(has-block)` / `(has-block-params)` are handled as built-in helpers
+  // by `buildBuiltInHelper` (see plugins/compiler/serializers/value.ts):
+  // it emits `$_hasBlock.bind(this, $slots)(name)` so the free runtime
+  // helper receives the locally-extracted `$slots` and the block name.
+  // We deliberately fall through here — the WIP rewrite that emitted
+  // `this.$_hasBlock(name)` instead broke template-only components,
+  // which compile to plain `function () { ... }` invoked with `new`,
+  // producing a fresh `this` with no such method.
 
   // Special handling for (element "tag") - creates a dynamic component wrapper
   if (name === 'element') {

@@ -287,12 +287,21 @@ export function compileTemplate(
     }
 
     // Create function that returns the compiled template array
-    // We wrap it in a function that has access to both GXT symbols and scope values
+    // We wrap it in a function that has access to both GXT symbols and scope values.
+    // Mirror the locals the .gts compile path injects (plugins/test.ts:347–352)
+    // so compiled output that references `$slots` (e.g. (has-block) which
+    // emits `$_hasBlock.bind(this, $slots)`) or `$fw` works the same way
+    // when compiled at runtime.
     const needsArgsAlias = result.code.includes('$a.');
+    const needsSlots = result.code.includes('$slots');
+    const needsFw = result.code.includes('$fw');
     const fnBody = `
       "use strict";
       return function() {
+        ${SYMBOLS.$_GET_ARGS}(this, arguments);
         ${needsArgsAlias ? 'const $a = this[$args];' : ''}
+        ${needsSlots ? 'const $slots = ' + SYMBOLS.$_GET_SLOTS + '(this, arguments);' : ''}
+        ${needsFw ? 'const $fw = ' + SYMBOLS.$_GET_FW + '(this, arguments);' : ''}
         return ${result.code};
       };
     `;
@@ -565,15 +574,6 @@ export function createTemplateFactory(
 const $template = 'template' as const;
 const $args = 'args' as const;
 
-// Re-use the same `(has-block)` / `(has-block-params)` runtime
-// implementations the Component base class uses, so template-only
-// components (the `instance` object built below) can serve compat-mode
-// `this.$_hasBlock(...)` calls the compiler emits.
-import {
-  $_hasBlockMethod,
-  $_hasBlockParamsMethod,
-} from '../src/core/shared';
-
 /**
  * Options for template function
  */
@@ -698,18 +698,11 @@ export function template(
     }
 
     // Otherwise, create a template-only component instance
-    // Store eval function on instance for deferred rendering.
-    // Also bind the `(has-block)` / `(has-block-params)` runtime
-    // helpers — the compiler emits compat-mode (has-block) as
-    // `this.$_hasBlock("default")`, which class components answer via
-    // their own method, but template-only instances are plain objects
-    // and would otherwise crash with "this.$_hasBlock is not a function".
+    // Store eval function on instance for deferred rendering
     const instance = {
       [$template]: universalTemplate,
       [$args]: args || {},
       $_eval: evalFn, // Store eval function for deferred rendering
-      $_hasBlock: $_hasBlockMethod,
-      $_hasBlockParams: $_hasBlockParamsMethod,
     };
     return instance;
   }
