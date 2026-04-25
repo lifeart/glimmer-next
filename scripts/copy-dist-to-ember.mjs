@@ -18,9 +18,12 @@
  */
 
 import { cpSync, existsSync, readdirSync, rmSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const root = resolve(import.meta.dirname, '..');
+// `import.meta.dirname` only exists on Node 20.11+. Use the
+// fileURLToPath form so the script runs on any maintained LTS.
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const emberRepo = process.argv[2] || '/Users/lifeart/Repos/ember.js';
 const required = process.env.GXT_COPY_DIST_REQUIRED === '1';
 

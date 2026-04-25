@@ -22,16 +22,34 @@ const PKG = JSON.parse(
   readFileSync(resolve(REPO_ROOT, 'package.json'), 'utf8'),
 );
 
+// The "file exists" half of the contract only makes sense once the lib
+// has been built. On a clean CI checkout `dist/` is absent, so the
+// existence assertions are gated on the build artifact being present.
+// The shape assertions (paths point under ./dist/, end in .d.ts, and
+// don't regress to the broken ./dist/src/utils/... locations) always
+// run — those are the part most likely to silently regress in a
+// future refactor.
+const DIST_BUILT = existsSync(resolve(REPO_ROOT, 'dist'));
+
 describe('package.json types & files contract', () => {
-  test('top-level "types" points at an existing .d.ts file under dist/', () => {
+  test('top-level "types" points at a path under dist/ that ends in .d.ts', () => {
     expect(typeof PKG.types).toBe('string');
     expect(PKG.types.startsWith('./dist/')).toBe(true);
     expect(PKG.types.endsWith('.d.ts')).toBe(true);
-    const abs = resolve(REPO_ROOT, PKG.types);
-    expect(existsSync(abs), `expected types file at ${abs}`).toBe(true);
+    // Pin against the exact regression we just fixed: ./dist/src/utils/*
+    // paths are not produced by the build pipeline.
+    expect(PKG.types).not.toMatch(/^\.\/dist\/src\//);
   });
 
-  test('every exports[*].types entry points at a real .d.ts under dist/', () => {
+  test.runIf(DIST_BUILT)(
+    'top-level "types" file actually exists after build-lib',
+    () => {
+      const abs = resolve(REPO_ROOT, PKG.types);
+      expect(existsSync(abs), `expected types file at ${abs}`).toBe(true);
+    },
+  );
+
+  test('every exports[*].types entry has a valid shape under dist/', () => {
     expect(PKG.exports).toBeDefined();
     expect(typeof PKG.exports).toBe('object');
 
@@ -51,11 +69,11 @@ describe('package.json types & files contract', () => {
         v.types!.endsWith('.d.ts'),
         `${entryKey}.types must end with .d.ts, got ${v.types}`,
       ).toBe(true);
-      const abs = resolve(REPO_ROOT, v.types!);
+      // Same regression check as above: no ./dist/src/utils/ paths.
       expect(
-        existsSync(abs),
-        `${entryKey}: missing .d.ts file at ${abs}`,
-      ).toBe(true);
+        v.types!,
+        `${entryKey}.types must not regress to ./dist/src/utils/...`,
+      ).not.toMatch(/^\.\/dist\/src\//);
       checked.push(entryKey);
     }
 
@@ -64,6 +82,22 @@ describe('package.json types & files contract', () => {
     expect(checked).toContain('./compiler');
     expect(checked).toContain('./runtime-compiler');
   });
+
+  test.runIf(DIST_BUILT)(
+    'every exports[*].types entry resolves to a real .d.ts after build-lib',
+    () => {
+      for (const [entryKey, value] of Object.entries(PKG.exports)) {
+        if (value === null || typeof value !== 'object') continue;
+        const v = value as { types?: string };
+        if (typeof v.types !== 'string') continue;
+        const abs = resolve(REPO_ROOT, v.types);
+        expect(
+          existsSync(abs),
+          `${entryKey}: missing .d.ts file at ${abs}`,
+        ).toBe(true);
+      }
+    },
+  );
 
   test('"files" glob includes "dist/*.d.ts" so root-level .d.ts files are packed', () => {
     expect(Array.isArray(PKG.files), 'files must be an array').toBe(true);

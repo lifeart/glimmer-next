@@ -13,10 +13,13 @@
 
 import { execSync } from 'node:child_process';
 import { writeFileSync, readFileSync, readdirSync } from 'node:fs';
-import { resolve, join } from 'node:path';
+import { dirname, resolve, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 
-const root = resolve(import.meta.dirname, '..');
+// `import.meta.dirname` only exists on Node 20.11+. Use the
+// fileURLToPath form so the script runs on any maintained LTS.
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 // Git info
 let gitHash = 'unknown';
