@@ -565,6 +565,15 @@ export function createTemplateFactory(
 const $template = 'template' as const;
 const $args = 'args' as const;
 
+// Re-use the same `(has-block)` / `(has-block-params)` runtime
+// implementations the Component base class uses, so template-only
+// components (the `instance` object built below) can serve compat-mode
+// `this.$_hasBlock(...)` calls the compiler emits.
+import {
+  $_hasBlockMethod,
+  $_hasBlockParamsMethod,
+} from '../src/core/shared';
+
 /**
  * Options for template function
  */
@@ -689,11 +698,18 @@ export function template(
     }
 
     // Otherwise, create a template-only component instance
-    // Store eval function on instance for deferred rendering
+    // Store eval function on instance for deferred rendering.
+    // Also bind the `(has-block)` / `(has-block-params)` runtime
+    // helpers — the compiler emits compat-mode (has-block) as
+    // `this.$_hasBlock("default")`, which class components answer via
+    // their own method, but template-only instances are plain objects
+    // and would otherwise crash with "this.$_hasBlock is not a function".
     const instance = {
       [$template]: universalTemplate,
       [$args]: args || {},
       $_eval: evalFn, // Store eval function for deferred rendering
+      $_hasBlock: $_hasBlockMethod,
+      $_hasBlockParams: $_hasBlockParamsMethod,
     };
     return instance;
   }

@@ -48,6 +48,42 @@ export const $_debug_args = '_debug_args' as const;
 export const $fwProp = '$fw' as const;
 export const noop = () => {};
 
+// Same registered symbol that dom.ts publishes as `$SLOTS_SYMBOL`.
+// Defined here too so component-class.ts and the template-only-component
+// factory in plugins/runtime-compiler.ts can read slots without
+// importing from dom.ts (which would form an import cycle through
+// component-class -> dom -> component-class).
+const SLOTS = Symbol.for('gxt-slots');
+
+/**
+ * Backing implementation of `(has-block)` / `this.$_hasBlock(name)`.
+ *
+ * The compiler emits `(has-block)` in compat mode as a method call on
+ * `this`, so both the `Component` base class and the template-only-
+ * component instance object need this method bound to themselves.
+ *
+ * @internal — exported so both invokers share one implementation.
+ */
+export function $_hasBlockMethod(this: any, name: string = 'default'): boolean {
+  const args = this[$args] as undefined | Record<string | symbol, unknown>;
+  const slots = (args?.[SLOTS] as Record<string, unknown>) ?? {};
+  return name in slots && slots[name] !== undefined;
+}
+
+/**
+ * Backing implementation of `(has-block-params)` / `this.$_hasBlockParams(name)`.
+ *
+ * The slot's "has block params" marker lives at `slots[`${name}_`]` —
+ * the trailing-underscore convention is set up by `$_args` in dom.ts.
+ *
+ * @internal — exported so both invokers share one implementation.
+ */
+export function $_hasBlockParamsMethod(this: any, name: string = 'default'): unknown {
+  const args = this[$args] as undefined | Record<string | symbol, unknown>;
+  const slots = (args?.[SLOTS] as Record<string, unknown>) ?? {};
+  return slots[`${name}_`];
+}
+
 export const IN_SSR_ENV =
   import.meta.env.SSR || location.pathname === '/tests.html';
 export const $DEBUG_REACTIVE_CONTEXTS: string[] = [];

@@ -419,6 +419,18 @@ function buildHelper(
   }
 
   if (isKnown) {
+    // `this.$_hasBlock` / `this.$_hasBlockParams` are runtime methods on
+    // the Component instance (and on the template-only-component
+    // wrapper object). They MUST be invoked as method calls so the
+    // method body sees the correct `this` and can read its own slots.
+    // Routing them through `$_maybeHelper` would pass the unbound
+    // function reference and lose the binding, producing
+    // `Cannot read properties of undefined (reading 'args')` at runtime.
+    if (name === 'this.$_hasBlock' || name === 'this.$_hasBlockParams') {
+      const args = buildDirectCallArgs(ctx, positional, named, ctxName);
+      const callee = pathRange ? B.runtimeRef(resolvedName, pathRange) : resolvedName;
+      return B.call(callee, args, sourceRange);
+    }
     // When WITH_HELPER_MANAGER is enabled, even known bindings go through
     // maybeHelper for runtime lifecycle management (passing function reference).
     if (ctx.flags.WITH_HELPER_MANAGER) {

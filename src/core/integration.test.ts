@@ -1867,4 +1867,106 @@ describe('Runtime Compiler Integration', () => {
       expect(fixture.container.querySelector('.ready-no')).toBeNull();
     });
   });
+
+  /**
+   * `(has-block)` and `(has-block-params)` regression coverage.
+   *
+   * The compiler emits these in compat mode as `this.$_hasBlock(name)` /
+   * `this.$_hasBlockParams(name)` method calls (see
+   * plugins/compiler/visitors/index.ts). Class components answer them
+   * via the methods defined on `Component` in src/core/component-class.ts;
+   * template-only components answer them via the same helpers attached
+   * to the instance object built in plugins/runtime-compiler.ts.
+   *
+   * Before this fix the runtime threw
+   *   `TypeError: this.$_hasBlock is not a function`
+   * for every template that used the `(has-block)` keyword.
+   */
+  describe('(has-block) and (has-block-params) — class component', () => {
+    test('renders the truthy branch when a default block IS provided', () => {
+      class Inner extends Component {
+        [$template] = template(
+          `{{#if (has-block)}}<span class="yes">yes</span>{{else}}<span class="no">no</span>{{/if}}`,
+        );
+      }
+      class Outer extends Component {
+        [$template] = template('<Inner>child</Inner>', {
+          scope: { Inner },
+        });
+      }
+      render(Outer);
+      expect(fixture.container.querySelector('.yes')?.textContent).toBe('yes');
+      expect(fixture.container.querySelector('.no')).toBeNull();
+    });
+
+    test('renders the falsy branch when no default block is provided', () => {
+      class Inner extends Component {
+        [$template] = template(
+          `{{#if (has-block)}}<span class="yes">yes</span>{{else}}<span class="no">no</span>{{/if}}`,
+        );
+      }
+      class Outer extends Component {
+        [$template] = template('<Inner />', {
+          scope: { Inner },
+        });
+      }
+      render(Outer);
+      expect(fixture.container.querySelector('.no')?.textContent).toBe('no');
+      expect(fixture.container.querySelector('.yes')).toBeNull();
+    });
+
+    test('(has-block-params) returns truthy only when the slot yields params', () => {
+      class Inner extends Component {
+        [$template] = template(
+          `{{#if (has-block-params)}}<span class="with-params">params</span>{{else}}<span class="no-params">none</span>{{/if}}`,
+        );
+      }
+      class WithParams extends Component {
+        [$template] = template('<Inner as |x|>{{x}}</Inner>', {
+          scope: { Inner },
+        });
+      }
+      class WithoutParams extends Component {
+        [$template] = template('<Inner>plain</Inner>', {
+          scope: { Inner },
+        });
+      }
+
+      render(WithParams);
+      expect(fixture.container.querySelector('.with-params')?.textContent).toBe('params');
+
+      // Reset and render the no-params variant in a fresh fixture so the
+      // queries below don't pick up the previous render.
+      fixture.cleanup();
+      fixture = createDOMFixture();
+      render(WithoutParams);
+      expect(fixture.container.querySelector('.no-params')?.textContent).toBe('none');
+      expect(fixture.container.querySelector('.with-params')).toBeNull();
+    });
+  });
+
+  describe('(has-block) — template-only component', () => {
+    test('TOC instance answers this.$_hasBlock without throwing', () => {
+      // template() returns a TOC factory whose instance must carry
+      // $_hasBlock/$_hasBlockParams or the template throws "is not a
+      // function" the moment it tries to evaluate (has-block) at render.
+      const Inner = template(
+        `{{#if (has-block)}}<span class="yes">yes</span>{{else}}<span class="no">no</span>{{/if}}`,
+      );
+      const Outer = template('<Inner>child</Inner>', {
+        scope: { Inner },
+      });
+      render(Outer);
+      expect(fixture.container.querySelector('.yes')?.textContent).toBe('yes');
+    });
+
+    test('TOC instance falsy branch when no default block', () => {
+      const Inner = template(
+        `{{#if (has-block)}}<span class="yes">yes</span>{{else}}<span class="no">no</span>{{/if}}`,
+      );
+      const Outer = template('<Inner />', { scope: { Inner } });
+      render(Outer);
+      expect(fixture.container.querySelector('.no')?.textContent).toBe('no');
+    });
+  });
 });
