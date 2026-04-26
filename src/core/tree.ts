@@ -105,7 +105,12 @@ export function addToTree(
   const PARENT_ID = ctx[COMPONENT_ID_PROPERTY];
   let ch = CHILD.get(PARENT_ID);
   if (ch === undefined) {
-    ch = new Set([ID]);
+    // `new Set([ID])` builds the Set via the iterable constructor — V8
+    // walks the array iterator. Empty `new Set()` + `add()` skips the
+    // iterator setup entirely; for the common single-element case this
+    // is a measurable win on per-row component tree wiring.
+    ch = new Set();
+    ch.add(ID);
     CHILD.set(PARENT_ID, ch);
   } else {
     ch.add(ID);
