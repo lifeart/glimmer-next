@@ -87,14 +87,28 @@ export function getContext<T>(
       const value = context.get(key);
       return isFn(value) ? value() : value;
     }
-    const parent = PARENT.get(current[COMPONENT_ID_PROPERTY])!;
-    if (parent !== null) {
-      current = TREE.get(parent) as ComponentLike;
-      if (IS_DEV_MODE) {
-        if (!current) {
+    // `PARENT.get(...)` returns `undefined` when the key is missing
+    // (which happens for function-component instances whose ctor body
+    // ran before `addToTree` registered them, e.g. `new CanvasRenderer()`
+    // calling `$_tag` from inside the body). Treat undefined the same as
+    // null — there's no parent to walk further. Without this guard the
+    // next `TREE.get(undefined)` returns `undefined` and the
+    // `current[RENDERING_CONTEXT_PROPERTY]` read crashes the render.
+    const parent = PARENT.get(current[COMPONENT_ID_PROPERTY]);
+    if (parent != null) {
+      const next = TREE.get(parent) as ComponentLike | undefined;
+      if (next === undefined) {
+        // PARENT had an entry but TREE didn't — tree state is
+        // inconsistent (a parent was destroyed without clearing PARENT).
+        // Stop walking; fall back to whatever the caller's defaults are.
+        if (IS_DEV_MODE) {
+          // eslint-disable-next-line no-debugger
           debugger;
         }
+        current = undefined;
+        continue;
       }
+      current = next;
       if (key === RENDERING_CONTEXT && current[RENDERING_CONTEXT_PROPERTY]) {
         return current[RENDERING_CONTEXT_PROPERTY] as T;
       }
