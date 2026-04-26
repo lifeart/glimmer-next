@@ -43,6 +43,7 @@ import {
   DestructorFn,
   Destructors,
   registerDestructor,
+  registerDestructorBatch,
 } from './glimmer/destroyable';
 import { HTMLBrowserDOMApi } from '@/core/dom-api';
 import {
@@ -481,15 +482,17 @@ function addAttrs(
   api: DOMApi,
   arr: TagAttr[],
   element: HTMLElement,
-  seenKeys: Set<string>,
+  seenKeys: Set<string> | null,
   destructors: Destructors,
 ) {
   for (let i = 0; i < arr.length; i++) {
     const key = arr[i][0];
-    if (seenKeys.has(key)) {
-      continue;
+    if (seenKeys !== null) {
+      if (seenKeys.has(key)) {
+        continue;
+      }
+      seenKeys.add(key);
     }
-    seenKeys.add(key);
     if (IS_DEV_MODE) {
       $DEBUG_REACTIVE_CONTEXTS.push(`[${key}]`);
     }
@@ -504,7 +507,7 @@ function addProperties(
   api: DOMApi,
   properties: TagProp[],
   element: Node,
-  seenKeys: Set<string>,
+  seenKeys: Set<string> | null,
   destructors: Destructors,
   classNameModifiers: Attr[],
   setShadowMode: (value: NonNullable<ShadowRootMode>) => void,
@@ -522,10 +525,12 @@ function addProperties(
         continue;
       }
     }
-    if (seenKeys.has(key)) {
-      continue;
+    if (seenKeys !== null) {
+      if (seenKeys.has(key)) {
+        continue;
+      }
+      seenKeys.add(key);
     }
-    seenKeys.add(key);
     if (IS_DEV_MODE) {
       $DEBUG_REACTIVE_CONTEXTS.push(`[${key}]`);
     }
@@ -558,7 +563,6 @@ function _DOM(
     api.attr(element, 'data-node-id', String(NODE_COUNTER));
   }
   const destructors: Destructors = [];
-  const seenKeys = new Set<string>();
   const classNameModifiers: Attr[] = [];
   let hasShadowMode: ShadowRootMode = null;
 
@@ -568,6 +572,13 @@ function _DOM(
 
   if ($_edp !== tagProps) {
     const hasSplatAttrs = typeof tagProps[3] === 'object';
+    // `seenKeys` only deduplicates between statically-emitted props/attrs
+    // and splat-attrs that the consumer forwards via `...attributes`. The
+    // compiler guarantees uniqueness for the statically-emitted set, so
+    // we only need a Set when splat attrs may collide. Passing null
+    // signals "no dedup needed" to the inner loops, removing both the
+    // Set allocation and the per-key has/add calls.
+    const seenKeys: Set<string> | null = hasSplatAttrs ? new Set<string>() : null;
 
     if (hasSplatAttrs === true) {
       for (let i = 0; i < tagProps[3]![2].length; i++) {
@@ -642,7 +653,9 @@ function _DOM(
   }
 
   if (destructors.length) {
-    registerDestructor(ctx, ...destructors);
+    // Batch variant avoids `...destructors` spread, which allocates an extra
+    // arguments-collected array on every `_DOM` call (per element).
+    registerDestructorBatch(ctx, destructors);
   }
 
   if (IS_DEV_MODE) {
@@ -1037,11 +1050,14 @@ function component(
   } else {
     // @ts-expect-error uniqSymbol as index
     const fw = args[$PROPS_SYMBOL] as unknown as FwType;
+    // Direct push/pop avoids the per-call branch inside setParentContext.
+    // Construction fires once per component; the try/finally still needed
+    // so a throwing user constructor doesn't unbalance the parent stack.
+    pushParentContext(ctx as unknown as ComponentLike);
     try {
-      setParentContext(ctx);
       return _component(comp, args, fw, ctx);
     } finally {
-      setParentContext(null);
+      popParentContext();
     }
   }
 }
