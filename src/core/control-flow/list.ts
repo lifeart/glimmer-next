@@ -309,33 +309,75 @@ export class BasicListComponent<T extends { id: number }> {
       this.api.destroy(marker);
     }
   }
+  /**
+   * Per-`items[]` first-occurrence cache for duplicate-key qualification.
+   *
+   * Both `@identity` and explicit-key paths have to detect when a base key
+   * (object identity, or the value of `item[this.key]`) has already been
+   * seen at an earlier index in the *current* items array, so subsequent
+   * occurrences can be position-qualified (`baseKey:i`) and treated as
+   * distinct rows by the diff algorithm.
+   *
+   * The naive per-call scan was O(n) inside `keyForItem`, which the diff
+   * loops invoke once per row, producing O(n^2) per render. For 1000 rows
+   * that's ~1M extra ops; for 5000 rows ~25M. We instead build a
+   * `Map<baseKey, firstIndex>` once per `items` reference, lazily, on the
+   * first call. Subsequent calls do a single Map.get and compare against
+   * `i` — O(1) per row, O(n) total.
+   *
+   * Cached by `items` array identity via WeakMap so multiple distinct
+   * arrays in flight (e.g. dev-mode indexFormula closures) don't invalidate
+   * each other.
+   */
+  protected _firstIdxCache: WeakMap<T[], Map<string, number>> = new WeakMap();
+
+  private getFirstIdxMap(items: T[], resolveBaseKey: (item: T, i: number) => string): Map<string, number> {
+    let map = this._firstIdxCache.get(items);
+    if (map !== undefined) return map;
+    map = new Map<string, number>();
+    for (let j = 0; j < items.length; j++) {
+      const k = resolveBaseKey(items[j], j);
+      if (!map.has(k)) {
+        map.set(k, j);
+      }
+    }
+    this._firstIdxCache.set(items, map);
+    return map;
+  }
+
   private setupKeyForItem() {
     if (this.key === '@identity') {
       let cnt = 0;
       const map: WeakMap<T & object, string> = new WeakMap();
-      this.keyForItem = (item: T, i: number, items?: T[]) => {
+      const baseKeyOf = (item: T, i: number): string => {
         if (isPrimitive(item) || isEmpty(item)) {
           return `${String(item)}:${i}`;
         }
         const existing = map.get(item as T & object);
-        let baseKey: string;
-        if (existing !== undefined) {
-          baseKey = existing;
-        } else {
-          baseKey = ++cnt as unknown as string;
-          map.set(item as T & object, baseKey);
+        if (existing !== undefined) return existing;
+        const key = ++cnt as unknown as string;
+        map.set(item as T & object, key);
+        return key;
+      };
+      this.keyForItem = (item: T, i: number, items?: T[]) => {
+        const baseKey = baseKeyOf(item, i);
+        if (isPrimitive(item) || isEmpty(item)) {
+          // Primitive base keys are already position-qualified, so the
+          // duplicate-detection step below is unnecessary and would
+          // misfire (every primitive of the same value would re-qualify
+          // again).
+          return baseKey;
         }
-        // Duplicate-reference support: when the same object ref appears more
-        // than once in the current items array, the first occurrence uses
-        // the stable identity key; every subsequent occurrence gets a
-        // position-qualified key so that the diff algorithm treats it as a
+        // Duplicate-reference support: when the same object ref appears
+        // more than once in the current items array, the first occurrence
+        // uses the stable identity key; every subsequent occurrence gets
+        // a position-qualified key so the diff algorithm treats it as a
         // distinct row. This preserves identity stability for the common
-        // (no-duplicates) case.
+        // (no-duplicates) case. O(1) via cached first-index map.
         if (items !== undefined) {
-          // Find the first index in items[] where this same reference lives.
-          // If it's < i, we're a subsequent occurrence.
-          const firstIdx = items.indexOf(item);
-          if (firstIdx !== -1 && firstIdx < i) {
+          const firstIdxMap = this.getFirstIdxMap(items, baseKeyOf);
+          const firstIdx = firstIdxMap.get(baseKey);
+          if (firstIdx !== undefined && firstIdx < i) {
             return `${baseKey}:${i}` as unknown as string;
           }
         }
@@ -365,18 +407,20 @@ export class BasicListComponent<T extends { id: number }> {
         // @ts-expect-error unknown key
         return item[this.key] as unknown as string;
       };
+      const baseKeyOf = (item: T, _i: number): string => resolveRawKey(item);
       this.keyForItem = (item: T, i: number, items?: T[]) => {
         const baseKey = resolveRawKey(item);
         // Duplicate-key support: when multiple items produce the same
         // key (e.g. `{{#each list key="text"}}` with several items having
         // the same text), each subsequent occurrence gets a position-
         // qualified key so they're rendered as distinct rows. Preserves
-        // stable identity for the common (no-duplicates) case.
+        // stable identity for the common (no-duplicates) case. O(1) via
+        // cached first-index map (built once per `items` reference).
         if (items !== undefined) {
-          for (let j = 0; j < i; j++) {
-            if (resolveRawKey(items[j]) === baseKey) {
-              return `${baseKey}:${i}`;
-            }
+          const firstIdxMap = this.getFirstIdxMap(items, baseKeyOf);
+          const firstIdx = firstIdxMap.get(baseKey);
+          if (firstIdx !== undefined && firstIdx < i) {
+            return `${baseKey}:${i}`;
           }
         }
         return baseKey;
@@ -775,6 +819,10 @@ export class SyncListComponent<
     // `items`, which is either the final desired state or `[]` (teardown).
     if (this._syncInProgress) return;
     this._syncInProgress = true;
+    // Invalidate the duplicate-key first-index cache for this items array
+    // so a mutated-in-place array doesn't carry stale duplicate information
+    // forward. WeakMap.delete on a missing key is a no-op.
+    this._firstIdxCache.delete(items);
     try {
     const { keyMap, keyForItem } = this;
 
@@ -991,6 +1039,8 @@ export class AsyncListComponent<
     }
   }
   async syncList(items: T[]) {
+    // Invalidate per-items-array duplicate-key cache (see SyncListComponent)
+    this._firstIdxCache.delete(items);
     // Destroy inverse when items arrive — guarded to avoid unnecessary await
     if (items.length > 0 && this.inverseContent !== null) {
       await this.destroyInverseAsync();
