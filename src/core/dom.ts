@@ -822,6 +822,12 @@ export function $_GET_SCOPES(hashOrCtx: Record<string, unknown> | any, ctx?: any
   return hashOrCtx[CONSTANTS.SCOPE_KEY]?.() || [];
 }
 
+// Caches for is-this-function-an-ES6-class probing in $_maybeHelper.
+// Two WeakSets avoid the per-call Function.prototype.toString cost which is
+// not free (V8 has to look up source code or recompose it).
+const __gxtClassFns = new WeakSet<Function>();
+const __gxtNonClassFns = new WeakSet<Function>();
+
 export const $_maybeHelper = (
   value: any,
   args: any[],
@@ -871,23 +877,27 @@ export const $_maybeHelper = (
         return $_MANAGERS.helper.handle(value, args, _hash);
       }
     }
-    try {
-      return value(...$_unwrapArgs(args));
-    } catch (e) {
-      // Fallback for classes without `isHelperFactory` (custom manager-registered
-      // classes). Detect the specific "Class constructor X cannot be invoked
-      // without 'new'" TypeError and attempt the helper manager route.
-      if (
-        WITH_EMBER_INTEGRATION &&
-        e instanceof TypeError &&
-        typeof e.message === 'string' &&
-        e.message.indexOf('Class constructor') !== -1 &&
-        $_MANAGERS.helper.canHandle(value)
-      ) {
+    if (WITH_EMBER_INTEGRATION) {
+      // Class-based helpers without `isHelperFactory` (custom manager-registered
+      // classes) cannot be invoked without `new`. We detect them via
+      // `Function.prototype.toString` once per value and cache the answer in a
+      // module-local WeakSet. This avoids the try/catch around the hot
+      // `value(...)` invocation, which V8 deopts.
+      let isClass: boolean;
+      if (__gxtNonClassFns.has(value)) {
+        isClass = false;
+      } else if (__gxtClassFns.has(value)) {
+        isClass = true;
+      } else {
+        const src = Function.prototype.toString.call(value);
+        isClass = src.charCodeAt(0) === 99 /* 'c' */ && src.startsWith('class ');
+        (isClass ? __gxtClassFns : __gxtNonClassFns).add(value);
+      }
+      if (isClass && $_MANAGERS.helper.canHandle(value)) {
         return $_MANAGERS.helper.handle(value, args, _hash);
       }
-      throw e;
     }
+    return value(...$_unwrapArgs(args));
   }
 
   if (WITH_EMBER_INTEGRATION) {
