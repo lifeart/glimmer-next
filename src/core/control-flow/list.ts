@@ -120,6 +120,9 @@ export class BasicListComponent<T extends { id: number }> {
   private _updatingKeys: Set<string> = new Set();
   private _moveSet: Set<string> = new Set();
   private _freshMoveKeys: Set<string> = new Set();
+  // Reused dedupe set for the right-to-left move phase — only populated
+  // when the items array contains duplicate keys. Cleared per call.
+  private _processedKeys: Set<string> = new Set();
   protected _keysToRemove: string[] = [];
   protected _rowsToRemove: GenericReturnType[] = [];
   [RENDERED_NODES_PROPERTY]: Array<Node> = [];
@@ -325,24 +328,38 @@ export class BasicListComponent<T extends { id: number }> {
    * first call. Subsequent calls do a single Map.get and compare against
    * `i` — O(1) per row, O(n) total.
    *
+   * The cached entry also carries a `hasDupes` flag — if the items array
+   * contains no duplicates (the overwhelmingly common case, including
+   * krausest), the per-row map.get + compare is skipped entirely.
+   *
    * Cached by `items` array identity via WeakMap so multiple distinct
    * arrays in flight (e.g. dev-mode indexFormula closures) don't invalidate
    * each other.
    */
-  protected _firstIdxCache: WeakMap<T[], Map<string, number>> = new WeakMap();
+  protected _firstIdxCache: WeakMap<T[], { map: Map<string, number> | null; hasDupes: boolean }> = new WeakMap();
 
-  private getFirstIdxMap(items: T[], resolveBaseKey: (item: T, i: number) => string): Map<string, number> {
-    let map = this._firstIdxCache.get(items);
-    if (map !== undefined) return map;
-    map = new Map<string, number>();
+  private getFirstIdxEntry(items: T[], resolveBaseKey: (item: T, i: number) => string): { map: Map<string, number> | null; hasDupes: boolean } {
+    let entry = this._firstIdxCache.get(items);
+    if (entry !== undefined) return entry;
+    // Detect duplicates with a single Map pass. If there are NO duplicates
+    // (the overwhelmingly common case, including krausest), drop the map
+    // immediately — keyForItem will short-circuit on `hasDupes === false`
+    // and never read it back.
+    const tmp = new Map<string, number>();
+    let hasDupes = false;
     for (let j = 0; j < items.length; j++) {
       const k = resolveBaseKey(items[j], j);
-      if (!map.has(k)) {
-        map.set(k, j);
+      if (!tmp.has(k)) {
+        tmp.set(k, j);
+      } else {
+        hasDupes = true;
+        // Continue scanning so we still capture earliest indices for
+        // every base key — needed when hasDupes is true.
       }
     }
-    this._firstIdxCache.set(items, map);
-    return map;
+    entry = { map: hasDupes ? tmp : null, hasDupes };
+    this._firstIdxCache.set(items, entry);
+    return entry;
   }
 
   private setupKeyForItem() {
@@ -373,10 +390,13 @@ export class BasicListComponent<T extends { id: number }> {
         // uses the stable identity key; every subsequent occurrence gets
         // a position-qualified key so the diff algorithm treats it as a
         // distinct row. This preserves identity stability for the common
-        // (no-duplicates) case. O(1) via cached first-index map.
+        // (no-duplicates) case. O(1) via cached first-index entry, and
+        // the per-row check is skipped entirely when the cached entry
+        // reports no duplicates.
         if (items !== undefined) {
-          const firstIdxMap = this.getFirstIdxMap(items, baseKeyOf);
-          const firstIdx = firstIdxMap.get(baseKey);
+          const entry = this.getFirstIdxEntry(items, baseKeyOf);
+          if (!entry.hasDupes) return baseKey;
+          const firstIdx = entry.map!.get(baseKey);
           if (firstIdx !== undefined && firstIdx < i) {
             return `${baseKey}:${i}` as unknown as string;
           }
@@ -415,10 +435,12 @@ export class BasicListComponent<T extends { id: number }> {
         // the same text), each subsequent occurrence gets a position-
         // qualified key so they're rendered as distinct rows. Preserves
         // stable identity for the common (no-duplicates) case. O(1) via
-        // cached first-index map (built once per `items` reference).
+        // cached first-index entry; the per-row check is skipped entirely
+        // when the cached entry reports no duplicates.
         if (items !== undefined) {
-          const firstIdxMap = this.getFirstIdxMap(items, baseKeyOf);
-          const firstIdx = firstIdxMap.get(baseKey);
+          const entry = this.getFirstIdxEntry(items, baseKeyOf);
+          if (!entry.hasDupes) return baseKey;
+          const firstIdx = entry.map!.get(baseKey);
           if (firstIdx !== undefined && firstIdx < i) {
             return `${baseKey}:${i}`;
           }
@@ -588,12 +610,6 @@ export class BasicListComponent<T extends { id: number }> {
 
         const row = ItemComponent(item, idx, self as unknown as Component<any>);
 
-        if (IS_DEV_MODE) {
-          if (row === undefined || row === null) {
-            console.log('[GXT-list] ItemComponent returned null/undefined for item:', item, 'key:', key);
-          }
-        }
-
         keyMap.set(key, row);
         indexMap.set(key, index);
         if (isAppendOnly) {
@@ -675,13 +691,21 @@ export class BasicListComponent<T extends { id: number }> {
     // and corrupts the tree. The rightmost occurrence wins (first visited
     // in right-to-left order); subsequent duplicates are treated as
     // stable and simply update the anchor.
+    //
+    // The `processedKeys` dedupe set is only populated when the items
+    // array actually contains duplicates (the firstIdxMap built during
+    // the diff loop above tells us). The common path skips the per-row
+    // Set.has check entirely.
     if (moveSet.size > 0) {
       const moveParent = api.parent(bottomMarker)!;
       let anchor: Node = bottomMarker;
-      const processedKeys: Set<string> = new Set();
+      const cacheEntry = this._firstIdxCache.get(items);
+      const hasDupes = cacheEntry !== undefined && cacheEntry.hasDupes;
+      const processedKeys = this._processedKeys;
+      if (hasDupes) processedKeys.clear();
       for (let idx = items.length - 1; idx >= 0; idx--) {
         const key = itemKeys[idx];
-        const alreadyProcessed = processedKeys.has(key);
+        const alreadyProcessed = hasDupes && processedKeys.has(key);
         if (!moveSet.has(key) || alreadyProcessed) {
           // Stable item (LIS or already-appended, or a duplicate whose
           // single DOM subtree was already handled). Use its marker as
@@ -690,7 +714,7 @@ export class BasicListComponent<T extends { id: number }> {
           if (marker) anchor = marker;
           continue;
         }
-        processedKeys.add(key);
+        if (hasDupes) processedKeys.add(key);
         const marker = itemMarkers.get(key);
         if (!marker) continue;
 
