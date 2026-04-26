@@ -321,45 +321,84 @@ export class BasicListComponent<T extends { id: number }> {
    * occurrences can be position-qualified (`baseKey:i`) and treated as
    * distinct rows by the diff algorithm.
    *
-   * The naive per-call scan was O(n) inside `keyForItem`, which the diff
-   * loops invoke once per row, producing O(n^2) per render. For 1000 rows
-   * that's ~1M extra ops; for 5000 rows ~25M. We instead build a
-   * `Map<baseKey, firstIndex>` once per `items` reference, lazily, on the
-   * first call. Subsequent calls do a single Map.get and compare against
-   * `i` — O(1) per row, O(n) total.
+   * Two-phase strategy to avoid per-syncList Map allocation in the
+   * overwhelmingly common no-duplicates case (krausest, sane apps):
    *
-   * The cached entry also carries a `hasDupes` flag — if the items array
-   * contains no duplicates (the overwhelmingly common case, including
-   * krausest), the per-row map.get + compare is skipped entirely.
+   *  1. First call for a fresh items[] does a single pass over items[]
+   *     adding every base key to a reusable instance Set
+   *     (`_dupDetectSet`). If the Set's final size equals items.length,
+   *     there are no dupes — we set `_dupHasDupes = false` and return.
+   *     No Map is allocated; no entry object is allocated.
    *
-   * Cached by `items` array identity via WeakMap so multiple distinct
-   * arrays in flight (e.g. dev-mode indexFormula closures) don't invalidate
-   * each other.
+   *  2. If dupes ARE detected, we lazily build the Map<baseKey,
+   *     firstIndex> on the SAME pass (using a reusable instance Map,
+   *     `_dupFirstIdxMap`) and set `_dupHasDupes = true`.
+   *
+   * The cached verdict is keyed by `_dupItemsRef`, an instance-level
+   * single-slot identity cache. Per-row callers compare `items` against
+   * `_dupItemsRef`; if they match, the cached verdict is consulted. Otherwise
+   * detection runs.
+   *
+   * The cache is invalidated explicitly at the top of every `syncList`
+   * (and `_dupItemsRef` is set to null) — it's intentionally narrow-scoped
+   * to a single sync pass. Inside one syncList we may receive several calls
+   * to `keyForItem` from `isAppendOnlySuperset`, `keysForItems`, and
+   * `updateItems`; the first hit pays the O(n) detection cost, all
+   * subsequent calls hit the cached verdict.
    */
-  protected _firstIdxCache: WeakMap<T[], { map: Map<string, number> | null; hasDupes: boolean }> = new WeakMap();
+  protected _dupItemsRef: T[] | null = null;
+  protected _dupHasDupes = false;
+  protected _dupDetectSet: Set<string> = new Set();
+  protected _dupFirstIdxMap: Map<string, number> = new Map();
 
-  private getFirstIdxEntry(items: T[], resolveBaseKey: (item: T, i: number) => string): { map: Map<string, number> | null; hasDupes: boolean } {
-    let entry = this._firstIdxCache.get(items);
-    if (entry !== undefined) return entry;
-    // Detect duplicates with a single Map pass. If there are NO duplicates
-    // (the overwhelmingly common case, including krausest), drop the map
-    // immediately — keyForItem will short-circuit on `hasDupes === false`
-    // and never read it back.
-    const tmp = new Map<string, number>();
+  /**
+   * Run dedup detection for `items[]` if it differs from the cached ref.
+   * After return, `_dupHasDupes` and (if true) `_dupFirstIdxMap` are
+   * populated. Returns true if dupes were detected.
+   *
+   * `_dupDetectSet` is cleared once at the start of detection. We don't
+   * clear it on the no-dupes path (the contents are scratch and will be
+   * cleared on next detection). We don't clear `_dupFirstIdxMap` on the
+   * no-dupes path either — `_dupHasDupes === false` ensures callers won't
+   * read it; we clear lazily on the next `_dupHasDupes = true` transition.
+   */
+  private detectDupes(items: T[], resolveBaseKey: (item: T, i: number) => string): boolean {
+    if (this._dupItemsRef === items) return this._dupHasDupes;
+    const set = this._dupDetectSet;
+    set.clear();
     let hasDupes = false;
+    let map: Map<string, number> | null = null;
     for (let j = 0; j < items.length; j++) {
       const k = resolveBaseKey(items[j], j);
-      if (!tmp.has(k)) {
-        tmp.set(k, j);
-      } else {
-        hasDupes = true;
-        // Continue scanning so we still capture earliest indices for
-        // every base key — needed when hasDupes is true.
+      const sizeBefore = set.size;
+      set.add(k);
+      if (set.size !== sizeBefore + 1) {
+        // Duplicate detected. Lazily allocate (well, re-use) the index
+        // map on first dupe; do NOT re-record an existing entry.
+        if (!hasDupes) {
+          hasDupes = true;
+          map = this._dupFirstIdxMap;
+          map.clear();
+          // Backfill: every key already in `set` is at its first
+          // occurrence. Iterate items[0..j-1] and record the first
+          // index for each key (re-using existing keys without
+          // re-resolving where possible). The simpler/correct path
+          // is to recompute baseKey for [0..j-1].
+          for (let p = 0; p < j; p++) {
+            const pk = resolveBaseKey(items[p], p);
+            if (!map.has(pk)) map.set(pk, p);
+          }
+          // Current j is duplicate; its first index is already in map.
+        }
+        // No-op: we keep the firstIndex we have.
+      } else if (hasDupes) {
+        // Past first dupe — record any newly-seen key.
+        if (!map!.has(k)) map!.set(k, j);
       }
     }
-    entry = { map: hasDupes ? tmp : null, hasDupes };
-    this._firstIdxCache.set(items, entry);
-    return entry;
+    this._dupItemsRef = items;
+    this._dupHasDupes = hasDupes;
+    return hasDupes;
   }
 
   private setupKeyForItem() {
@@ -394,9 +433,9 @@ export class BasicListComponent<T extends { id: number }> {
         // the per-row check is skipped entirely when the cached entry
         // reports no duplicates.
         if (items !== undefined) {
-          const entry = this.getFirstIdxEntry(items, baseKeyOf);
-          if (!entry.hasDupes) return baseKey;
-          const firstIdx = entry.map!.get(baseKey);
+          const hasDupes = this.detectDupes(items, baseKeyOf);
+          if (!hasDupes) return baseKey;
+          const firstIdx = this._dupFirstIdxMap.get(baseKey);
           if (firstIdx !== undefined && firstIdx < i) {
             return `${baseKey}:${i}` as unknown as string;
           }
@@ -438,9 +477,9 @@ export class BasicListComponent<T extends { id: number }> {
         // cached first-index entry; the per-row check is skipped entirely
         // when the cached entry reports no duplicates.
         if (items !== undefined) {
-          const entry = this.getFirstIdxEntry(items, baseKeyOf);
-          if (!entry.hasDupes) return baseKey;
-          const firstIdx = entry.map!.get(baseKey);
+          const hasDupes = this.detectDupes(items, baseKeyOf);
+          if (!hasDupes) return baseKey;
+          const firstIdx = this._dupFirstIdxMap.get(baseKey);
           if (firstIdx !== undefined && firstIdx < i) {
             return `${baseKey}:${i}`;
           }
@@ -699,8 +738,10 @@ export class BasicListComponent<T extends { id: number }> {
     if (moveSet.size > 0) {
       const moveParent = api.parent(bottomMarker)!;
       let anchor: Node = bottomMarker;
-      const cacheEntry = this._firstIdxCache.get(items);
-      const hasDupes = cacheEntry !== undefined && cacheEntry.hasDupes;
+      // The diff loop above will have called keyForItem(items[i], i, items)
+      // for every i, so dedup detection has run for `items` and the cached
+      // verdict on `_dupHasDupes` is authoritative for THIS items[].
+      const hasDupes = this._dupItemsRef === items && this._dupHasDupes;
       const processedKeys = this._processedKeys;
       if (hasDupes) processedKeys.clear();
       for (let idx = items.length - 1; idx >= 0; idx--) {
@@ -843,10 +884,9 @@ export class SyncListComponent<
     // `items`, which is either the final desired state or `[]` (teardown).
     if (this._syncInProgress) return;
     this._syncInProgress = true;
-    // Invalidate the duplicate-key first-index cache for this items array
-    // so a mutated-in-place array doesn't carry stale duplicate information
-    // forward. WeakMap.delete on a missing key is a no-op.
-    this._firstIdxCache.delete(items);
+    // Invalidate the duplicate-key detection cache for this sync pass — a
+    // mutated-in-place array would otherwise carry stale verdict forward.
+    this._dupItemsRef = null;
     try {
     const { keyMap, keyForItem } = this;
 
@@ -1064,7 +1104,7 @@ export class AsyncListComponent<
   }
   async syncList(items: T[]) {
     // Invalidate per-items-array duplicate-key cache (see SyncListComponent)
-    this._firstIdxCache.delete(items);
+    this._dupItemsRef = null;
     // Destroy inverse when items arrive — guarded to avoid unnecessary await
     if (items.length > 0 && this.inverseContent !== null) {
       await this.destroyInverseAsync();
