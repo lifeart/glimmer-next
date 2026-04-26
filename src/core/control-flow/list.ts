@@ -429,15 +429,18 @@ export class BasicListComponent<T extends { id: number }> {
         // uses the stable identity key; every subsequent occurrence gets
         // a position-qualified key so the diff algorithm treats it as a
         // distinct row. This preserves identity stability for the common
-        // (no-duplicates) case. O(1) via cached first-index entry, and
-        // the per-row check is skipped entirely when the cached entry
-        // reports no duplicates.
+        // (no-duplicates) case. Inline fast-path: when the cached verdict
+        // matches `items` and reports no dupes, the entire branch reduces
+        // to two ref-equal compares + a boolean check (no method call).
         if (items !== undefined) {
-          const hasDupes = this.detectDupes(items, baseKeyOf);
-          if (!hasDupes) return baseKey;
-          const firstIdx = this._dupFirstIdxMap.get(baseKey);
-          if (firstIdx !== undefined && firstIdx < i) {
-            return `${baseKey}:${i}` as unknown as string;
+          if (this._dupItemsRef !== items) {
+            this.detectDupes(items, baseKeyOf);
+          }
+          if (this._dupHasDupes) {
+            const firstIdx = this._dupFirstIdxMap.get(baseKey);
+            if (firstIdx !== undefined && firstIdx < i) {
+              return `${baseKey}:${i}` as unknown as string;
+            }
           }
         }
         return baseKey;
@@ -473,15 +476,19 @@ export class BasicListComponent<T extends { id: number }> {
         // key (e.g. `{{#each list key="text"}}` with several items having
         // the same text), each subsequent occurrence gets a position-
         // qualified key so they're rendered as distinct rows. Preserves
-        // stable identity for the common (no-duplicates) case. O(1) via
-        // cached first-index entry; the per-row check is skipped entirely
-        // when the cached entry reports no duplicates.
+        // stable identity for the common (no-duplicates) case. Inline
+        // fast-path: when the cached verdict matches `items` and reports
+        // no dupes, the entire branch reduces to two ref-equal compares +
+        // a boolean check (no method call).
         if (items !== undefined) {
-          const hasDupes = this.detectDupes(items, baseKeyOf);
-          if (!hasDupes) return baseKey;
-          const firstIdx = this._dupFirstIdxMap.get(baseKey);
-          if (firstIdx !== undefined && firstIdx < i) {
-            return `${baseKey}:${i}`;
+          if (this._dupItemsRef !== items) {
+            this.detectDupes(items, baseKeyOf);
+          }
+          if (this._dupHasDupes) {
+            const firstIdx = this._dupFirstIdxMap.get(baseKey);
+            if (firstIdx !== undefined && firstIdx < i) {
+              return `${baseKey}:${i}`;
+            }
           }
         }
         return baseKey;
