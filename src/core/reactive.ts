@@ -437,9 +437,15 @@ export function lazyRawCellFor<T extends object, K extends keyof T>(
   key: K,
   init?: () => T[K],
 ): Cell<T[K]> {
-  const refs = cellsMap.get(obj) || new Map<string | number | symbol, Cell>();
-  if (refs.has(key)) {
-    return refs.get(key) as Cell<T[K]>;
+  let refs = cellsMap.get(obj);
+  if (refs === undefined) {
+    refs = new Map<string | number | symbol, Cell>();
+    cellsMap.set(obj, refs);
+  } else {
+    const existing = refs.get(key);
+    if (existing !== undefined) {
+      return existing as Cell<T[K]>;
+    }
   }
   // make value lazy
   const cellValue = new LazyCell<T[K]>(
@@ -447,7 +453,6 @@ export function lazyRawCellFor<T extends object, K extends keyof T>(
     `${obj.constructor.name}.${String(key)}`,
   );
   refs.set(key, cellValue);
-  cellsMap.set(obj, refs);
   return cellValue as unknown as Cell<T[K]>;
 }
 export function rawCellFor<T extends object, K extends keyof T>(
@@ -458,9 +463,13 @@ export function rawCellFor<T extends object, K extends keyof T>(
   if (refs === undefined) {
     refs = new Map<string | number | symbol, Cell>();
     cellsMap.set(obj, refs);
-  }
-  if (refs.has(key)) {
-    return refs.get(key) as Cell<T[K]>;
+  } else {
+    // Single .get() instead of has()+get() — Cell instances are never falsy,
+    // and cellFor is on the per-property hot path during template setup.
+    const existing = refs.get(key);
+    if (existing !== undefined) {
+      return existing as Cell<T[K]>;
+    }
   }
   const cellValue = new Cell<T[K]>(
     obj[key],
