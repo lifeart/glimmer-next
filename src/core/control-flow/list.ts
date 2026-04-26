@@ -977,38 +977,39 @@ export class SyncListComponent<
     // (PARENT[rowId] === listId). Otherwise restrict destruction to the row's
     // own rendered nodes without traversing CHILD — the real subtree owner
     // will tear itself down when its scope ends.
-    const rowAny = row as unknown as { [COMPONENT_ID_PROPERTY]?: number };
-    const rowId =
-      rowAny && typeof rowAny === 'object' && !Array.isArray(row)
-        ? rowAny[COMPONENT_ID_PROPERTY]
-        : undefined;
-    const listId = this[COMPONENT_ID_PROPERTY];
-    const parentOfRow = rowId !== undefined ? PARENT.get(rowId) : undefined;
-    const isOurChild = rowId !== undefined && parentOfRow === listId;
-    if (rowId === undefined || isOurChild || Array.isArray(row)) {
-      // Normal path: safe to cascade.
+    const rowIsArray = Array.isArray(row);
+    let safeToCascade = rowIsArray;
+    if (!safeToCascade) {
+      const rowAny = row as unknown as { [COMPONENT_ID_PROPERTY]?: number };
+      if (rowAny !== null && typeof rowAny === 'object') {
+        const rowId = rowAny[COMPONENT_ID_PROPERTY];
+        if (rowId === undefined || PARENT.get(rowId) === this[COMPONENT_ID_PROPERTY]) {
+          safeToCascade = true;
+        }
+      } else {
+        // primitive/null row — pass through (destroyElementSync handles it)
+        safeToCascade = true;
+      }
+    }
+    if (safeToCascade) {
       destroyElementSync(row as ComponentLike, false, this.api);
     } else {
       // Shared/root row — scope DOM cleanup to this row's rendered nodes only.
-      try {
-        const rendered = (row as any)?.[RENDERED_NODES_PROPERTY];
-        if (Array.isArray(rendered)) {
-          for (let i = 0; i < rendered.length; i++) {
-            const node = rendered[i];
-            if (node && typeof node === 'object' && 'nodeType' in node) {
-              const n = node as Node;
-              if (n.isConnected) {
-                try {
-                  this.api.destroy(n);
-                } catch {
-                  /* best-effort */
-                }
+      const rendered = (row as any)?.[RENDERED_NODES_PROPERTY];
+      if (Array.isArray(rendered)) {
+        for (let i = 0; i < rendered.length; i++) {
+          const node = rendered[i];
+          if (node && typeof node === 'object' && 'nodeType' in node) {
+            const n = node as Node;
+            if (n.isConnected) {
+              try {
+                this.api.destroy(n);
+              } catch {
+                /* best-effort */
               }
             }
           }
         }
-      } catch {
-        /* noop */
       }
     }
     this.removeMarker(key);
