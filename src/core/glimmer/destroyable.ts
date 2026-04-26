@@ -90,7 +90,29 @@ export function registerDestructor(ctx: object, ...fn: Destructors) {
     existingDestructors = getDestructorArray();
     $dfi.set(ctx, existingDestructors);
   }
-  existingDestructors.push(...fn);
+  // Inline push without spread — `fn` is already an array. Spread would
+  // re-walk it and `Array.prototype.push.apply`-style hot paths get
+  // deoptimized by V8 above ~32 elements.
+  for (let i = 0; i < fn.length; i++) {
+    existingDestructors.push(fn[i]);
+  }
+}
+
+/**
+ * Same as registerDestructor but takes a destructor array directly,
+ * avoiding the rest-parameter `arguments` collection allocation per call.
+ * Used on hot per-element paths in `_DOM` where we already have the
+ * destructors pre-built in an array.
+ */
+export function registerDestructorBatch(ctx: object, fns: Destructors) {
+  let existingDestructors = $dfi.get(ctx);
+  if (existingDestructors === undefined) {
+    existingDestructors = getDestructorArray();
+    $dfi.set(ctx, existingDestructors);
+  }
+  for (let i = 0; i < fns.length; i++) {
+    existingDestructors.push(fns[i]);
+  }
 }
 
 // Track objects whose destruction is in progress (marked early)
