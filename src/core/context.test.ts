@@ -987,4 +987,88 @@ describe('Bug Fixes Verification', () => {
       expect(initDOM(comp3).toString()).toBe('test:root-api');
     });
   });
+
+  // Regression coverage for the CanvasRenderer crash on PR #212. Surfaced
+  // by deploy-preview-212 navigating /renderers after TresCanvas reset
+  // fastRenderingContext to null. Mechanism captured here:
+  //   1. Root-level provideContext sets fastRenderingContext = htmlApi.
+  //   2. Inner provideContext on a non-document root resets it to null.
+  //   3. A function-component instance NOT YET in the tree calls
+  //      `getContext(this, RENDERING_CONTEXT)` (the slow path).
+  //   4. Without the rootRenderingContext fallback the walk would return
+  //      null — initDOM would then return null and `_DOM` would crash on
+  //      `api.element(...)`.
+  describe('FIX: rootRenderingContext fallback when slow walk fails', () => {
+    test('orphan ctx (no PARENT entry) resolves via root fallback after nested reset', () => {
+      const htmlApi = new TestCustomDOMApi('html-root-api', fixture.document);
+      const innerApi = new TestCustomDOMApi('canvas-inner-api', fixture.document);
+
+      // 1. Root provides RENDERING_CONTEXT — fastRenderingContext = htmlApi
+      //    AND the rootRenderingContext mirror is set.
+      provideContext(fixture.root, RENDERING_CONTEXT, htmlApi);
+
+      // 2. A nested non-document root provides a different RENDERING_CONTEXT
+      //    (this is what TresCanvas / CanvasRenderer / PdfViewer do internally
+      //    on their inner synthetic roots). After this, fastRenderingContext
+      //    is null but rootRenderingContext still points at htmlApi.
+      const innerRoot = {
+        [COMPONENT_ID_PROPERTY]: 99999,
+        [RENDERED_NODES_PROPERTY]: [],
+      };
+      provideContext(innerRoot as any, RENDERING_CONTEXT, innerApi);
+
+      // 3. Construct a function-component-style ctx that has NOT been added
+      //    to the tree (mirrors `new CanvasRenderer()` reaching `$_tag`
+      //    before `addToTree`). PARENT.get(orphanId) returns undefined, so
+      //    the slow-path walk in getContext stops on the very first step.
+      const orphan = new Component({});
+      orphan[RENDERED_NODES_PROPERTY] = [];
+
+      // 4. Without the fallback this returns null and initDOM produces null.
+      //    With the fallback we recover the most-recent root api (htmlApi).
+      const resolved = getContext(orphan, RENDERING_CONTEXT);
+      expect(resolved).toBe(htmlApi);
+      expect(initDOM(orphan).toString()).toBe('test:html-root-api');
+    });
+
+    test('cleanupFastContext clears the rootRenderingContext fallback', () => {
+      const htmlApi = new TestCustomDOMApi('html', fixture.document);
+      const innerApi = new TestCustomDOMApi('inner', fixture.document);
+      provideContext(fixture.root, RENDERING_CONTEXT, htmlApi);
+
+      const innerRoot = {
+        [COMPONENT_ID_PROPERTY]: 88888,
+        [RENDERED_NODES_PROPERTY]: [],
+      };
+      provideContext(innerRoot as any, RENDERING_CONTEXT, innerApi);
+
+      cleanupFastContext();
+
+      // After cleanup, an orphan with no path should NOT silently inherit
+      // a stale root api — getContext should return null so the next
+      // renderComponent has a clean slate.
+      const orphan = new Component({});
+      orphan[RENDERED_NODES_PROPERTY] = [];
+      expect(getContext(orphan, RENDERING_CONTEXT)).toBe(null);
+    });
+
+    test('function provider on Root mirrors the resolved api into the fallback', () => {
+      const htmlApi = new TestCustomDOMApi('lazy-root', fixture.document);
+      const innerApi = new TestCustomDOMApi('lazy-inner', fixture.document);
+
+      // Lazy provider: function value evaluated on first read AND mirrored.
+      provideContext(fixture.root, RENDERING_CONTEXT, () => htmlApi);
+
+      const innerRoot = {
+        [COMPONENT_ID_PROPERTY]: 77777,
+        [RENDERED_NODES_PROPERTY]: [],
+      };
+      provideContext(innerRoot as any, RENDERING_CONTEXT, innerApi);
+
+      const orphan = new Component({});
+      orphan[RENDERED_NODES_PROPERTY] = [];
+      // Should return the resolved api (NOT the function reference).
+      expect(getContext(orphan, RENDERING_CONTEXT)).toBe(htmlApi);
+    });
+  });
 });
