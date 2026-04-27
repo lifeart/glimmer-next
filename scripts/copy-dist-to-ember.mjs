@@ -17,7 +17,7 @@
  * expect the copy to land), set GXT_COPY_DIST_REQUIRED=1.
  */
 
-import { cpSync, existsSync, readdirSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -26,6 +26,17 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const emberRepo = process.argv[2] || '/Users/lifeart/Repos/ember.js';
 const required = process.env.GXT_COPY_DIST_REQUIRED === '1';
+
+// Read our own version so we copy into the matching pnpm store entry.
+// Without this we'd alphabetically pick the lowest installed version
+// (e.g. 0.0.53) and stamp the new dist there while the consumer is on
+// 0.0.60 — silent staleness.
+let ownVersion = null;
+try {
+  ownVersion = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')).version;
+} catch {
+  // fall through; we'll pick the highest installed entry instead
+}
 
 function softFail(message) {
   if (required) {
@@ -51,7 +62,31 @@ if (pnpmEntries.length === 0) {
   softFail(`@lifeart/gxt not installed in ${pnpmBase}`);
 }
 
-const gxtPnpmDir = resolve(pnpmBase, pnpmEntries[0], 'node_modules/@lifeart/gxt');
+// Prefer the entry whose version matches glimmer-next's package.json. If
+// that's missing (e.g. consumer is on a different version, or version
+// read failed), fall back to the highest semver-sorted entry so a
+// `pnpm build-lib` still produces a useful update.
+function semverCompareDesc(a, b) {
+  const av = a.replace('@lifeart+gxt@', '').split('.').map(Number);
+  const bv = b.replace('@lifeart+gxt@', '').split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((bv[i] || 0) !== (av[i] || 0)) return (bv[i] || 0) - (av[i] || 0);
+  }
+  return 0;
+}
+const expected = ownVersion ? `@lifeart+gxt@${ownVersion}` : null;
+const matched = expected && pnpmEntries.includes(expected) ? expected : null;
+const fallback = [...pnpmEntries].sort(semverCompareDesc)[0];
+const targetEntry = matched || fallback;
+if (!matched && expected) {
+  console.warn(
+    `[copy-dist] note: pnpm store has no entry for ${expected}; ` +
+      `using ${targetEntry} (highest installed). The consumer may need ` +
+      `a fresh \`pnpm install\` after this build.`
+  );
+}
+
+const gxtPnpmDir = resolve(pnpmBase, targetEntry, 'node_modules/@lifeart/gxt');
 
 if (!existsSync(gxtPnpmDir)) {
   softFail(`GXT package dir not found at ${gxtPnpmDir}`);
