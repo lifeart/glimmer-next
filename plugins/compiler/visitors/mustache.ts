@@ -6,7 +6,7 @@
 
 import type { ASTv1 } from '@glimmer/syntax';
 import type { CompilerContext, VisitFn } from '../context';
-import type { SerializedValue, HBSControlExpression, SourceRange } from '../types';
+import type { SerializedValue, HBSControlExpression, HBSNode, SourceRange } from '../types';
 import { literal, path, helper, getter, raw, isSerializedValue } from '../types';
 import { getNodeRange, resolvePath, serializeValueToString, getPathPartRanges, getPathExpressionString } from './utils';
 
@@ -32,7 +32,7 @@ export function visitMustache(
   ctx: CompilerContext,
   node: ASTv1.MustacheStatement,
   wrap = true
-): SerializedValue | HBSControlExpression | null {
+): SerializedValue | HBSControlExpression | HBSNode | null {
   const range = getNodeRange(node);
 
   // Handle non-path mustache (literal values, sub-expressions)
@@ -41,6 +41,81 @@ export function visitMustache(
   }
 
   const pathName = getPathExpressionString(node.path);
+
+  // In compat mode, transform {{mount "engine-name" model=expr}} to <ember-mount> element
+  if (pathName === 'mount' && ctx.flags.IS_GLIMMER_COMPAT_MODE) {
+    return createMountElement(ctx, node, range);
+  }
+
+  // In compat mode, transform {{component "name" arg=val}} or {{component this.xxx arg=val}}
+  // to an HBSNode (angle-bracket component element).
+  // Skip when the first param is a SubExpression (e.g., {{component (component "-looked-up") arg=val}})
+  // — let it fall through to normal helper processing so $_componentHelper handles chaining.
+  if (pathName === 'component' && ctx.flags.IS_GLIMMER_COMPAT_MODE) {
+    const firstParam = node.params[0];
+    if (firstParam && firstParam.type === 'SubExpression') {
+      // Fall through to helper processing — $_componentHelper will handle the chained call
+    } else {
+      return createComponentElement(ctx, node, range);
+    }
+  }
+
+  // In compat mode, transform {{mut (get obj key)}} → {{__mutGet obj key}}
+  // This enables two-way binding with dynamic property paths.
+  if (ctx.flags.IS_GLIMMER_COMPAT_MODE && pathName === 'mut' && node.params.length === 1) {
+    const firstParam = node.params[0];
+    if (firstParam.type === 'SubExpression' && firstParam.path.type === 'PathExpression' && getPathExpressionString(firstParam.path) === 'get') {
+      const mutGetPositional = firstParam.params.map((param) => {
+        const result = getVisit(ctx)(ctx, param, false);
+        if (result === null) return literal(null);
+        if (typeof result === 'string') return literal(result);
+        if (isSerializedValue(result)) return result;
+        return raw(JSON.stringify(result));
+      });
+      const pathRange = getNodeRange(node.path);
+      const mutGetResult = helper('__mutGet', mutGetPositional, new Map(), range, pathRange);
+      if (wrap) {
+        return getter(mutGetResult, range);
+      }
+      return mutGetResult;
+    }
+  }
+
+  // In compat mode, transform bare {{this}} to {{this.__gxtSelfString__}}
+  // Ember's {{this}} calls toString() on the component instance.
+  if (ctx.flags.IS_GLIMMER_COMPAT_MODE && node.path.type === 'PathExpression') {
+    const head = node.path.head;
+    if (head.type === 'ThisHead' && node.path.tail.length === 0 && node.params.length === 0 && node.hash.pairs.length === 0) {
+      const resolved = resolvePath(ctx, 'this.__gxtSelfString__');
+      const pathRange = getNodeRange(node.path);
+      return path(resolved, false, pathRange);
+    }
+  }
+
+  // In compat mode, transform {{input ...}} / {{textarea ...}} to <Input /> / <Textarea />
+  if ((pathName === 'input' || pathName === 'textarea') && ctx.flags.IS_GLIMMER_COMPAT_MODE) {
+    return createInputTextareaElement(ctx, node, pathName, range);
+  }
+
+  // In compat mode, transform inline curly components: {{foo-bar arg=val}} → HBSNode
+  // Hyphenated names that are not built-in helpers or known bindings are treated as components.
+  if (ctx.flags.IS_GLIMMER_COMPAT_MODE && isInlineCurlyComponent(ctx, node, pathName)) {
+    return createInlineCurlyComponent(ctx, node, pathName, range);
+  }
+
+  // In compat mode, transform let-block param dot-path invocations with args
+  // to component HBSNodes so they compile as $_dc (dynamic component).
+  // e.g. {{param.prop arg=val}} where param is a let-binding → HBSNode with tag "param.prop"
+  if (ctx.flags.IS_GLIMMER_COMPAT_MODE && node.path.type === 'PathExpression') {
+    const headNode = node.path.head;
+    if (headNode.type === 'VarHead' && node.path.tail.length > 0) {
+      const headName = headNode.name ?? headNode.original;
+      const binding = ctx.scopeTracker.resolve(headName);
+      if (binding && binding.kind === 'let-binding' && (node.hash.pairs.length > 0 || node.params.length > 0)) {
+        return createLetParamComponentInvocation(ctx, node, pathName, range);
+      }
+    }
+  }
 
   // Handle yield/outlet
   if (pathName === 'yield' || pathName === 'outlet') {
@@ -147,6 +222,165 @@ function createYieldExpression(
 }
 
 /**
+ * Create an <ember-mount> HBSNode for {{mount "engine-name" model=expr}} in compat mode.
+ * The engine name becomes a data-engine attribute, and an optional model hash arg becomes @model.
+ */
+function createMountElement(
+  ctx: CompilerContext,
+  node: ASTv1.MustacheStatement,
+  range?: SourceRange
+): HBSNode {
+  const attributes: Array<[string, SerializedValue]> = [];
+
+  // First positional param is the engine name (string literal)
+  if (node.params.length > 0) {
+    const engineParam = node.params[0];
+    if (engineParam.type === 'StringLiteral') {
+      attributes.push(['data-engine', literal(engineParam.value)]);
+    }
+  }
+
+  // Hash arg "model" becomes @model
+  const modelPair = node.hash.pairs.find((p) => p.key === 'model');
+  if (modelPair) {
+    const modelResult = getVisit(ctx)(ctx, modelPair.value, false);
+    if (modelResult !== null && isSerializedValue(modelResult)) {
+      attributes.push(['@model', getter(modelResult, range)]);
+    }
+  }
+
+  return {
+    _nodeType: 'element',
+    tag: 'ember-mount',
+    selfClosing: true,
+    blockParams: [],
+    hasStableChild: false,
+    attributes,
+    properties: [],
+    events: [],
+    children: [],
+    sourceRange: range,
+  };
+}
+
+/**
+ * Create an <Input /> or <Textarea /> HBSNode for {{input ...}} / {{textarea ...}} in compat mode.
+ * Hash args are converted to @-prefixed attributes on the component element.
+ */
+function createInputTextareaElement(
+  ctx: CompilerContext,
+  node: ASTv1.MustacheStatement,
+  name: string,
+  range?: SourceRange
+): HBSNode {
+  const pascalName = name === 'input' ? 'Input' : 'Textarea';
+  const attributes: Array<[string, SerializedValue]> = [];
+
+  // Convert all hash pairs to @-prefixed attributes
+  for (const pair of node.hash.pairs) {
+    const value = getVisit(ctx)(ctx, pair.value, false);
+    if (value !== null && isSerializedValue(value)) {
+      attributes.push([`@${pair.key}`, getter(value, range)]);
+    }
+  }
+
+  return {
+    _nodeType: 'element',
+    tag: pascalName,
+    selfClosing: true,
+    blockParams: [],
+    hasStableChild: false,
+    attributes,
+    properties: [],
+    events: [],
+    children: [],
+    sourceRange: range,
+  };
+}
+
+/**
+ * Convert kebab-case to PascalCase.
+ * E.g. "my-component" → "MyComponent"
+ */
+function toPascalCase(name: string): string {
+  return name.split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join('');
+}
+
+/**
+ * Create an HBSNode for {{component "name" arg=val}} or {{component this.xxx arg=val}}.
+ *
+ * - Static string name: {{component "foo-bar" arg=val}} → <FooBar @__fromComponentHelper__={{true}} @arg={{val}} />
+ * - Dynamic path name: {{component this.xxx arg=val}} → <this.xxx @arg={{val}} />
+ * - Positional params beyond the first become @__pos0__, @__pos1__, etc. with @__posCount__
+ */
+function createComponentElement(
+  ctx: CompilerContext,
+  node: ASTv1.MustacheStatement,
+  range?: SourceRange
+): HBSNode | null {
+  if (node.params.length === 0) return null;
+
+  const firstParam = node.params[0];
+  let tag: string;
+  let isStaticName = false;
+
+  if (firstParam.type === 'StringLiteral') {
+    // Static name: {{component "foo-bar"}} → <FooBar>
+    tag = toPascalCase(firstParam.value);
+    isStaticName = true;
+  } else if (firstParam.type === 'PathExpression') {
+    // Dynamic name: {{component this.xxx}} → <this.xxx>
+    tag = getPathExpressionString(firstParam);
+  } else if (firstParam.type === 'SubExpression') {
+    // SubExpression: {{component (someHelper)}} — skip, let existing pipeline handle
+    return null;
+  } else {
+    return null;
+  }
+
+  const attributes: Array<[string, SerializedValue]> = [];
+
+  // For static names, add the marker so $_tag knows this came from {{component}}
+  if (isStaticName) {
+    attributes.push(['@__fromComponentHelper__', literal(true)]);
+  }
+
+  // Remaining positional params (after the first which is the component name)
+  const positionalParams = node.params.slice(1);
+  for (let i = 0; i < positionalParams.length; i++) {
+    const param = positionalParams[i];
+    const value = getVisit(ctx)(ctx, param, false);
+    if (value !== null && isSerializedValue(value)) {
+      attributes.push([`@__pos${i}__`, getter(value, range)]);
+    }
+  }
+  if (positionalParams.length > 0) {
+    attributes.push(['@__posCount__', literal(positionalParams.length)]);
+  }
+
+  // Convert hash pairs to @-prefixed attributes
+  for (const pair of node.hash.pairs) {
+    const value = getVisit(ctx)(ctx, pair.value, false);
+    if (value !== null && isSerializedValue(value)) {
+      attributes.push([`@${pair.key}`, getter(value, range)]);
+    }
+  }
+
+  return {
+    _nodeType: 'element',
+    tag,
+    selfClosing: true,
+    blockParams: [],
+    hasStableChild: false,
+    attributes,
+    properties: [],
+    events: [],
+    children: [],
+    sourceRange: range,
+  };
+}
+
+/**
  * Collect hash pairs into a Map.
  */
 function collectHashArgs(
@@ -188,7 +422,19 @@ function visitSimpleMustache(
   // - Paths with explicit bindings
   const head = pathExpr.head;
   const isThisPath = head.type === 'ThisHead';
-  const isArg = head.type === 'AtHead';
+  let isArg = head.type === 'AtHead';
+
+  // In compat mode, `this.attrs.X` is rewritten to `@X` by resolvePath —
+  // mark it as an arg so serialization treats it like an @-arg reference.
+  if (
+    ctx.flags.IS_GLIMMER_COMPAT_MODE &&
+    isThisPath &&
+    pathExpr.tail.length >= 2 &&
+    pathExpr.tail[0] === 'attrs'
+  ) {
+    isArg = true;
+  }
+
   let headName = 'this';
   if (head.type !== 'ThisHead') {
     headName = head.name ?? head.original;
@@ -260,4 +506,145 @@ function visitHelperMustache(
   }
 
   return helperValue;
+}
+
+// ============================================================================
+// Inline curly component detection and conversion (compat mode)
+// ============================================================================
+
+/**
+ * Built-in helpers with hyphens that should NOT be treated as component invocations.
+ */
+const BUILTIN_HYPHENATED_HELPERS = new Set([
+  'unique-id', 'each-in', 'has-block', 'has-block-params', 'in-element',
+]);
+
+/**
+ * Check if a mustache statement is an inline curly component invocation.
+ * A hyphenated name (contains '-') that is not a built-in helper and not a known binding.
+ */
+function isInlineCurlyComponent(
+  ctx: CompilerContext,
+  node: ASTv1.MustacheStatement,
+  pathName: string
+): boolean {
+  // Must contain a hyphen
+  if (!pathName.includes('-')) return false;
+  // Must be a simple VarHead path (not this.foo.bar-baz or @arg-name)
+  const pathExpr = node.path as ASTv1.PathExpression;
+  if (pathExpr.head.type !== 'VarHead') return false;
+  // Must not have a dotted path (e.g., foo.bar-baz)
+  if (pathExpr.tail.length > 0) return false;
+  // Must not have positional params — positional params indicate helper call, not component
+  if (node.params.length > 0) return false;
+  // Must not be a built-in hyphenated helper
+  if (BUILTIN_HYPHENATED_HELPERS.has(pathName)) return false;
+  // Must not be a known binding (e.g., a let-block param or imported name)
+  if (ctx.scopeTracker.hasBinding(pathName)) return false;
+  // Hyphenated mustaches with NO positional and NO named args are ambiguous
+  // — they could be a dasherized helper (e.g. `{{x-borf}}` resolved through
+  // a helper manager / runtime scope) or a self-closing component. Synthesizing
+  // a component invocation here short-circuits runtime helper resolution
+  // (e.g. component.args[$_scope]-based dispatch in `$_maybeHelper`), which
+  // breaks the `Integration | DashHelpers | x-bar >> dashed hlpers without
+  // args wrapped with helper manager` flow regardless of WITH_HELPER_MANAGER.
+  // Route to `$_maybeHelper` always when no args are provided; component
+  // invocations are reachable via explicit angle-bracket syntax `<XBorf />`.
+  // See PR https://github.com/lifeart/glimmer-next/pull/212.
+  if (node.hash.pairs.length === 0) return false;
+  return true;
+}
+
+/**
+ * Create an HBSNode for an inline curly component invocation.
+ * {{foo-bar arg=val}} → HBSNode with tag="foo-bar" and @arg attributes.
+ * Positional params become @__pos0__, @__pos1__, etc. attributes.
+ */
+function createInlineCurlyComponent(
+  ctx: CompilerContext,
+  node: ASTv1.MustacheStatement,
+  pathName: string,
+  range?: SourceRange
+): HBSNode {
+  const attributes: Array<[string, SerializedValue]> = [];
+
+  // Convert hash pairs to @-prefixed attributes
+  for (const pair of node.hash.pairs) {
+    const value = getVisit(ctx)(ctx, pair.value, false);
+    if (value !== null && isSerializedValue(value)) {
+      attributes.push([`@${pair.key}`, getter(value, range)]);
+    }
+  }
+
+  // Convert positional params to @__pos0__, @__pos1__, etc.
+  for (let i = 0; i < node.params.length; i++) {
+    const value = getVisit(ctx)(ctx, node.params[i]!, false);
+    if (value !== null && isSerializedValue(value)) {
+      attributes.push([`@__pos${i}__`, getter(value, range)]);
+    }
+  }
+  if (node.params.length > 0) {
+    attributes.push([`@__posCount__`, literal(node.params.length)]);
+  }
+
+  // Convert kebab-case to PascalCase for the tag name
+  const pascalTag = toPascalCase(pathName);
+  return createSelfClosingComponentNode(pascalTag, attributes, range);
+}
+
+/**
+ * Create an HBSNode for a let-block param dot-path component invocation.
+ * {{param.prop arg=val}} where param is a let-binding → HBSNode with tag "param.prop"
+ * This compiles as $_dc (dynamic component) because the tag contains a dot.
+ */
+function createLetParamComponentInvocation(
+  ctx: CompilerContext,
+  node: ASTv1.MustacheStatement,
+  pathName: string,
+  range?: SourceRange
+): HBSNode {
+  const attributes: Array<[string, SerializedValue]> = [];
+
+  // Convert hash pairs to @-prefixed attributes
+  for (const pair of node.hash.pairs) {
+    const value = getVisit(ctx)(ctx, pair.value, false);
+    if (value !== null && isSerializedValue(value)) {
+      attributes.push([`@${pair.key}`, getter(value, range)]);
+    }
+  }
+
+  // Convert positional params to @__pos0__, @__pos1__, etc.
+  for (let i = 0; i < node.params.length; i++) {
+    const value = getVisit(ctx)(ctx, node.params[i]!, false);
+    if (value !== null && isSerializedValue(value)) {
+      attributes.push([`@__pos${i}__`, getter(value, range)]);
+    }
+  }
+  if (node.params.length > 0) {
+    attributes.push([`@__posCount__`, literal(node.params.length)]);
+  }
+
+  return createSelfClosingComponentNode(pathName, attributes, range);
+}
+
+/**
+ * Build a self-closing HBSNode for component invocations.
+ */
+function createSelfClosingComponentNode(
+  tag: string,
+  attributes: Array<[string, SerializedValue]>,
+  range?: SourceRange
+): HBSNode {
+  return {
+    _nodeType: 'element',
+    tag,
+    selfClosing: true,
+    blockParams: [],
+    hasStableChild: false,
+    attributes,
+    properties: [],
+    events: [],
+    children: [],
+    sourceRange: range,
+  };
 }

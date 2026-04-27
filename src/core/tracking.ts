@@ -11,8 +11,11 @@ import {
 } from './types';
 import { TREE } from './tree';
 
+// `parentContextStack.length - 1` IS the active index — keeping a parallel
+// `parentContextIndex` doubled the bookkeeping (every push/pop incremented or
+// decremented two counters) for no benefit. Single source of truth keeps the
+// hot path tighter and reduces ICs that V8 has to track.
 const parentContextStack: Array<number> = [];
-let parentContextIndex = -1;
 
 if (IS_DEV_MODE) {
   try {
@@ -30,7 +33,6 @@ if (IS_DEV_MODE) {
  * Split into push/pop for hot path performance - avoids null check on every call.
  */
 export const pushParentContext = (value: ComponentLike): void => {
-  parentContextIndex++;
   parentContextStack.push(value[COMPONENT_ID_PROPERTY]!);
 };
 
@@ -38,7 +40,6 @@ export const pushParentContext = (value: ComponentLike): void => {
  * Pop a component from the parent context stack.
  */
 export const popParentContext = (): void => {
-  parentContextIndex--;
   parentContextStack.pop();
 };
 
@@ -47,9 +48,9 @@ export const popParentContext = (): void => {
  */
 export const setParentContext = (value: ComponentLike | null): void => {
   if (value === null) {
-    popParentContext();
+    parentContextStack.pop();
   } else {
-    pushParentContext(value);
+    parentContextStack.push(value[COMPONENT_ID_PROPERTY]!);
   }
 };
 
@@ -58,11 +59,5 @@ export const setParentContext = (value: ComponentLike | null): void => {
  * Return type is 'any' to avoid type dependency on Component<any>.
  */
 export const getParentContext = (): any => {
-  if (IS_DEV_MODE) {
-    if (!TREE.get(parentContextStack[parentContextIndex]!)) {
-      // parent context is not found, may happen if context was not set properly
-      // debugger;
-    }
-  }
-  return TREE.get(parentContextStack[parentContextIndex]!);
+  return TREE.get(parentContextStack[parentContextStack.length - 1]!);
 };

@@ -165,6 +165,57 @@ describe('Destruction Flow Tests', () => {
       expect(CHILD.has(ifId)).toBe(false);
     });
 
+    test('IfCondition cleans up DOM inserted by orphan branches (yield-only branch case)', async () => {
+      // Regression test for the bug where a true branch that returns an empty
+      // array (e.g. `{{#if cond}}{{yield}}{{/if}}` when the slot inserts DOM
+      // out-of-band) leaves stale nodes behind on toggle-off.
+      const parentComponent = new Component({});
+      parentComponent[RENDERED_NODES_PROPERTY] = [];
+      addToTree(fixture.root, parentComponent);
+
+      // Build a host element that will hold the if's placeholder.
+      const host = fixture.document.createElement('div');
+      const placeholder = fixture.api.comment('orphan-test');
+      host.appendChild(placeholder);
+
+      const condition = cell(true);
+
+      // The "true" branch simulates a sub-runtime (slot/yield) that inserts a
+      // DOM node directly next to the placeholder but returns an EMPTY array
+      // — i.e. nothing is threaded back through prevComponent.
+      const orphanText = 'orphan-yield-content';
+      const trueBranch = () => {
+        const textNode = fixture.document.createTextNode(orphanText);
+        host.insertBefore(textNode, placeholder);
+        return [] as any;
+      };
+      const falseBranch = () => [] as any;
+
+      const ifCondition = new IfCondition(
+        parentComponent,
+        condition,
+        host as unknown as DocumentFragment,
+        placeholder,
+        trueBranch as any,
+        falseBranch as any,
+      );
+
+      // Wait for initial render.
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      // The orphan text node should be visible inside the host.
+      expect(host.textContent).toContain(orphanText);
+
+      // Flip the condition off.
+      condition.value = false;
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      // The orphan text MUST be gone from the host.
+      expect(host.textContent).not.toContain(orphanText);
+
+      await ifCondition.destroy();
+    });
+
     test('rapid condition toggling does not cause race conditions', async () => {
       const parentComponent = new Component({});
       parentComponent[RENDERED_NODES_PROPERTY] = [];
@@ -645,6 +696,118 @@ describe('Destruction Flow Tests', () => {
       expect(list.indexFormulaMap?.size).toBe(0);
 
       // Clean up
+      destroyElementSync(parentComponent, true, fixture.api);
+    });
+
+    // PR https://github.com/lifeart/glimmer-next/pull/212 — regression
+    // coverage for `Integration | InternalComponent | each >> it wait for
+    // async element destructors before destroying`. When the LIST is being
+    // torn down by a parent destruction cascade, its own `syncList([])`
+    // destructor used to run `fastCleanup` → `clearChildren(parent)` and
+    // wipe row DOM synchronously. That short-circuited the async modifier
+    // destructors (e.g. fade-out animations) whose DOM removal was already
+    // queued behind a 100ms promise by `runDestructorsInternal`.
+    //
+    // The expectation here is conservative: when fastCleanup runs while the
+    // list is itself in destruction, it must leave the row DOM (between
+    // topMarker and bottomMarker) in place so the per-row destroyNodes
+    // call (deferred behind each row's modifier promise) can reclaim it
+    // at the correct time.
+    test('AsyncListComponent fastCleanup defers DOM removal during cascade destruction', async () => {
+      if (typeof IS_DEV_MODE === 'undefined' || !IS_DEV_MODE) {
+        return;
+      }
+      const parentComponent = new Component({});
+      parentComponent[RENDERED_NODES_PROPERTY] = [];
+      addToTree(fixture.root, parentComponent);
+
+      const items = cell([{ id: 1 }, { id: 2 }]);
+      const placeholder = fixture.api.comment('async-list-cascade');
+      // Mirror the sibling test setup: fragment + bottom marker so that
+      // `parent.firstChild === topMarker && parent.lastChild === bottomMarker`
+      // holds and fastCleanup takes the bulk path.
+      const target = fixture.api.fragment();
+      fixture.api.insert(target, placeholder);
+
+      const list = new AsyncListComponent(
+        {
+          tag: items,
+          ItemComponent: (item: { id: number }) => {
+            const li = fixture.document.createElement('li');
+            li.setAttribute('data-id', String(item.id));
+            return [li];
+          },
+          ctx: parentComponent,
+          key: 'id',
+        },
+        target as unknown as DocumentFragment,
+        placeholder,
+      );
+
+      // Allow the initial sync to complete.
+      await new Promise(resolve => setTimeout(resolve, 20));
+      expect((target as unknown as DocumentFragment).querySelectorAll('li[data-id]').length).toBe(2);
+
+      // Mark the list as in destruction WITHOUT running its destructors
+      // (mimics the state observed when the parent cascade has tagged the
+      // child but its own destructor microtask is still pending).
+      const { markAsDestroyed } = await import('./glimmer/destroyable');
+      markAsDestroyed(list);
+
+      // Drive fastCleanup directly. With cascade-destruction detected the
+      // function must NOT call `clearChildren(parent)`; row DOM stays in
+      // place and is reclaimed by the parent runDestructorsInternal chain.
+      const cleanupResult = await list.fastCleanup();
+      expect(cleanupResult).toBe(true);
+
+      // The list's bookkeeping is cleared regardless...
+      expect(list.indexFormulaMap?.size ?? 0).toBe(0);
+      // ...but the row DOM remains attached because the cascade owns it.
+      expect((target as unknown as DocumentFragment).querySelectorAll('li[data-id]').length).toBe(2);
+
+      // Final cleanup
+      destroyElementSync(parentComponent, true, fixture.api);
+    });
+
+    // Regression coverage that the standalone teardown path still bulk-
+    // clears row DOM (this is the only path that does — the cascade case
+    // above defers to per-row removal). Same PR.
+    test('AsyncListComponent fastCleanup clears DOM when standalone (no cascade)', async () => {
+      if (typeof IS_DEV_MODE === 'undefined' || !IS_DEV_MODE) {
+        return;
+      }
+      const parentComponent = new Component({});
+      parentComponent[RENDERED_NODES_PROPERTY] = [];
+      addToTree(fixture.root, parentComponent);
+
+      const items = cell([{ id: 10 }, { id: 20 }, { id: 30 }]);
+      const placeholder = fixture.api.comment('async-list-standalone');
+      const target = fixture.api.fragment();
+      fixture.api.insert(target, placeholder);
+
+      const list = new AsyncListComponent(
+        {
+          tag: items,
+          ItemComponent: (item: { id: number }) => {
+            const li = fixture.document.createElement('li');
+            li.setAttribute('data-id', String(item.id));
+            return [li];
+          },
+          ctx: parentComponent,
+          key: 'id',
+        },
+        target as unknown as DocumentFragment,
+        placeholder,
+      );
+
+      await new Promise(resolve => setTimeout(resolve, 20));
+      expect((target as unknown as DocumentFragment).querySelectorAll('li[data-id]').length).toBe(3);
+
+      // List is alive (not in destruction) — fastCleanup is the bulk path.
+      const cleanupResult = await list.fastCleanup();
+      expect(cleanupResult).toBe(true);
+      expect((target as unknown as DocumentFragment).querySelectorAll('li[data-id]').length).toBe(0);
+
       destroyElementSync(parentComponent, true, fixture.api);
     });
   });

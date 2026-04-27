@@ -105,7 +105,12 @@ export function addToTree(
   const PARENT_ID = ctx[COMPONENT_ID_PROPERTY];
   let ch = CHILD.get(PARENT_ID);
   if (ch === undefined) {
-    ch = new Set([ID]);
+    // `new Set([ID])` builds the Set via the iterable constructor — V8
+    // walks the array iterator. Empty `new Set()` + `add()` skips the
+    // iterator setup entirely; for the common single-element case this
+    // is a measurable win on per-row component tree wiring.
+    ch = new Set();
+    ch.add(ID);
     CHILD.set(PARENT_ID, ch);
   } else {
     ch.add(ID);
@@ -113,8 +118,9 @@ export function addToTree(
   TREE.set(ID, node);
   if (WITH_CONTEXT_API) {
     if (IS_DEV_MODE) {
-      if (!PARENT_ID) {
-        throw new Error("unknown parent");
+      if (PARENT_ID === undefined || PARENT_ID === null) {
+        // Don't throw — Ember compat layer may pass contexts without IDs
+        return;
       }
     }
     PARENT.set(ID, PARENT_ID);

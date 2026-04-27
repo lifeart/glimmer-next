@@ -319,6 +319,47 @@ describe('Transform Function', () => {
         expect(result.map.version).toBe(3);
       }
     });
+
+    test('keeps conservative getter wrappers when checker hints are disabled', async () => {
+      const source = `
+        function compute() { return 42; }
+        export default class MyComponent {
+          value = compute();
+          <template>{{this.value}}</template>
+        }
+      `;
+
+      const result = (await transform(
+        source,
+        'test.gts',
+        'development',
+        false,
+        { ...asyncFlags, WITH_TYPE_CHECKER_HINTS: false },
+      )) as TransformResult;
+
+      expect(result.code).toMatch(/\(\)\s*=>\s*this\.value/);
+    });
+
+    test('applies checker hints in async mode when enabled by flag', async () => {
+      const source = `
+        function compute() { return 42; }
+        export default class MyComponent {
+          value = compute();
+          <template>{{this.value}}</template>
+        }
+      `;
+
+      const result = (await transform(
+        source,
+        'test.gts',
+        'development',
+        false,
+        { ...asyncFlags, WITH_TYPE_CHECKER_HINTS: true },
+      )) as TransformResult;
+
+      expect(result.code).not.toMatch(/\(\)\s*=>\s*this\.value/);
+      expect(result.code).toContain('this.value');
+    });
   });
 
   describe('template compilation with block params', () => {
@@ -345,7 +386,11 @@ export class MyList extends Component {
         source,
       ) as TransformResult;
 
-      // Should only have ONE $_each call in roots
+      // Should only have ONE $_each call in roots.
+      // PR https://github.com/lifeart/glimmer-next/pull/212: compat-mode
+      // {{#each}} now compiles to $_each (async) by default — sync
+      // iteration is opt-in via `sync=true`. See compile.test.ts
+      // "{{#each}} uses $_each (async) by default in compat mode".
       const eachMatches = result.code.match(/\$_each\(/g);
       expect(eachMatches).toHaveLength(1);
 
@@ -1270,5 +1315,95 @@ export class C extends Component {
       const genOffset = lineColumnToOffset(result.code, seg.generatedLine, seg.generatedColumn);
       expect(result.code.slice(genOffset, genOffset + 2)).toBe('$a');
     }
+  });
+});
+
+/**
+ * Coverage for plugins/test.ts globalFlags propagation (commit 274d2dd).
+ *
+ * Before the fix, only IS_GLIMMER_COMPAT_MODE leaked through the compile
+ * call inside processTransformedFiles. WITH_HELPER_MANAGER (and other
+ * Ember-integration flags) were dropped, so a known-binding helper
+ * `Custom` (in lexical scope) compiled to a direct `Custom(...)` call —
+ * which throws for ES6 classes ("Class constructor cannot be invoked
+ * without 'new'").
+ *
+ * The test pins the new behavior: with WITH_HELPER_MANAGER on the
+ * transform-level flags, the generated code MUST route the known
+ * binding through `$_maybeHelper`. With the flag off, the legacy
+ * direct-call form is preserved (verifying the regression test
+ * isolates the propagation, not the compiler default).
+ */
+describe('plugins/test.ts global flags propagation (274d2dd)', () => {
+  test('WITH_HELPER_MANAGER:true routes a known-binding helper through $_maybeHelper', () => {
+    const source = `
+import { Component } from '@lifeart/gxt';
+import Custom from './custom-helper';
+
+export class HostComp extends Component {
+  <template>{{ (Custom 'arg') }}</template>
+}
+`;
+    const flags = {
+      ...defaultFlags(),
+      ASYNC_COMPILE_TRANSFORMS: false,
+      WITH_HELPER_MANAGER: true,
+      IS_GLIMMER_COMPAT_MODE: true,
+    };
+    const preprocessed = preprocess(source, 'host.gts');
+    const result = transform(
+      preprocessed,
+      'host.gts',
+      'development',
+      false,
+      flags,
+      source,
+    ) as TransformResult;
+
+    expect(result.code).toContain('$_maybeHelper');
+    // The generated code must NOT emit a bare `Custom(...)` call before the
+    // $_maybeHelper wrapper. We allow the binding identifier to appear inside
+    // $_maybeHelper, but a bare invocation `Custom("` would mean the flag
+    // was dropped on the way to compile().
+    expect(result.code).not.toMatch(/[^a-zA-Z_$]Custom\("arg"\)/);
+  });
+
+  test('WITH_HELPER_MANAGER:false keeps the legacy direct-call form', () => {
+    // This is the negative control: with the flag off, the compiler emits
+    // `Custom("arg")` directly (the pre-274d2dd behavior). If the
+    // propagation regressed, the previous test would still pass on its own
+    // because of compiler defaults — this test pins that the flag actually
+    // changes generation, so the previous test reflects propagation, not
+    // some unconditional behavior.
+    const source = `
+import { Component } from '@lifeart/gxt';
+import Custom from './custom-helper';
+
+export class HostComp extends Component {
+  <template>{{ (Custom 'arg') }}</template>
+}
+`;
+    const flags = {
+      ...defaultFlags(),
+      ASYNC_COMPILE_TRANSFORMS: false,
+      WITH_HELPER_MANAGER: false,
+      IS_GLIMMER_COMPAT_MODE: true,
+    };
+    const preprocessed = preprocess(source, 'host.gts');
+    const result = transform(
+      preprocessed,
+      'host.gts',
+      'development',
+      false,
+      flags,
+      source,
+    ) as TransformResult;
+
+    // With WITH_HELPER_MANAGER off, a known-binding helper compiles to a
+    // direct call — the legacy form. (Note: in compat mode, direct calls
+    // may still be wrapped in a reactive getter; we only assert the bare
+    // invocation appears AND $_maybeHelper does not.)
+    expect(result.code).toContain('Custom("arg")');
+    expect(result.code).not.toContain('$_maybeHelper(Custom');
   });
 });

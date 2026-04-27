@@ -8,9 +8,13 @@ export {
   cell,
   cellFor,
   tracked,
+  getTracker,
+  setTracker,
   type Cell,
   type MergedCell,
   formula,
+  cached,
+  type CachedCell,
 } from '@/core/reactive';
 
 // Component class and types
@@ -35,6 +39,7 @@ export { Root, createRoot } from '@/core/root';
 export * from '@/core/helpers/index';
 export { $template, $args, $fwProp } from '@/core/shared';
 export { syncDom, takeRenderingControl } from '@/core/runtime';
+export { setIsRendering, isRendering } from '@/core/reactive';
 
 // Export decorator-free suspense utilities from suspense-utils
 // For Suspense and lazy components, import directly from '@lifeart/gxt/suspense'

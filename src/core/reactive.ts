@@ -50,6 +50,16 @@ export const DEBUG_MERGED_CELLS = new Set<MergedCell>();
 export const DEBUG_CELLS = new Set<Cell>();
 var currentTracker: Set<Cell> | null = null;
 let _isRendering = false;
+
+// Monotonic revision counter bumped on every Cell.update(), used by cached()
+// to detect whether any dependency has changed since last compute.
+let _globalRevision = 0;
+export function currentGlobalRevision() {
+  return _globalRevision;
+}
+export function bumpGlobalRevision() {
+  return ++_globalRevision;
+}
 export const cellsMap = new WeakMap<
   object,
   Map<string | number | symbol, Cell<unknown>>
@@ -139,6 +149,9 @@ function tracker() {
 export class Cell<T extends unknown = unknown> {
   private __value!: T;
   id = tagId++;
+  // per-cell revision; bumped each time update() is called.
+  // cached() uses this to decide whether a dependency has changed.
+  _revision = 0;
   declare toHTML: () => string;
   [Symbol.toPrimitive]() {
     return this.value;
@@ -169,7 +182,17 @@ export class Cell<T extends unknown = unknown> {
     this.update(value);
   }
   update(value: T) {
+    // Value-equality guard for revision bumps. Downstream `cached()` uses
+    // `_revision` to detect dep invalidation; bumping it on a no-op write
+    // (e.g., Ember's sync layer reapplying the same arg) would cause
+    // spurious recomputes within a single render pass. We still schedule
+    // revalidation to preserve observable side-effect semantics — callers
+    // that update() a cell explicitly expect the opcode queue to flush.
+    const changed = this._value !== value;
     this._value = value;
+    if (changed) {
+      this._revision = bumpGlobalRevision();
+    }
     tagsToRevalidate.add(this);
     scheduleRevalidate();
   }
@@ -229,6 +252,9 @@ function bindAllCellsToTag(cells: Set<Cell>, tag: MergedCell) {
   cells.forEach((cell) => {
     const tags = relatedTagsForCell(cell);
     tags.add(tag);
+    if (IS_DEV_MODE && (globalThis as any).__gxtDebugSync && tag._debugName?.includes('if-condition')) {
+      console.log('[BIND] cell.id=' + cell.id + ' → formula=' + tag._debugName + ' (id=' + tag.id + ')');
+    }
   });
 }
 
@@ -292,6 +318,10 @@ export class MergedCell {
     }
 
     if (this.isConst || !_isRendering || currentTracker !== null) {
+      // @ts-ignore debug
+      if (IS_DEV_MODE && this._debugName?.includes('if-condition') && currentTracker !== null) {
+        console.warn('[GXT-TRACK] if-condition formula short-circuited: currentTracker is SET, isRendering=' + _isRendering);
+      }
       return this.fn();
     }
 
@@ -305,6 +335,10 @@ export class MergedCell {
       this.isConst = $tracker.size === 0;
       this.relatedCells = $tracker;
       setTracker(null);
+      // @ts-ignore debug
+      if (IS_DEV_MODE && this._debugName?.includes('if-condition')) {
+        console.log('[GXT-TRACK] if-condition formula tracked ' + $tracker.size + ' cells');
+      }
     }
   }
 }
@@ -403,9 +437,15 @@ export function lazyRawCellFor<T extends object, K extends keyof T>(
   key: K,
   init?: () => T[K],
 ): Cell<T[K]> {
-  const refs = cellsMap.get(obj) || new Map<string | number | symbol, Cell>();
-  if (refs.has(key)) {
-    return refs.get(key) as Cell<T[K]>;
+  let refs = cellsMap.get(obj);
+  if (refs === undefined) {
+    refs = new Map<string | number | symbol, Cell>();
+    cellsMap.set(obj, refs);
+  } else {
+    const existing = refs.get(key);
+    if (existing !== undefined) {
+      return existing as Cell<T[K]>;
+    }
   }
   // make value lazy
   const cellValue = new LazyCell<T[K]>(
@@ -413,7 +453,6 @@ export function lazyRawCellFor<T extends object, K extends keyof T>(
     `${obj.constructor.name}.${String(key)}`,
   );
   refs.set(key, cellValue);
-  cellsMap.set(obj, refs);
   return cellValue as unknown as Cell<T[K]>;
 }
 export function rawCellFor<T extends object, K extends keyof T>(
@@ -424,9 +463,13 @@ export function rawCellFor<T extends object, K extends keyof T>(
   if (refs === undefined) {
     refs = new Map<string | number | symbol, Cell>();
     cellsMap.set(obj, refs);
-  }
-  if (refs.has(key)) {
-    return refs.get(key) as Cell<T[K]>;
+  } else {
+    // Single .get() instead of has()+get() — Cell instances are never falsy,
+    // and cellFor is on the per-property hot path during template setup.
+    const existing = refs.get(key);
+    if (existing !== undefined) {
+      return existing as Cell<T[K]>;
+    }
   }
   const cellValue = new Cell<T[K]>(
     obj[key],
@@ -447,15 +490,22 @@ export function cellFor<T extends object, K extends keyof T>(
   if (skipDefine) {
     return cellValue;
   }
-  // remove below for ember
-  Object.defineProperty(obj, key, {
-    get() {
-      return cellValue.value;
-    },
-    set(val) {
-      cellValue.update(val);
-    },
-  });
+  try {
+    Object.defineProperty(obj, key, {
+      get() {
+        return cellValue.value;
+      },
+      set(val) {
+        cellValue.update(val);
+      },
+      enumerable: true,
+      configurable: true,
+    });
+  } catch (e) {
+    if (IS_DEV_MODE && (globalThis as any).__gxtDebugSync) {
+      console.error('[CELLFOR] defineProperty failed for ' + String(key) + ':', (e as Error).message);
+    }
+  }
   return cellValue;
 }
 
@@ -463,6 +513,136 @@ type Fn = () => unknown;
 
 export function formula(fn: Function | Fn, debugName?: string) {
   return new MergedCell(fn, IS_DEV_MODE ? `formula:${debugName ?? 'unknown'}` : undefined);
+}
+
+/**
+ * `cached(fn)` — memoizing derivation.
+ *
+ * Like `formula(fn)` but records the last computed value and the set of tracked
+ * cells observed during that computation. A subsequent `value` read returns the
+ * cached value as long as none of those cells has bumped its `_revision` since
+ * the last compute. When the observed deps are dirty, the underlying fn() is
+ * re-executed exactly once, freshly collecting deps.
+ *
+ * Both `cached.value` (public) and the inner MergedCell's `value` (invoked by
+ * `executeTag` during DOM sync) route through the same memoized path, so the
+ * user getter runs at most once per dep-revision epoch even when the sync
+ * pipeline re-executes the tag directly.
+ *
+ * The returned object is tag-like: it participates in GXT's tracker frames, so
+ * a parent formula that reads `cached.value` still records a dependency on the
+ * underlying cells (we re-add them to the ambient tracker on every read).
+ */
+export interface CachedCell<T = unknown> {
+  readonly value: T;
+  readonly tag: MergedCell;
+  invalidate(): void;
+  [isTag]: true;
+}
+export function cached<T>(fn: () => T, debugName?: string): CachedCell<T> {
+  let hasValue = false;
+  let lastValue: T;
+  let lastDeps: Set<Cell> | null = null;
+  // Per-dep revision snapshot taken when we last ran fn().
+  let lastDepRevisions: Map<number, number> | null = null;
+  // Global revision at time of last compute. If the global has advanced,
+  // SOMETHING has changed (not necessarily a dep we captured). For pure
+  // getters that read through non-tracked paths (arrays, plain objects),
+  // dep-only invalidation can miss mutations. Treating any global advance
+  // as potentially-stale keeps semantics correct while still suppressing
+  // same-epoch (no-update) repeats — exactly what fixes VM priming spikes.
+  let lastGlobalRevisionAtCompute = -1;
+  // The inner MergedCell's fn is a THUNK through readCached() so that if
+  // the sync-DOM path invokes tag.value directly (executeTag during
+  // scheduleRevalidate), we still go through our cache instead of running
+  // the user getter an extra time. The thunk is created after readCached
+  // is declared; we use `readThunk` as a late binding.
+  let readThunk!: () => T;
+  const tag = new MergedCell(() => readThunk(), IS_DEV_MODE ? `cached:${debugName ?? 'unknown'}` : undefined);
+
+  function isClean(): boolean {
+    if (!hasValue || lastDeps === null || lastDepRevisions === null) return false;
+    // Fast path: nothing in the whole system has updated since compute.
+    if (_globalRevision === lastGlobalRevisionAtCompute) return true;
+    // Something moved — if any captured dep's per-cell revision has advanced,
+    // the cached value may be stale. Treating zero-dep captures as stale is
+    // a safety net for getters that read raw (non-tracked) state.
+    if (lastDeps.size === 0) return false;
+    for (const cell of lastDeps) {
+      const prev = lastDepRevisions.get(cell.id);
+      if (prev === undefined || cell._revision !== prev) return false;
+    }
+    return true;
+  }
+
+  function recompute(): T {
+    // Re-run fn() with a fresh tracker so we can snapshot the real deps.
+    // We also forward all collected deps into the ambient tracker so any
+    // parent formula that triggered us still records them — otherwise a
+    // parent formula whose only dep flows through this cached() would
+    // become const and never re-run.
+    const priorTracker = currentTracker;
+    const localTracker: Set<Cell> = new Set();
+    setTracker(localTracker);
+    let value: T;
+    try {
+      value = fn();
+    } finally {
+      setTracker(priorTracker);
+      if (priorTracker !== null) {
+        localTracker.forEach((cell) => priorTracker.add(cell));
+      }
+    }
+    // Bind to MergedCell so opcode invalidation paths stay consistent with
+    // a plain formula (downstream relatedTags machinery keeps working).
+    if (localTracker.size > 0) {
+      bindAllCellsToTag(localTracker, tag);
+    }
+    tag.isConst = localTracker.size === 0;
+    tag.relatedCells = localTracker;
+    // Snapshot revisions so we can detect staleness cheaply on next read.
+    const snapshot = new Map<number, number>();
+    localTracker.forEach((cell) => snapshot.set(cell.id, cell._revision));
+    lastDeps = localTracker;
+    lastDepRevisions = snapshot;
+    lastGlobalRevisionAtCompute = _globalRevision;
+    lastValue = value;
+    hasValue = true;
+    return value;
+  }
+
+  // Called both by self.value (cached read) and by the MergedCell's
+  // own value getter (via executeTag during syncDom). Routing both through
+  // a single cache-first function prevents the user getter from running
+  // an extra time when the sync path invokes tag.value directly.
+  function readCached(): T {
+    if (isClean()) return lastValue;
+    return recompute();
+  }
+  readThunk = readCached;
+
+  const self: CachedCell<T> = {
+    // marker so isTagLike() treats this like a cell-ish thing if needed
+    [isTag]: true,
+    get tag() {
+      return tag;
+    },
+    invalidate() {
+      hasValue = false;
+      lastDeps = null;
+      lastDepRevisions = null;
+    },
+    get value(): T {
+      // Replay known deps into the ambient tracker so outer formulas still
+      // depend on the underlying cells even when we short-circuit with the
+      // cache. This preserves invalidation semantics for parents.
+      if (currentTracker !== null && lastDeps !== null && lastDeps.size > 0) {
+        lastDeps.forEach((cell) => currentTracker!.add(cell));
+      }
+      return readCached();
+    },
+  };
+  return self;
 }
 
 export function deepFnValue(fn: Function | Fn) {
@@ -496,3 +676,10 @@ export function getTracker() {
 export function setTracker(tracker: Set<Cell> | null) {
   currentTracker = tracker;
 }
+
+// Map/Set prototype patching used to be applied here as an import side-
+// effect, but that affects every consumer — including vendor code that
+// subclasses Map/Set or relies on the identity of unpatched method
+// references. The patch is now opt-in via
+// `ensureReactiveCollectionsPatched()` from `@/core/reactive-collections`,
+// which `setupGlobalScope` (plugins/runtime-compiler.ts) calls.

@@ -43,6 +43,12 @@ export function takeRenderingControl() {
 }
 
 export function scheduleRevalidate() {
+  // External sync hook: allows Ember integration to bypass async scheduling
+  // When set, the hook is responsible for calling syncDom() at the right time
+  if ((globalThis as any).__gxtExternalSchedule) {
+    (globalThis as any).__gxtExternalSchedule();
+    return;
+  }
   if (hasExternalUpdate) {
     return;
   }
@@ -96,14 +102,32 @@ function sortSharedTags(sharedTags: MergedCell[]) {
 function syncDomSync() {
   let sharedTags: MergedCell[] | null = null;
   setIsRendering(true);
-  for (const cell of tagsToRevalidate) {
+  // Process primary cells in creation (id) order so that parent opcodes
+  // run before child opcodes. Without this, when two cells are dirtied
+  // in the same batch (e.g., outer each source + inner each source),
+  // iteration order follows insertion order, which can cause a child
+  // effect (e.g., a nested {{#each}}'s syncList) to create items just
+  // before its parent tears it down. Sorting by tag.id gives parent-first
+  // ordering because parent cells are allocated first during render.
+  const primaryCells =
+    tagsToRevalidate.size > 1
+      ? Array.from(tagsToRevalidate).sort((a, b) => a.id - b.id)
+      : tagsToRevalidate;
+  for (const cell of primaryCells) {
     executeTag(cell, false);
     const subTags = relatedTags.get(cell.id);
     if (subTags !== undefined) {
+      if (IS_DEV_MODE && (globalThis as any).__gxtDebugSync) {
+        const names: string[] = [];
+        subTags.forEach(t => names.push(t._debugName || '?'));
+        console.log('[SYNC] cell.id=' + cell.id + ' DELETE relatedTags, had: [' + names.join(',') + ']');
+      }
       relatedTags.delete(cell.id);
       if (sharedTags === null) sharedTags = [];
       for (const tag of subTags) sharedTags.push(tag);
       subTags.clear();
+    } else if (IS_DEV_MODE && (globalThis as any).__gxtDebugSync) {
+      console.log('[SYNC] cell.id=' + cell.id + ' no relatedTags');
     }
   }
   if (sharedTags !== null) {
@@ -111,6 +135,9 @@ function syncDomSync() {
     const epoch = nextExecutionEpoch();
     for (const tag of sharedTags) {
       if (shouldExecuteSharedTag(tag, epoch)) {
+        if (IS_DEV_MODE && (globalThis as any).__gxtDebugSync) {
+          console.log('[SYNC] executeTag formula.id=' + tag.id + ' name=' + tag._debugName);
+        }
         executeTag(tag, false);
       }
     }
@@ -126,7 +153,12 @@ function syncDomSync() {
 async function syncDomAsync() {
   let sharedTags: MergedCell[] | null = null;
   setIsRendering(true);
-  for (const cell of tagsToRevalidate) {
+  // See syncDomSync for rationale: parent-first ordering by tag.id.
+  const primaryCells =
+    tagsToRevalidate.size > 1
+      ? Array.from(tagsToRevalidate).sort((a, b) => a.id - b.id)
+      : tagsToRevalidate;
+  for (const cell of primaryCells) {
     await executeTag(cell, true);
     const subTags = relatedTags.get(cell.id);
     if (subTags !== undefined) {

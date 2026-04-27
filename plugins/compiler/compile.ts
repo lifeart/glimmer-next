@@ -6,6 +6,88 @@
  */
 
 import { preprocess, type ASTv1 } from '@glimmer/syntax';
+
+/**
+ * Find the index of the first whitespace character in a string, or -1 if none.
+ * Whitespace = space (32), tab (9), LF (10), CR (13). Used by error-span
+ * refinement on the parser's "tag name" / "attribute name" reports.
+ *
+ * @internal
+ */
+export function findFirstWhitespace(str: string): number {
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i);
+    if (c === 32 || c === 9 || c === 10 || c === 13) return i; // space, tab, LF, CR
+  }
+  return -1;
+}
+
+/**
+ * Find the index of the first character that is NOT a valid bare-attr-name
+ * character (a-zA-Z0-9 plus `_ - = @ :`). Used by error-span refinement to
+ * end the highlighted range at the first non-name char in the source line.
+ *
+ * @internal
+ */
+export function findFirstNonIdentChar(str: string): number {
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i);
+    if (!((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) ||
+          c === 95 || c === 45 || c === 61 || c === 64 || c === 58)) return i;
+  }
+  return -1;
+}
+
+/** Parse "@ line N : column M" or "- N:M" from error messages. */
+function parseTokenizerLocation(msg: string): { line: number; column: number } | null {
+  // Try "@ line N : column M"
+  let idx = msg.indexOf('@ line ');
+  if (idx !== -1) {
+    const afterLine = msg.substring(idx + 7);
+    const lineEnd = afterLine.indexOf(' ');
+    if (lineEnd !== -1) {
+      const line = parseInt(afterLine.substring(0, lineEnd), 10);
+      const colIdx = afterLine.indexOf(': column ');
+      if (colIdx !== -1) {
+        const col = parseInt(afterLine.substring(colIdx + 9), 10);
+        if (!isNaN(line) && !isNaN(col)) return { line, column: col };
+      }
+    }
+  }
+  // Try "- N:M" at end
+  idx = msg.lastIndexOf('- ');
+  if (idx !== -1) {
+    const rest = msg.substring(idx + 2);
+    const colonIdx = rest.indexOf(':');
+    if (colonIdx !== -1 && rest === rest.trim()) {
+      const line = parseInt(rest.substring(0, colonIdx), 10);
+      const col = parseInt(rest.substring(colonIdx + 1), 10);
+      if (!isNaN(line) && !isNaN(col)) return { line, column: col };
+    }
+  }
+  return null;
+}
+
+/** Parse "Lexical error on line N" from error messages. */
+function parseLexicalErrorLine(msg: string): number | null {
+  const marker = 'Lexical error on line ';
+  const idx = msg.indexOf(marker);
+  if (idx === -1) return null;
+  const numStr = msg.substring(idx + marker.length);
+  const line = parseInt(numStr, 10);
+  return isNaN(line) ? null : line;
+}
+
+/** Extract module name from "error occurred in 'module.hbs'" pattern. */
+function parseModuleName(msg: string): string | null {
+  const marker = "error occurred in '";
+  const idx = msg.indexOf(marker);
+  if (idx === -1) return null;
+  const afterMarker = msg.substring(idx + marker.length);
+  const endQuote = afterMarker.indexOf("'");
+  if (endQuote === -1) return null;
+  return afterMarker.substring(0, endQuote);
+}
 import type { CompileOptions, CompileResult, HBSChild, SourceMapV3, SourceMapOptions } from './types';
 import { createContext, initializeVisitors, setSerializeChildFunction, type CompilerContext } from './context';
 import { visit, visitChildren, setSourceForRanges } from './visitors';
@@ -118,7 +200,7 @@ export function compile(
         if (closeIndex !== -1) {
           refinedEnd = start + closeIndex + 1;
         } else {
-          const nextSpace = contentFromStart.search(/\s/);
+          const nextSpace = findFirstWhitespace(contentFromStart);
           if (nextSpace !== -1 && nextSpace > 0) {
             refinedEnd = start + nextSpace;
           } else {
@@ -131,7 +213,7 @@ export function compile(
         if (closeIndex !== -1) {
           refinedEnd = start + closeIndex + 2;
         } else {
-          const nextSpace = contentFromStart.search(/\s/);
+          const nextSpace = findFirstWhitespace(contentFromStart);
           if (nextSpace !== -1 && nextSpace > 0) {
             refinedEnd = start + nextSpace;
           } else {
@@ -141,7 +223,7 @@ export function compile(
         }
       } else {
         // Identify alphanumeric "word" symbols (attributes, args, identifiers)
-        const nextBoundary = contentFromStart.search(/[^a-zA-Z0-9_\-=@:]/);
+        const nextBoundary = findFirstNonIdentChar(contentFromStart);
         if (nextBoundary !== -1 && nextBoundary > 0) {
           refinedEnd = start + nextBoundary;
         }
@@ -187,32 +269,24 @@ export function compile(
     } else {
       // Try to parse Glimmer tokenizer style errors which contain location in message
       const errorMsg = error instanceof Error ? error.message : '';
-      let tokenizerMatch = errorMsg.match(/@ line (\d+) : column (\d+)/);
-      if (!tokenizerMatch) {
-         tokenizerMatch = errorMsg.match(/-\s(\d+):(\d+)$/);
-      }
-      
-      // Lexical errors
-      let lexicalMatch = null;
-      if (!tokenizerMatch) {
-        lexicalMatch = errorMsg.match(/Lexical error on line (\d+)/);
-      }
+      const tokenizerLoc = parseTokenizerLocation(errorMsg);
+      const lexicalLine = tokenizerLoc ? null : parseLexicalErrorLine(errorMsg);
 
-      if (tokenizerMatch || lexicalMatch) {
-        const line = tokenizerMatch ? parseInt(tokenizerMatch[1], 10) : parseInt(lexicalMatch![1], 10);
-        const column = tokenizerMatch ? parseInt(tokenizerMatch[2], 10) : 0; 
-        
+      if (tokenizerLoc || lexicalLine !== null) {
+        const line = tokenizerLoc ? tokenizerLoc.line : lexicalLine!;
+        const column = tokenizerLoc ? tokenizerLoc.column : 0;
+
         const start = lineColumnToOffset(template, line, column);
         const end = refineErrorSpan(start, start + 1);
 
         const rawMessage = errorMsg.split('\n')[0];
-        
+
         // Extract module name if available in message: (error occurred in 'module.hbs' @ line ...)
-        const moduleMatch = errorMsg.match(/error occurred in '([^']+)'/);
+        const moduleName = parseModuleName(errorMsg);
         let filename = options.filename;
 
-        if (moduleMatch && moduleMatch[1] && moduleMatch[1] !== 'an unknown module') {
-            filename = moduleMatch[1];
+        if (moduleName && moduleName !== 'an unknown module') {
+            filename = moduleName;
         }
 
         enrichedError = enrichError({
@@ -370,3 +444,4 @@ function resolveSourceMapOptions(opts: CompileOptions['sourceMap']): Required<So
     sourceRoot: opts.sourceRoot ?? '',
   };
 }
+

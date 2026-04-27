@@ -18,6 +18,22 @@ import { isTag, isGetter } from './-private';
  */
 export function $__fn(fn: Function, ...args: unknown[]) {
   return (...tail: unknown[]) => {
+    // Unwrap the function itself if it's a compiler-generated getter (e.g., () => this.myAction)
+    // Compiler getters are zero-arg arrow functions that return functions.
+    // We check: is it a getter? If so, call it — if the result is a function, use it.
+    // Otherwise use the original (it was a real function, not a getter).
+    let resolvedFn: Function = fn as Function;
+    // Re-evaluate the wrapper getter on every invocation: in compat mode
+    // `fn` is `() => this.action`, and we want each call to resolve the
+    // current `this.action` value (which may have been replaced) and to
+    // register a fresh tracking-frame dependency. Memoizing across calls
+    // would cause stale-action and dropped-dependency bugs.
+    if (isGetter(fn) && fn.length === 0) {
+      const maybeResolved = (fn as () => unknown)();
+      if (typeof maybeResolved === 'function') {
+        resolvedFn = maybeResolved;
+      }
+    }
     // Unwrap getter functions but preserve Cells and other values
     const unwrappedArgs = args.map((arg) => {
       // Explicitly preserve Cells - they need to be passed to callbacks
@@ -32,6 +48,6 @@ export function $__fn(fn: Function, ...args: unknown[]) {
       // Keep other values as-is
       return arg;
     });
-    return fn(...unwrappedArgs, ...tail);
+    return resolvedFn(...unwrappedArgs, ...tail);
   };
 }

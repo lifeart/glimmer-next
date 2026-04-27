@@ -1,7 +1,7 @@
 {
   "name": "@lifeart/gxt",
   "private": false,
-  "version": "0.0.59",
+  "version": "0.0.60",
   "type": "module",
   "license": "MIT",
   "author": "Aleksandr Kanunnikov <lifeart92@gmail.com>",
@@ -24,7 +24,8 @@
     "build": "tsc && vite build --mode development && pnpm build:server && pnpm prerender:main",
     "build:prod": "tsc && vite build",
     "build:server": "vite build --mode development --outDir dist/server --ssr src/server.ts",
-    "build-lib": "tsc && vite build -- --lib",
+    "build-lib": "tsc && vite build -- --lib && node scripts/write-build-meta.mjs",
+    "postbuild-lib": "node scripts/copy-dist-to-ember.mjs",
     "preview": "vite preview",
     "benchmark": "zx ./bin/setup-bench.mjs",
     "prepublishOnly": "npm run build-lib && node ./utils/write-compiler-types.js",
@@ -45,16 +46,16 @@
   "files": [
     "dist/src",
     "dist/plugins/compiler.d.ts",
-    "dist/index.d.ts",
     "dist/*.js",
+    "dist/*.d.ts",
     "compiler.d.ts"
   ],
   "module": "./dist/gxt.index.es.js",
-  "types": "./dist/src/utils/index.d.ts",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "import": "./dist/gxt.index.es.js",
-      "types": "./dist/src/utils/index.d.ts"
+      "types": "./dist/index.d.ts"
     },
     "./glimmer-compatibility": {
       "import": "./dist/gxt.glimmer-compat.es.js",
@@ -70,15 +71,15 @@
     },
     "./ember-inspector": {
       "import": "./dist/gxt.ember-inspector.es.js",
-      "types": "./dist/src/utils/ember-inspector.d.ts"
+      "types": "./dist/ember-inspector.d.ts"
     },
     "./test-utils": {
       "import": "./dist/gxt.utils.es.js",
-      "types": "./dist/src/tests/utils.d.ts"
+      "types": "./dist/utils.d.ts"
     },
     "./suspense": {
       "import": "./dist/gxt.suspense.es.js",
-      "types": "./dist/src/utils/suspense.d.ts"
+      "types": "./dist/suspense.d.ts"
     }
   },
   "devDependencies": {

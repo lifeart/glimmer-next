@@ -13,6 +13,15 @@ import {
   serializeJS,
   type JSExpression,
 } from '../builder';
+import {
+  getStaticLiteralValue,
+  shouldAccessCellValue,
+  shouldSkipGetterWrapper,
+} from '../type-hints';
+
+export interface BuildPathExpressionOptions {
+  preferCellValue?: boolean;
+}
 
 /**
  * Serialize a SerializedValue to JavaScript code.
@@ -65,8 +74,25 @@ export function buildValue(
       return buildHelper(ctx, value.name, value.positional, value.named, ctxName, value.sourceRange, value.pathRange);
 
     case 'getter':
+      // In compat mode, $__log should not be wrapped in a reactive getter.
+      // Ember's {{log}} fires once, not on every re-evaluation.
+      // Transform: () => $__log(args) → ($__log("__logSite:N", args), "")
+      if (ctx.flags.IS_GLIMMER_COMPAT_MODE &&
+          value.value.kind === 'helper' && value.value.name === 'log') {
+        const siteId = `__logSite:${ctx.logSiteCounter++}`;
+        const innerHelper = value.value;
+        const siteIdExpr = B.string(siteId);
+        const originalArgs = innerHelper.positional.map(arg => buildValue(ctx, arg, ctxName));
+        const logSymbol = getBuiltInHelperSymbol('log')!;
+        const logCallWithId = B.call(logSymbol, [siteIdExpr, ...originalArgs], innerHelper.sourceRange);
+        // Comma expression: ($__log("siteId", args), "") — evaluates log, returns empty string
+        // Must be "" not undefined, because GXT renders undefined as text node
+        return B.raw(`(${serializeJS(logCallWithId)}, "")`, value.sourceRange);
+      }
       // Wrap the inner value in an arrow function: () => innerValue
-      return B.getter(buildValue(ctx, value.value, ctxName), value.sourceRange);
+      // Use buildValueNoGetter to avoid double-wrapping: getter(path) should
+      // produce () => this.x, NOT () => () => this.x
+      return B.getter(buildValueNoGetter(ctx, value.value, ctxName), value.sourceRange);
 
     case 'concat':
       // Build [part1, part2, ...].join('') with source mapping for paths.
@@ -74,6 +100,23 @@ export function buildValue(
       // outer getter already provides reactivity.
       return buildConcat(ctx, value.parts, ctxName, value.sourceRange);
   }
+}
+
+/**
+ * Build a value WITHOUT getter wrapping for path expressions.
+ * Used inside getter(value) to prevent double-wrapping:
+ * getter(path) should produce () => this.x, NOT () => () => this.x
+ */
+function buildValueNoGetter(
+  ctx: CompilerContext,
+  value: SerializedValue,
+  ctxName: string
+): JSExpression {
+  if (value.kind === 'path') {
+    return buildPathExpression(ctx, value, false, ctxName);
+  }
+  // For non-path types, buildValue doesn't double-wrap
+  return buildValue(ctx, value, ctxName);
 }
 
 /**
@@ -101,7 +144,8 @@ export function buildPathExpression(
   ctx: CompilerContext,
   value: PathValue,
   wrapInGetter = ctx.flags.IS_GLIMMER_COMPAT_MODE,
-  ctxName = 'this'
+  ctxName = 'this',
+  options: BuildPathExpressionOptions = {}
 ): JSExpression {
   const expression = value.expression;
 
@@ -114,12 +158,22 @@ export function buildPathExpression(
     expression === 'this' ||
     ctx.scopeTracker.hasBinding(rootName);
 
-  // For unknown bindings in compat mode, use $_maybeHelper for dynamic resolution
-  // This enables eval/scope-based lookup for unknown references
+  // For unknown bindings in compat mode with Ember integration,
+  // treat bare names as this.name since Ember templates have implicit this.
+  // This ensures reactive tracking works — this.cond1 goes through the cell
+  // getter and GXT's formula tracking picks it up.
+  // Exception: when WITH_EVAL_SUPPORT is true, unknown bindings should use
+  // $_maybeHelper for dynamic resolution via eval().
   if (!isKnown && ctx.flags.IS_GLIMMER_COMPAT_MODE) {
-    // Build $_maybeHelper("name", [], ctx) or $_maybeHelper("name", [])
-    // Pass ctx only when WITH_EVAL_SUPPORT is enabled (for $_eval access)
-    // This avoids creating closure functions on every reactive update
+    if (ctx.flags.WITH_EMBER_INTEGRATION && !ctx.flags.WITH_EVAL_SUPPORT) {
+      // Treat as this.expression — Ember's implicit this
+      const thisPath = `${ctxName}.${expression}`;
+      if (wrapInGetter) {
+        return B.reactiveGetter(B.id(thisPath), value.sourceRange);
+      }
+      return B.id(thisPath);
+    }
+    // Non-Ember compat or eval mode: use $_maybeHelper for dynamic resolution
     const maybeHelperArgs: JSExpression[] = [
       B.string(expression, value.sourceRange),
       B.array([]),
@@ -133,8 +187,27 @@ export function buildPathExpression(
     return maybeHelperCall;
   }
 
-  const pathExpr = buildPathBase(ctx, value);
+  const staticLiteral = getStaticLiteralValue(ctx, value.expression, value.isArg);
+  if (staticLiteral !== undefined) {
+    return buildLiteral(staticLiteral, value.sourceRange);
+  }
+
+  let pathExpr = buildPathBase(ctx, value);
+
+  if (
+    options.preferCellValue &&
+    wrapInGetter &&
+    shouldAccessCellValue(ctx, value.expression, value.isArg)
+  ) {
+    pathExpr = B.optionalMember(pathExpr, 'value');
+  }
+
+  // Type-directed optimization: skip getter wrapper for known-static values
   if (wrapInGetter && ctx.flags.IS_GLIMMER_COMPAT_MODE) {
+    if (shouldSkipGetterWrapper(ctx, value.expression, value.isArg)) {
+      // Type hint says this value is static -- emit direct reference
+      return pathExpr;
+    }
     return B.reactiveGetter(pathExpr, value.sourceRange);
   }
   return pathExpr;
@@ -360,7 +433,21 @@ function buildHelper(
   }
 
   // Unknown helper - use maybe helper wrapper with $scope for resolution
-  return buildMaybeHelper(ctx, name, positional, named, ctxName, sourceRange, undefined, pathRange);
+  const maybeHelperExpr = buildMaybeHelper(ctx, name, positional, named, ctxName, sourceRange, undefined, pathRange);
+
+  // In compat mode, wrap {{unbound expr}} calls with caching logic.
+  // The unbound helper should snapshot the value once and never update.
+  // Wrap: $_maybeHelper("unbound", ...) → globalThis.__gxtUnboundEval(__ubCache, "id", () => (call))
+  if (ctx.flags.IS_GLIMMER_COMPAT_MODE && name === 'unbound') {
+    const ubId = `__ub${ctx.unboundCounter++}`;
+    const serialized = serializeJS(maybeHelperExpr);
+    return B.raw(
+      `globalThis.__gxtUnboundEval(__ubCache,"${ubId}",()=>(${serialized}))`,
+      sourceRange
+    );
+  }
+
+  return maybeHelperExpr;
 }
 
 /**
@@ -376,8 +463,18 @@ function buildSpecialHelper(
   pathRange?: SourceRange
 ): JSExpression {
   const posArgs = positional.map(arg => buildValue(ctx, arg, ctxName));
-  const namedObj = buildNamedArgsObject(ctx, named, ctxName);
   const callee = pathRange ? B.id(name, pathRange, 'PathExpression', name) : name;
+
+  // In compat mode, wrap $_componentHelper hash values in getter functions
+  // for reactivity. This preserves reactivity so curried component args
+  // update when dependencies change.
+  // Transform: $_componentHelper([params], {key: expr}) → $_componentHelper([params], {key: () => (expr)})
+  if (ctx.flags.IS_GLIMMER_COMPAT_MODE && name === SYMBOLS.COMPONENT_HELPER) {
+    const namedObj = buildComponentHelperNamedArgs(ctx, named, ctxName);
+    return B.call(callee, [B.array(posArgs), namedObj], sourceRange);
+  }
+
+  const namedObj = buildNamedArgsObject(ctx, named, ctxName);
   return B.call(callee, [B.array(posArgs), namedObj], sourceRange);
 }
 
@@ -462,6 +559,28 @@ function buildNamedArgsObject(
   return B.object(props);
 }
 
+/**
+ * Build named args for $_componentHelper with getter-wrapped values.
+ * In compat mode, each hash value is wrapped in () => (expr) for reactivity,
+ * so curried component args update when dependencies change.
+ */
+function buildComponentHelperNamedArgs(
+  ctx: CompilerContext,
+  named: ReadonlyMap<string, SerializedValue>,
+  ctxName: string
+): JSExpression {
+  if (named.size === 0) return B.emptyObject();
+
+  const props = [];
+  for (const [key, val] of named) {
+    const builtVal = buildValue(ctx, val, ctxName);
+    // Wrap in getter for reactivity, but don't double-wrap if already a function
+    const wrappedVal = B.getter(builtVal, val.sourceRange);
+    props.push(B.prop(key, wrappedVal, false, val.sourceRange));
+  }
+  return B.object(props);
+}
+
 // Note: getBuiltInHelperSymbol is imported from ./symbols (the single source of truth)
 
 /**
@@ -475,6 +594,135 @@ const REACTIVE_HELPERS: Set<string> = new Set([
   SYMBOLS.OR,
   SYMBOLS.AND,
 ]);
+
+type KnownLiteral = {
+  value: string | number | boolean | null | undefined;
+  source: 'hint' | 'literal';
+};
+
+function getKnownLiteral(
+  ctx: CompilerContext,
+  value: SerializedValue
+): KnownLiteral | undefined {
+  if (value.kind === 'literal') {
+    return { value: value.value, source: 'literal' };
+  }
+
+  if (value.kind === 'path') {
+    const literal = getStaticLiteralValue(ctx, value.expression, value.isArg);
+    if (literal !== undefined) {
+      return { value: literal, source: 'hint' };
+    }
+    return undefined;
+  }
+
+  if (value.kind === 'getter') {
+    return getKnownLiteral(ctx, value.value);
+  }
+
+  return undefined;
+}
+
+function tryFoldBuiltInHelper(
+  ctx: CompilerContext,
+  symbol: string,
+  positional: readonly SerializedValue[],
+  named: ReadonlyMap<string, SerializedValue>,
+  ctxName: string,
+  sourceRange?: SourceRange
+): JSExpression | undefined {
+  // Built-ins we fold do not use named arguments in GXT.
+  if (named.size > 0) {
+    return undefined;
+  }
+
+  if (symbol === SYMBOLS.IF_HELPER) {
+    if (positional.length === 0) return undefined;
+    const cond = getKnownLiteral(ctx, positional[0]);
+    if (!cond || cond.source !== 'hint') {
+      return undefined;
+    }
+    const branch = cond.value ? positional[1] : positional[2];
+    if (!branch) {
+      return B.string('', sourceRange);
+    }
+    return buildValue(ctx, branch, ctxName);
+  }
+
+  if (symbol === SYMBOLS.NOT) {
+    if (positional.length === 0) return undefined;
+    const arg = getKnownLiteral(ctx, positional[0]);
+    if (!arg || arg.source !== 'hint') {
+      return undefined;
+    }
+    return B.bool(!arg.value, sourceRange);
+  }
+
+  if (symbol === SYMBOLS.EQ) {
+    const literals = positional.map((arg) => getKnownLiteral(ctx, arg));
+    const known = literals.filter((entry): entry is KnownLiteral => !!entry);
+    if (!known.some((entry) => entry.source === 'hint')) {
+      return undefined;
+    }
+    if (known.length === 0) {
+      return undefined;
+    }
+    const first = known[0].value;
+    const hasMismatch = known.some((entry) => entry.value !== first);
+    if (hasMismatch) {
+      // Any mismatch among known values guarantees eq(...) is false,
+      // regardless of unresolved arguments.
+      return B.bool(false, sourceRange);
+    }
+    // If some args are unknown, equality is not provably true yet.
+    if (known.length !== literals.length) {
+      return undefined;
+    }
+    return B.bool(true, sourceRange);
+  }
+
+  if (symbol === SYMBOLS.AND) {
+    const literals = positional.map((arg) => getKnownLiteral(ctx, arg));
+    let sawHint = false;
+    for (const entry of literals) {
+      if (!entry) {
+        // Unknown encountered before a decisive false value.
+        return undefined;
+      }
+      if (entry.source === 'hint') {
+        sawHint = true;
+      }
+      if (!entry.value) {
+        return sawHint ? B.bool(false, sourceRange) : undefined;
+      }
+    }
+    return sawHint ? B.bool(true, sourceRange) : undefined;
+  }
+
+  if (symbol === SYMBOLS.OR) {
+    const literals = positional.map((arg) => getKnownLiteral(ctx, arg));
+    if (literals.length === 0) {
+      return undefined;
+    }
+    let sawHint = false;
+    for (const entry of literals) {
+      if (!entry) {
+        // Unknown encountered before a decisive truthy value.
+        return undefined;
+      }
+      if (entry.source === 'hint') {
+        sawHint = true;
+      }
+      if (entry.value) {
+        return sawHint ? buildLiteral(entry.value, sourceRange) : undefined;
+      }
+    }
+    const last = literals[literals.length - 1] as KnownLiteral;
+    return sawHint ? buildLiteral(last.value, sourceRange) : undefined;
+  }
+
+  return undefined;
+}
 
 /**
  * Build a built-in helper call.
@@ -490,6 +738,18 @@ function buildBuiltInHelper(
   displayName?: string
 ): JSExpression {
   const helperId = nameRange ? B.id(symbol, nameRange, 'PathExpression', displayName ?? symbol) : symbol;
+
+  const folded = tryFoldBuiltInHelper(
+    ctx,
+    symbol,
+    positional,
+    named,
+    ctxName,
+    sourceRange
+  );
+  if (folded) {
+    return folded;
+  }
 
   // Special handling for hash helper - wrap values in getters so $__hash
   // can lazily evaluate them without auto-calling functions
@@ -683,7 +943,15 @@ function buildFnHelperArgs(
       // First arg is function reference - don't wrap in getter
       // For paths, use raw output instead of reactiveGetter
       if (arg.kind === 'path') {
-        args.push(buildPathExpression(ctx, arg, false, ctxName));
+        const pathExpr = buildPathExpression(ctx, arg, false, ctxName);
+        // In compat mode, when the first arg is a this.X path, wrap in a
+        // getter () => this.X so $__fn_ember can resolve it lazily at call
+        // time, supporting reactive function swaps via set().
+        if (ctx.flags.IS_GLIMMER_COMPAT_MODE && ctx.flags.WITH_EMBER_INTEGRATION && /^this\.[a-zA-Z_$][a-zA-Z0-9_$.?]*$/.test(arg.expression)) {
+          args.push(B.getter(pathExpr, arg.sourceRange));
+        } else {
+          args.push(pathExpr);
+        }
       } else {
         args.push(buildValue(ctx, arg, ctxName));
       }

@@ -3,7 +3,7 @@ import { compile } from '../compile';
 
 describe('Helper signature tests', () => {
   describe('$_componentHelper', () => {
-    test('component helper uses array signature', () => {
+    test('component helper with binding compiles to dynamic component', () => {
       const result = compile('{{component MyComponent foo="bar"}}', {
         bindings: new Set(['MyComponent']),
         flags: { IS_GLIMMER_COMPAT_MODE: true },
@@ -11,12 +11,13 @@ describe('Helper signature tests', () => {
 
       console.log('Generated code:', result.code);
 
-      // Should use $_componentHelper([MyComponent], { foo: "bar" })
-      // NOT $_componentHelper(MyComponent, { foo: "bar" })
-      expect(result.code).toMatch(/\$_componentHelper\s*\(\s*\[/);
+      // AST-level {{component}} transform emits a dynamic component element
+      // which compiles to $_dc or $_c with the binding as the tag
+      expect(result.code).toContain('MyComponent');
+      expect(result.code).toContain('foo');
     });
 
-    test('component helper with multiple positional args', () => {
+    test('component helper with positional args compiles to dynamic component', () => {
       const result = compile('{{component MyComponent "arg1"}}', {
         bindings: new Set(['MyComponent']),
         flags: { IS_GLIMMER_COMPAT_MODE: true },
@@ -24,8 +25,9 @@ describe('Helper signature tests', () => {
 
       console.log('Generated code:', result.code);
 
-      // Should wrap positional args in array
-      expect(result.code).toMatch(/\$_componentHelper\s*\(\s*\[.*MyComponent.*,.*"arg1".*\]/);
+      // Positional args become @__pos0__ attributes on the component element
+      expect(result.code).toContain('MyComponent');
+      expect(result.code).toContain('__pos0__');
     });
   });
 

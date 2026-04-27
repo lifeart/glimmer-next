@@ -1052,6 +1052,147 @@ describe('List Component Destruction', () => {
     expect(listInstance.indexMap.size).toBe(0);
   });
 
+  // Regression: Ember.js each-test.js "it can render duplicate objects"
+  // If a list contains the same object reference multiple times, @identity
+  // key-generation assigns the same key to all occurrences. Prior to the
+  // fix, this caused syncList / updateItems / destroy paths to enter a
+  // feedback loop; the test below ensures that a list with duplicate
+  // identities completes updates synchronously without hanging.
+  test('duplicate object identities do not hang syncList updates', async () => {
+    const { SyncListComponent } = await import('./list');
+    const { cell } = await import('../reactive');
+
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, parentComponent);
+
+    const dup: { text: string } = { text: 'foo' };
+    const bar = { text: 'bar' };
+    const baz = { text: 'baz' };
+
+    const items = cell<{ text: string }[]>([dup, dup, bar, baz]);
+    const topMarker = document.createComment('list top');
+    container.appendChild(topMarker);
+
+    const list = new SyncListComponent<any>(
+      {
+        tag: items as any,
+        // @identity key (same behavior as `{{#each list as |item|}}` with no key)
+        key: null,
+        ctx: parentComponent,
+        ItemComponent: (item: any) => {
+          const span = document.createElement('span');
+          span.textContent = String(item.text);
+          return [span];
+        },
+      },
+      container,
+      topMarker,
+    );
+
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Push duplicate — must not hang.
+    items.update([dup, dup, bar, baz, dup]);
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Push another duplicate.
+    items.update([dup, dup, bar, baz, dup, dup]);
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Replace list with a fresh 4-item array that re-uses `dup` but
+    // creates fresh bar/baz objects — the original test's replaceList path.
+    items.update([dup, dup, { text: 'bar' }, { text: 'baz' }]);
+    await new Promise((r) => setTimeout(r, 10));
+
+    // If we reach this point without timing out, the infinite-loop
+    // regression is gone. keyMap should hold the unique keys for the
+    // surviving items (duplicate identity counts as one).
+    expect(list.keyMap.size).toBeGreaterThan(0);
+  });
+
+  // Regression: Ember.js each-test.js "it can render duplicate objects".
+  // A list containing the same object reference multiple times must render
+  // each occurrence as a distinct row — not collapse them into one.
+  test('duplicate object identities render as distinct rows', async () => {
+    const { SyncListComponent } = await import('./list');
+    const { cell } = await import('../reactive');
+
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, parentComponent);
+
+    const foo = { name: 'foo' };
+    const bar = { name: 'bar' };
+    const baz = { name: 'baz' };
+    const other = { name: 'other' };
+
+    const items = cell<{ name: string }[]>([foo, foo, bar, baz]);
+    const topMarker = document.createComment('list top');
+    container.appendChild(topMarker);
+
+    new SyncListComponent<any>(
+      {
+        tag: items as any,
+        key: null, // @identity
+        ctx: parentComponent,
+        ItemComponent: (item: any) => {
+          const span = document.createElement('span');
+          span.textContent = String(item.name);
+          return [span];
+        },
+      },
+      container,
+      topMarker,
+    );
+
+    await new Promise((r) => setTimeout(r, 10));
+
+    const renderedText = () =>
+      Array.from(container.querySelectorAll('span'))
+        .map((s) => s.textContent)
+        .join('');
+
+    // Initial: two `foo` occurrences must both render.
+    expect(renderedText()).toBe('foofoobarbaz');
+    expect(container.querySelectorAll('span').length).toBe(4);
+
+    // Add a third duplicate.
+    items.update([foo, foo, foo, bar, baz]);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(renderedText()).toBe('foofoofoobarbaz');
+    expect(container.querySelectorAll('span').length).toBe(5);
+
+    // Remove one duplicate.
+    items.update([foo, bar, baz]);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(renderedText()).toBe('foobarbaz');
+    expect(container.querySelectorAll('span').length).toBe(3);
+
+    // Back to two duplicates in a different arrangement.
+    items.update([bar, foo, foo, baz]);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(renderedText()).toBe('barfoofoobaz');
+    expect(container.querySelectorAll('span').length).toBe(4);
+
+    // All duplicates.
+    items.update([foo, foo, foo, foo]);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(renderedText()).toBe('foofoofoofoo');
+    expect(container.querySelectorAll('span').length).toBe(4);
+
+    // Replace with a mix containing multiple distinct duplicates.
+    items.update([bar, bar, foo, foo, other]);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(renderedText()).toBe('barbarfoofooother');
+    expect(container.querySelectorAll('span').length).toBe(5);
+
+    // Clear.
+    items.update([]);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(container.querySelectorAll('span').length).toBe(0);
+  });
+
   test('destroying list items properly cleans up their children', async () => {
     const { SyncListComponent } = await import('./list');
     const { cell } = await import('../reactive');

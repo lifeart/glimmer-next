@@ -1705,4 +1705,284 @@ describe('Runtime Compiler Integration', () => {
       expect(tags[2].textContent).toBe('featured');
     });
   });
+
+  describe('let-block shadowing (runtime smoke)', () => {
+    // The buildLet IIFE rewrites `replaceLetGetterRefsInExpr` against ~13
+    // expression kinds. Compile-time string assertions don't catch a
+    // shadow regression where an inner `as |v|` accidentally bleeds out
+    // and an outer `{{v}}` resolves to the wrong binding.
+    test('inner let with the same param name shadows the outer binding', () => {
+      render(
+        `{{#let "outer" as |v|}}<span class="o">{{v}}</span>{{#let "inner" as |v|}}<span class="i">{{v}}</span>{{/let}}<span class="o2">{{v}}</span>{{/let}}`
+      );
+
+      expect(fixture.container.querySelector('.o')?.textContent).toBe('outer');
+      expect(fixture.container.querySelector('.i')?.textContent).toBe('inner');
+      // The `.o2` span sits *after* the inner `{{/let}}`, so it must see
+      // the outer scope, not the inner one.
+      expect(fixture.container.querySelector('.o2')?.textContent).toBe('outer');
+    });
+
+    test('inner let does not leak its binding into a sibling subtree', () => {
+      render(
+        `{{#let "outer" as |v|}}<span class="before">{{v}}</span>{{#let "inner" as |v|}}<span class="inside">{{v}}</span>{{/let}}<span class="after">{{v}}</span>{{/let}}`
+      );
+
+      expect(fixture.container.querySelector('.before')?.textContent).toBe('outer');
+      expect(fixture.container.querySelector('.inside')?.textContent).toBe('inner');
+      expect(fixture.container.querySelector('.after')?.textContent).toBe('outer');
+    });
+  });
+
+  /**
+   * End-to-end runtime coverage for the `__gxtGetCellOrFormula` `typeof === 'function'`
+   * guard injected by plugins/compiler/serializers/control.ts (commit a128135).
+   *
+   * Generated code shape, simplified:
+   *   $_if(
+   *     ((__r) => typeof __r === 'function' ? __r : (() => this.X))(
+   *       globalThis.__gxtGetCellOrFormula?.(this, "X")
+   *     ),
+   *     trueBranch,
+   *     falseBranch,
+   *     this,
+   *   );
+   *
+   * The contract: when the host hook returns a falsy-but-defined value
+   * (`0`, `""`, `null`), the `typeof === 'function'` test fails and the
+   * if falls back to a plain `() => this.X` getter. The previous `??`
+   * form caught only `null`/`undefined`, so a hook returning `0` would
+   * leak through and be passed to `$_if` as the condition itself
+   * (always falsy → wrong branch).
+   */
+  describe('__gxtGetCellOrFormula runtime guard (a128135)', () => {
+    let savedHook: unknown;
+
+    beforeEach(() => {
+      savedHook = (globalThis as any).__gxtGetCellOrFormula;
+    });
+
+    afterEach(() => {
+      if (savedHook === undefined) {
+        delete (globalThis as any).__gxtGetCellOrFormula;
+      } else {
+        (globalThis as any).__gxtGetCellOrFormula = savedHook;
+      }
+    });
+
+    test('hook returning 0 (falsy but defined) falls through to plain getter — TRUE branch renders', () => {
+      // Hook returns the literal 0, NOT a function. Without the typeof guard
+      // this would be passed to $_if as the condition, producing the FALSE
+      // branch. With the guard, $_if sees `() => this.show`, this.show is
+      // true, so the TRUE branch must render.
+      (globalThis as any).__gxtGetCellOrFormula = () => 0;
+
+      class FalsyHookComponent extends Component {
+        show = true;
+        [$template] = template(`
+          {{#if this.show}}
+            <span class="yes">YES</span>
+          {{else}}
+            <span class="no">NO</span>
+          {{/if}}
+        `);
+      }
+
+      render(FalsyHookComponent);
+
+      expect(fixture.container.querySelector('.yes')).not.toBeNull();
+      expect(fixture.container.querySelector('.no')).toBeNull();
+    });
+
+    test('hook returning empty string falls through to plain getter', () => {
+      (globalThis as any).__gxtGetCellOrFormula = () => '';
+
+      class EmptyStringHookComponent extends Component {
+        flag = true;
+        [$template] = template(`
+          {{#if this.flag}}
+            <span class="branch-true">A</span>
+          {{else}}
+            <span class="branch-false">B</span>
+          {{/if}}
+        `);
+      }
+
+      render(EmptyStringHookComponent);
+
+      expect(fixture.container.querySelector('.branch-true')?.textContent).toBe('A');
+      expect(fixture.container.querySelector('.branch-false')).toBeNull();
+    });
+
+    test('hook returning a function is honored and used as the condition', () => {
+      // Sanity: when the hook returns a real function, the guard is a
+      // no-op and the function IS used. Use a function that always returns
+      // the OPPOSITE of this.show — that proves the hook value flowed through.
+      class HookComponent extends Component {
+        show = true; // would render YES via the fallback
+      }
+      // Hook returns a function — its return value should drive the if
+      // (rendering NO branch even though this.show is true).
+      (globalThis as any).__gxtGetCellOrFormula = (_self: unknown, _name: string) => {
+        return () => false;
+      };
+
+      class HookComponentImpl extends HookComponent {
+        [$template] = template(`
+          {{#if this.show}}
+            <span class="yes-from-hook">YES</span>
+          {{else}}
+            <span class="no-from-hook">NO</span>
+          {{/if}}
+        `);
+      }
+
+      render(HookComponentImpl);
+
+      // The hook-supplied function returned false → ELSE branch.
+      expect(fixture.container.querySelector('.no-from-hook')).not.toBeNull();
+      expect(fixture.container.querySelector('.yes-from-hook')).toBeNull();
+    });
+
+    test('hook absent (typeof undefined): fallback getter wins, true branch renders normally', () => {
+      // Explicit delete forces the optional-call (`?.`) to be a no-op,
+      // and __r becomes undefined — the typeof guard still falls through
+      // to the plain getter.
+      delete (globalThis as any).__gxtGetCellOrFormula;
+
+      class NoHookComponent extends Component {
+        ready = true;
+        [$template] = template(`
+          {{#if this.ready}}
+            <em class="ready-yes">ready</em>
+          {{else}}
+            <em class="ready-no">not</em>
+          {{/if}}
+        `);
+      }
+
+      render(NoHookComponent);
+
+      expect(fixture.container.querySelector('.ready-yes')?.textContent).toBe('ready');
+      expect(fixture.container.querySelector('.ready-no')).toBeNull();
+    });
+  });
+
+  /**
+   * `(has-block)` and `(has-block-params)` regression coverage.
+   *
+   * The compiler emits these as a bound call to the free runtime helper:
+   *   `$_hasBlock.bind(this, $slots)(name)`
+   *   `$_hasBlockParams.bind(this, $slots)(name)`
+   * (see plugins/compiler/serializers/value.ts:791 and
+   * plugins/compiler/visitors/index.ts:245). The locally-extracted
+   * `$slots` (declared by the wrapping template function) is passed
+   * positionally so the helper can introspect the slot map without
+   * touching `this` — which is critical for template-only components,
+   * whose `this` is a plain instance object built by `template()` and
+   * may be invoked with `new`.
+   *
+   * The tests below assert the rendered DOM, not the codegen shape;
+   * the regression intent is that any future refactor must keep
+   * (has-block) functional through the bound-call shape.
+   *
+   * Regression: a previous WIP commit emitted `this.$_hasBlock(name)`,
+   * which crashed with `TypeError: this.$_hasBlock is not a function`
+   * for template-only components compiled to plain functions invoked
+   * with `new` (the TOC instance object carries `[$template]`/`[$args]`
+   * but not the `$_hasBlock` method).
+   */
+  describe('(has-block) and (has-block-params) — class component', () => {
+    test('renders the truthy branch when a default block IS provided', () => {
+      class Inner extends Component {
+        [$template] = template(
+          `{{#if (has-block)}}<span class="yes">yes</span>{{else}}<span class="no">no</span>{{/if}}`,
+        );
+      }
+      class Outer extends Component {
+        [$template] = template('<Inner>child</Inner>', {
+          scope: { Inner },
+        });
+      }
+      render(Outer);
+      expect(fixture.container.querySelector('.yes')?.textContent).toBe('yes');
+      expect(fixture.container.querySelector('.no')).toBeNull();
+    });
+
+    test('renders the falsy branch when no default block is provided', () => {
+      class Inner extends Component {
+        [$template] = template(
+          `{{#if (has-block)}}<span class="yes">yes</span>{{else}}<span class="no">no</span>{{/if}}`,
+        );
+      }
+      class Outer extends Component {
+        [$template] = template('<Inner />', {
+          scope: { Inner },
+        });
+      }
+      render(Outer);
+      expect(fixture.container.querySelector('.no')?.textContent).toBe('no');
+      expect(fixture.container.querySelector('.yes')).toBeNull();
+    });
+
+    test('(has-block-params) returns truthy only when the slot yields params', () => {
+      class Inner extends Component {
+        [$template] = template(
+          `{{#if (has-block-params)}}<span class="with-params">params</span>{{else}}<span class="no-params">none</span>{{/if}}`,
+        );
+      }
+      class WithParams extends Component {
+        [$template] = template('<Inner as |x|>{{x}}</Inner>', {
+          scope: { Inner },
+        });
+      }
+      class WithoutParams extends Component {
+        [$template] = template('<Inner>plain</Inner>', {
+          scope: { Inner },
+        });
+      }
+
+      render(WithParams);
+      expect(fixture.container.querySelector('.with-params')?.textContent).toBe('params');
+
+      // Reset and render the no-params variant in a fresh fixture so the
+      // queries below don't pick up the previous render.
+      fixture.cleanup();
+      fixture = createDOMFixture();
+      render(WithoutParams);
+      expect(fixture.container.querySelector('.no-params')?.textContent).toBe('none');
+      expect(fixture.container.querySelector('.with-params')).toBeNull();
+    });
+  });
+
+  describe('(has-block) — template-only component', () => {
+    test('TOC renders correctly under the bound-call (has-block) shape', () => {
+      // template() returns a TOC factory; its instance is a plain object
+      // (no Component prototype, so no `$_hasBlock` method on `this`).
+      // The compiled template must therefore call the *free* helper
+      // bound to the locally-extracted `$slots`, i.e.
+      //   `$_hasBlock.bind(this, $slots)(name)`.
+      // Regression: a previous WIP commit emitted `this.$_hasBlock(name)`,
+      // which crashed here with `TypeError: this.$_hasBlock is not a
+      // function` the moment the template tried to evaluate (has-block)
+      // at render — the TOC instance had no such method.
+      const Inner = template(
+        `{{#if (has-block)}}<span class="yes">yes</span>{{else}}<span class="no">no</span>{{/if}}`,
+      );
+      const Outer = template('<Inner>child</Inner>', {
+        scope: { Inner },
+      });
+      render(Outer);
+      expect(fixture.container.querySelector('.yes')?.textContent).toBe('yes');
+    });
+
+    test('TOC instance falsy branch when no default block', () => {
+      const Inner = template(
+        `{{#if (has-block)}}<span class="yes">yes</span>{{else}}<span class="no">no</span>{{/if}}`,
+      );
+      const Outer = template('<Inner />', { scope: { Inner } });
+      render(Outer);
+      expect(fixture.container.querySelector('.no')?.textContent).toBe('no');
+    });
+  });
 });

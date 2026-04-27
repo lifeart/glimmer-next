@@ -121,9 +121,24 @@ function visitPathExpression(
   _wrap: boolean,
   range?: SourceRange
 ): SerializedValue {
-  const pathString = getPathExpressionString(node);
+  let pathString = getPathExpressionString(node);
+  let isArg = node.head.type === 'AtHead';
+
+  // In compat mode, rewrite `this.attrs.X` → `@X` (deprecated Ember pattern).
+  // The Glimmer parser produces ThisHead + tail ["attrs", "X", ...].
+  if (
+    ctx.flags.IS_GLIMMER_COMPAT_MODE &&
+    node.head.type === 'ThisHead' &&
+    node.tail.length >= 2 &&
+    node.tail[0] === 'attrs'
+  ) {
+    // this.attrs.foo.bar → @foo.bar
+    const remainingTail = node.tail.slice(1);
+    pathString = `@${remainingTail.join('.')}`;
+    isArg = true;
+  }
+
   const resolved = resolvePath(ctx, pathString);
-  const isArg = node.head.type === 'AtHead';
   const partsInfo = getPathPartRanges(node);
 
   // Always return as a path value - buildPath() handles compat mode wrapping
@@ -171,6 +186,68 @@ function visitSubExpression(
 
   const name = getPathExpressionString(node.path);
   const range = getNodeRange(node);
+
+  // In compat mode, transform (mut (get obj key)) → (__mutGet obj key)
+  // This enables two-way binding with dynamic property paths.
+  if (ctx.flags.IS_GLIMMER_COMPAT_MODE && name === 'mut' && node.params.length === 1) {
+    const firstParam = node.params[0];
+    if (firstParam.type === 'SubExpression' && firstParam.path.type === 'PathExpression' && getPathExpressionString(firstParam.path) === 'get') {
+      // (mut (get obj key)) → (__mutGet obj key)
+      const mutGetPositional = firstParam.params.map((param) => {
+        const result = visit(ctx, param, false);
+        if (result === null) return literal(null);
+        if (typeof result === 'string') return literal(result);
+        if (isSerializedValue(result)) return result;
+        return raw(JSON.stringify(result));
+      });
+      const pathRange = getNodeRange(node.path);
+      const mutGetResult = helper('__mutGet', mutGetPositional, new Map(), range, pathRange);
+      if (wrap) {
+        return getter(mutGetResult, range);
+      }
+      return mutGetResult;
+    }
+  }
+
+  // In compat mode, transform (mut this.prop) / (mut @arg) to pass the property
+  // path as a second string argument so the mut helper can create a proper setter.
+  // (mut this.foo) → (mut this.foo "this.foo")
+  // (mut @bar)     → (mut @bar "@bar")
+  if (ctx.flags.IS_GLIMMER_COMPAT_MODE && name === 'mut' && node.params.length === 1) {
+    const firstParam = node.params[0];
+    if (firstParam.type === 'PathExpression') {
+      const paramPath = getPathExpressionString(firstParam);
+      if (paramPath.startsWith('this.') || paramPath.startsWith('@')) {
+        const paramResult = visit(ctx, firstParam, false);
+        const firstArg = paramResult && isSerializedValue(paramResult) ? paramResult : literal(null);
+        const mutPositional = [firstArg, literal(paramPath)];
+        const mutNamed = new Map<string, SerializedValue>();
+        for (const pair of node.hash.pairs) {
+          const value = visit(ctx, pair.value, false);
+          if (value !== null && isSerializedValue(value)) {
+            mutNamed.set(pair.key, value);
+          } else if (typeof value === 'string') {
+            mutNamed.set(pair.key, literal(value));
+          }
+        }
+        const pathRange = getNodeRange(node.path);
+        const mutResult = helper(name, mutPositional, mutNamed, range, pathRange);
+        if (wrap) {
+          return getter(mutResult, range);
+        }
+        return mutResult;
+      }
+    }
+  }
+
+  // `(has-block)` / `(has-block-params)` are handled as built-in helpers
+  // by `buildBuiltInHelper` (see plugins/compiler/serializers/value.ts):
+  // it emits `$_hasBlock.bind(this, $slots)(name)` so the free runtime
+  // helper receives the locally-extracted `$slots` and the block name.
+  // We deliberately fall through here — the WIP rewrite that emitted
+  // `this.$_hasBlock(name)` instead broke template-only components,
+  // which compile to plain `function () { ... }` invoked with `new`,
+  // producing a fresh `this` with no such method.
 
   // Special handling for (element "tag") - creates a dynamic component wrapper
   if (name === 'element') {
@@ -252,5 +329,5 @@ export { getNodeRange, resolvePath, serializeValueToString } from './utils';
 // Re-export individual visitors
 export { visitText, isWhitespaceOnly } from './text';
 export { visitMustache } from './mustache';
-export { visitBlock, setBlockSerializeFunction } from './block';
+export { visitBlock } from './block';
 export { visitElement } from './element';

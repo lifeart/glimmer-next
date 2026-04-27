@@ -25,6 +25,7 @@ declare global {
   const WITH_CONTEXT_API: boolean;
   const WITH_DYNAMIC_EVAL: boolean;
   const ASYNC_COMPILE_TRANSFORMS: boolean;
+  const WITH_TYPE_CHECKER_HINTS: boolean;
 }
 
 declare module 'glint-environment-gxt/globals' {

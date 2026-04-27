@@ -43,6 +43,7 @@ import {
   DestructorFn,
   Destructors,
   registerDestructor,
+  registerDestructorBatch,
 } from './glimmer/destroyable';
 import { HTMLBrowserDOMApi } from '@/core/dom-api';
 import {
@@ -101,8 +102,8 @@ type BranchCb = (ctx: IfCondition) => GenericReturnType | Node | null;
 export const $_edp = [[], [], []] as Props;
 export const $_emptySlot = Object.seal(Object.freeze({}));
 
-export const $SLOTS_SYMBOL = Symbol('slots');
-export const $PROPS_SYMBOL = Symbol('props');
+export const $SLOTS_SYMBOL = Symbol.for('gxt-slots');
+export const $PROPS_SYMBOL = Symbol.for('gxt-props');
 export const $_SVGProvider = SVGProvider;
 export const $_HTMLProvider = HTMLProvider;
 export const $_MathMLProvider = MathMLProvider;
@@ -481,15 +482,17 @@ function addAttrs(
   api: DOMApi,
   arr: TagAttr[],
   element: HTMLElement,
-  seenKeys: Set<string>,
+  seenKeys: Set<string> | null,
   destructors: Destructors,
 ) {
   for (let i = 0; i < arr.length; i++) {
     const key = arr[i][0];
-    if (seenKeys.has(key)) {
-      continue;
+    if (seenKeys !== null) {
+      if (seenKeys.has(key)) {
+        continue;
+      }
+      seenKeys.add(key);
     }
-    seenKeys.add(key);
     if (IS_DEV_MODE) {
       $DEBUG_REACTIVE_CONTEXTS.push(`[${key}]`);
     }
@@ -504,7 +507,7 @@ function addProperties(
   api: DOMApi,
   properties: TagProp[],
   element: Node,
-  seenKeys: Set<string>,
+  seenKeys: Set<string> | null,
   destructors: Destructors,
   classNameModifiers: Attr[],
   setShadowMode: (value: NonNullable<ShadowRootMode>) => void,
@@ -522,10 +525,12 @@ function addProperties(
         continue;
       }
     }
-    if (seenKeys.has(key)) {
-      continue;
+    if (seenKeys !== null) {
+      if (seenKeys.has(key)) {
+        continue;
+      }
+      seenKeys.add(key);
     }
-    seenKeys.add(key);
     if (IS_DEV_MODE) {
       $DEBUG_REACTIVE_CONTEXTS.push(`[${key}]`);
     }
@@ -558,7 +563,6 @@ function _DOM(
     api.attr(element, 'data-node-id', String(NODE_COUNTER));
   }
   const destructors: Destructors = [];
-  const seenKeys = new Set<string>();
   const classNameModifiers: Attr[] = [];
   let hasShadowMode: ShadowRootMode = null;
 
@@ -568,6 +572,13 @@ function _DOM(
 
   if ($_edp !== tagProps) {
     const hasSplatAttrs = typeof tagProps[3] === 'object';
+    // `seenKeys` only deduplicates between statically-emitted props/attrs
+    // and splat-attrs that the consumer forwards via `...attributes`. The
+    // compiler guarantees uniqueness for the statically-emitted set, so
+    // we only need a Set when splat attrs may collide. Passing null
+    // signals "no dedup needed" to the inner loops, removing both the
+    // Set allocation and the per-key has/add calls.
+    const seenKeys: Set<string> | null = hasSplatAttrs ? new Set<string>() : null;
 
     if (hasSplatAttrs === true) {
       for (let i = 0; i < tagProps[3]![2].length; i++) {
@@ -642,7 +653,9 @@ function _DOM(
   }
 
   if (destructors.length) {
-    registerDestructor(ctx, ...destructors);
+    // Batch variant avoids `...destructors` spread, which allocates an extra
+    // arguments-collected array on every `_DOM` call (per element).
+    registerDestructorBatch(ctx, destructors);
   }
 
   if (IS_DEV_MODE) {
@@ -722,6 +735,28 @@ export function $_ucw(
         // @ts-ignore $_eval may exist on ctx
         if (ctx?.$_eval) { this.$_eval = ctx.$_eval; }
       }
+      // Seed the wrapper's rendering context from the outer ctx *before* the
+      // body runs. Otherwise raw <tag>s emitted directly in an each-body (e.g.
+      // `{{#each list as |x|}}<li>...</li>{{/each}}`) call `initDOM(this)`
+      // while `this` is not yet in PARENT/TREE (the wrapper is only added to
+      // the tree by _component *after* its body returns), so getContext
+      // walks an empty parent chain and returns null, crashing in `$_tag`.
+      //
+      // Resolving via `ctx` (the outer, already-tree-attached component)
+      // short-circuits the lookup for all tag children inside the wrapper.
+      if (!this[RENDERING_CONTEXT_PROPERTY] && ctx) {
+        const resolved = (ctx as any)[RENDERING_CONTEXT_PROPERTY];
+        if (resolved) {
+          this[RENDERING_CONTEXT_PROPERTY] = resolved as DOMApi;
+        } else {
+          // Fall back to initDOM on the outer ctx, which walks its own tree.
+          try {
+            this[RENDERING_CONTEXT_PROPERTY] = initDOM(ctx);
+          } catch {
+            /* noop — leave unset; body may still succeed */
+          }
+        }
+      }
       try {
         setParentContext(this);
         return $_fin(roots(this), this);
@@ -800,6 +835,12 @@ export function $_GET_SCOPES(hashOrCtx: Record<string, unknown> | any, ctx?: any
   return hashOrCtx[CONSTANTS.SCOPE_KEY]?.() || [];
 }
 
+// Caches for is-this-function-an-ES6-class probing in $_maybeHelper.
+// Two WeakSets avoid the per-call Function.prototype.toString cost which is
+// not free (V8 has to look up source code or recompose it).
+const __gxtClassFns = new WeakSet<Function>();
+const __gxtNonClassFns = new WeakSet<Function>();
+
 export const $_maybeHelper = (
   value: any,
   args: any[],
@@ -836,6 +877,38 @@ export const $_maybeHelper = (
       return (...runtimeArgs: any[]) => {
         return value($_unwrapArgs(runtimeArgs), hash);
       };
+    }
+    // ES6 class-based helpers (e.g. `class Custom extends Helper {}` in strict mode)
+    // cannot be invoked without `new`. Route them through the helper manager so
+    // classic Ember helper lifecycle (recompute, compute with positional/named)
+    // is honored. Detection: `isHelperFactory` is declared statically on Ember's
+    // `Helper` class and inherited by all subclasses. Only engage this path when
+    // WITH_EMBER_INTEGRATION is enabled and a manager claims the value, so plain
+    // function helpers continue through the direct-call fallback below.
+    if (WITH_EMBER_INTEGRATION && value.isHelperFactory === true) {
+      if ($_MANAGERS.helper.canHandle(value)) {
+        return $_MANAGERS.helper.handle(value, args, _hash);
+      }
+    }
+    if (WITH_EMBER_INTEGRATION) {
+      // Class-based helpers without `isHelperFactory` (custom manager-registered
+      // classes) cannot be invoked without `new`. We detect them via
+      // `Function.prototype.toString` once per value and cache the answer in a
+      // module-local WeakSet. This avoids the try/catch around the hot
+      // `value(...)` invocation, which V8 deopts.
+      let isClass: boolean;
+      if (__gxtNonClassFns.has(value)) {
+        isClass = false;
+      } else if (__gxtClassFns.has(value)) {
+        isClass = true;
+      } else {
+        const src = Function.prototype.toString.call(value);
+        isClass = src.charCodeAt(0) === 99 /* 'c' */ && src.startsWith('class ');
+        (isClass ? __gxtClassFns : __gxtNonClassFns).add(value);
+      }
+      if (isClass && $_MANAGERS.helper.canHandle(value)) {
+        return $_MANAGERS.helper.handle(value, args, _hash);
+      }
     }
     return value(...$_unwrapArgs(args));
   }
@@ -977,11 +1050,14 @@ function component(
   } else {
     // @ts-expect-error uniqSymbol as index
     const fw = args[$PROPS_SYMBOL] as unknown as FwType;
+    // Direct push/pop avoids the per-call branch inside setParentContext.
+    // Construction fires once per component; the try/finally still needed
+    // so a throwing user constructor doesn't unbalance the parent stack.
+    pushParentContext(ctx as unknown as ComponentLike);
     try {
-      setParentContext(ctx);
       return _component(comp, args, fw, ctx);
     } finally {
-      setParentContext(null);
+      popParentContext();
     }
   }
 }
@@ -1003,6 +1079,23 @@ function _component(
     }
   }
   if (IS_GLIMMER_COMPAT_MODE) {
+    // The compat manager's handle() returns a rendering closure for string
+    // component names (e.g., $_c('FooBar', ...)). This closure returns DOM
+    // nodes directly — it's NOT a constructible class. Detect this case and
+    // invoke the closure immediately, returning its result as the component
+    // output. Without this, _component tries to construct the closure as a
+    // class, which crashes on `$template in instance`.
+    if (typeof comp === 'function' && comp !== _comp && comp.prototype === undefined) {
+      const result = (comp as any)();
+      if (result !== null && result !== undefined && (result instanceof Node || Array.isArray(result) || typeof result !== 'function')) {
+        if (IS_DEV_MODE) {
+          if (!COMPONENTS_HMR.has(comp as any)) {
+            COMPONENTS_HMR.set(comp as any, new Set());
+          }
+        }
+        return result;
+      }
+    }
   } else {
     if (isTagLike(comp)) {
       comp = comp.value;

@@ -15,7 +15,7 @@ import type {
   SerializedValue,
   SourceRange,
 } from '../types';
-import { literal, helper, isSerializedValue, runtimeTag } from '../types';
+import { literal, helper, getter, isSerializedValue, runtimeTag } from '../types';
 import { getNodeRange, serializeValueToString, getAttributeNameRange, getPathExpressionString, getElementBlockParamRanges } from './utils';
 import { withElementContext, addWarning } from '../context';
 import { SYMBOLS, INTERNAL_HELPERS } from '../serializers/symbols';
@@ -133,6 +133,17 @@ const EVENT_TYPE = {
 } as const;
 
 /**
+ * Set of HTML event names that can appear as on<event> attributes.
+ * Used in compat mode to transform onclick={{expr}} → {{on "click" expr}}.
+ */
+const HTML_EVENT_NAMES = new Set([
+  'click', 'mousedown', 'mouseup', 'mousemove', 'mouseenter', 'mouseleave',
+  'keydown', 'keyup', 'keypress', 'input', 'change', 'submit',
+  'focus', 'blur', 'focusin', 'focusout',
+  'touchstart', 'touchend', 'touchmove',
+]);
+
+/**
  * Check if an attribute name is an HTML attribute (vs property).
  * Note: @-prefixed args are also treated as attributes for component serialization,
  * except for special event-like attributes (@oncreated, @textContent).
@@ -186,6 +197,40 @@ export function visitElement(
   const range = getNodeRange(node);
   let actualTag = node.tag;
 
+  // In compat mode, transform Foo::Bar namespaced components to foo--bar kebab-case.
+  // The Glimmer parser preserves :: in tag names, so we convert here.
+  if (ctx.flags.IS_GLIMMER_COMPAT_MODE && actualTag.indexOf('::') !== -1) {
+    actualTag = transformNamespacedTag(actualTag);
+  }
+
+  // In compat mode, transform known PascalCase built-in component names to kebab-case.
+  // e.g. <LinkTo> → <link-to>, <Outlet> → <outlet>
+  if (ctx.flags.IS_GLIMMER_COMPAT_MODE) {
+    actualTag = transformPascalToKebab(actualTag);
+    // Mutate node.tag so downstream processing (namespace checks, etc.) sees the kebab name
+    (node as any).tag = actualTag;
+  }
+
+  // In compat mode, add @__hasBlock__="default" to empty component invocations.
+  // <Foo></Foo> gets the marker; self-closing <Foo /> does not.
+  if (ctx.flags.IS_GLIMMER_COMPAT_MODE && !node.selfClosing && node.children.length === 0) {
+    if (isComponentName(actualTag) || actualTag.includes('-')) {
+      const hasMarker = node.attributes.some(a => a.name === '@__hasBlock__');
+      if (!hasMarker) {
+        node.attributes.push({
+          type: 'AttrNode',
+          name: '@__hasBlock__',
+          value: {
+            type: 'TextNode',
+            chars: 'default',
+            loc: node.loc,
+          } as ASTv1.TextNode,
+          loc: node.loc,
+        } as ASTv1.AttrNode);
+      }
+    }
+  }
+
   // Manual component name customization for traceability
   if (ctx.customizeComponentName && isComponentName(actualTag)) {
     actualTag = ctx.customizeComponentName(actualTag);
@@ -208,7 +253,19 @@ export function visitElement(
     actualTag = 'svg';
   }
 
-  // Add block params to scope
+  // In Ember compat mode, transform onclick={{expr}} attributes to {{on "click" expr}} modifiers.
+  if (ctx.flags.IS_GLIMMER_COMPAT_MODE) {
+    rewriteOnEventAttributes(node);
+  }
+
+  // In Ember compat mode, mark attributes after ...attributes as local overrides.
+  if (ctx.flags.IS_GLIMMER_COMPAT_MODE) {
+    rewriteSplatLocalOverrides(node);
+  }
+
+  // Add block params to a fresh scope frame so nested elements with matching
+  // block-param names shadow rather than clobber the outer binding.
+  ctx.scopeTracker.enterScope('element-block');
   for (const param of node.blockParams) {
     warnOnReservedBinding(ctx, param);
     ctx.scopeTracker.addBinding(param, { kind: 'block-param', name: param });
@@ -217,10 +274,8 @@ export function visitElement(
   // Visit children
   const children = getVisitChildren(ctx)(ctx, node.children);
 
-  // Remove block params from scope
-  for (const param of node.blockParams) {
-    ctx.scopeTracker.removeBinding(param);
-  }
+  // Exit scope, restoring outer bindings.
+  ctx.scopeTracker.exitScope();
 
   // Process style.* attributes
   const { styleEvents, regularAttrs } = processStyleAttributes(ctx, node);
@@ -377,7 +432,12 @@ function visitElementInner(
     actualTag = 'svg';
   }
 
-  // Add block params to scope
+  // NOTE: rewriteOnEventAttributes and rewriteSplatLocalOverrides are called
+  // in visitElement (the outer entry point), not here, to avoid double-processing.
+
+  // Add block params to a fresh scope frame so nested elements with matching
+  // block-param names shadow rather than clobber the outer binding.
+  ctx.scopeTracker.enterScope('element-block');
   for (const param of node.blockParams) {
     warnOnReservedBinding(ctx, param);
     ctx.scopeTracker.addBinding(param, { kind: 'block-param', name: param });
@@ -386,10 +446,8 @@ function visitElementInner(
   // Visit children
   const children = getVisitChildren(ctx)(ctx, node.children);
 
-  // Remove block params from scope
-  for (const param of node.blockParams) {
-    ctx.scopeTracker.removeBinding(param);
-  }
+  // Exit scope, restoring outer bindings.
+  ctx.scopeTracker.exitScope();
 
   // Process attributes
   const { styleEvents, regularAttrs } = processStyleAttributes(ctx, node);
@@ -566,6 +624,23 @@ function visitAttributeValue(
   }
 
   if (value.type === 'MustacheStatement') {
+    // In compat mode, when (has-block) or (has-block-params) is used in attribute
+    // position (e.g., name={{(has-block)}}), wrap in (if ... "true" "false") so GXT
+    // produces string attribute values instead of booleans which GXT would strip.
+    if (ctx.flags.IS_GLIMMER_COMPAT_MODE && value.path.type === 'SubExpression') {
+      const subExpr = value.path as ASTv1.SubExpression;
+      if (subExpr.path.type === 'PathExpression') {
+        const subName = getPathExpressionString(subExpr.path);
+        if (subName === 'has-block' || subName === 'has-block-params') {
+          const subResult = getVisit(ctx)(ctx, subExpr, false);
+          if (subResult !== null && isSerializedValue(subResult)) {
+            const range = getNodeRange(value);
+            const ifResult = helper('if', [subResult, literal('true'), literal('false')], new Map(), range);
+            return getter(ifResult, range);
+          }
+        }
+      }
+    }
     // Use wrap=true to ensure helper results are wrapped in getters for reactivity
     // This is critical for dynamic values like {{if condition 'a' 'b'}} or {{fn this.handler arg}}
     const result = getVisit(ctx)(ctx, value, true);
@@ -620,6 +695,43 @@ function processEvents(
   }
 
   for (const mod of node.modifiers) {
+    // In compat mode, transform {{(modifier "name" args...) extraArgs...}} in
+    // element modifier position by unwrapping the SubExpression:
+    // {{(modifier "name" curriedArgs...) extraArgs...}} → {{name curriedArgs... extraArgs...}}
+    if (ctx.flags.IS_GLIMMER_COMPAT_MODE && mod.path.type === 'SubExpression') {
+      const subExpr = mod.path as ASTv1.SubExpression;
+      if (subExpr.path.type === 'PathExpression' && getPathExpressionString(subExpr.path) === 'modifier') {
+        const firstName = subExpr.params[0];
+        if (firstName && firstName.type === 'StringLiteral') {
+          const modRange = getNodeRange(mod);
+          const modPathRange = getNodeRange(subExpr.path);
+          const realModName = firstName.value;
+          // Collect curried args (from SubExpression, after the name) + extra args (from modifier statement)
+          const positionalValues: SerializedValue[] = [];
+          for (const p of subExpr.params.slice(1)) {
+            const result = getVisit(ctx)(ctx, p, false);
+            positionalValues.push(result && isSerializedValue(result) ? result : literal(null));
+          }
+          for (const p of mod.params) {
+            const result = getVisit(ctx)(ctx, p, false);
+            positionalValues.push(result && isSerializedValue(result) ? result : literal(null));
+          }
+          const namedMap = new Map<string, SerializedValue>();
+          for (const pair of subExpr.hash.pairs) {
+            const value = getVisit(ctx)(ctx, pair.value, false);
+            if (value && isSerializedValue(value)) namedMap.set(pair.key, value);
+          }
+          for (const pair of mod.hash.pairs) {
+            const value = getVisit(ctx)(ctx, pair.value, false);
+            if (value && isSerializedValue(value)) namedMap.set(pair.key, value);
+          }
+          const modValue = helper(realModName, positionalValues, namedMap, modRange, modPathRange);
+          events.push([EVENT_TYPE.ON_CREATED, modValue, modRange]);
+          continue;
+        }
+      }
+    }
+
     if (mod.path.type !== 'PathExpression') continue;
 
     const modRange = getNodeRange(mod);
@@ -720,4 +832,190 @@ function optimizeTextChild(
     children: [],
     additionalEvents: [[EVENT_TYPE.TEXT_CONTENT, textValue]],
   };
+}
+
+// --- Compat mode: onclick={{expr}} → {{on "click" expr}} ---
+
+/**
+ * Rewrite on<event> HTML attributes to {{on "event" expr}} modifiers on the AST.
+ *
+ * The Glimmer parser produces AttrNode for `onclick={{this.handler}}`.
+ * We convert matching attrs to ElementModifierStatements so the existing
+ * modifier processing in processEvents() handles them as proper event bindings.
+ *
+ * Only active in IS_GLIMMER_COMPAT_MODE.
+ */
+function rewriteOnEventAttributes(node: ASTv1.ElementNode): void {
+  const attrsToRemove: number[] = [];
+
+  for (let i = 0; i < node.attributes.length; i++) {
+    const attr = node.attributes[i]!;
+    const name = attr.name.toLowerCase();
+
+    // Match on<eventname> pattern
+    if (!name.startsWith('on') || name.length <= 2) continue;
+    const eventName = name.slice(2);
+    if (!HTML_EVENT_NAMES.has(eventName)) continue;
+
+    // The value must be a MustacheStatement (e.g., onclick={{this.handler}})
+    if (attr.value.type !== 'MustacheStatement') continue;
+
+    // Build an {{on "eventName" expr}} modifier
+    const mustache = attr.value as ASTv1.MustacheStatement;
+    const onModifier: ASTv1.ElementModifierStatement = {
+      type: 'ElementModifierStatement',
+      path: {
+        type: 'PathExpression',
+        original: 'on',
+        parts: ['on'],
+        head: { type: 'VarHead', name: 'on', original: 'on', loc: attr.loc } as any,
+        tail: [],
+        this: false,
+        data: false,
+        loc: attr.loc,
+      } as ASTv1.PathExpression,
+      params: [
+        {
+          type: 'StringLiteral',
+          value: eventName,
+          original: eventName,
+          loc: attr.loc,
+        } as ASTv1.StringLiteral,
+        mustache.path as ASTv1.Expression,
+      ],
+      hash: {
+        type: 'Hash',
+        pairs: [],
+        loc: attr.loc,
+      } as ASTv1.Hash,
+      loc: attr.loc,
+    };
+
+    node.modifiers.push(onModifier);
+    attrsToRemove.push(i);
+  }
+
+  // Remove converted attributes (reverse order to preserve indices)
+  for (let i = attrsToRemove.length - 1; i >= 0; i--) {
+    node.attributes.splice(attrsToRemove[i]!, 1);
+  }
+}
+
+// --- Compat mode: ...attributes local override tracking ---
+
+/**
+ * Mark attributes that appear AFTER `...attributes` as local overrides.
+ *
+ * In Ember, attrs after `...attributes` override forwarded attrs; attrs before
+ * are overridden by forwarded values. GXT always gives forwarded attrs priority,
+ * so we add a `__splatLocal__` marker attribute listing the attribute names that
+ * should override forwarded values. The runtime reads this marker to apply
+ * correct precedence.
+ *
+ * Only active in IS_GLIMMER_COMPAT_MODE.
+ */
+function rewriteSplatLocalOverrides(node: ASTv1.ElementNode): void {
+  // Find the index of ...attributes in the attribute list
+  let splatIndex = -1;
+  for (let i = 0; i < node.attributes.length; i++) {
+    if (node.attributes[i]!.name === '...attributes') {
+      splatIndex = i;
+      break;
+    }
+  }
+
+  if (splatIndex === -1) return;
+
+  // Collect attribute names that come AFTER ...attributes
+  const localOverrideNames: string[] = [];
+  let hasClassAfterSplat = false;
+
+  for (let i = splatIndex + 1; i < node.attributes.length; i++) {
+    const attr = node.attributes[i]!;
+    const name = attr.name;
+    // Skip @-prefixed args and already-existing markers
+    if (name.startsWith('@') || name === '__splatLocal__') continue;
+    if (name === 'class') {
+      hasClassAfterSplat = true;
+    } else {
+      localOverrideNames.push(name);
+    }
+  }
+
+  if (localOverrideNames.length === 0 && !hasClassAfterSplat) return;
+
+  // Build marker value: non-class attrs + optional __class__ marker
+  const markerParts = [...localOverrideNames];
+  if (hasClassAfterSplat) markerParts.push('__class__');
+
+  // Check if __splatLocal__ already exists
+  const hasMarker = node.attributes.some(a => a.name === '__splatLocal__');
+  if (hasMarker) return;
+
+  // Add __splatLocal__ marker attribute
+  node.attributes.push({
+    type: 'AttrNode',
+    name: '__splatLocal__',
+    value: {
+      type: 'TextNode',
+      chars: markerParts.join(','),
+      loc: node.loc,
+    } as ASTv1.TextNode,
+    loc: node.loc,
+  } as ASTv1.AttrNode);
+}
+
+// --- Compat mode: PascalCase → kebab-case for known built-in components ---
+
+/**
+ * Known PascalCase component names that should be converted to kebab-case.
+ */
+const PASCAL_TO_KEBAB_MAP: Record<string, string> = {
+  LinkTo: 'link-to',
+  Outlet: 'outlet',
+};
+
+/**
+ * Transform known PascalCase built-in component names to kebab-case.
+ * e.g. "LinkTo" → "link-to", "Outlet" → "outlet"
+ * Unknown PascalCase names are left unchanged.
+ */
+function transformPascalToKebab(tag: string): string {
+  return PASCAL_TO_KEBAB_MAP[tag] ?? tag;
+}
+
+/**
+ * Transform Foo::Bar namespaced component tags to foo--bar kebab-case.
+ * Each PascalCase segment is converted to kebab-case, then joined with '--'.
+ */
+function transformNamespacedTag(tag: string): string {
+  const segments = tag.split('::');
+  return segments.map(toKebabCase).join('--');
+}
+
+/**
+ * Convert a PascalCase string to kebab-case.
+ * e.g. "FooBar" → "foo-bar", "HTMLElement" → "html-element"
+ */
+function toKebabCase(segment: string): string {
+  let result = '';
+  for (let i = 0; i < segment.length; i++) {
+    const ch = segment[i]!;
+    const upper = ch >= 'A' && ch <= 'Z';
+    if (upper) {
+      // Insert hyphen before uppercase letter unless at start
+      // or previous char is also uppercase and next is uppercase (acronym interior)
+      if (i > 0) {
+        const prevUpper = segment[i - 1]! >= 'A' && segment[i - 1]! <= 'Z';
+        const nextUpper = i + 1 < segment.length && segment[i + 1]! >= 'A' && segment[i + 1]! <= 'Z';
+        if (!prevUpper || !nextUpper) {
+          result += '-';
+        }
+      }
+      result += ch.toLowerCase();
+    } else {
+      result += ch;
+    }
+  }
+  return result;
 }

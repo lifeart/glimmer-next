@@ -1388,8 +1388,24 @@ describe('Formatted Calls', () => {
       const lines = result.code.split('\n');
       expect(lines.length).toBeGreaterThan(3);
 
-      // Should have $_each
+      // PR https://github.com/lifeart/glimmer-next/pull/212: compat mode no
+      // longer force-routes {{#each}} through `$_eachSync` — sync iteration
+      // is opt-in via `{{#each items sync=true ...}}` so async element
+      // destructors keep working for the common case.
       expect(result.code).toContain('$_each(');
+    });
+
+    test('each block with sync=true uses $_eachSync', () => {
+      // PR #212 regression coverage: ensure the explicit opt-in still
+      // produces synchronous iteration for hosts that rely on it.
+      const template =
+        '{{#each this.items sync=true as |item|}}{{item}}{{/each}}';
+      const result = compile(template, {
+        sourceMap: { enabled: true },
+        flags: { IS_GLIMMER_COMPAT_MODE: true },
+        format: { enabled: true },
+      });
+      expect(result.code).toContain('$_eachSync(');
     });
   });
 

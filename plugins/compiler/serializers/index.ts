@@ -29,7 +29,7 @@ import {
   buildControl,
   setControlDependencies,
 } from './control';
-import { serializeValue, buildValue } from './value';
+import { serializeValue, buildValue, buildPathExpression } from './value';
 import { B, type JSExpression } from '../builder';
 
 // ============================================================================
@@ -75,6 +75,17 @@ export function build(
 
   // SerializedValue (expression)
   if (isSerializedValue(child)) {
+    if (child.kind === 'path') {
+      // Text-rendered path values can safely unwrap known Cell/MergedCell
+      // values to avoid runtime deep resolution overhead.
+      return buildPathExpression(
+        ctx,
+        child,
+        ctx.flags.IS_GLIMMER_COMPAT_MODE,
+        ctxName,
+        { preferCellValue: true }
+      );
+    }
     return buildValue(ctx, child, ctxName);
   }
 

@@ -26,6 +26,33 @@ let buildChildrenExprs: (ctx: CompilerContext, children: readonly HBSChild[], ct
 let nextCtxName: (ctx: CompilerContext) => string;
 
 /**
+ * JavaScript reserved words that cannot be used as bare identifiers.
+ * Used when a template scope binding shadows a GXT built-in keyword
+ * (e.g. `renderComponent(tpl, { scope: { if: Component } })`) — we must
+ * emit a safe alias (`__scope_if`) instead of the bare reserved word.
+ */
+const JS_RESERVED_WORDS = new Set([
+  'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger',
+  'default', 'delete', 'do', 'else', 'enum', 'export', 'extends',
+  'false', 'finally', 'for', 'function', 'if', 'implements', 'import',
+  'in', 'instanceof', 'interface', 'let', 'new', 'null', 'package',
+  'private', 'protected', 'public', 'return', 'static', 'super',
+  'switch', 'this', 'throw', 'true', 'try', 'typeof', 'var', 'void',
+  'while', 'with', 'yield', 'await',
+]);
+
+/**
+ * Produce a JS-safe identifier name for a template binding.
+ * If the name is a JS reserved word, prefix with `__scope_` so it can be
+ * used as a bare identifier. This matches the Ember compat layer's
+ * `__scope_<name>` aliasing convention, so scope injection and bare-ref
+ * emission agree on the symbol.
+ */
+function jsSafeBindingId(name: string): string {
+  return JS_RESERVED_WORDS.has(name) ? `__scope_${name}` : name;
+}
+
+/**
  * Set dependencies from index.ts to break circular dependency.
  */
 export function setElementDependencies(
@@ -77,10 +104,20 @@ export function buildElement(
   // Build children as JSExpression array (proper tree - no intermediate string serialization)
   const childExprs = buildChildrenExprs(ctx, node.children, ctxName);
 
+  // In compat mode, wrap children of component-like $_tag calls in lazy arrow functions.
+  // Detect Ember components: hyphenated names (custom elements) or PascalCase (angle-bracket).
+  // Standard HTML elements (div, span, p, etc.) don't need lazy children.
+  const isLikelyComponent = typeof node.tag === 'string' && (
+    node.tag.includes('-') || (node.tag[0] >= 'A' && node.tag[0] <= 'Z')
+  );
+  const finalChildExprs = (ctx.flags.IS_GLIMMER_COMPAT_MODE && isLikelyComponent)
+    ? maybeWrapComponentChildren(childExprs)
+    : childExprs;
+
   // Use formattedArray for children when formatting is enabled and there are children
-  const childrenExpr = fmt.options.enabled && childExprs.length > 0
-    ? B.formattedArray(childExprs, true)
-    : B.array(childExprs);
+  const childrenExpr = fmt.options.enabled && finalChildExprs.length > 0
+    ? B.formattedArray(finalChildExprs, true)
+    : B.array(finalChildExprs);
 
   // RuntimeTag should never reach buildElement - they're always components
   // If this happens, there's a bug in isComponentTag() or the calling code
@@ -170,13 +207,13 @@ export function buildComponent(
   if (node.selfClosing) {
     // Self-closing component - empty slots object
     const argsCall = buildComponentArgsExpr(ctx, args, B.emptyObject(), finalPropsExpr, ctxName);
-    return buildComponentCall(node.tag, argsCall, ctxName, useFormatted, node.sourceRange, node.tagRange);
+    return buildComponentCall(ctx, node.tag, argsCall, ctxName, useFormatted, node.sourceRange, node.tagRange);
   }
 
   // Component with children/slots
   const slotsExpr = buildSlots(ctx, node);
   const argsCall = buildComponentArgsExpr(ctx, args, slotsExpr, finalPropsExpr, ctxName);
-  return buildComponentCall(node.tag, argsCall, ctxName, useFormatted, node.sourceRange, node.tagRange);
+  return buildComponentCall(ctx, node.tag, argsCall, ctxName, useFormatted, node.sourceRange, node.tagRange);
 }
 
 /**
@@ -360,6 +397,14 @@ function buildEvents(
       // ($n) => modName($n, ...args, {hash}) or
       // ($n) => $__maybeModifier(modName, $n, [...args], {hash})
       handlerExpr = buildModifierExpr(ctx, handler as HelperValue, ctxName);
+    } else if (eventName === EVENT_TYPE.TEXT_CONTENT && handler.kind === 'path') {
+      handlerExpr = buildPathExpression(
+        ctx,
+        handler,
+        ctx.flags.IS_GLIMMER_COMPAT_MODE,
+        ctxName,
+        { preferCellValue: true }
+      );
     } else {
       // Use buildValue directly to preserve AST structure for better code generation
       handlerExpr = buildValue(ctx, handler, ctxName);
@@ -594,7 +639,9 @@ function buildSlots(
       ? slot.blockParamRanges ?? []
       : [];
 
-    // Add block params to scope tracker during serialization
+    // Add block params in a dedicated scope frame so nested slots with
+    // matching block-param names shadow rather than clobber outer bindings.
+    ctx.scopeTracker.enterScope('slot');
     for (const param of blockParams) {
       ctx.scopeTracker.addBinding(param, { kind: 'block-param', name: param });
     }
@@ -605,10 +652,8 @@ function buildSlots(
       ? B.formattedArray(slotChildExprs, true)
       : B.array(slotChildExprs);
 
-    // Remove block params from scope after serialization
-    for (const param of blockParams) {
-      ctx.scopeTracker.removeBinding(param);
-    }
+    // Exit slot scope, restoring outer bindings.
+    ctx.scopeTracker.exitScope();
     const hasBlockParams = blockParams.length > 0;
 
     // Build the slot function: (ctx, ...blockParams) => [children]
@@ -633,6 +678,7 @@ function buildSlots(
  * Build component call expression.
  */
 function buildComponentCall(
+  ctx: CompilerContext,
   tag: HBSTag,
   argsExpr: JSExpression,
   ctxName: string,
@@ -657,5 +703,76 @@ function buildComponentCall(
     return B.call(SYMBOLS.DYNAMIC_COMPONENT, [tagGetter, argsExpr, B.id(ctxName)], sourceRange, formatted, 'ElementNode');
   }
 
-  return B.call(SYMBOLS.COMPONENT, [B.id(tag, tagRange, 'ElementNode'), argsExpr, B.id(ctxName)], sourceRange, formatted, 'ComponentNode');
+  // In Glimmer compat mode, emit component tags as string literals instead of
+  // bare JS identifiers. The Ember compat manager resolves string component
+  // names from the registry at runtime (via $_MANAGERS.component.canHandle).
+  // Without this, curly-invoked components like {{#foo-bar}} get compiled to
+  // $_c(FooBar, ...) which fails with "FooBar is not defined" because FooBar
+  // is not a JS variable — it's an Ember registry component.
+  if (ctx.flags.IS_GLIMMER_COMPAT_MODE) {
+    // Check if tag is genuinely in user scope (e.g., passed via scopeValues / strict mode).
+    // Only use string literal for tags that were synthetically added as bindings
+    // (from curly block conversion) or that have no real JS binding.
+    const binding = ctx.scopeTracker.resolve(tag);
+    const isSyntheticCompatBinding = binding && binding.kind === 'compat-component';
+    // If the binding is synthetic (added by convertComponentBlock in block.ts),
+    // or there's no real binding at all, use string literal for registry lookup.
+    if (isSyntheticCompatBinding || !ctx.scopeTracker.hasBinding(tag)) {
+      return B.call(SYMBOLS.COMPONENT, [B.stringSingle(tag, tagRange), argsExpr, B.id(ctxName)], sourceRange, formatted, 'ComponentNode');
+    }
+  }
+
+  // Rewrite reserved words (e.g. `if`, `let`, `class`) to their safe alias
+  // so template scope bindings that shadow GXT built-ins emit valid JS.
+  const safeTag = jsSafeBindingId(tag);
+  return B.call(SYMBOLS.COMPONENT, [B.id(safeTag, tagRange, 'ElementNode'), argsExpr, B.id(ctxName)], sourceRange, formatted, 'ComponentNode');
+}
+
+/**
+ * In compat mode, wrap children that contain component calls in arrow functions.
+ * Returns children unchanged if no wrapping is needed.
+ */
+function maybeWrapComponentChildren(childExprs: JSExpression[]): JSExpression[] {
+  if (childExprs.length === 0) return childExprs;
+  if (!childExprs.some(expr => exprContainsComponentCall(expr))) return childExprs;
+  return childExprs.map(expr => {
+    if (exprContainsComponentCall(expr)) {
+      // Don't double-wrap if already an arrow function
+      if (expr.type === 'arrow') return expr;
+      return B.getter(expr, expr.sourceRange);
+    }
+    return expr;
+  });
+}
+
+/**
+ * Check if a JSExpression is or contains a call to $_tag or $_c.
+ * Used in compat mode to determine which children need lazy wrapping.
+ */
+function exprContainsComponentCall(expr: JSExpression): boolean {
+  if (expr.type === 'call') {
+    const callee = expr.callee;
+    if (callee.type === 'identifier') {
+      if (callee.name === SYMBOLS.TAG || callee.name === SYMBOLS.COMPONENT ||
+          callee.name === SYMBOLS.DYNAMIC_COMPONENT) {
+        return true;
+      }
+    }
+    // Check arguments recursively
+    for (const arg of expr.arguments) {
+      if (exprContainsComponentCall(arg)) return true;
+    }
+  }
+  if (expr.type === 'array' || expr.type === 'formattedArray') {
+    for (const el of expr.elements) {
+      if (exprContainsComponentCall(el)) return true;
+    }
+  }
+  if (expr.type === 'reactiveGetter') {
+    return exprContainsComponentCall(expr.expression);
+  }
+  if (expr.type === 'arrow' && expr.expression) {
+    return exprContainsComponentCall(expr.body as JSExpression);
+  }
+  return false;
 }

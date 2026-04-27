@@ -153,13 +153,8 @@ export function CanvasRenderer(): ComponentReturn<
   // Get device pixel ratio for retina support
   const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
 
-  const canvasNode = $_tag(
-    'canvas',
-    [[], [], []],
-    [],
-    // @ts-expect-error
-    this,
-  ) as HTMLCanvasElement;
+  // @ts-expect-error this is a Component-like ctx
+  const canvasNode = $_tag('canvas', [[], [], []], this) as HTMLCanvasElement;
   // @ts-expect-error
   const api = initDOM(this);
   const comment = api.comment('runtime-placeholder');

@@ -10,7 +10,7 @@ import type { ComponentLike, DOMApi, GenericReturnType } from '@/core/types';
 
 // Import render/destroy functions directly (no late-binding needed)
 import { renderElement } from '@/core/render-core';
-import { destroyElement, unregisterFromParent } from '@/core/destroy';
+import { destroyElement, destroyElementSync, unregisterFromParent } from '@/core/destroy';
 
 import { Destructors, registerDestructor, destroy, markAsDestroyed } from '@/core/glimmer/destroyable';
 import { formula, type Cell, type MergedCell } from '@/core/reactive';
@@ -45,6 +45,12 @@ export class IfCondition {
   destroyPromise: Promise<any> | null = null;
   [RENDERED_NODES_PROPERTY]: Array<Node> = [];
   [COMPONENT_ID_PROPERTY] = cId();
+  // Snapshot of DOM nodes inserted by the most recent branch render. We track
+  // these so we can clean them up even when the branch's `prevComponent` is
+  // empty (e.g. when the true branch is just `{{yield}}` and the slot runtime
+  // inserts nodes directly into the parent without threading them back into
+  // the IfCondition's component tree).
+  branchDomNodes: Array<Node> = [];
   trueBranch: (ifContext: IfCondition) => GenericReturnType;
   falseBranch: (ifContext: IfCondition) => GenericReturnType;
   declare api: DOMApi;
@@ -62,19 +68,31 @@ export class IfCondition {
     this.setupCondition(maybeCondition);
     this.trueBranch = trueBranch;
     this.falseBranch = falseBranch;
-    // Propagate $_eval from parent context for deferred rendering
-    if (WITH_DYNAMIC_EVAL) {
-      // @ts-expect-error $_eval may exist on parentContext
-      if (parentContext?.$_eval) {
-        // @ts-expect-error $_eval may exist
-        this.$_eval = parentContext.$_eval;
-      }
+    // Propagate $_eval from parent context for deferred rendering.
+    // Use an `in` check before reading: under Ember integration the
+    // parent can be a tracked-property proxy that throws on unknown
+    // property access. A throw here aborts the constructor before
+    // `addToTree` runs, leaving the if half-registered.
+    if (
+      WITH_DYNAMIC_EVAL &&
+      parentContext != null &&
+      typeof parentContext === 'object' &&
+      '$_eval' in parentContext
+    ) {
+      // @ts-expect-error $_eval is host-extension state, untyped on the parent.
+      this.$_eval = parentContext.$_eval;
     }
     // @ts-expect-error typings error
     addToTree(parentContext, this, 'from if constructor');
     // @ts-expect-error
     this.api = initDOM(this);
     this.destructors.push(opcodeFor(this.condition, this.syncState.bind(this)));
+    // Ensure initial branch renders synchronously even if opcodeFor deferred.
+    // If opcodeFor already fired syncState, checkStatement will short-circuit
+    // because lastValue matches and runNumber > 1.
+    if (this.runNumber === 0) {
+      this.syncState(this.condition.value);
+    }
     registerDestructor(parentContext, this.destroy.bind(this));
     if (IS_DEV_MODE) {
       const instance = () => {
@@ -147,29 +165,48 @@ export class IfCondition {
     if (this.destroyPromise) {
       this.destroyPromise.then(() => {
         this.destroyPromise = null;
-        // Re-validate epoch after async wait - condition may have changed again
         if (!this.validateEpoch(runNumber)) {
           return;
         }
         this.renderBranch(nextBranch, runNumber);
       }).catch(() => {
-        // Destruction was interrupted or failed - reset state
         this.destroyPromise = null;
       });
       return;
-    } else if (this.prevComponent && !(Array.isArray(this.prevComponent) && this.prevComponent.length === 0)) {
-      // Track the destroy promise to prevent race conditions
-      // Note: Empty arrays should be treated as no component (skip async destroy)
+    } else if (this.prevComponent || this.branchDomNodes.length > 0) {
+      const isEmptyArray = Array.isArray(this.prevComponent) && this.prevComponent.length === 0;
+      // In Ember integration mode, use synchronous destroy for immediate DOM updates.
+      // Re-check the epoch between destroy and render: a destructor (or any side
+      // effect of `destroyBranchSync`) can synchronously flip the condition again
+      // and re-enter `syncState`, advancing `runNumber`. Without the recheck the
+      // outer (now-stale) call would still proceed to render its branch, clobbering
+      // the inner (newer) render. The async sibling path below uses the same guard.
+      if ((globalThis as any).__GXT_MODE__) {
+        this.destroyBranchSync();
+        if (!this.validateEpoch(runNumber)) {
+          return;
+        }
+        this.renderState(nextBranch);
+        return;
+      }
+      // Fast path: nothing meaningful to async-destroy and no orphan DOM —
+      // just render the next branch synchronously.
+      if (isEmptyArray && this.branchDomNodes.length === 0) {
+        this.prevComponent = null;
+        if (!this.validateEpoch(runNumber)) {
+          return;
+        }
+        this.renderState(nextBranch);
+        return;
+      }
       this.destroyPromise = this.destroyBranch();
       this.destroyPromise.then(() => {
         this.destroyPromise = null;
-        // Re-validate epoch after async destroy
         if (!this.validateEpoch(runNumber)) {
           return;
         }
         this.renderBranch(nextBranch, runNumber);
       }).catch(() => {
-        // Destruction failed - reset state
         this.destroyPromise = null;
       });
       return;
@@ -200,20 +237,67 @@ export class IfCondition {
     return true;
   }
 
+  /**
+   * Remove any DOM nodes that the previous branch render inserted between
+   * its first node and the IfCondition placeholder. Used as a fallback for
+   * branches whose render function does not thread results back through
+   * `prevComponent` (e.g. yield-only true branches in slot mode).
+   */
+  removeOrphanBranchDom() {
+    const nodes = this.branchDomNodes;
+    if (nodes.length === 0) {
+      return;
+    }
+    for (let i = 0; i < nodes.length; i++) {
+      const node = nodes[i];
+      // Skip nodes that were already torn down (e.g. they were owned by
+      // prevComponent and destroyElementSync already removed them) or that
+      // are no longer attached anywhere.
+      if (node && (node as Node).parentNode) {
+        try {
+          (node as Node).parentNode!.removeChild(node as Node);
+        } catch {
+          // Defensive: a parent may have been removed in the same tick.
+          // Re-throw any unexpected error so it surfaces in dev.
+          if (IS_DEV_MODE) {
+            throw new Error('IfCondition: failed to remove orphan branch node');
+          }
+        }
+      }
+    }
+    this.branchDomNodes = [];
+  }
+
+  destroyBranchSync() {
+    const branch = this.prevComponent;
+    this.prevComponent = null;
+    if (branch !== null) {
+      destroyElementSync(branch as ComponentLike, false, this.api);
+    }
+    this.removeOrphanBranchDom();
+  }
+
   async destroyBranch() {
     const branch = this.prevComponent;
-    if (branch === null) {
-      return;
-    } else {
-      this.prevComponent = null;
+    this.prevComponent = null;
+    if (branch !== null) {
+      await destroyElement(branch as ComponentLike, false, this.api);
     }
-    await destroyElement(branch as ComponentLike, false, this.api);
+    this.removeOrphanBranchDom();
   }
 
   renderState(nextBranch: (ifContext: IfCondition) => GenericReturnType) {
     if (IS_DEV_MODE) {
       $DEBUG_REACTIVE_CONTEXTS.push(`if:${String(this.lastValue)}`);
     }
+    // Capture the sibling immediately before the placeholder so that, after
+    // the branch renders, we can identify which DOM nodes are "owned" by
+    // this branch — including nodes inserted by sub-runtimes (slots, dynamic
+    // components) that don't thread their roots through `prevComponent`.
+    const placeholderParent = this.api.parent(this.placeholder) as Node | null;
+    const anchorBefore: Node | null = placeholderParent
+      ? (this.placeholder as Node).previousSibling
+      : null;
     try {
       setParentContext(this as unknown as ComponentLike);
       this.prevComponent = nextBranch(this);
@@ -228,6 +312,22 @@ export class IfCondition {
       this.prevComponent,
       this.placeholder,
     );
+    // Snapshot all nodes between the pre-render anchor and the placeholder.
+    // These are the DOM nodes the branch ended up inserting into the parent.
+    const livingParent = this.api.parent(this.placeholder) as Node | null;
+    if (livingParent) {
+      const captured: Node[] = [];
+      let cursor: Node | null = anchorBefore
+        ? anchorBefore.nextSibling
+        : livingParent.firstChild;
+      while (cursor && cursor !== this.placeholder) {
+        captured.push(cursor);
+        cursor = cursor.nextSibling;
+      }
+      this.branchDomNodes = captured;
+    } else {
+      this.branchDomNodes = [];
+    }
     if (IS_DEV_MODE) {
       // HMR logic
       if (this.runNumber === 1) {
@@ -265,6 +365,11 @@ export class IfCondition {
     if (isFn(maybeCondition)) {
       this.condition = formula(() => {
         const v = maybeCondition();
+        // Allow external truthiness override (e.g., Ember's special rules)
+        const externalToBool = (globalThis as any).__gxtToBool;
+        if (externalToBool) {
+          return externalToBool(v);
+        }
         if (isPrimitive(v) || isEmpty(v)) {
           return !!v;
         } else if (isTagLike(v)) {

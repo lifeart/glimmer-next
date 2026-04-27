@@ -1,11 +1,24 @@
-import { expect, test, describe, beforeEach } from 'vitest';
+import { expect, test, describe, beforeEach, afterEach } from 'vitest';
 import {
   CanvasBaseElement,
   CanvasComment,
   CanvasFragment,
   CanvasTextElement,
+  CanvasRenderer,
   DESTROYED_NODES,
 } from './canvas';
+import { Component } from '../component';
+import { $_c, $_args, $_edp } from '../dom';
+import {
+  provideContext,
+  RENDERING_CONTEXT,
+} from '../context';
+import {
+  COMPONENT_ID_PROPERTY,
+  RENDERED_NODES_PROPERTY,
+  addToTree,
+} from '../shared';
+import { createDOMFixture, type DOMFixture } from '../__test-utils__';
 
 describe('Canvas Renderer Elements', () => {
   describe('CanvasBaseElement', () => {
@@ -607,5 +620,101 @@ describe('Canvas API factory function', () => {
       const result = api.prop(element, 'someProperty', 'someValue');
       expect(result).toBe('someValue');
     });
+  });
+});
+
+// Regression coverage for the deploy-preview-212 crash:
+//   <CanvasRenderer undefined />
+//   TypeError: Cannot read properties of null (reading 'element') at _DOM
+//
+// Root cause: canvas.ts called `$_tag('canvas', tagProps, [], this)` with 4
+// arguments. _DOM's signature is `(tag, tagProps, ctx, children = [])`, so
+// `[]` was being passed as `ctx` (and `this` as `children`). When
+// fastRenderingContext was set (the common case), `initDOM([])` returned
+// the global and the bug was masked. But on the /renderers page, an earlier
+// non-document renderer (TresCanvas) calls `provideContext` on its inner
+// root, which resets fastRenderingContext to null. The slow path then walked
+// from `[]` — `[][COMPONENT_ID_PROPERTY]` is undefined, the parent walk
+// exited immediately, getContext returned null, and _DOM crashed in
+// `api.element(...)`. Sister renderers (TresCanvas, PdfViewer) have always
+// used the correct 3-arg form: `$_tag('canvas', tagProps, this)`.
+describe('CanvasRenderer — fastRenderingContext-reset regression (PR #212)', () => {
+  let fixture: DOMFixture;
+
+  beforeEach(() => {
+    fixture = createDOMFixture();
+  });
+
+  afterEach(() => {
+    fixture.cleanup();
+  });
+
+  test('renders a real <canvas> after a sibling reset fastRenderingContext to null', () => {
+    // The sibling-reset hangs on a property of context.ts: a `provideContext`
+    // call on a ctx WITHOUT a `document` property sets fastRenderingContext
+    // to null (forcing the slow walk for subsequent renderers).
+    const innerRoot = {
+      [COMPONENT_ID_PROPERTY]: 0xC0FFEE,
+      [RENDERED_NODES_PROPERTY]: [],
+    };
+    provideContext(
+      innerRoot as unknown as Component<any>,
+      RENDERING_CONTEXT,
+      // The api value isn't exercised here — only the side effect of
+      // resetting fastRenderingContext matters for this regression.
+      { toString: () => 'sibling:nondoc-api' } as never,
+    );
+
+    // Now mount CanvasRenderer through the same code path the compiled
+    // output uses. With the buggy 4-arg `$_tag` call, _DOM would receive
+    // `[]` as ctx, fail to resolve the api, and the dev-mode try/catch in
+    // `component()` would swap the canvas for an error overlay.
+    const parent = new Component({});
+    parent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(fixture.root, parent);
+
+    const args = $_args({}, { default: () => [] }, $_edp as never);
+    const result = $_c(CanvasRenderer as never, args, parent) as Component<any>;
+
+    const rendered = result[RENDERED_NODES_PROPERTY];
+    expect(Array.isArray(rendered)).toBe(true);
+    expect(rendered.length).toBeGreaterThan(0);
+
+    const first = rendered[0] as HTMLElement;
+    // Must be a real <canvas> — not an error overlay (<pre> / vite-error-overlay).
+    expect(first.tagName).toBe('CANVAS');
+  });
+
+  test('$_tag inside CanvasRenderer is invoked with `this` as ctx, not an array', () => {
+    // Direct check on the call signature: scan the source so that re-adding
+    // the stray `[]` argument trips a test, even on environments where the
+    // dev-mode try/catch would otherwise mask the runtime crash.
+    // (canvas.ts is small; reading it in-test is cheap and keeps the
+    // regression tied to the actual cause, not just the symptom.)
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const fs = require('node:fs') as typeof import('node:fs');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const path = require('node:path') as typeof import('node:path');
+    const source = fs.readFileSync(
+      path.resolve(__dirname, './canvas.ts'),
+      'utf8',
+    );
+
+    // Match the canvas-creation $_tag call. Allow whitespace/newlines.
+    const match = source.match(
+      /\$_tag\(\s*'canvas'\s*,\s*\[\[\]\s*,\s*\[\]\s*,\s*\[\]\]\s*,([\s\S]*?)\)/,
+    );
+    expect(match, '$_tag("canvas", ...) call must exist in canvas.ts').toBeTruthy();
+
+    // The captured tail must contain a `this` argument and must NOT contain
+    // a leading `[]` (the historical bug). Strip line comments first.
+    const tail = (match![1] ?? '')
+      .split('\n')
+      .map((l) => l.replace(/\/\/.*$/, ''))
+      .join('\n')
+      .trim()
+      .replace(/,$/, '')
+      .trim();
+    expect(tail).toBe('this');
   });
 });
