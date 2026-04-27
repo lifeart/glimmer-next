@@ -621,12 +621,13 @@ function serializeHelperCall(value: SerializedValue & { kind: 'helper' }): strin
     args.push(`{ ${namedPairs.join(', ')} }`);
   }
 
-  // Special handling for has-block helpers - they need .bind(this, $slots)
+  // Special handling for has-block helpers - they need .bind(this, $slots).
+  //
+  // Always emit a CALL on the bound function so the helper evaluates to a
+  // boolean wherever it appears (mustache, block, inline {{if}}, attribute).
+  // See plugins/compiler/serializers/value.ts for the full rationale.
   if (symbolName === SYMBOLS.HAS_BLOCK || symbolName === SYMBOLS.HAS_BLOCK_PARAMS) {
-    if (args.length > 0) {
-      return `${symbolName}.bind(this, $slots)(${args.join(', ')})`;
-    }
-    return `${symbolName}.bind(this, $slots)`;
+    return `${symbolName}.bind(this, $slots)(${args.join(', ')})`;
   }
 
   // Special handling for debugger - prepend this and use .call

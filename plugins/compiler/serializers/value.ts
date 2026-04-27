@@ -785,16 +785,30 @@ function buildBuiltInHelper(
 
   const args = buildHelperArgs(ctx, positional, named, ctxName);
 
-  // Special handling for has-block helpers - they need bound to $slots
+  // Special handling for has-block helpers - they need bound to $slots.
+  //
+  // Emit a CALL of the bound function so the SubExpression evaluates to a
+  // boolean wherever it appears. The "no positional args" case used to return
+  // just the bound function (e.g. `$_hasBlock.bind(this, $slots)`), which is
+  // truthy by virtue of being a function regardless of slot presence. That
+  // worked for direct mustache `{{has-block}}` (the renderer auto-calls
+  // function children via deepFnValue) and for `{{#if (has-block)}}` (the
+  // `$_if` runtime auto-calls function conditions in setupCondition), but
+  // broke the inline-helper / attribute paths that route through `$__if`,
+  // whose `unwrap()` is shallow and treats a returned function as truthy.
+  // (Tests: ember.js curly-components-test "(has-block) expression in an
+  // attribute" / "(has-block) as a param to a helper", and the matching
+  // (has-block-params) variants.)
+  //
+  // Calling immediately is safe: `$slots` is fully populated by the time the
+  // template body runs (the runtime-compiler wrapper extracts it before
+  // returning the array), and `$_hasBlock` / `$_hasBlockParams` perform a
+  // pure key lookup against that snapshot — there is no reactivity to
+  // preserve via lazy invocation.
   if (symbol === SYMBOLS.HAS_BLOCK || symbol === SYMBOLS.HAS_BLOCK_PARAMS) {
     const bindTarget = typeof helperId === 'string' ? B.id(helperId) : helperId;
     const bindCall = B.methodCall(bindTarget, 'bind', [B.id(ctxName), B.id('$slots')], sourceRange);
-    if (positional.length > 0) {
-      // Call the bound function with args
-      return B.call(bindCall, args, sourceRange);
-    }
-    // Just return the bound function
-    return bindCall;
+    return B.call(bindCall, args, sourceRange);
   }
 
   // Special handling for debugger - prepend this and use .call
