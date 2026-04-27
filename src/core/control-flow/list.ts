@@ -55,6 +55,12 @@ type ListComponentArgs<T> = {
   ctx: Component<any>;
   ItemComponent: (item: T, index?: number | MergedCell) => GenericReturnType;
   inverseFn?: InverseFn;
+  // Set by the compiler when the each-block body actually reads `index`
+  // (`{{index}}` becomes `index.value`). When false (the common case in
+  // Krausest-style large lists) we skip allocating a per-row reactive
+  // index formula and pass the raw number instead — this saves one
+  // MergedCell + closure capture per item on every render.
+  hasIndex?: boolean;
 };
 type RenderTarget = HTMLElement | DocumentFragment;
 
@@ -62,6 +68,101 @@ type RenderTarget = HTMLElement | DocumentFragment;
 const _lisTails: number[] = [];
 const _lisTailIdx: number[] = [];
 const _lisPred: number[] = [];
+
+/**
+ * Normalize an arbitrary `{{#each}}` input value into a real Array<T>.
+ *
+ * Glimmer-VM's `{{#each}}` semantics treat any non-array, non-iterable
+ * value as falsy (renders the inverse). For iterables that aren't plain
+ * arrays (Set, Map, custom Symbol.iterator classes, generators), the body
+ * iterates with the spread elements. Ember's ArrayProxy is normalized via
+ * its `.content` slot.
+ *
+ * Returns:
+ *   - The same array if `Array.isArray(value)` (covers plain arrays and
+ *     Ember `A()` / NativeArray, which IS-A Array).
+ *   - `[...value]` if `value[Symbol.iterator]` is callable.
+ *   - Recursive normalization on `value.content` for ArrayProxy-shaped
+ *     objects (defensive: falls back to `[]` if access throws or the proxy
+ *     is destroyed).
+ *   - `[]` for everything else (null, undefined, false, '', 0, NaN, true,
+ *     non-iterable strings, plain objects, functions, numbers).
+ *
+ * Strings are intentionally treated as `[]` — Glimmer's `{{#each}}` does
+ * NOT iterate string characters, and the upstream tests require `'hello'`
+ * to render the inverse block.
+ */
+export function normalizeIterableValue<T>(value: unknown): T[] {
+  // Fast paths: empty or already-an-array
+  if (value === null || value === undefined || value === false || value === '' || value === 0) {
+    return [];
+  }
+  if (Array.isArray(value)) {
+    return value as T[];
+  }
+  // Strings have Symbol.iterator but Glimmer's #each treats them as falsy
+  if (typeof value !== 'object' && typeof value !== 'function') {
+    // primitives we haven't already filtered: true, non-zero numbers, bigints, symbols
+    return [];
+  }
+  // ArrayProxy-shaped objects: defer to .content (covers Ember.ArrayProxy)
+  // We check this BEFORE Symbol.iterator — ArrayProxy itself is iterable
+  // via .content, but the safer/cheaper path is to read .content directly,
+  // which avoids walking through the proxy's iterator-trap layer.
+  if (typeof value === 'object' && value !== null && 'content' in (value as object)) {
+    const proxy = value as { content?: unknown; isDestroyed?: boolean; isDestroying?: boolean };
+    if (proxy.isDestroyed || proxy.isDestroying) {
+      return [];
+    }
+    try {
+      const content = proxy.content;
+      if (content === value) {
+        // self-referential — fall through to iterator handling below
+      } else if (content !== undefined) {
+        return normalizeIterableValue<T>(content);
+      }
+    } catch {
+      return [];
+    }
+  }
+  // Generic iterable (Set, Map, custom Symbol.iterator class, generators)
+  if (
+    (typeof value === 'object' || typeof value === 'function') &&
+    value !== null &&
+    typeof (value as { [Symbol.iterator]?: unknown })[Symbol.iterator] === 'function'
+  ) {
+    try {
+      return Array.from(value as Iterable<T>);
+    } catch {
+      return [];
+    }
+  }
+  // ForEach-based delegates (Ember test ForEachable, custom collection
+  // wrappers without Symbol.iterator). Glimmer-VM iterates these via the
+  // `forEach` callback to produce an array of items. Also require a
+  // `length` property so we don't accidentally drain a non-collection
+  // object that happens to expose a `forEach` method (e.g. NodeList-like
+  // shapes are fine; arbitrary objects with an unrelated `forEach` would
+  // be unusual but length-gating keeps us closer to a "collection" shape).
+  if (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { forEach?: unknown }).forEach === 'function' &&
+    typeof (value as { length?: unknown }).length === 'number'
+  ) {
+    try {
+      const out: T[] = [];
+      (value as { forEach: (cb: (item: T) => void) => void }).forEach((item) => {
+        out.push(item);
+      });
+      return out;
+    } catch {
+      return [];
+    }
+  }
+  // Plain objects, functions, anything else — falsy
+  return [];
+}
 
 /**
  * Compute positions in `arr` that form the Longest Increasing Subsequence.
@@ -184,14 +285,18 @@ export class BasicListComponent<T extends { id: number }> {
   // Cached fragment reused across relocateItem calls to avoid allocating new ones
   private _relocateFragment!: DocumentFragment;
   declare api: DOMApi;
+  hasIndex = false;
   constructor(
-    { tag, ctx, key, ItemComponent, inverseFn }: ListComponentArgs<T>,
+    { tag, ctx, key, ItemComponent, inverseFn, hasIndex }: ListComponentArgs<T>,
     outlet: RenderTarget,
     topMarker: Comment,
   ) {
     this.api = initDOM(ctx);
     if (inverseFn) {
       this.inverseFn = inverseFn;
+    }
+    if (hasIndex) {
+      this.hasIndex = true;
     }
     this._relocateFragment = this.api.fragment();
     this.ItemComponent = ItemComponent;
@@ -270,6 +375,11 @@ export class BasicListComponent<T extends { id: number }> {
         registerDestructor(ctx, () => {
           (tag as MergedCell).destroy();
         });
+      } else {
+        // Non-tag, non-array, non-fn: normalize to an array (covers
+        // Set/Map/iterables/ArrayProxy/falsy-objects passed directly).
+        const normalized = normalizeIterableValue<T>(tag);
+        tag = new Cell(normalized, 'list tag');
       }
     }
     this.tag = tag;
@@ -621,10 +731,18 @@ export class BasicListComponent<T extends { id: number }> {
           itemMarkers.set(key, marker);
           markerSet.add(marker);
         }
+        // Provide a reactive `index` cell only when the compiled body
+        // actually reads `index.value` (compiler sets `hasIndex` for that
+        // case). Templates that bind `as |item|` only — including the
+        // Krausest benchmark — skip the per-row MergedCell allocation +
+        // closure capture and pass the raw integer instead. Templates that
+        // do read the index get a formula that re-locates `item` in the
+        // current tag value (handling duplicates by matching on key) so
+        // reordering — e.g. `insertAt(1, ...)` shifting subsequent items
+        // down — causes every existing row's index cell to recompute on
+        // the next render pass.
         let idx: number | MergedCell = index;
-        if (IS_DEV_MODE) {
-          // @todo - add `hasIndex` argument to compiler to tree-shake this
-          // for now reactive indexes works only in dev mode
+        if (this.hasIndex) {
           const indexFormula = formula(() => {
             if (isPrimitive(item)) {
               return index;
@@ -647,7 +765,7 @@ export class BasicListComponent<T extends { id: number }> {
               }
             }
             return itemIndex;
-          }, `each.index[${index}]`);
+          }, IS_DEV_MODE ? `each.index[${index}]` : undefined);
           idx = indexFormula;
           // Track formula for cleanup when item is destroyed
           if (!this.indexFormulaMap) this.indexFormulaMap = new Map();
@@ -840,7 +958,7 @@ export class SyncListComponent<
         // active, drop this opcode invocation. The outer call already sees
         // the current tag value.
         if (this._syncInProgress) return;
-        this.syncList(value as T[]);
+        this.syncList(normalizeIterableValue<T>(value));
       }),
     );
   }
@@ -884,6 +1002,12 @@ export class SyncListComponent<
     }
   }
   syncList(items: T[]) {
+    // Defensive normalization: while the opcode handler already normalizes
+    // incoming cell values, syncList may be invoked through other paths
+    // (legacy callers, internal teardown) — guarantee a real array.
+    if (!Array.isArray(items)) {
+      items = normalizeIterableValue<T>(items);
+    }
     // Re-entry guard: during an item-destroy cascade, Ember's KVO/backtracking
     // layer can synchronously fire a destructor that re-invokes syncList on
     // this same instance. A nested call observes half-destroyed keyMap state
@@ -1043,7 +1167,7 @@ export class AsyncListComponent<
       },
       opcodeFor(this.tag, async (value) => {
         if (isDestructionStarted(this)) return;
-        await this.syncList(value as T[]);
+        await this.syncList(normalizeIterableValue<T>(value));
       }),
     );
   }
@@ -1111,6 +1235,10 @@ export class AsyncListComponent<
     }
   }
   async syncList(items: T[]) {
+    // Defensive normalization (see SyncListComponent.syncList).
+    if (!Array.isArray(items)) {
+      items = normalizeIterableValue<T>(items);
+    }
     // Invalidate per-items-array duplicate-key cache (see SyncListComponent)
     this._dupItemsRef = null;
     // Destroy inverse when items arrive — guarded to avoid unnecessary await

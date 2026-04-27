@@ -1307,6 +1307,7 @@ export function $_eachSync<T extends { id: number }>(
   key: string | null = null,
   ctx: Component<any>,
   inverseFn?: InverseFn,
+  hasIndex?: boolean,
 ) {
   const api = initDOM(ctx);
   const { outlet, placeholder } = getRenderTargets(
@@ -1320,6 +1321,7 @@ export function $_eachSync<T extends { id: number }>(
       ctx,
       key,
       inverseFn,
+      hasIndex,
     },
     // @ts-expect-error outlet
     outlet,
@@ -1335,6 +1337,7 @@ export function $_each<T extends { id: number }>(
   key: string | null = null,
   ctx: Component<any>,
   inverseFn?: InverseFn,
+  hasIndex?: boolean,
 ) {
   const api = initDOM(ctx);
   const { outlet, placeholder } = getRenderTargets(
@@ -1348,6 +1351,7 @@ export function $_each<T extends { id: number }>(
       key,
       ctx,
       inverseFn,
+      hasIndex,
     },
     // @ts-expect-error outlet
     outlet,
