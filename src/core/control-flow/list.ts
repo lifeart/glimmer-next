@@ -721,38 +721,47 @@ export class BasicListComponent<T extends { id: number }> {
           itemMarkers.set(key, marker);
           markerSet.add(marker);
         }
-        let idx: number | MergedCell = index;
-        if (IS_DEV_MODE) {
-          // @todo - add `hasIndex` argument to compiler to tree-shake this
-          // for now reactive indexes works only in dev mode
-          const indexFormula = formula(() => {
-            if (isPrimitive(item)) {
-              return index;
+        // Always provide a reactive `index` cell.
+        //
+        // The compiler unconditionally rewrites `{{index}}` references in
+        // `{{#each ... as |item index|}}` bodies to `index.value`, regardless
+        // of build mode. If we passed a plain number here, `.value` would
+        // resolve to `undefined` and the rendered text would be empty (the
+        // upstream regression that broke `it receives the index as the second
+        // parameter` across all array-source variants).
+        //
+        // The formula re-locates `item` in the current tag value (handling
+        // duplicates by matching on key), so reordering the underlying array
+        // — e.g. `insertAt(1, ...)` shifting subsequent items down — causes
+        // every existing row's index cell to recompute on the next render
+        // pass.
+        const indexFormula = formula(() => {
+          if (isPrimitive(item)) {
+            return index;
+          }
+          const values = this.tag.value as T[];
+          const itemIndex = values.indexOf(item);
+          if (itemIndex === -1) {
+            return values.findIndex((value: T, i) => {
+              return keyForItem(value, i, values) === key;
+            });
+          }
+          // For the common (non-duplicate) case, indexOf is correct. When
+          // the item appears multiple times in `values`, compute the key
+          // at each occurrence and return the one that matches.
+          const firstKey = keyForItem(item, itemIndex, values);
+          if (firstKey === key) return itemIndex;
+          for (let j = itemIndex + 1; j < values.length; j++) {
+            if (values[j] === item && keyForItem(values[j], j, values) === key) {
+              return j;
             }
-            const values = this.tag.value as T[];
-            const itemIndex = values.indexOf(item);
-            if (itemIndex === -1) {
-              return values.findIndex((value: T, i) => {
-                return keyForItem(value, i, values) === key;
-              });
-            }
-            // For the common (non-duplicate) case, indexOf is correct. When
-            // the item appears multiple times in `values`, compute the key
-            // at each occurrence and return the one that matches.
-            const firstKey = keyForItem(item, itemIndex, values);
-            if (firstKey === key) return itemIndex;
-            for (let j = itemIndex + 1; j < values.length; j++) {
-              if (values[j] === item && keyForItem(values[j], j, values) === key) {
-                return j;
-              }
-            }
-            return itemIndex;
-          }, `each.index[${index}]`);
-          idx = indexFormula;
-          // Track formula for cleanup when item is destroyed
-          if (!this.indexFormulaMap) this.indexFormulaMap = new Map();
-          this.indexFormulaMap.set(key, indexFormula);
-        }
+          }
+          return itemIndex;
+        }, IS_DEV_MODE ? `each.index[${index}]` : undefined);
+        const idx: MergedCell = indexFormula;
+        // Track formula for cleanup when item is destroyed
+        if (!this.indexFormulaMap) this.indexFormulaMap = new Map();
+        this.indexFormulaMap.set(key, indexFormula);
 
         const row = ItemComponent(item, idx, self as unknown as Component<any>);
 

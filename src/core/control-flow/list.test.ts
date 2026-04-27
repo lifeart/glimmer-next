@@ -12,6 +12,7 @@ import {
 } from '../shared';
 import { cleanupFastContext, provideContext, RENDERING_CONTEXT } from '../context';
 import { Root } from '../dom';
+import type { Cell } from '../reactive';
 
 describe('getFirstNode', () => {
   let window: Window;
@@ -3118,5 +3119,181 @@ describe('DOM mutation counting', () => {
     // 3 new items rendered into fragment, 1 batch insert into container,
     // plus topMarker + bottomMarker re-insert = 3
     expect(getInsertCount()).toBe(3);
+  });
+});
+
+/**
+ * Regression coverage for the integration tests in
+ * `Syntax test: {{#each}} with native arrays / emberA-wrapped arrays / array
+ * proxies, replacing its content`. Failures from those modules don't surface
+ * as plain LIS bugs at the unit level, so each test below is shaped to mirror
+ * one piece of the upstream assertion (DOM identity preservation, reactive
+ * `index` cell, etc.) using glimmer-next's own primitives.
+ */
+describe('SyncListComponent — Ember each-test parity', () => {
+  let window: Window;
+  let document: Document;
+  let api: DOMApi;
+  let root: Root;
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    window = new Window();
+    document = window.document as unknown as Document;
+    api = new HTMLBrowserDOMApi(document);
+    cleanupFastContext();
+    root = new Root(document);
+    provideContext(root, RENDERING_CONTEXT, api);
+    container = document.createElement('div');
+    document.body.appendChild(container);
+  });
+
+  afterEach(() => {
+    cleanupFastContext();
+    TREE.clear();
+    PARENT.clear();
+    CHILD.clear();
+    window.close();
+  });
+
+  async function createTextList(items: Array<{ text: string }>) {
+    const { SyncListComponent } = await import('./list');
+    const { cell } = await import('../reactive');
+
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, parentComponent);
+
+    const itemsCell = cell(items);
+    const topMarker = document.createComment('list top');
+
+    const listInstance = new SyncListComponent(
+      {
+        tag: itemsCell as unknown as Cell<{ text: string; id: number }[]>,
+        key: 'text',
+        ctx: parentComponent,
+        ItemComponent: ((item: { text: string }) => {
+          // Mirror Ember's `{{item.text}}` body: a single text node per row.
+          return [document.createTextNode(item.text)];
+        }) as any,
+      },
+      container,
+      topMarker,
+    );
+
+    const textNodesBetweenMarkers = () => {
+      const out: Text[] = [];
+      let node: Node | null = listInstance.topMarker.nextSibling;
+      while (node && node !== listInstance.bottomMarker) {
+        if (node.nodeType === 3 /* Text */) {
+          out.push(node as Text);
+        }
+        node = node.nextSibling;
+      }
+      return out;
+    };
+
+    return { listInstance, itemsCell, parentComponent, textNodesBetweenMarkers };
+  }
+
+  test('it maintains DOM stability for stable keys when list is updated', async () => {
+    // Mirrors the `it maintains DOM stability for stable keys when list is
+    // updated` integration test: 3-item list keyed on `text`, then unshift
+    // two items at the front and push two at the back. The original three
+    // text nodes (Hello / space / world) MUST be the exact same Node
+    // instances after the update — `{{#each list key="text"}}` promises
+    // node identity for unchanged keys.
+    const { itemsCell, textNodesBetweenMarkers } = await createTextList([
+      { text: 'Hello' },
+      { text: ' ' },
+      { text: 'world' },
+    ]);
+    await new Promise((r) => setTimeout(r, 10));
+
+    const oldSnapshot = textNodesBetweenMarkers();
+    expect(oldSnapshot.length).toBe(3);
+
+    itemsCell.update([
+      { text: 'Hi' },
+      { text: ', ' },
+      { text: 'Hello' },
+      { text: ' ' },
+      { text: 'world' },
+      { text: '!' },
+      { text: 'earth' },
+    ] as any);
+    await new Promise((r) => setTimeout(r, 10));
+
+    const newSnapshot = textNodesBetweenMarkers();
+    expect(newSnapshot.length).toBe(7);
+    expect(newSnapshot.map((n) => n.textContent)).toEqual([
+      'Hi', ', ', 'Hello', ' ', 'world', '!', 'earth',
+    ]);
+    // The middle 3 nodes must be the SAME Text instances as the old ones.
+    expect(newSnapshot[2]).toBe(oldSnapshot[0]);
+    expect(newSnapshot[3]).toBe(oldSnapshot[1]);
+    expect(newSnapshot[4]).toBe(oldSnapshot[2]);
+  });
+
+  test('it provides a reactive `index` cell that reflects insertions', async () => {
+    // Mirrors `it receives the index as the second parameter`. The compiler
+    // unconditionally rewrites `{{index}}` to `index.value`, so updateItems
+    // must always hand each row a tag-like with a `.value` property — never
+    // a raw number — and the value must be recomputed when the surrounding
+    // array reorders.
+    const { SyncListComponent } = await import('./list');
+    const { cell } = await import('../reactive');
+    const reactive = await import('../reactive');
+    const { isTagLike } = await import('../shared');
+
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, parentComponent);
+
+    const items: Array<{ text: string }> = [{ text: 'hello' }, { text: 'world' }];
+    const itemsCell = cell(items);
+    const topMarker = document.createComment('list top');
+
+    // Capture the indexes seen by ItemComponent across renders.
+    const captured: Array<{ key: string; cell: unknown }> = [];
+    const listInstance = new SyncListComponent(
+      {
+        tag: itemsCell as unknown as Cell<{ text: string; id: number }[]>,
+        key: 'text',
+        ctx: parentComponent,
+        ItemComponent: (item: { text: string }, idx: unknown) => {
+          captured.push({ key: item.text, cell: idx });
+          return [document.createTextNode(item.text)];
+        },
+      },
+      container,
+      topMarker,
+    );
+    void listInstance;
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(captured.length).toBe(2);
+    // Every captured idx must be tag-like (so `index.value` works in the
+    // compiled template). A plain number would break the integration test.
+    for (const { cell: idx } of captured) {
+      expect(isTagLike(idx as never)).toBe(true);
+      expect(typeof (idx as { value: unknown }).value).toBe('number');
+    }
+    expect((captured[0]!.cell as { value: number }).value).toBe(0);
+    expect((captured[1]!.cell as { value: number }).value).toBe(1);
+
+    // Capture the cell for `world` BEFORE we mutate, so we can assert it
+    // recomputes after `my` is inserted at index 1.
+    const worldCell = captured.find((c) => c.key === 'world')!.cell as { value: number };
+    expect(worldCell.value).toBe(1);
+
+    // Insert `my` at index 1 — `world` should now be at index 2.
+    itemsCell.update([{ text: 'hello' }, { text: 'my' }, { text: 'world' }] as any);
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Pre-existing rows are NOT re-invoked; only the new `my` row joins
+    // captured. But `world`'s index cell must reflect the new position.
+    expect(worldCell.value).toBe(2);
+    expect(reactive.formula).toBeDefined(); // sanity: reactive primitives reachable
   });
 });
