@@ -55,6 +55,12 @@ type ListComponentArgs<T> = {
   ctx: Component<any>;
   ItemComponent: (item: T, index?: number | MergedCell) => GenericReturnType;
   inverseFn?: InverseFn;
+  // Set by the compiler when the each-block body actually reads `index`
+  // (`{{index}}` becomes `index.value`). When false (the common case in
+  // Krausest-style large lists) we skip allocating a per-row reactive
+  // index formula and pass the raw number instead — this saves one
+  // MergedCell + closure capture per item on every render.
+  hasIndex?: boolean;
 };
 type RenderTarget = HTMLElement | DocumentFragment;
 
@@ -279,14 +285,18 @@ export class BasicListComponent<T extends { id: number }> {
   // Cached fragment reused across relocateItem calls to avoid allocating new ones
   private _relocateFragment!: DocumentFragment;
   declare api: DOMApi;
+  hasIndex = false;
   constructor(
-    { tag, ctx, key, ItemComponent, inverseFn }: ListComponentArgs<T>,
+    { tag, ctx, key, ItemComponent, inverseFn, hasIndex }: ListComponentArgs<T>,
     outlet: RenderTarget,
     topMarker: Comment,
   ) {
     this.api = initDOM(ctx);
     if (inverseFn) {
       this.inverseFn = inverseFn;
+    }
+    if (hasIndex) {
+      this.hasIndex = true;
     }
     this._relocateFragment = this.api.fragment();
     this.ItemComponent = ItemComponent;
@@ -721,47 +731,46 @@ export class BasicListComponent<T extends { id: number }> {
           itemMarkers.set(key, marker);
           markerSet.add(marker);
         }
-        // Always provide a reactive `index` cell.
-        //
-        // The compiler unconditionally rewrites `{{index}}` references in
-        // `{{#each ... as |item index|}}` bodies to `index.value`, regardless
-        // of build mode. If we passed a plain number here, `.value` would
-        // resolve to `undefined` and the rendered text would be empty (the
-        // upstream regression that broke `it receives the index as the second
-        // parameter` across all array-source variants).
-        //
-        // The formula re-locates `item` in the current tag value (handling
-        // duplicates by matching on key), so reordering the underlying array
-        // — e.g. `insertAt(1, ...)` shifting subsequent items down — causes
-        // every existing row's index cell to recompute on the next render
-        // pass.
-        const indexFormula = formula(() => {
-          if (isPrimitive(item)) {
-            return index;
-          }
-          const values = this.tag.value as T[];
-          const itemIndex = values.indexOf(item);
-          if (itemIndex === -1) {
-            return values.findIndex((value: T, i) => {
-              return keyForItem(value, i, values) === key;
-            });
-          }
-          // For the common (non-duplicate) case, indexOf is correct. When
-          // the item appears multiple times in `values`, compute the key
-          // at each occurrence and return the one that matches.
-          const firstKey = keyForItem(item, itemIndex, values);
-          if (firstKey === key) return itemIndex;
-          for (let j = itemIndex + 1; j < values.length; j++) {
-            if (values[j] === item && keyForItem(values[j], j, values) === key) {
-              return j;
+        // Provide a reactive `index` cell only when the compiled body
+        // actually reads `index.value` (compiler sets `hasIndex` for that
+        // case). Templates that bind `as |item|` only — including the
+        // Krausest benchmark — skip the per-row MergedCell allocation +
+        // closure capture and pass the raw integer instead. Templates that
+        // do read the index get a formula that re-locates `item` in the
+        // current tag value (handling duplicates by matching on key) so
+        // reordering — e.g. `insertAt(1, ...)` shifting subsequent items
+        // down — causes every existing row's index cell to recompute on
+        // the next render pass.
+        let idx: number | MergedCell = index;
+        if (this.hasIndex) {
+          const indexFormula = formula(() => {
+            if (isPrimitive(item)) {
+              return index;
             }
-          }
-          return itemIndex;
-        }, IS_DEV_MODE ? `each.index[${index}]` : undefined);
-        const idx: MergedCell = indexFormula;
-        // Track formula for cleanup when item is destroyed
-        if (!this.indexFormulaMap) this.indexFormulaMap = new Map();
-        this.indexFormulaMap.set(key, indexFormula);
+            const values = this.tag.value as T[];
+            const itemIndex = values.indexOf(item);
+            if (itemIndex === -1) {
+              return values.findIndex((value: T, i) => {
+                return keyForItem(value, i, values) === key;
+              });
+            }
+            // For the common (non-duplicate) case, indexOf is correct. When
+            // the item appears multiple times in `values`, compute the key
+            // at each occurrence and return the one that matches.
+            const firstKey = keyForItem(item, itemIndex, values);
+            if (firstKey === key) return itemIndex;
+            for (let j = itemIndex + 1; j < values.length; j++) {
+              if (values[j] === item && keyForItem(values[j], j, values) === key) {
+                return j;
+              }
+            }
+            return itemIndex;
+          }, IS_DEV_MODE ? `each.index[${index}]` : undefined);
+          idx = indexFormula;
+          // Track formula for cleanup when item is destroyed
+          if (!this.indexFormulaMap) this.indexFormulaMap = new Map();
+          this.indexFormulaMap.set(key, indexFormula);
+        }
 
         const row = ItemComponent(item, idx, self as unknown as Component<any>);
 

@@ -203,6 +203,13 @@ function buildEach(
   // Check for stable children
   const hasStable = hasStableChildsForControlNode(control.children);
 
+  // Detect at compile time whether the body actually reads `index`. When
+  // false, we can let the runtime skip allocating a per-row reactive
+  // index formula (saves a MergedCell + closure capture per item — a
+  // measurable win on Krausest-scale lists).
+  const indexParamName = paramNames[1] ?? '$index';
+  const hasIndex = childrenUseIndex(control.children, indexParamName);
+
   // Build the callback body with index replacement
   // Pass all param names so they can be tracked as known bindings during serialization
   const bodyExpr = buildEachBody(ctx, control.children, newCtxName, paramNames, hasStable);
@@ -231,9 +238,17 @@ function buildEach(
     const inverseCtxName = nextCtxName(ctx);
     const inverseBranch = buildIfBranch(ctx, control.inverse, inverseCtxName, ctxName);
     eachArgs.push(inverseBranch);
+  } else if (hasIndex) {
+    // Need a placeholder for `inverseFn` so `hasIndex` lands at the
+    // correct positional slot (6th arg).
+    eachArgs.push(B.nil());
   }
 
-  // $_each(condition, callback, key, ctx[, inverseFn])
+  if (hasIndex) {
+    eachArgs.push(B.bool(true));
+  }
+
+  // $_each(condition, callback, key, ctx[, inverseFn[, hasIndex]])
   return B.call(
     B.id(fnName),
     eachArgs,

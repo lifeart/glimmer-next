@@ -3235,12 +3235,12 @@ describe('SyncListComponent — Ember each-test parity', () => {
     expect(newSnapshot[4]).toBe(oldSnapshot[2]);
   });
 
-  test('it provides a reactive `index` cell that reflects insertions', async () => {
-    // Mirrors `it receives the index as the second parameter`. The compiler
-    // unconditionally rewrites `{{index}}` to `index.value`, so updateItems
-    // must always hand each row a tag-like with a `.value` property — never
-    // a raw number — and the value must be recomputed when the surrounding
-    // array reorders.
+  test('it provides a reactive `index` cell that reflects insertions when hasIndex=true', async () => {
+    // Mirrors `it receives the index as the second parameter`. When the
+    // compiler detects an `index` reference in the body it threads
+    // `hasIndex: true` to the list component; updateItems must then hand
+    // each row a tag-like with a `.value` property (compiled `index.value`)
+    // and the value must recompute when the surrounding array reorders.
     const { SyncListComponent } = await import('./list');
     const { cell } = await import('../reactive');
     const reactive = await import('../reactive');
@@ -3265,6 +3265,7 @@ describe('SyncListComponent — Ember each-test parity', () => {
           captured.push({ key: item.text, cell: idx });
           return [document.createTextNode(item.text)];
         },
+        hasIndex: true,
       },
       container,
       topMarker,
@@ -3295,5 +3296,48 @@ describe('SyncListComponent — Ember each-test parity', () => {
     // captured. But `world`'s index cell must reflect the new position.
     expect(worldCell.value).toBe(2);
     expect(reactive.formula).toBeDefined(); // sanity: reactive primitives reachable
+  });
+
+  test('it skips the index cell allocation when hasIndex is unset (fast path)', async () => {
+    // Krausest-shaped templates bind `as |item|` only; the compiler does
+    // NOT set `hasIndex`, so the runtime hands each row a raw integer.
+    // This avoids one MergedCell + closure capture per item — the source
+    // of the +18% append1000Items2End regression on PR #216.
+    const { SyncListComponent } = await import('./list');
+    const { cell } = await import('../reactive');
+
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, parentComponent);
+
+    const items: Array<{ text: string }> = [{ text: 'a' }, { text: 'b' }, { text: 'c' }];
+    const itemsCell = cell(items);
+    const topMarker = document.createComment('list top');
+
+    const captured: Array<{ key: string; idx: unknown }> = [];
+    const listInstance = new SyncListComponent(
+      {
+        tag: itemsCell as unknown as Cell<{ text: string; id: number }[]>,
+        key: 'text',
+        ctx: parentComponent,
+        ItemComponent: (item: { text: string }, idx: unknown) => {
+          captured.push({ key: item.text, idx });
+          return [document.createTextNode(item.text)];
+        },
+        // hasIndex deliberately omitted
+      },
+      container,
+      topMarker,
+    );
+    void listInstance;
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(captured.length).toBe(3);
+    for (let i = 0; i < captured.length; i++) {
+      expect(typeof captured[i]!.idx).toBe('number');
+      expect(captured[i]!.idx).toBe(i);
+    }
+    // No indexFormulaMap allocated when index cells aren't needed.
+    expect(listInstance.indexFormulaMap).toBeNull();
   });
 });
