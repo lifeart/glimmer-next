@@ -29,7 +29,10 @@ import {
 import { TREE, CHILD, PARENT, cId, addToTree } from '@/core/tree';
 import { isRehydrationScheduled } from '@/core/ssr/rehydration';
 import { initDOM } from '@/core/context';
-import { registerDestructor, isDestructionStarted } from '../glimmer/destroyable';
+import {
+  registerDestructor,
+  isDestructionStarted,
+} from '../glimmer/destroyable';
 import { setParentContext, getParentContext } from '../tracking';
 
 // Re-export getFirstNode for backward compatibility
@@ -42,10 +45,7 @@ export { getFirstNode };
 
   Based on Glimmer-VM list update logic.
 */
-type GenericReturnType =
-  | Array<ComponentLike | Node>
-  | ComponentLike
-  | Node;
+type GenericReturnType = Array<ComponentLike | Node> | ComponentLike | Node;
 
 export type InverseFn = (ctx: Component<any>) => GenericReturnType | null;
 
@@ -94,7 +94,13 @@ const _lisPred: number[] = [];
  */
 export function normalizeIterableValue<T>(value: unknown): T[] {
   // Fast paths: empty or already-an-array
-  if (value === null || value === undefined || value === false || value === '' || value === 0) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === false ||
+    value === '' ||
+    value === 0
+  ) {
     return [];
   }
   if (Array.isArray(value)) {
@@ -109,8 +115,16 @@ export function normalizeIterableValue<T>(value: unknown): T[] {
   // We check this BEFORE Symbol.iterator — ArrayProxy itself is iterable
   // via .content, but the safer/cheaper path is to read .content directly,
   // which avoids walking through the proxy's iterator-trap layer.
-  if (typeof value === 'object' && value !== null && 'content' in (value as object)) {
-    const proxy = value as { content?: unknown; isDestroyed?: boolean; isDestroying?: boolean };
+  if (
+    typeof value === 'object' &&
+    value !== null &&
+    'content' in (value as object)
+  ) {
+    const proxy = value as {
+      content?: unknown;
+      isDestroyed?: boolean;
+      isDestroying?: boolean;
+    };
     if (proxy.isDestroyed || proxy.isDestroying) {
       return [];
     }
@@ -129,7 +143,8 @@ export function normalizeIterableValue<T>(value: unknown): T[] {
   if (
     (typeof value === 'object' || typeof value === 'function') &&
     value !== null &&
-    typeof (value as { [Symbol.iterator]?: unknown })[Symbol.iterator] === 'function'
+    typeof (value as { [Symbol.iterator]?: unknown })[Symbol.iterator] ===
+      'function'
   ) {
     try {
       return Array.from(value as Iterable<T>);
@@ -152,9 +167,11 @@ export function normalizeIterableValue<T>(value: unknown): T[] {
   ) {
     try {
       const out: T[] = [];
-      (value as { forEach: (cb: (item: T) => void) => void }).forEach((item) => {
-        out.push(item);
-      });
+      (value as { forEach: (cb: (item: T) => void) => void }).forEach(
+        (item) => {
+          out.push(item);
+        },
+      );
       return out;
     } catch {
       return [];
@@ -169,7 +186,10 @@ export function normalizeIterableValue<T>(value: unknown): T[] {
  * Items at these positions are already in correct relative order and don't
  * need to be relocated.  O(n log n) time, O(n) space (reused).
  */
-export function longestIncreasingSubsequence(arr: number[], out?: Set<number>): Set<number> {
+export function longestIncreasingSubsequence(
+  arr: number[],
+  out?: Set<number>,
+): Set<number> {
   const n = arr.length;
   const result = out ?? new Set<number>();
   if (out) out.clear();
@@ -243,7 +263,10 @@ export class BasicListComponent<T extends { id: number }> {
   get ctx() {
     return this;
   }
-  protected keysForItems(items: T[], keyForItem: (item: T, index: number, items: T[]) => string): Set<string> {
+  protected keysForItems(
+    items: T[],
+    keyForItem: (item: T, index: number, items: T[]) => string,
+  ): Set<string> {
     const set = this._updatingKeys;
     set.clear();
     for (let i = 0; i < items.length; i++) {
@@ -332,6 +355,23 @@ export class BasicListComponent<T extends { id: number }> {
       CHILD.delete(listId);
       TREE.delete(listId);
       PARENT.delete(listId);
+      // Unregister all per-item markers from the consumer-provided registry
+      // (if any). The registry lets host environments (e.g. ember.js's
+      // gxt-backend artifact stripper) skip our list-marker comments when
+      // pruning empty comments from rendered output. See registration sites
+      // in the constructor and updateItems.
+      const _unreg = (
+        globalThis as {
+          __gxtUnregisterListMarker?: (m: Comment) => void;
+        }
+      ).__gxtUnregisterListMarker;
+      if (_unreg) {
+        for (const marker of this.markerSet) {
+          _unreg(marker);
+        }
+        if (this.topMarker) _unreg(this.topMarker);
+        if (this.bottomMarker) _unreg(this.bottomMarker);
+      }
       this.itemMarkers.clear();
       this.markerSet.clear();
     });
@@ -363,6 +403,20 @@ export class BasicListComponent<T extends { id: number }> {
 
     this.api.insert(outlet, this.topMarker);
     this.api.insert(outlet, this.bottomMarker);
+
+    // Notify any consumer-provided registry that these markers belong to a
+    // list and must NOT be stripped by external "remove empty comments"
+    // passes (e.g. ember.js's removeGxtArtifacts). The hook is a no-op when
+    // no consumer has installed it.
+    {
+      const _reg = (
+        globalThis as { __gxtRegisterListMarker?: (m: Comment) => void }
+      ).__gxtRegisterListMarker;
+      if (_reg) {
+        _reg(this.topMarker);
+        _reg(this.bottomMarker);
+      }
+    }
 
     const originalTag = tag;
 
@@ -418,6 +472,12 @@ export class BasicListComponent<T extends { id: number }> {
     if (!marker) return;
     this.itemMarkers.delete(key);
     this.markerSet.delete(marker);
+    // Unregister from the consumer-provided registry (if any) so the WeakSet
+    // entry can be released and the marker can be GC'd promptly.
+    const _unreg = (
+      globalThis as { __gxtUnregisterListMarker?: (m: Comment) => void }
+    ).__gxtUnregisterListMarker;
+    if (_unreg) _unreg(marker);
     if (marker.isConnected) {
       this.api.destroy(marker);
     }
@@ -472,7 +532,10 @@ export class BasicListComponent<T extends { id: number }> {
    * no-dupes path either — `_dupHasDupes === false` ensures callers won't
    * read it; we clear lazily on the next `_dupHasDupes = true` transition.
    */
-  private detectDupes(items: T[], resolveBaseKey: (item: T, i: number) => string): boolean {
+  private detectDupes(
+    items: T[],
+    resolveBaseKey: (item: T, i: number) => string,
+  ): boolean {
     if (this._dupItemsRef === items) return this._dupHasDupes;
     const set = this._dupDetectSet;
     set.clear();
@@ -612,7 +675,13 @@ export class BasicListComponent<T extends { id: number }> {
     this.inverseContent = this.inverseFn(self as unknown as Component<any>);
     setParentContext(null);
     const parent = this.api.parent(this.bottomMarker)!;
-    renderElement(this.api, self, parent, this.inverseContent, this.bottomMarker);
+    renderElement(
+      this.api,
+      self,
+      parent,
+      this.inverseContent,
+      this.bottomMarker,
+    );
   }
   destroyInverseSync() {
     if (this.inverseContent === null) return;
@@ -730,6 +799,14 @@ export class BasicListComponent<T extends { id: number }> {
             : api.comment();
           itemMarkers.set(key, marker);
           markerSet.add(marker);
+          // Register per-item marker with the consumer registry (no-op when
+          // no consumer hook is installed). See constructor for rationale.
+          const _reg = (
+            globalThis as {
+              __gxtRegisterListMarker?: (m: Comment) => void;
+            }
+          ).__gxtRegisterListMarker;
+          if (_reg) _reg(marker);
         }
         // Provide a reactive `index` cell only when the compiled body
         // actually reads `index.value` (compiler sets `hasIndex` for that
@@ -743,29 +820,35 @@ export class BasicListComponent<T extends { id: number }> {
         // the next render pass.
         let idx: number | MergedCell = index;
         if (this.hasIndex) {
-          const indexFormula = formula(() => {
-            if (isPrimitive(item)) {
-              return index;
-            }
-            const values = this.tag.value as T[];
-            const itemIndex = values.indexOf(item);
-            if (itemIndex === -1) {
-              return values.findIndex((value: T, i) => {
-                return keyForItem(value, i, values) === key;
-              });
-            }
-            // For the common (non-duplicate) case, indexOf is correct. When
-            // the item appears multiple times in `values`, compute the key
-            // at each occurrence and return the one that matches.
-            const firstKey = keyForItem(item, itemIndex, values);
-            if (firstKey === key) return itemIndex;
-            for (let j = itemIndex + 1; j < values.length; j++) {
-              if (values[j] === item && keyForItem(values[j], j, values) === key) {
-                return j;
+          const indexFormula = formula(
+            () => {
+              if (isPrimitive(item)) {
+                return index;
               }
-            }
-            return itemIndex;
-          }, IS_DEV_MODE ? `each.index[${index}]` : undefined);
+              const values = this.tag.value as T[];
+              const itemIndex = values.indexOf(item);
+              if (itemIndex === -1) {
+                return values.findIndex((value: T, i) => {
+                  return keyForItem(value, i, values) === key;
+                });
+              }
+              // For the common (non-duplicate) case, indexOf is correct. When
+              // the item appears multiple times in `values`, compute the key
+              // at each occurrence and return the one that matches.
+              const firstKey = keyForItem(item, itemIndex, values);
+              if (firstKey === key) return itemIndex;
+              for (let j = itemIndex + 1; j < values.length; j++) {
+                if (
+                  values[j] === item &&
+                  keyForItem(values[j], j, values) === key
+                ) {
+                  return j;
+                }
+              }
+              return itemIndex;
+            },
+            IS_DEV_MODE ? `each.index[${index}]` : undefined,
+          );
           idx = indexFormula;
           // Track formula for cleanup when item is destroyed
           if (!this.indexFormulaMap) this.indexFormulaMap = new Map();
@@ -786,13 +869,7 @@ export class BasicListComponent<T extends { id: number }> {
           // (e.g., primitive-key rows where every shift invalidates
           // every key and triggers a mid-sync teardown).
           if (row !== undefined && row !== null) {
-            renderElement(
-              api,
-              self,
-              parent,
-              row,
-              targetNode,
-            );
+            renderElement(api, self, parent, row, targetNode);
           }
         } else {
           moveSet.add(key);
@@ -963,14 +1040,8 @@ export class SyncListComponent<
     );
   }
   fastCleanup() {
-    const {
-      keyMap,
-      bottomMarker,
-      topMarker,
-      indexMap,
-      indexFormulaMap,
-      api,
-    } = this;
+    const { keyMap, bottomMarker, topMarker, indexMap, indexFormulaMap, api } =
+      this;
     const parent = api.parent(bottomMarker);
     if (
       parent &&
@@ -1019,62 +1090,62 @@ export class SyncListComponent<
     // mutated-in-place array would otherwise carry stale verdict forward.
     this._dupItemsRef = null;
     try {
-    const { keyMap, keyForItem } = this;
+      const { keyMap, keyForItem } = this;
 
-    if (items.length > 0 && this.inverseContent !== null) {
-      this.destroyInverseSync();
-    }
-
-    if (items.length === 0 && !this.isFirstRender) {
-      if (this.fastCleanup()) {
-        if (this.inverseFn) this.renderInverse();
-        return;
+      if (items.length > 0 && this.inverseContent !== null) {
+        this.destroyInverseSync();
       }
-    }
-    let amountOfKeys = keyMap.size;
-    let removedCount = 0;
 
-    if (
-      amountOfKeys > 0 &&
-      !this.isAppendOnlySuperset(items, amountOfKeys, keyForItem)
-    ) {
-      const updatingKeys = this.keysForItems(items, keyForItem);
-      const keysToRemove = this._keysToRemove;
-      const rowsToRemove = this._rowsToRemove;
-      keysToRemove.length = 0;
-      rowsToRemove.length = 0;
-
-      for (const [key, row] of keyMap.entries()) {
-        if (updatingKeys.has(key)) {
-          continue;
+      if (items.length === 0 && !this.isFirstRender) {
+        if (this.fastCleanup()) {
+          if (this.inverseFn) this.renderInverse();
+          return;
         }
-        keysToRemove.push(key);
-        rowsToRemove.push(row);
       }
-      if (keysToRemove.length) {
-        if (keysToRemove.length === amountOfKeys) {
-          if (this.fastCleanup()) {
-            amountOfKeys = 0;
-            keysToRemove.length = 0;
-          } else {
-            // fastCleanup failed but removing all items — detach CHILD
-            // to skip parent-sibling delete work in each item's destructor.
-            this.detachTreeChildren();
+      let amountOfKeys = keyMap.size;
+      let removedCount = 0;
+
+      if (
+        amountOfKeys > 0 &&
+        !this.isAppendOnlySuperset(items, amountOfKeys, keyForItem)
+      ) {
+        const updatingKeys = this.keysForItems(items, keyForItem);
+        const keysToRemove = this._keysToRemove;
+        const rowsToRemove = this._rowsToRemove;
+        keysToRemove.length = 0;
+        rowsToRemove.length = 0;
+
+        for (const [key, row] of keyMap.entries()) {
+          if (updatingKeys.has(key)) {
+            continue;
+          }
+          keysToRemove.push(key);
+          rowsToRemove.push(row);
+        }
+        if (keysToRemove.length) {
+          if (keysToRemove.length === amountOfKeys) {
+            if (this.fastCleanup()) {
+              amountOfKeys = 0;
+              keysToRemove.length = 0;
+            } else {
+              // fastCleanup failed but removing all items — detach CHILD
+              // to skip parent-sibling delete work in each item's destructor.
+              this.detachTreeChildren();
+            }
+          }
+          removedCount = keysToRemove.length;
+          for (let i = 0; i < keysToRemove.length; i++) {
+            this.destroyItem(rowsToRemove[i], keysToRemove[i]);
           }
         }
-        removedCount = keysToRemove.length;
-        for (let i = 0; i < keysToRemove.length; i++) {
-          this.destroyItem(rowsToRemove[i], keysToRemove[i]);
-        }
+        // Release references to destroyed rows
+        rowsToRemove.length = 0;
       }
-      // Release references to destroyed rows
-      rowsToRemove.length = 0;
-    }
-    this.updateItems(items, amountOfKeys, removedCount);
+      this.updateItems(items, amountOfKeys, removedCount);
 
-    if (items.length === 0 && this.inverseFn) {
-      this.renderInverse();
-    }
+      if (items.length === 0 && this.inverseFn) {
+        this.renderInverse();
+      }
     } finally {
       this._syncInProgress = false;
     }
@@ -1107,7 +1178,10 @@ export class SyncListComponent<
       const rowAny = row as unknown as { [COMPONENT_ID_PROPERTY]?: number };
       if (rowAny !== null && typeof rowAny === 'object') {
         const rowId = rowAny[COMPONENT_ID_PROPERTY];
-        if (rowId === undefined || PARENT.get(rowId) === this[COMPONENT_ID_PROPERTY]) {
+        if (
+          rowId === undefined ||
+          PARENT.get(rowId) === this[COMPONENT_ID_PROPERTY]
+        ) {
           safeToCascade = true;
         }
       } else {
@@ -1172,14 +1246,8 @@ export class AsyncListComponent<
     );
   }
   async fastCleanup() {
-    const {
-      bottomMarker,
-      topMarker,
-      keyMap,
-      indexMap,
-      indexFormulaMap,
-      api,
-    } = this;
+    const { bottomMarker, topMarker, keyMap, indexMap, indexFormulaMap, api } =
+      this;
     const parent = api.parent(bottomMarker);
     if (
       parent &&
