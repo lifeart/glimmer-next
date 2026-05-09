@@ -12,6 +12,7 @@ import {
   releaseOpArray,
 } from './reactive';
 import { isFn } from './shared';
+import { registerDestructor } from './glimmer/destroyable';
 
 type maybeDestructor = undefined | (() => void);
 type maybePromise = undefined | Promise<void>;
@@ -29,7 +30,7 @@ function runEffectDestructor(destructor: maybeDestructor) {
   }
 }
 
-export function effect(cb: () => void): () => void {
+export function effect(cb: () => void, owner?: object): () => void {
   const sourceTag = formula(cb, 'effect.internal'); // we have binded tracking chain for tag
   let destructor: maybeDestructor;
   let isDestroyCalled = false;
@@ -49,7 +50,7 @@ export function effect(cb: () => void): () => void {
     }
     // tag is computed here;
   });
-  return () => {
+  const cleanup = () => {
     if (isDestroyCalled) {
       return;
     }
@@ -60,6 +61,10 @@ export function effect(cb: () => void): () => void {
     tag.destroy();
     destroyOpcode();
   };
+  if (owner !== undefined) {
+    registerDestructor(owner, cleanup);
+  }
+  return cleanup;
 }
 
 /**

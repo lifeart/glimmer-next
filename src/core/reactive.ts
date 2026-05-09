@@ -346,6 +346,21 @@ export class MergedCell {
 // this function is called when we need to update DOM, values represented by tags are changed
 export type tagOp = (...values: unknown[]) => Promise<void> | void;
 
+// Host-registerable error reporter. Hosts (e.g. the Ember integration) call
+// `setOpcodeErrorReporter` once at module init to receive opcode errors that
+// would otherwise be silently dropped. The reporter MUST NOT throw; if it
+// does, the throw is caught and logged in DEV.
+export type OpcodeErrorReporter = (
+  error: unknown,
+  context: { tag: Cell | MergedCell; opcode: tagOp | null },
+) => void;
+
+let _opcodeErrorReporter: OpcodeErrorReporter | null = null;
+
+export function setOpcodeErrorReporter(reporter: OpcodeErrorReporter | null): void {
+  _opcodeErrorReporter = reporter;
+}
+
 // Shared error handler for executeTag variants — avoids code duplication
 function handleOpcodeError(e: any, tag: Cell | MergedCell, opcode: tagOp | null, ops: tagOp[]) {
   if (IS_DEV_MODE) {
@@ -360,6 +375,15 @@ function handleOpcodeError(e: any, tag: Cell | MergedCell, opcode: tagOp | null,
     const index = ops.indexOf(opcode);
     if (index > -1) {
       ops.splice(index, 1);
+    }
+  }
+  if (_opcodeErrorReporter !== null) {
+    try {
+      _opcodeErrorReporter(e, { tag, opcode });
+    } catch (reporterErr) {
+      if (IS_DEV_MODE) {
+        console.error('OpcodeErrorReporter threw:', reporterErr);
+      }
     }
   }
 }

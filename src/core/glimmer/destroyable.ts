@@ -48,11 +48,22 @@ export function destroySync(ctx: object) {
     return;
   }
   $dfi.delete(ctx);
+  // First-error-wins: complete all destructors, throw the first error after.
+  // Matches classic Ember backburner semantics; ensures one bad destructor
+  // doesn't leak siblings (the common case during 2998-row teardown).
+  let firstError: unknown = undefined;
   for (let i = 0; i < destructors.length; i++) {
-    destructors[i]();
+    try {
+      destructors[i]();
+    } catch (e) {
+      if (firstError === undefined) firstError = e;
+    }
   }
   // Return array to pool for reuse
   releaseDestructorArray(destructors);
+  if (firstError !== undefined) {
+    throw firstError;
+  }
 }
 export function destroy(ctx: object, promises: Array<Promise<void>> = []) {
   if (import.meta.env.DEV) {
@@ -74,15 +85,26 @@ export function destroy(ctx: object, promises: Array<Promise<void>> = []) {
     return;
   }
   $dfi.delete(ctx);
+  // First-error-wins: complete all destructors, throw the first sync error
+  // after. Async rejections are accumulated into `promises` and surfaced
+  // through the caller's Promise.all unchanged.
+  let firstError: unknown = undefined;
   let result;
   for (let i = 0; i < destructors.length; i++) {
-    result = destructors[i]();
-    if (result) {
-      promises.push(result as Promise<void>);
+    try {
+      result = destructors[i]();
+      if (result) {
+        promises.push(result as Promise<void>);
+      }
+    } catch (e) {
+      if (firstError === undefined) firstError = e;
     }
   }
   // Return array to pool for reuse
   releaseDestructorArray(destructors);
+  if (firstError !== undefined) {
+    throw firstError;
+  }
 }
 export function registerDestructor(ctx: object, ...fn: Destructors) {
   let existingDestructors = $dfi.get(ctx);

@@ -88,7 +88,7 @@ export function destroyElementSync(
         if (IS_DEV_MODE) {
           console.error('Error during destruction:', e);
         }
-        // Continue destruction even if there's an error
+        throw e;
       }
     } else {
       try {
@@ -97,6 +97,7 @@ export function destroyElementSync(
         if (IS_DEV_MODE) {
           console.error('Error destroying node:', e);
         }
+        throw e;
       }
     }
   }

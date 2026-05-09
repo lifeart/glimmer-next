@@ -40,6 +40,7 @@ export * from '@/core/helpers/index';
 export { $template, $args, $fwProp } from '@/core/shared';
 export { syncDom, takeRenderingControl } from '@/core/runtime';
 export { setIsRendering, isRendering } from '@/core/reactive';
+export { setOpcodeErrorReporter, type OpcodeErrorReporter } from '@/core/reactive';
 
 // Export decorator-free suspense utilities from suspense-utils
 // For Suspense and lazy components, import directly from '@lifeart/gxt/suspense'
