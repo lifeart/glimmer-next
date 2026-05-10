@@ -970,6 +970,24 @@ export function $_unwrapArgs(args: any[]): any[] {
   return args;
 }
 
+// Host-registerable reporter for component-construction errors. Hosts (e.g.
+// the Ember integration) call `setComponentRenderErrorReporter` once at module
+// init to be notified when a thrown error from inside `_component(...)` is
+// about to be silently recovered with a placeholder. The reporter MAY throw to
+// bypass the recovery and propagate the error up to the caller. The reporter
+// MUST NOT throw a non-Error; reporter throws of any other type are caught and
+// dev-logged so they don't replace the original error path silently.
+export type ComponentRenderErrorReporter = (
+  error: unknown,
+  context: { component: unknown; args: Record<string, unknown> },
+) => void;
+
+let _componentRenderErrorReporter: ComponentRenderErrorReporter | null = null;
+
+export function setComponentRenderErrorReporter(reporter: ComponentRenderErrorReporter | null): void {
+  _componentRenderErrorReporter = reporter;
+}
+
 function component(
   comp: ComponentReturnType | Component | typeof Component,
   args: Record<string, unknown>,
@@ -1009,6 +1027,16 @@ function component(
       }
       if (isRehydrationScheduled()) {
         throw e;
+      }
+      // Notify the host-registered reporter (if any) BEFORE the dev/prod
+      // recovery substitution. The reporter MAY throw to bypass recovery —
+      // a re-throw here propagates out of this catch, replacing the original
+      // exception. Hosts use this to maintain integration-side state (queues,
+      // counters) and/or to force the original error to surface for
+      // `assert.throws`-style tests. No reporter registered = no behavior
+      // change (current dev overlay / prod placeholder paths run unchanged).
+      if (_componentRenderErrorReporter !== null) {
+        _componentRenderErrorReporter(e, { component: comp, args });
       }
       if (IS_DEV_MODE) {
         debugger;
