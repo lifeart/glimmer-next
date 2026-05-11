@@ -1043,7 +1043,10 @@ export function processTemplate(
                     path.node.arguments[0] as Babel.types.TemplateLiteral,
                   ),
                 );
-              } else if (path.node.callee.name === 'formula') {
+              } else if (
+                path.node.callee.name === 'formula' ||
+                path.node.callee.name === 'effect'
+              ) {
                 if (mode === 'production') {
                   // remove last argument if two arguments
                   if (path.node.arguments.length === 2) {
@@ -1199,12 +1202,12 @@ export function stripGXTDebug(babel: { types: typeof Babel.types }) {
           path.remove();
         }
       },
-      FunctionDeclaration(path: any) {
-        const nodeName = path.node.id.name;
-        if (nodeName === 'formula' || nodeName === 'cell') {
-          path.node.params.pop();
-        }
-      },
+        FunctionDeclaration(path: any) {
+          const nodeName = path.node.id.name;
+          if (nodeName === 'formula' || nodeName === 'cell' || nodeName === 'effect') {
+            path.node.params.pop();
+          }
+        },
       AssignmentPattern(path: any) {
         if (path.node.left.name === 'debugName') {
           path.remove();
@@ -1221,18 +1224,19 @@ export function stripGXTDebug(babel: { types: typeof Babel.types }) {
         }
       },
       CallExpression(path: any) {
-        if (path.node.callee && path.node.callee.type === 'Identifier') {
-          const name = path.node.callee.name;
-          if (name === 'addToTree' && path.node.arguments.length === 3) {
-            path.node.arguments.pop();
-          } else if (
-            name === 'cell' ||
-            name === 'formula' ||
-            name === 'resolveRenderable'
-          ) {
-            if (path.node.arguments.length === 2) {
+          if (path.node.callee && path.node.callee.type === 'Identifier') {
+            const name = path.node.callee.name;
+            if (name === 'addToTree' && path.node.arguments.length === 3) {
               path.node.arguments.pop();
-            }
+            } else if (
+              name === 'cell' ||
+              name === 'formula' ||
+              name === 'resolveRenderable' ||
+              name === 'effect'
+            ) {
+              if (path.node.arguments.length === 2) {
+                path.node.arguments.pop();
+              }
           }
         }
       },

@@ -561,39 +561,6 @@ export function formattedArray(
 }
 
 /**
- * Symbol configuration for style setter.
- */
-export interface StyleSetterSymbols {
-  TO_VALUE: string;
-  LOCAL_VALUE: string;
-  LOCAL_NODE: string;
-}
-
-/**
- * Create a style setter function for style.property bindings.
- * Generates: function($v,$n){$n.style.setProperty(prop,$v);}.bind(null,toValue(getter))
- */
-export function styleSetter(
-  propertyName: string,
-  valueExpr: JSExpression,
-  symbols: StyleSetterSymbols,
-  sourceRange?: SourceRange
-): JSMethodBinding {
-  // Create: function($v,$n){$n.style.setProperty(prop,$v);}
-  const setPropertyCall = call(
-    member(member(id(symbols.LOCAL_NODE), 'style'), 'setProperty'),
-    [string(propertyName), id(symbols.LOCAL_VALUE)]
-  );
-  const fn = func([symbols.LOCAL_VALUE, symbols.LOCAL_NODE], [exprStmt(setPropertyCall)]);
-
-  // Wrap valueExpr in toValue call
-  const toValueCall = call(symbols.TO_VALUE, [valueExpr]);
-
-  // Create: fn.bind(null, toValueCall)
-  return methodBinding(fn, nil(), [toValueCall], sourceRange);
-}
-
-/**
  * Symbol configuration for element helper wrapper.
  */
 export interface ElementHelperSymbols {

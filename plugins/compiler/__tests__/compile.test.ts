@@ -2059,16 +2059,21 @@ describe('Namespace handling', () => {
 describe('Style attribute handling', () => {
   test('style.property creates oncreated event', () => {
     const result = compile('<div style.color="red">styled</div>');
-    // style.color should become a setProperty call in oncreated event
+    // style.color should become a style modifier call in oncreated event
     expect(result.code).toContain('"0"'); // ON_CREATED event type
-    expect(result.code).toContain('style');
+    expect(result.code).toContain(SYMBOLS.STYLE);
+    expect(result.code).toMatch(/\$_style\(\s*\$n/);
     expect(result.code).toContain('color');
+    expect(result.code).not.toContain('style.setProperty');
   });
 
   test('dynamic style.property', () => {
     const result = compile('<div style.color={{this.color}}>styled</div>');
     expect(result.code).toContain('"0"'); // ON_CREATED event type
+    expect(result.code).toContain(SYMBOLS.STYLE);
+    expect(result.code).toMatch(/\$_style\(\s*\$n/);
     expect(result.code).toContain('this.color');
+    expect(result.code).not.toContain('style.setProperty');
   });
 });
 

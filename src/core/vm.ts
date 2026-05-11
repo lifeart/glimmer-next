@@ -29,15 +29,17 @@ function runEffectDestructor(destructor: maybeDestructor) {
   }
 }
 
-export function effect(cb: () => void): () => void {
-  const sourceTag = formula(cb, 'effect.internal'); // we have binded tracking chain for tag
+export function effect(cb: () => void, debugName?: string): () => void {
+  const label = debugName ? `effect:${debugName}` : 'effect';
+  const internalLabel = debugName ? `effect.internal:${debugName}` : 'effect.internal';
+  const sourceTag = formula(cb, internalLabel); // we have binded tracking chain for tag
   let destructor: maybeDestructor;
   let isDestroyCalled = false;
   const tag = formula(() => {
     runEffectDestructor(destructor);
     destructor = undefined;
     return sourceTag.value;
-  }, 'effect');
+  }, label);
   const destroyOpcode = opcodeFor(tag, (value: unknown) => {
     if (IS_DEV_MODE) {
       if (value instanceof Promise) {
