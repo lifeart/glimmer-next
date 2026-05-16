@@ -182,6 +182,31 @@ export class Cell<T extends unknown = unknown> {
     this.update(value);
   }
   update(value: T) {
+    // Cluster A Phase 1: optional host-registered defer hook.
+    // The hook lets an integration (e.g. Ember) take ownership of Cell.update
+    // work and queue it for later application from inside the host's drain
+    // phase (e.g. runloop end). When no hook is registered, behavior is
+    // identical to the pre-hook code path. The hook MUST return `true` if it
+    // accepted ownership (in which case it is responsible for eventually
+    // calling `applyDeferredCellUpdate(this, value)` to actually mutate the
+    // cell), or `false` to fall through to the synchronous path below.
+    // The hook MUST NOT throw — throws are caught and logged in DEV.
+    if (_cellUpdateDeferralHook !== null) {
+      let accepted = false;
+      try {
+        accepted = _cellUpdateDeferralHook(
+          this as unknown as Cell<unknown>,
+          value as unknown,
+        );
+      } catch (hookErr) {
+        if (IS_DEV_MODE) {
+          console.error('CellUpdateDeferralHook threw:', hookErr);
+        }
+      }
+      if (accepted) {
+        return;
+      }
+    }
     // Value-equality guard for revision bumps. Downstream `cached()` uses
     // `_revision` to detect dep invalidation; bumping it on a no-op write
     // (e.g., Ember's sync layer reapplying the same arg) would cause
@@ -359,6 +384,72 @@ let _opcodeErrorReporter: OpcodeErrorReporter | null = null;
 
 export function setOpcodeErrorReporter(reporter: OpcodeErrorReporter | null): void {
   _opcodeErrorReporter = reporter;
+}
+
+// Cluster A Phase 1: host-registerable Cell.update deferral hook.
+// Hosts (e.g. the Ember integration) call `setCellUpdateDeferralHook` once at
+// module init to take ownership of `Cell.update` work and defer it to a host-
+// owned drain phase (e.g. runloop end). The hook receives the target cell and
+// the proposed new value, and MUST return:
+//   * `true` — hook accepted ownership; the synchronous `Cell.update` path is
+//     skipped. The hook is responsible for eventually calling
+//     `applyDeferredCellUpdate(cell, value)` to actually mutate the cell.
+//   * `false` — hook declined; `Cell.update` falls through to the existing
+//     synchronous path (mutate + bump revision + schedule revalidation).
+// The hook MUST NOT throw; throws are caught and logged in DEV, and the
+// synchronous fallback path runs.
+// When no hook is registered (default), `Cell.update` behavior is unchanged.
+export type CellUpdateDeferralHook = (
+  cell: Cell<unknown>,
+  newValue: unknown,
+) => boolean;
+
+let _cellUpdateDeferralHook: CellUpdateDeferralHook | null = null;
+
+export function setCellUpdateDeferralHook(
+  hook: CellUpdateDeferralHook | null,
+): void {
+  _cellUpdateDeferralHook = hook;
+}
+
+/**
+ * Apply a deferred cell update from the host's drain phase.
+ *
+ * Mirrors the synchronous body of `Cell.update` (mutate value + bump revision
+ * when changed + enqueue for revalidation + schedule), but bypasses the
+ * deferral-hook check so it can be called from inside the hook's queue
+ * flusher without re-entering the hook (which would loop).
+ *
+ * The host owns the queue of `(cell, value)` pairs. This function exposes the
+ * primitive that applies a single pair. Typical host pattern:
+ *
+ *   setCellUpdateDeferralHook((cell, value) => {
+ *     hostQueue.push([cell, value]);
+ *     scheduleHostDrain();
+ *     return true;
+ *   });
+ *
+ *   function drain() {
+ *     while (hostQueue.length) {
+ *       const [cell, value] = hostQueue.shift()!;
+ *       applyDeferredCellUpdate(cell, value);
+ *     }
+ *   }
+ */
+export function applyDeferredCellUpdate(
+  cell: Cell<unknown>,
+  value: unknown,
+): void {
+  // Same body as Cell.update's synchronous path, intentionally without the
+  // deferral-hook check (the hook is the CALLER here — re-entering it would
+  // loop forever).
+  const changed = cell._value !== value;
+  cell._value = value;
+  if (changed) {
+    cell._revision = bumpGlobalRevision();
+  }
+  tagsToRevalidate.add(cell);
+  scheduleRevalidate();
 }
 
 // Shared error handler for executeTag variants — avoids code duplication
