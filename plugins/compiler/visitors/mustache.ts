@@ -9,6 +9,7 @@ import type { CompilerContext, VisitFn } from '../context';
 import type { SerializedValue, HBSControlExpression, HBSNode, SourceRange } from '../types';
 import { literal, path, helper, getter, raw, isSerializedValue } from '../types';
 import { getNodeRange, resolvePath, serializeValueToString, getPathPartRanges, getPathExpressionString } from './utils';
+import { INTERNAL_HELPERS } from '../serializers/symbols';
 
 /**
  * Get the visit function from context.
@@ -120,6 +121,37 @@ export function visitMustache(
   // Handle yield/outlet
   if (pathName === 'yield' || pathName === 'outlet') {
     return createYieldExpression(ctx, node, range);
+  }
+
+  // Mirror the SubExpression handler for `(element "tag")` (visitors/index.ts).
+  // The `element` keyword (Ember keyword helper + `@ember/helper` export)
+  // produces a component-like value: a function that, when invoked as a
+  // component, renders its block wrapped in the given tag. In SubExpression
+  // form `(element "h1")` we emit `elementHelperWrapper`. In MustacheStatement
+  // form `{{element "p"}}` (e.g. in attribute position `@tag={{element "p"}}`)
+  // the runtime path routes through `$_maybeHelper("element", ...)` which
+  // either fails ("element not in scope") or invokes Ember's helper and
+  // returns an ElementComponentDefinition instance — neither shape works as
+  // a `<Tag>` component invocation downstream. Intercept the keyword here so
+  // BOTH forms produce the same elementHelperWrapper function value.
+  // Skip when `element` resolves to a local binding (e.g. user-shadowed).
+  if (pathName === 'element' && !ctx.scopeTracker.hasBinding('element')) {
+    const pathRange = getNodeRange(node.path);
+    let tagValue: SerializedValue;
+    if (node.params.length !== 1) {
+      tagValue = raw('(()=>{throw new Error("The `element` helper takes a single positional argument")})()');
+    } else if (node.hash.pairs.length !== 0) {
+      tagValue = raw('(()=>{throw new Error("The `element` helper does not take any named arguments")})()');
+    } else {
+      const tagParam = node.params[0];
+      const tagResult = getVisit(ctx)(ctx, tagParam, false);
+      tagValue = tagResult && isSerializedValue(tagResult) ? tagResult : literal('div');
+    }
+    const helperResult = helper(INTERNAL_HELPERS.ELEMENT_HELPER, [tagValue], new Map(), range, pathRange);
+    if (wrap) {
+      return getter(helperResult, range);
+    }
+    return helperResult;
   }
 
   // Collect hash arguments
