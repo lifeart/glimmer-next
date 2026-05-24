@@ -555,6 +555,20 @@ function _DOM(
     }
   }
   const resolvedTag = typeof tag === 'function' ? tag() : tag;
+  // Validation for `(element ...)` helper: when the resolved tag is not a
+  // non-empty string, surface the Ember-compatible assertion message so
+  // assert.throws(/.../) in element-helper tests matches. Static elements
+  // always pass `"h1"` / `"div"` literals, so this check is invisible to
+  // them. Not gated on IS_DEV_MODE because lib builds tree-shake those.
+  if (typeof resolvedTag !== 'string') {
+    const detail =
+      resolvedTag === null || resolvedTag === undefined || typeof resolvedTag === 'object'
+        ? ''
+        : ` (you passed \`${resolvedTag}\`)`;
+    throw new Error(
+      `The argument passed to the \`element\` helper must be a string${detail}`
+    );
+  }
   const element = api.element(resolvedTag) as HTMLElement;
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.push(`${resolvedTag}`);

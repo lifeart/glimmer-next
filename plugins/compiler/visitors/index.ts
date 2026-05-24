@@ -249,11 +249,23 @@ function visitSubExpression(
   // which compile to plain `function () { ... }` invoked with `new`,
   // producing a fresh `this` with no such method.
 
-  // Special handling for (element "tag") - creates a dynamic component wrapper
+  // Special handling for (element "tag") - creates a dynamic component wrapper.
+  // Validate arity / named args. On misuse, emit a raw `throw` expression as
+  // the tag so the wrapper fails at invocation time (the runtime-compiler
+  // swallows compile-time throws into result.errors; the test wraps both
+  // template() and renderComponent() in assert.throws, so a render-time
+  // throw still matches the Ember regex).
   if (name === 'element') {
-    const tagParam = node.params[0];
-    const tagResult = tagParam ? visit(ctx, tagParam, false) : literal('div');
-    const tagValue = tagResult && isSerializedValue(tagResult) ? tagResult : literal('div');
+    let tagValue: SerializedValue;
+    if (node.params.length !== 1) {
+      tagValue = raw('(()=>{throw new Error("The `element` helper takes a single positional argument")})()');
+    } else if (node.hash.pairs.length !== 0) {
+      tagValue = raw('(()=>{throw new Error("The `element` helper does not take any named arguments")})()');
+    } else {
+      const tagParam = node.params[0];
+      const tagResult = visit(ctx, tagParam, false);
+      tagValue = tagResult && isSerializedValue(tagResult) ? tagResult : literal('div');
+    }
     const pathRange = getNodeRange(node.path);
     return helper(INTERNAL_HELPERS.ELEMENT_HELPER, [tagValue], new Map(), range, pathRange);
   }
