@@ -569,6 +569,16 @@ function _DOM(
       `The argument passed to the \`element\` helper must be a string${detail}`
     );
   }
+  // Empty-string tag: `(element "")` renders children without a wrapping
+  // element (matches Ember's element-helper semantics — the manager returns
+  // null tagName, producing fragment-only output and discarding attributes).
+  if (resolvedTag === '') {
+    const fragment = api.fragment() as unknown as HTMLElement;
+    for (let i = 0; i < children.length; i++) {
+      renderElement(api, ctx, fragment, children[i] as any, null, true);
+    }
+    return fragment;
+  }
   const element = api.element(resolvedTag) as HTMLElement;
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.push(`${resolvedTag}`);
