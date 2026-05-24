@@ -619,7 +619,15 @@ export class BasicListComponent<T extends { id: number }> {
         return baseKey;
       };
     } else {
-      const resolveRawKey = (item: T): string => {
+      const resolveRawKey = (item: T, i: number): string => {
+        // Null/undefined/primitive items cannot be keyed by an arbitrary
+        // property name. Fall back to a position-qualified primitive key,
+        // matching the `@identity` branch behavior. This avoids throwing on
+        // arrays such as `[1, null]` or `[1, undefined]`, which the upstream
+        // Ember runtime treats as render-but-not-keyed entries.
+        if (item === null || item === undefined || isPrimitive(item)) {
+          return `${String(item)}:${i}`;
+        }
         if (IS_DEV_MODE) {
           if (this.key.split('.').length > 1) {
             console.warn(
@@ -627,7 +635,7 @@ export class BasicListComponent<T extends { id: number }> {
             );
             const resolvedKeyValue = this.key.split('.').reduce((acc, key) => {
               // @ts-expect-error unknown key
-              return acc[key];
+              return acc?.[key];
             }, item);
             console.log({ resolvedKeyValue, key: this.key, item });
             return String(resolvedKeyValue);
@@ -642,9 +650,9 @@ export class BasicListComponent<T extends { id: number }> {
         // @ts-expect-error unknown key
         return item[this.key] as unknown as string;
       };
-      const baseKeyOf = (item: T, _i: number): string => resolveRawKey(item);
+      const baseKeyOf = (item: T, i: number): string => resolveRawKey(item, i);
       this.keyForItem = (item: T, i: number, items?: T[]) => {
-        const baseKey = resolveRawKey(item);
+        const baseKey = resolveRawKey(item, i);
         // Duplicate-key support: when multiple items produce the same
         // key (e.g. `{{#each list key="text"}}` with several items having
         // the same text), each subsequent occurrence gets a position-
