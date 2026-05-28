@@ -391,6 +391,38 @@ function buildEvents(
       handlerExpr = B.arrow(['$n'], B.call(fnExpr, callArgs));
     } else if (handler.kind === 'helper' && handler.name === INTERNAL_HELPERS.STYLE_SETTER) {
       handlerExpr = buildStyleSetterExpr(ctx, handler as HelperValue, ctxName);
+    } else if (
+      handler.kind === 'helper' &&
+      handler.name === INTERNAL_HELPERS.DYNAMIC_MODIFIER
+    ) {
+      // Dynamic modifier (SubExpression in element-modifier position):
+      //   positional[0] = compiled SubExpression value (the modifier ref)
+      //   positional[1..] = invocation args appended after curried args
+      // Emit `($n) => $_maybeModifier(expr, $n, [extraArgs], () => ({hash}))`.
+      const hv = handler as HelperValue;
+      const [modExprValue, ...extraArgs] = hv.positional;
+      const modExpr = modExprValue
+        ? buildValue(ctx, modExprValue, ctxName)
+        : B.nil();
+      const extraExprs = extraArgs.map(a =>
+        a.kind === 'path' ? buildPathExpression(ctx, a, false) : buildValue(ctx, a, ctxName)
+      );
+      const namedProps: JSProperty[] = [];
+      for (const [key, val] of hv.named) {
+        namedProps.push(B.prop(key, buildValue(ctx, val, ctxName), false, val.sourceRange));
+      }
+      // Wrap the object body in parens so `() => ({...})` parses as an
+      // expression-body arrow returning an object — NOT a block-body arrow
+      // (`() => {}` returns `undefined`, which downstream `Object.keys(...)`
+      // would explode on).
+      const hashBody = namedProps.length > 0 ? B.object(namedProps) : B.emptyObject();
+      const hashExpr = B.raw(`() => (${serializeJS(hashBody)})`, hv.sourceRange);
+      const callExpr = B.call(
+        SYMBOLS.MAYBE_MODIFIER,
+        [modExpr, B.id('$n'), B.array(extraExprs), hashExpr],
+        hv.sourceRange,
+      );
+      handlerExpr = B.arrow(['$n'], callExpr, hv.sourceRange);
     } else if (handler.kind === 'helper' && eventName === EVENT_TYPE.ON_CREATED) {
       // Modifier handlers are stored as helper() values (kind === 'helper')
       // to preserve positional param source ranges. Build them as:

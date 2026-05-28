@@ -270,8 +270,36 @@ function visitSubExpression(
     return helper(INTERNAL_HELPERS.ELEMENT_HELPER, [tagValue], new Map(), range, pathRange);
   }
 
-  // Collect positional arguments
-  const positional = node.params.map((param) => {
+  // Collect positional arguments.
+  //
+  // Special-case the `(modifier NAME ...)` keyword: when NAME is a free
+  // (out-of-scope) bare identifier — e.g. the built-in `on` keyword in
+  // strict-mode templates like `{{ (if true (modifier on "click" cb) )}}` —
+  // the runtime $_modifierHelper needs a string it can resolve via
+  // INTERNAL_MODIFIER_MANAGERS / `_builtinModifiers`. Emitting it as a JS
+  // identifier would produce a ReferenceError at evaluation time because
+  // no `const on = ...` binding exists in the generated factory. The
+  // `modifier` keyword's runtime wrapper (createEmberModifierHelper) already
+  // handles string-name resolution; we just need to deliver the string.
+  const positional = node.params.map((param, idx) => {
+    // First positional param of `(modifier ...)` may need name-as-string
+    // hoisting; handle it explicitly before the generic visit() dispatch.
+    if (
+      idx === 0 &&
+      name === 'modifier' &&
+      param.type === 'PathExpression' &&
+      param.head.type === 'VarHead' &&
+      param.tail.length === 0
+    ) {
+      const headName = (param.head as { name?: string; original: string }).name
+        ?? param.head.original;
+      const isInScope = ctx.scopeTracker.hasBinding(headName);
+      if (!isInScope) {
+        // Free identifier — emit as string literal so the runtime resolves
+        // it via the modifier registry (e.g. "on" → OnModifierManager).
+        return literal(headName, getNodeRange(param));
+      }
+    }
     const result = visit(ctx, param, false);
     if (result === null) return literal(null);
     if (typeof result === 'string') return literal(result);
