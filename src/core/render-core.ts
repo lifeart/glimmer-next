@@ -203,6 +203,31 @@ export function renderElement(
         } else if (api.isNode(node as Node)) {
           renderedNodes[i] = node as Node;
           api.insert(target, node as Node, placeholder);
+        } else if (
+          (globalThis as any).__GXT_SPIKE_SKIP_MORPH &&
+          isTagLike(node)
+        ) {
+          // Fine-grained mode (gated): the renderable resolved to a REACTIVE
+          // tag (a non-const formula — e.g. an each-body `{{item.text}}` whose
+          // item is cell-backed). The generic `else` path below would call
+          // renderElement with skipRegistration=true, which creates the bound
+          // text node but registers it NOWHERE — `renderedNodes[i]` keeps the
+          // raw function, so the LIVE text node is invisible to teardown and
+          // leaks when the row is destroyed (the dominant `{{#each}}` morph-OFF
+          // content-update failure: rows stack on keyed update / ref-swap).
+          // Create the bound text node here, write it back into renderedNodes[i]
+          // so destroyElementSync removes it, and register the update opcode on
+          // the row (`el`). Morph-ON (flag off) this branch is skipped → the
+          // original `else` path runs → byte-identical.
+          const textNode = api.text('');
+          renderedNodes[i] = textNode;
+          api.insert(target, textNode, placeholder);
+          registerDestructor(
+            el as ComponentLike,
+            opcodeFor(node as MergedCell, (value) => {
+              api.textContent(textNode, String(value ?? ''));
+            }),
+          );
         } else if (isArray(node)) {
           renderElement(api, el as ComponentLike, target, node as RenderableElement[], placeholder, true);
         } else {
