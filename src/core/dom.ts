@@ -104,6 +104,16 @@ export const $_emptySlot = Object.seal(Object.freeze({}));
 
 export const $SLOTS_SYMBOL = Symbol.for('gxt-slots');
 export const $PROPS_SYMBOL = Symbol.for('gxt-props');
+// Marks glimmer-next-native block wrappers ($_ucw / $_inElement). These
+// instances are real, TREE-registered nodes with their own COMPONENT_ID and
+// their own CHILD bucket. Consumers (e.g. ember.js' gxt-backend $_tag path)
+// that re-stamp arbitrary render contexts with the shared gxt-root id MUST
+// skip wrappers carrying this flag — overwriting their id collapses their
+// CHILD bucket into the root's, so destroying the wrapper (e.g. an {{#if}}
+// branch toggling off) cascades through the ENTIRE root subtree instead of
+// just the wrapper's own children. Symbol.for so the contract crosses the
+// package boundary (mirrors $SLOTS_SYMBOL / $PROPS_SYMBOL).
+export const $BLOCK_WRAPPER_SYMBOL = Symbol.for('gxt-block-wrapper');
 export const $_SVGProvider = SVGProvider;
 export const $_HTMLProvider = HTMLProvider;
 export const $_MathMLProvider = MathMLProvider;
@@ -697,6 +707,10 @@ export function $_inElement(
   return component(
     function UnstableChildWrapper(this: Component<any>) {
       $_GET_ARGS(this, arguments);
+      // See $BLOCK_WRAPPER_SYMBOL doc — native wrapper; don't let consumers
+      // re-stamp our COMPONENT_ID with their root id.
+      // @ts-expect-error symbol index
+      this[$BLOCK_WRAPPER_SYMBOL] = true;
       if (IS_DEV_MODE) {
         // @ts-expect-error construct signature
         this.debugName = `InElement-${unstableWrapperId++}`;
@@ -749,6 +763,12 @@ export function $_ucw(
   return component(
     function UnstableChildWrapper(this: Component<any>) {
       $_GET_ARGS(this, arguments);
+      // Tag this as a native block wrapper so consumers don't re-stamp our
+      // COMPONENT_ID with their root id (see $BLOCK_WRAPPER_SYMBOL doc). Set
+      // BEFORE the body (`roots(this)`) runs, since the body may invoke a
+      // consumer tag-render path that reads this flag off `this` (ctx).
+      // @ts-expect-error symbol index
+      this[$BLOCK_WRAPPER_SYMBOL] = true;
       if (IS_DEV_MODE) {
         // @ts-expect-error construct signature
         this.debugName = `UnstableChildWrapper-${unstableWrapperId++}`;
