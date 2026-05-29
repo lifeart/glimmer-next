@@ -38,6 +38,13 @@ import { setParentContext, getParentContext } from '../tracking';
 // Re-export getFirstNode for backward compatibility
 export { getFirstNode };
 
+// Fine-grained mode gate (host-set). When ON, syncList re-binds a reused row's
+// block-param to a new source object via the host `__gxtRebindEachItem` hook
+// (group-E). OFF (shipping) → none of this runs → byte-identical.
+function _fineGrainedEachRebind(): boolean {
+  return (globalThis as any).__GXT_SPIKE_SKIP_MORPH === true;
+}
+
 /*
   List manager for rendering and syncing arrays of items.
   Uses per-item comment markers for stable DOM boundaries,
@@ -229,6 +236,13 @@ export class BasicListComponent<T extends { id: number }> {
   indexMap: Map<string, number> = new Map();
   // Track reactive index formulas for cleanup (dev mode only, lazily initialized)
   indexFormulaMap: Map<string, MergedCell> | null = null;
+  // Fine-grained mode (gated): the RAW source object currently bound to each
+  // key's row body. On a keyed REUSE where the source object changed by ref
+  // (group-E: in-place mutation of the keyed property stales the key, then a
+  // ref-swap reuses by the stale key), we notify the host so the row's
+  // block-param re-binds to the new object WITHOUT recreating the row. Only
+  // populated when `__GXT_SPIKE_SKIP_MORPH` is on. Lazily allocated.
+  boundItemMap: Map<string, T> | null = null;
   // Track per-item markers for stable relocation boundaries
   itemMarkers: Map<string, Comment> = new Map();
   markerSet: Set<Comment> = new Set();
@@ -867,6 +881,10 @@ export class BasicListComponent<T extends { id: number }> {
 
         keyMap.set(key, row);
         indexMap.set(key, index);
+        if (_fineGrainedEachRebind()) {
+          if (!this.boundItemMap) this.boundItemMap = new Map();
+          this.boundItemMap.set(key, item);
+        }
         if (isAppendOnly) {
           // TODO: in ssr parentNode may not exist
           const parent = api.parent(targetNode)!;
@@ -891,6 +909,22 @@ export class BasicListComponent<T extends { id: number }> {
         existOldIdx.push(oldIndex);
         if (oldIndex !== index) {
           indexMap.set(key, index);
+        }
+        // Group-E: keyed REUSE. If the source object bound to this key changed
+        // by reference (e.g. the keyed property was mutated in place, staling
+        // the key, then a ref-swap reused the row by that stale key), re-bind
+        // the row's block-param to the NEW object IN PLACE — preserving DOM
+        // identity (no recreate). The host hook swaps the body-proxy's holder
+        // target + re-fires the body. Gated to fine-grained mode.
+        if (this.boundItemMap !== null) {
+          const boundItem = this.boundItemMap.get(key);
+          if (boundItem !== item) {
+            const rebind = (globalThis as any).__gxtRebindEachItem;
+            if (typeof rebind === 'function') {
+              rebind(boundItem, item);
+            }
+            this.boundItemMap.set(key, item);
+          }
         }
       }
     }
@@ -1073,6 +1107,7 @@ export class SyncListComponent<
       this.api.insert(parent, bottomMarker);
       keyMap.clear();
       indexMap.clear();
+      if (this.boundItemMap !== null) this.boundItemMap.clear();
       this.itemMarkers.clear();
       this.markerSet.clear();
       return true;
@@ -1178,6 +1213,7 @@ export class SyncListComponent<
     const { keyMap, indexMap, indexFormulaMap } = this;
     keyMap.delete(key);
     indexMap.delete(key);
+    if (this.boundItemMap !== null) this.boundItemMap.delete(key);
     // Clean up reactive index formula if it exists
     if (indexFormulaMap) {
       const formula = indexFormulaMap.get(key);
