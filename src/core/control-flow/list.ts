@@ -1131,7 +1131,23 @@ export class SyncListComponent<
           rowsToRemove.push(row);
         }
         if (keysToRemove.length) {
-          if (keysToRemove.length === amountOfKeys) {
+          // Only take the bulk `fastCleanup` path when the list is going fully
+          // empty (`items.length === 0`). On a REF-SWAP to a disjoint non-empty
+          // set (`set(this,'items', newArr)` where every old key is gone but new
+          // keys arrive), every old key is in `keysToRemove` so
+          // `keysToRemove.length === amountOfKeys`, but we still need to render
+          // the new rows immediately afterwards. `fastCleanup` runs
+          // `clearChildren(parent)` AND a `destroyElementSync(row, skipDom)`
+          // cascade that — for Ember each-body rows — reaches the LIST's own
+          // destructor, deleting the list from TREE. `updateItems` then resolves
+          // `getParentContext()` to `undefined` and the new-row construction
+          // throws ("reading 'Symbol()'" inside addToTree/provideContext),
+          // leaving the list empty. Restricting the bulk path to the
+          // going-empty case keeps that optimization for the common clear/teardown
+          // while routing the disjoint ref-swap through per-row `destroyItem`
+          // (which has the COMPONENT_ID safeToCascade guard and does NOT tear
+          // down the list itself), so the list stays in TREE and new rows render.
+          if (keysToRemove.length === amountOfKeys && items.length === 0) {
             if (this.fastCleanup()) {
               amountOfKeys = 0;
               keysToRemove.length = 0;
