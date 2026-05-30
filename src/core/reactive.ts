@@ -153,6 +153,12 @@ export class Cell<T extends unknown = unknown> {
   // cached() uses this to decide whether a dependency has changed.
   _revision = 0;
   declare toHTML: () => string;
+  // Optional back-reference to the (object, key) this cell was created for via
+  // `rawCellFor`. Lets a host (Ember's fine-grained capture path) reverse a
+  // captured cell to its owner so it can register value→owner mappings for
+  // nested-object subscription. Purely metadata — never read by update().
+  _relatedObj?: object;
+  _relatedKey?: string | number | symbol;
   [Symbol.toPrimitive]() {
     return this.value;
   }
@@ -588,8 +594,14 @@ export function rawCellFor<T extends object, K extends keyof T>(
   }
   const cellValue = new Cell<T[K]>(
     obj[key],
-    `${obj.constructor.name}.${String(key)}`,
+    // `obj.constructor` is undefined for `Object.create(null)` — guard it so
+    // null-proto objects (e.g. Ember's `it can read from a null object`
+    // dynamic-content case) don't throw during cell creation.
+    `${(obj as any).constructor?.name ?? 'NullProto'}.${String(key)}`,
   );
+  // Record the owner so hosts can reverse a captured cell back to (obj, key).
+  cellValue._relatedObj = obj;
+  cellValue._relatedKey = key;
   refs.set(key, cellValue);
   return cellValue;
 }
