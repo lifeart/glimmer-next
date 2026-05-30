@@ -28,7 +28,7 @@ import {
 import { cId, addToTree } from '@/core/tree';
 import { opcodeFor } from '@/core/vm';
 import { initDOM } from '@/core/context';
-import { setParentContext } from '../tracking';
+import { setParentContext, getParentContext } from '../tracking';
 
 export type IfFunction = () => boolean;
 
@@ -82,8 +82,36 @@ export class IfCondition {
       // @ts-expect-error $_eval is host-extension state, untyped on the parent.
       this.$_eval = parentContext.$_eval;
     }
+    // Fine-grained (morph-OFF) mode: prefer the ACTIVE render parent-context as
+    // the GXT tree parent when it differs from the passed `parentContext`.
+    //
+    // Under Ember integration the compiled `$_if(cond, t, f, ctx)` passes the
+    // user component (often the gxt-root) as `ctx`, so a nested {{#if}} inside an
+    // outer {{#if}}'s branch is registered as a SIBLING of the outer if under the
+    // root — not as a descendant of the outer branch's wrapper. With the morph ON
+    // that's harmless (the whole-template re-render rebuilds everything). With the
+    // morph OFF it breaks cascade teardown: when the outer branch collapses,
+    // `destroyElementSync(branchWrapper)` walks only the wrapper's TREE subtree;
+    // the orphaned inner if (registered under root) is never reached, leaving its
+    // rendered content (e.g. `F-inner`) stranded in the DOM. `getParentContext()`
+    // correctly reports the enclosing branch wrapper here (it is on the active
+    // parent-context stack pushed by the outer's renderState / $_ucw), so we use
+    // it. GATED: morph-ON keeps the legacy `parentContext` (byte-identical).
+    let treeParent: Component<any> = parentContext;
+    if ((globalThis as any).__GXT_SPIKE_SKIP_MORPH) {
+      const activeParent = getParentContext();
+      if (
+        activeParent &&
+        activeParent !== parentContext &&
+        activeParent[COMPONENT_ID_PROPERTY] !== undefined &&
+        activeParent[COMPONENT_ID_PROPERTY] !==
+          (parentContext as any)?.[COMPONENT_ID_PROPERTY]
+      ) {
+        treeParent = activeParent;
+      }
+    }
     // @ts-expect-error typings error
-    addToTree(parentContext, this, 'from if constructor');
+    addToTree(treeParent, this, 'from if constructor');
     // @ts-expect-error
     this.api = initDOM(this);
     this.destructors.push(opcodeFor(this.condition, this.syncState.bind(this)));
@@ -93,7 +121,25 @@ export class IfCondition {
     if (this.runNumber === 0) {
       this.syncState(this.condition.value);
     }
-    registerDestructor(parentContext, this.destroy.bind(this));
+    // Register the async destroy on the SAME node we used as the tree parent so
+    // the parent's teardown reaches this if in both the sync-cascade and the
+    // async-destructor paths (morph-OFF re-parents to the enclosing branch
+    // wrapper above; morph-ON keeps `parentContext`).
+    registerDestructor(treeParent, this.destroy.bind(this));
+    // Fine-grained (morph-OFF) mode: when this IfCondition is torn down as part
+    // of a PARENT cascade (e.g. an outer {{#if}} collapsing to its inverse via
+    // destroyBranchSync → destroyElementSync → runDestructorsSync), the walker
+    // only removes nodes reachable from this instance's RENDERED_NODES (just the
+    // placeholder) and recurses into TREE children. The current branch's content
+    // lives in `prevComponent`/`branchDomNodes`, which the sync walker never
+    // touches — so an inner {{#if}}'s rendered text (e.g. `F-inner`) is orphaned
+    // and left in the DOM after the outer branch swap. Registering a SELF sync
+    // destructor here makes destroySync(this) tear down the live branch content.
+    // GATED on fine-grained mode: with the morph ON the whole-template re-render
+    // owns teardown, so this is a no-op there (byte-identical to baseline).
+    if ((globalThis as any).__GXT_SPIKE_SKIP_MORPH) {
+      registerDestructor(this, this.destroyBranchSync.bind(this));
+    }
     if (IS_DEV_MODE) {
       const instance = () => {
         return {
