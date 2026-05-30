@@ -1436,6 +1436,30 @@ function ifCond(
     trueBranch,
     falseBranch,
   );
+  // Fine-grained (morph-OFF) only: when the condition is REACTIVE (can re-enter),
+  // register the IfCondition placeholder with the host's list-marker registry so
+  // the ember-side `removeGxtArtifacts` keeps it live. In a production gxt build
+  // the placeholder is an EMPTY comment (IS_DEV_MODE === false) and removeGxtArtifacts
+  // strips empty comments, orphaning it; an orphaned placeholder makes branch
+  // re-entry render into the detached `this.target` instead of the live DOM
+  // (GH#14284 if-in-yielded-block toggle, {{yield}}-in-{{#if}} toggle, GH#12267).
+  // GATED additionally on `!condition.isConst`: a CONSTANT condition (e.g.
+  // `{{#if (has-block)}}`) never re-enters, so its placeholder is pure artifact —
+  // keeping it would leave a stray `<!---->` that breaks exact-content assertions
+  // (`assertComponentElement(..., { content: 'No' })`). Const ifs let the comment
+  // be stripped as before. `condition.isConst` is reliable here: the constructor's
+  // initial `syncState(condition.value)` already evaluated it. The registry hook
+  // is a no-op when the host hasn't installed it (morph-ON / classic).
+  if ((globalThis as any).__GXT_SPIKE_SKIP_MORPH) {
+    const cond = instance.condition as { isConst?: boolean };
+    if (cond && cond.isConst !== true) {
+      const _reg = (globalThis as { __gxtRegisterListMarker?: (m: Comment) => void })
+        .__gxtRegisterListMarker;
+      if (_reg) {
+        _reg(placeholder);
+      }
+    }
+  }
   // @ts-expect-error outlet
   return toNodeReturnType(outlet, instance);
 }

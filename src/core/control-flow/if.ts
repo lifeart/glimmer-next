@@ -204,10 +204,73 @@ export class IfCondition {
     this.renderBranch(nextBranch, this.runNumber);
   }
 
+  // Fine-grained (morph-OFF) only. The IfCondition's placeholder is created in
+  // a detached `outlet` fragment (getRenderTargets) and the branch content is
+  // rendered relative to it there; the consumer (ember-side template factory /
+  // component manager) then collects the rendered DOM nodes and moves them into
+  // the LIVE document — but the placeholder comment is NOT carried along (it is
+  // not one of the extracted content nodes), so after the first render the
+  // placeholder is left orphaned (parentNode === null). On a later branch toggle
+  // `renderState` falls back to `api.parent(placeholder) || this.target`; with an
+  // orphaned placeholder that resolves to the detached `this.target` fragment, so
+  // the re-entered branch (a {{yield}}, {{#each}}+component, or yield-to-inverse)
+  // renders into a dead fragment and never appears in the live DOM (GH#12267,
+  // yield-to-inverse, {{yield}}-in-{{#if}}, GH#14284).
+  //
+  // Recover by re-anchoring the placeholder into the LIVE DOM next to the
+  // currently-rendered branch content (which the consumer DID move live) before
+  // we tear that content down. The next branch then renders at the correct live
+  // position. No-op when the placeholder is already connected, or when there is
+  // no live branch node to anchor against. GATED on fine-grained mode so the
+  // morph-ON path is byte-identical.
+  private reanchorPlaceholderIfOrphaned() {
+    const ph = this.placeholder as Node;
+    if (ph.parentNode) {
+      return; // already live (or in its outlet) — nothing to do
+    }
+    // Find the first still-connected node from the current branch's live DOM.
+    let anchor: Node | null = null;
+    const nodes = this.branchDomNodes;
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      if (n && (n as Node).isConnected) {
+        anchor = n as Node;
+        break;
+      }
+    }
+    if (!anchor) {
+      // Fall back to the previous component's first rendered node, if any.
+      const pc: any = this.prevComponent;
+      const rendered = pc && pc[RENDERED_NODES_PROPERTY];
+      if (Array.isArray(rendered)) {
+        for (let i = 0; i < rendered.length; i++) {
+          const r = rendered[i];
+          if (r && (r as Node).isConnected) {
+            anchor = r as Node;
+            break;
+          }
+        }
+      }
+    }
+    if (anchor && anchor.parentNode) {
+      // Insert the placeholder immediately AFTER the live branch node so the
+      // destroy of that content (which precedes it) leaves the placeholder as
+      // the live insertion anchor for the next branch.
+      try {
+        anchor.parentNode.insertBefore(ph, anchor.nextSibling);
+      } catch {
+        /* defensive: anchor may have been detached concurrently */
+      }
+    }
+  }
+
   renderBranch(
     nextBranch: (ifContext: IfCondition) => GenericReturnType,
     runNumber: number,
   ) {
+    if ((globalThis as any).__GXT_SPIKE_SKIP_MORPH) {
+      this.reanchorPlaceholderIfOrphaned();
+    }
     if (this.destroyPromise) {
       this.destroyPromise.then(() => {
         this.destroyPromise = null;
