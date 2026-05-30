@@ -495,7 +495,17 @@ function visitSimpleMustache(
   // - Known bindings (direct call or maybeHelper with WITH_HELPER_MANAGER)
   // - Unknown helpers (maybeHelper with scope resolution)
   // - Built-in helpers (symbol lookup)
-  return helper(pathName, [], hashArgs, range, pathRange);
+  const helperValue = helper(pathName, [], hashArgs, range, pathRange);
+  // Wrap in a getter for reactivity, mirroring visitHelperMustache (the
+  // positional-args path). Without this, a named-args-only helper mustache
+  // like `{{hello foo=this.foo}}` is emitted as a bare value and the runtime
+  // const-folds it (the hash getters read once, producing a static value),
+  // so changes to `this.foo` never re-invoke the helper. Wrapping makes the
+  // hash-value path reads reactive exactly like positional params.
+  if (_wrap) {
+    return getter(helperValue, range);
+  }
+  return helperValue;
 }
 
 
