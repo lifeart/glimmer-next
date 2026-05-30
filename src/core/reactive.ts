@@ -279,6 +279,43 @@ export function relatedTagsForCell(cell: Cell) {
   return tags;
 }
 
+/**
+ * Synchronously run a cell's own opcodes and the opcodes of every formula that
+ * depends on it. Intended for hosts (Ember's fine-grained sync) that update a
+ * cell from INSIDE the current `syncDomSync` drain — at that point the drain
+ * has already snapshotted its work list and its terminal `tagsToRevalidate`
+ * clear would otherwise discard the just-dirtied cell, so its bound DOM (e.g. a
+ * `{{this.salutation}}` text node) would never re-render this tick. This flushes
+ * those opcodes immediately. The related-tag set for the cell is consumed
+ * (deleted) the same way the normal drain consumes it, so a subsequent drain
+ * does not double-execute. Best-effort: opcode errors are swallowed so a single
+ * bad binding can't abort the flush.
+ */
+export function flushCellOpcodes(cell: Cell | MergedCell): void {
+  try {
+    executeTagSync(cell);
+  } catch {
+    /* ignore — opcode error must not abort the flush */
+  }
+  const subTags = relatedTags.get((cell as Cell).id);
+  if (subTags === undefined) {
+    return;
+  }
+  relatedTags.delete((cell as Cell).id);
+  const ordered = [...subTags];
+  subTags.clear();
+  if (ordered.length > 1) {
+    ordered.sort((a, b) => a.id - b.id);
+  }
+  for (const tag of ordered) {
+    try {
+      executeTagSync(tag);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 function bindAllCellsToTag(cells: Set<Cell>, tag: MergedCell) {
   cells.forEach((cell) => {
     const tags = relatedTagsForCell(cell);
