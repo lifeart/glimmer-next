@@ -12,7 +12,13 @@ import type { ComponentLike, DOMApi } from '@/core/types';
 import { renderElement, getFirstNode } from '@/core/render-core';
 import { destroyElementSync, destroyElement } from '@/core/destroy';
 
-import { Cell, MergedCell, formula, deepFnValue } from '@/core/reactive';
+import {
+  Cell,
+  MergedCell,
+  formula,
+  deepFnValue,
+  registerLeafOwnersForFormula,
+} from '@/core/reactive';
 import { opcodeFor } from '@/core/vm';
 import {
   $_debug_args,
@@ -451,6 +457,24 @@ export class BasicListComponent<T extends { id: number }> {
       }
     }
     this.tag = tag;
+    // Fine-grained (morph-OFF) only: when the each source is a dynamic
+    // expression (a MergedCell formula) whose deps include a LEAF object read
+    // off the render context (e.g. `{{#each-in (get this.hashes this.hashes.type)}}`
+    // — the source reads `this.hashes` then `.type` on the raw held object,
+    // which taps no cell), register each tracked cell's held object as a
+    // value-owner of its (ownerObj, ownerKey) with the Ember host. Then a
+    // nested `set(this.hashes, 'type', ...)` reaches the source formula through
+    // SyncCore's reverse lookup → the list re-iterates. The morph-ON path
+    // re-renders the whole template and is unaffected (the host hook is
+    // installed only in fine-grained mode → no-op when flag is off).
+    if (
+      (globalThis as any).__GXT_SPIKE_SKIP_MORPH &&
+      this.tag instanceof MergedCell
+    ) {
+      // Force the formula to compute once so relatedCells is populated.
+      (this.tag as MergedCell).value;
+      registerLeafOwnersForFormula(this.tag as MergedCell);
+    }
   }
   private relocateItem(marker: Comment, anchor: Node, parent: Node) {
     // Defensive: anchor is the same marker we're about to move. This can

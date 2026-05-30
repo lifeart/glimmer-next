@@ -326,6 +326,26 @@ function $prop(
         if (val === prevPropValue) {
           return;
         }
+        // Fine-grained (morph-OFF) only: when a reactive `style` prop binding
+        // transitions to empty, GXT sets `element.style = ''`, which leaves a
+        // stale `style=""` attribute on the in-place element. Ember removes the
+        // attribute entirely for empty values (the morph-ON path rebuilds the
+        // element from scratch where the empty binding is never applied). Remove
+        // it synchronously here so the assertion right after `runTask` sees
+        // `attrs: {}` instead of relying on the async MutationObserver fallback.
+        // Gated so morph-ON stays byte-identical.
+        if (
+          (globalThis as any).__GXT_SPIKE_SKIP_MORPH &&
+          key === 'style' &&
+          (val === '' || val === null || val === undefined) &&
+          (element as HTMLElement).removeAttribute
+        ) {
+          prevPropValue = api.prop(element, key, val);
+          if ((element as HTMLElement).getAttribute('style') === '') {
+            (element as HTMLElement).removeAttribute('style');
+          }
+          return;
+        }
         prevPropValue = api.prop(element, key, val);
       }),
     );
