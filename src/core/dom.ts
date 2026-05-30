@@ -32,6 +32,8 @@ import {
   deepFnValue,
   getTagId,
   tagsFromRange,
+  materializeAbsentPathCell,
+  registerLeafOwnersForFormula,
 } from '@/core/reactive';
 import { opcodeFor } from '@/core/vm';
 import {
@@ -253,6 +255,41 @@ function resolveBindingValue(
 ): { result: unknown; isReactive: boolean } {
   if (isFn(value)) {
     const f = formula(() => deepFnValue(value as Function), debugName);
+    // Fine-grained (morph-OFF) only: a fresh formula's `isConst` is the default
+    // `false` until its `.value` has been read once during render (the getter
+    // populates it as a side effect). The shipping path treats any not-yet-
+    // computed formula as reactive and registers an opcode — but if the binding
+    // is an initially-undefined `this.<path>` that reads NO cell, that opcode
+    // tracks nothing and never fires on a later `set()`. Force the `isConst`
+    // computation, and when it really is const + empty, materialize the leaf
+    // cell and re-wrap so the binding becomes genuinely reactive. Gated; the
+    // morph-ON path is the original `if (f.isConst)` fast-path (byte-identical).
+    if ((globalThis as any).__GXT_SPIKE_SKIP_MORPH) {
+      const v0 = f.value; // side effect: computes f.isConst + relatedCells
+      if (f.isConst) {
+        if (
+          (v0 === null || v0 === undefined || v0 === '') &&
+          materializeAbsentPathCell(value as Function)
+        ) {
+          f.destroy();
+          const f2 = formula(() => deepFnValue(value as Function), debugName);
+          f2.value;
+          if (!f2.isConst) {
+            registerLeafOwnersForFormula(f2);
+            return { result: f2, isReactive: true };
+          }
+          const v2b = f2.value;
+          f2.destroy();
+          return { result: v2b, isReactive: false };
+        }
+        f.destroy();
+        return { result: v0, isReactive: false };
+      }
+      // Reactive: register leaf-object owners so a nested-property `set()` on a
+      // held object (e.g. `this.nullObject.message`) dirties this cell.
+      registerLeafOwnersForFormula(f);
+      return { result: f, isReactive: true };
+    }
     if (f.isConst) {
       const constValue = f.value;
       f.destroy();
@@ -347,6 +384,16 @@ function mergeClassModifiers(
       outerFormula,
       destructors,
     );
+    // Fine-grained (morph-OFF) only: register leaf-object owners for each
+    // reactive class-name modifier so a nested-property `set()` on a held
+    // object (e.g. `is.enabled` where the binding reads `this.is.enabled`)
+    // dirties the modifier cell. The $prop read above has populated each
+    // formula's relatedCells. Gated — never reached morph-ON.
+    if ((globalThis as any).__GXT_SPIKE_SKIP_MORPH) {
+      for (const f of formulasToDestroy) {
+        registerLeafOwnersForFormula(f);
+      }
+    }
     if (formulasToDestroy.length > 0) {
       destructors.push(() => {
         for (const f of formulasToDestroy) {

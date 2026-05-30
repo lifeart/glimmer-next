@@ -10,6 +10,8 @@ import {
   MergedCell,
   formula,
   deepFnValue,
+  materializeAbsentPathCell,
+  registerLeafOwnersForFormula,
 } from '@/core/reactive';
 import { checkOpcode } from '@/core/vm';
 import { registerDestructor } from './glimmer/destroyable';
@@ -77,10 +79,36 @@ export function resolveRenderable(
     componentProps = value as unknown as RenderableType;
   });
   if (f.isConst) {
+    // Fine-grained (morph-OFF) only: a const formula whose value is empty may be
+    // an initially-undefined `this.<path>` binding that read no cell. Materialize
+    // the leaf cell and re-wrap; the new formula tracks a real cell so a later
+    // `set(context,'<path>',...)` updates the binding. Gated — never morph-ON.
+    if (
+      (globalThis as any).__GXT_SPIKE_SKIP_MORPH &&
+      (isPrimitive(componentProps) || isEmpty(componentProps)) &&
+      materializeAbsentPathCell(child)
+    ) {
+      f.destroy();
+      const f2 = formula(() => deepFnValue(child), debugName);
+      checkOpcode(f2, (value) => {
+        componentProps = value as unknown as RenderableType;
+      });
+      if (!f2.isConst) {
+        registerLeafOwnersForFormula(f2);
+        return f2;
+      }
+      f2.destroy();
+      return componentProps;
+    }
     f.destroy();
     return componentProps;
   } else {
     if (isPrimitive(componentProps) || isEmpty(componentProps)) {
+      // Fine-grained (morph-OFF) only: register leaf-object owners so a
+      // nested-property `set()` on a held object dirties this cell.
+      if ((globalThis as any).__GXT_SPIKE_SKIP_MORPH) {
+        registerLeafOwnersForFormula(f);
+      }
       return f;
     } else {
       // looks like a component

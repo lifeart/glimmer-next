@@ -787,6 +787,95 @@ export function cell<T>(value: T, debugName?: string) {
   return new Cell(value, debugName);
 }
 
+// Fine-grained (morph-OFF) only. For a reactive binding formula, register every
+// LEAF object held by a tracked cell as a value-owner of that cell with the
+// Ember host (via the gated `globalThis.__gxtRegisterObjectValueOwner` hook).
+// This lets `set(leafObj,'key',...)` reach the cell through Ember's SyncCore
+// reverse lookup — the attribute / inside-element analogue of the
+// content-position null-object fix. No-op when the hook is absent (shipping
+// build) or the formula tracked no object-valued cells. Gated by the caller.
+export function registerLeafOwnersForFormula(f: MergedCell): void {
+  try {
+    const hook = (globalThis as any).__gxtRegisterObjectValueOwner;
+    if (typeof hook !== 'function') return;
+    const cells = (f as any).relatedCells as Set<Cell> | undefined;
+    if (!cells || cells.size === 0) return;
+    cells.forEach((c) => {
+      const v = (c as any)._value;
+      const ro = (c as any)._relatedObj;
+      const rk = (c as any)._relatedKey;
+      if (
+        v &&
+        typeof v === 'object' &&
+        ro &&
+        typeof ro === 'object' &&
+        typeof rk === 'string'
+      ) {
+        hook(v, ro, rk);
+      }
+    });
+  } catch {
+    /* best-effort */
+  }
+}
+
+// Fine-grained (morph-OFF) only. When a `this.<path>` binding resolves off an
+// ABSENT property the getter touches no cell, so its wrapping formula reports
+// `isConst` and the binding is set ONCE and never updates (Ember's
+// dynamic-content "undefined dynamic paths" cases for attribute / inside-an-
+// element positions). Materialize the leaf cell on the current template `this`
+// (exposed by the Ember host as `globalThis.__gxtCurrentTemplateThis`) by
+// reading it through `cellFor`, so a re-evaluated formula now tracks a real
+// cell that `set(context,'<path>',...)` will dirty. Returns true if a cell was
+// materialized (caller should treat the binding as reactive). Best-effort and
+// gated by the caller on `globalThis.__GXT_SPIKE_SKIP_MORPH`; never reached in
+// the shipping (morph-ON) build.
+export function materializeAbsentPathCell(child: Function): boolean {
+  try {
+    // Prefer an explicit path stamp (set by the Ember host when the getter is
+    // wrapped — e.g. the attribute `_attrNormalize` wrapper whose own toString
+    // hides the inner `this.<path>`). Fall back to scanning the getter source.
+    let path = (child as any).__gxtPath as string | undefined;
+    if (!path) {
+      const str = String(child);
+      const marker = 'this.';
+      const idx = str.indexOf(marker);
+      if (idx === -1) return false;
+      let end = idx + marker.length;
+      while (end < str.length) {
+        const c = str[end]!;
+        if (
+          (c >= 'a' && c <= 'z') ||
+          (c >= 'A' && c <= 'Z') ||
+          (c >= '0' && c <= '9') ||
+          c === '_' ||
+          c === '$' ||
+          c === '.'
+        ) {
+          end++;
+        } else {
+          break;
+        }
+      }
+      path = str.slice(idx + marker.length, end);
+    }
+    if (!path) return false;
+    const ctx = (globalThis as any).__gxtCurrentTemplateThis;
+    if (!ctx || typeof ctx !== 'object') return false;
+    let cur: any = ctx;
+    let materialized = false;
+    for (const seg of path.split('.')) {
+      if (!cur || typeof cur !== 'object') break;
+      const segCell = (cellFor as any)(cur, seg, /* skipDefine */ false);
+      materialized = true;
+      cur = segCell ? segCell.value : cur[seg];
+    }
+    return materialized;
+  } catch {
+    return false;
+  }
+}
+
 export function inNewTrackingFrame(callback: () => void) {
   const existingTracker = currentTracker;
   setTracker(null);
