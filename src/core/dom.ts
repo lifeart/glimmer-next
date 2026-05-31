@@ -476,6 +476,20 @@ function $ev(
       destructors.push(
         opcodeFor(result as AnyCell, (value) => {
           api.textContent(element, String(value ?? ''));
+          // Fine-grained (morph-OFF) GH#14332: re-register leaf-object owners
+          // on every opcode tick. `resolveRenderable` registered owners on
+          // first render, but when a parent ref-swaps the held object
+          // (`set(context,'page',newPage)`) the formula re-tracks
+          // `cellFor(context,'page')` with `_value=newPage`, yet newPage was
+          // never registered as that cell's value-owner — so a subsequent
+          // `set(newPage,'title',…)` reverse-looks-up nothing and the
+          // element's text content (`<h1>{{this.page.title}}</h1>`) stays
+          // stale. Re-registering here (idempotent — host dedupes by
+          // (obj,key)) picks up the swapped object. Gated; morph-ON never
+          // reaches this branch with the hook installed.
+          if ((globalThis as any).__GXT_SPIKE_SKIP_MORPH) {
+            registerLeafOwnersForFormula(result as MergedCell);
+          }
         }),
       );
     }

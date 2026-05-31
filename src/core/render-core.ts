@@ -23,6 +23,7 @@ import {
 } from './shared';
 import { opcodeFor } from './vm';
 import type { MergedCell } from './reactive';
+import { registerLeafOwnersForFormula } from './reactive';
 
 // Import resolveRenderable from root.ts
 import { resolveRenderable } from './root';
@@ -226,6 +227,10 @@ export function renderElement(
             el as ComponentLike,
             opcodeFor(node as MergedCell, (value) => {
               api.textContent(textNode, String(value ?? ''));
+              // Fine-grained GH#14332: re-register leaf-object owners each tick
+              // so a parent ref-swap of the held object re-subscribes the
+              // reverse-lookup (see dom.ts $ev TEXT_CONTENT for rationale).
+              registerLeafOwnersForFormula(node as MergedCell);
             }),
           );
         } else if (isArray(node)) {
@@ -250,6 +255,12 @@ export function renderElement(
       ctx,
       opcodeFor(el, (value) => {
         api.textContent(node, String(value ?? ''));
+        // Fine-grained GH#14332: re-register leaf-object owners each tick so a
+        // parent ref-swap of the held object re-subscribes the reverse-lookup
+        // (see dom.ts $ev TEXT_CONTENT for rationale).
+        if ((globalThis as any).__GXT_SPIKE_SKIP_MORPH) {
+          registerLeafOwnersForFormula(el as MergedCell);
+        }
       }),
     );
     return;
