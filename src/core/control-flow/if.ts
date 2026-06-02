@@ -24,6 +24,8 @@ import {
   isTagLike,
   RENDERED_NODES_PROPERTY,
   COMPONENT_ID_PROPERTY,
+  ADDED_TO_TREE_FLAG,
+  TREE,
 } from '@/core/shared';
 import { cId, addToTree } from '@/core/tree';
 import { opcodeFor } from '@/core/vm';
@@ -53,6 +55,9 @@ export class IfCondition {
   branchDomNodes: Array<Node> = [];
   trueBranch: (ifContext: IfCondition) => GenericReturnType;
   falseBranch: (ifContext: IfCondition) => GenericReturnType;
+  // Tree parent captured at construction; used to re-register this IfCondition
+  // in the TREE map when a teardown cascade evicted it (fine-grained GH#12267).
+  _treeParent: Component<any> | null = null;
   declare api: DOMApi;
 
   constructor(
@@ -110,6 +115,9 @@ export class IfCondition {
         treeParent = activeParent;
       }
     }
+    // Remember the tree parent so renderState can re-register this IfCondition
+    // in the TREE if a teardown cascade evicted it (GH#12267 — see renderState).
+    this._treeParent = treeParent;
     // @ts-expect-error typings error
     addToTree(treeParent, this, 'from if constructor');
     // @ts-expect-error
@@ -165,6 +173,30 @@ export class IfCondition {
   }
 
   checkStatement(value: boolean) {
+    // Fine-grained (morph-OFF) only: when an incoming syncState is a NO-OP
+    // (`runNumber > 1` and `lastValue` already equals the incoming value),
+    // return WITHOUT bumping `runNumber`. `runNumber` is the epoch that
+    // `validateEpoch` uses to detect concurrent re-entry between an in-flight
+    // `renderBranch`'s synchronous destroy and its render. The native GXT
+    // condition opcode (`opcodeFor(this.condition, syncState)`) can fire a
+    // re-entrant same-value `syncState` DURING `destroyBranchSync` of a real
+    // branch toggle (e.g. a {{#if}} flipping false→true tears down its inverse,
+    // and the same gxtSyncDom pass re-reads the condition cell and re-invokes
+    // the bound syncState with the SAME `true`). Pre-fix that re-entrant no-op
+    // bumped `runNumber`, so the outer `renderBranch`'s `validateEpoch` then
+    // failed — the old branch was destroyed but the new branch was never
+    // rendered (GH#12267: `{{#if}}`+`{{#each}}` toggled false→true renders
+    // empty). Skipping the bump for no-ops keeps the in-flight epoch valid so
+    // the outer render proceeds. A REAL flip (lastValue !== value) still bumps
+    // and proceeds, so concurrent-flip detection is preserved. GATED so the
+    // morph-ON path is byte-identical (increment-then-check, as before).
+    if (
+      (globalThis as any).__GXT_SPIKE_SKIP_MORPH &&
+      this.runNumber > 0 &&
+      this.lastValue === !!value
+    ) {
+      return;
+    }
     this.runNumber++;
     if (this.runNumber > 1) {
       if (this.lastValue === !!value) {
@@ -407,6 +439,28 @@ export class IfCondition {
     const anchorBefore: Node | null = placeholderParent
       ? (this.placeholder as Node).previousSibling
       : null;
+    // Fine-grained (morph-OFF) only: ensure THIS IfCondition is registered in
+    // the TREE before rendering the branch. `setParentContext(this)` pushes our
+    // COMPONENT_ID onto the parent-context stack, and `getParentContext()`
+    // resolves it back via `TREE.get(id)`. A prior teardown cascade (e.g. an
+    // earlier branch toggle that tore down a child {{#each}}, whose destructor
+    // deleted its own + cleaned tree entries) can evict THIS IfCondition's TREE
+    // entry. When that happens, `getParentContext()` returns `undefined`, and a
+    // child created during the new branch render (a {{#each}} row component)
+    // calls `addToTree(undefined, ...)` → `undefined[COMPONENT_ID_PROPERTY]`
+    // throws "reading 'Symbol()'" → the branch render aborts → renders EMPTY
+    // (GH#12267: `{{#if}}`+`{{#each}}` toggled false→true). Re-add ourselves to
+    // our captured tree parent so the resolution chain is intact. No-op when the
+    // entry is already present. GATED so morph-ON is byte-identical.
+    if (
+      (globalThis as any).__GXT_SPIKE_SKIP_MORPH &&
+      this._treeParent &&
+      TREE.get(this[COMPONENT_ID_PROPERTY]) !== (this as unknown as ComponentLike)
+    ) {
+      // Clear the added-flag so addToTree re-runs its registration body.
+      (this as any)[ADDED_TO_TREE_FLAG] = false;
+      addToTree(this._treeParent, this as unknown as ComponentLike, 'if renderState re-register');
+    }
     try {
       setParentContext(this as unknown as ComponentLike);
       this.prevComponent = nextBranch(this);
