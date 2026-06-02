@@ -632,6 +632,139 @@ function addProperties(
   }
 }
 
+/**
+ * Reactive dynamic tag-name wrapper for `$_tag(() => tagName, ...)`
+ * (the `(element this.tag)` helper). Builds the element via the normal `_DOM`
+ * path with the CURRENT resolved tag-name, then watches the tag-name formula:
+ * when it changes, the old element subtree is torn down and a fresh element is
+ * built (re-running the children thunks) and swapped in at a stable anchor.
+ * Returns a carrier (`RENDERED_NODES_PROPERTY`) so the caller's `renderElement`
+ * positions the element + anchor like any other component output.
+ */
+function reactiveTagElement(
+  fn: () => string,
+  tagProps: Props,
+  ctx: any,
+  children: (ComponentReturnType | string | Cell | MergedCell | Function)[],
+  api: DOMApi,
+): any {
+  // Subscribe to the tag-name's tracked deps. Pass the RAW resolved value to
+  // `_DOM` (no coercion) so `_DOM`'s own validation throws the Ember-compatible
+  // assertion for null/undefined/number/boolean tags (the throws-on-* tests).
+  const tagCell = formula(() => fn(), 'reactive-element-tag');
+
+  // Build the initial element subtree at the current tag-name into its own
+  // child sub-context so a later swap can tear down exactly this element's
+  // registrations (child slots/modifiers). `_DOM` returns the element Node (or
+  // a fragment for the empty-tag no-wrapper case).
+  const buildChildCtx = () => {
+    const childCtx: any = {
+      [$args]: {},
+      [RENDERED_NODES_PROPERTY]: [] as Node[],
+      [COMPONENT_ID_PROPERTY]: cId(),
+      [RENDERING_CONTEXT_PROPERTY]: (ctx as any)[RENDERING_CONTEXT_PROPERTY] ?? null,
+    };
+    return childCtx;
+  };
+
+  // Collect the top-level DOM nodes a `_DOM` result occupies. For an element it
+  // is the element itself; for the empty-tag fragment it is the fragment's
+  // children captured BEFORE insertion empties the fragment.
+  const topNodesOf = (node: Node): Node[] => {
+    if (node && (node as any).nodeType === 11 /* DocumentFragment */) {
+      return Array.from((node as DocumentFragment).childNodes);
+    }
+    return [node];
+  };
+
+  let childCtx = buildChildCtx();
+  const initialTag = tagCell.value;
+  const initialNode = _DOM(initialTag as any, tagProps, childCtx, children);
+  const initialTopNodes = topNodesOf(initialNode);
+
+  // Carrier holds the live nodes for positioning + teardown by the caller.
+  // A trailing anchor comment is the stable swap target.
+  const anchor = IS_DEV_MODE ? api.comment('element-tag') : api.comment();
+  const carrier: any = {
+    [$args]: {},
+    [RENDERED_NODES_PROPERTY]: [...initialTopNodes, anchor] as Node[],
+    [COMPONENT_ID_PROPERTY]: cId(),
+    [RENDERING_CONTEXT_PROPERTY]: null,
+  };
+  addToTree(ctx, carrier);
+  addToTree(carrier, childCtx);
+
+  let lastTag: any = initialTag;
+  let currentChildCtx: any = childCtx;
+  let currentTopNodes: Node[] = initialTopNodes;
+  let firstRun = true;
+
+  const destructor = opcodeFor(tagCell, (value: any) => {
+    if (firstRun) {
+      firstRun = false;
+      return;
+    }
+    // Reference-stable comparison; identical tag-name => nothing to do.
+    if (value === lastTag) {
+      return;
+    }
+    lastTag = value;
+    // Tear down the previous element subtree (slots/modifiers) then remove its
+    // DOM nodes.
+    const oldChildCtx = currentChildCtx;
+    const oldTopNodes = currentTopNodes;
+    // Determine the live insertion point. Prefer the anchor (a stable trailing
+    // comment); if it is detached (some host insertion paths drop trailing
+    // anchors), fall back to the old element's parent + next sibling so the new
+    // element lands in the same position.
+    let parent = api.parent(anchor);
+    let insertBefore: Node | null = anchor;
+    if (!parent && oldTopNodes.length > 0) {
+      const ref = oldTopNodes[0];
+      parent = api.parent(ref);
+      insertBefore = (ref as any).nextSibling ?? null;
+    }
+    // Build the replacement BEFORE removing the old nodes so a build-time throw
+    // (invalid tag) leaves the existing DOM intact.
+    const newChildCtx = buildChildCtx();
+    const newNode = _DOM(value as any, tagProps, newChildCtx, children);
+    const newTopNodes = topNodesOf(newNode);
+    addToTree(carrier, newChildCtx);
+    // Insert the new nodes at the live insertion point.
+    if (parent) {
+      for (let i = 0; i < newTopNodes.length; i++) {
+        api.insert(parent, newTopNodes[i], insertBefore);
+      }
+    }
+    // Remove + destroy the old subtree.
+    if (oldChildCtx) {
+      unregisterFromParent(oldChildCtx);
+      destroyElementSync(oldChildCtx, false, api);
+    }
+    for (let i = 0; i < oldTopNodes.length; i++) {
+      const n = oldTopNodes[i];
+      if (api.parent(n)) {
+        api.destroy(n);
+      }
+    }
+    currentChildCtx = newChildCtx;
+    currentTopNodes = newTopNodes;
+    carrier[RENDERED_NODES_PROPERTY] = [...newTopNodes, anchor];
+  });
+
+  if (!tagCell.isConst) {
+    registerDestructor(ctx, destructor);
+    registerDestructor(ctx, () => {
+      tagCell.destroy();
+    });
+  } else {
+    tagCell.destroy();
+    destructor();
+  }
+
+  return carrier;
+}
+
 function _DOM(
   tag: string | (() => string),
   tagProps: Props,
@@ -644,6 +777,24 @@ function _DOM(
     if (!api) {
       console.error('Unable to resolve root rendering context');
     }
+  }
+  // Reactive dynamic tag-name (`{{#let (element this.tag) as |Tag|}}<Tag>`):
+  // the `(element ...)` helper compiles to `$_tag(() => this.tag, ...)`, i.e. a
+  // FUNCTION tag. The static path below resolves it ONCE (`tag()`), so a later
+  // `this.tag` mutation never re-creates the element (the `{{element}}` dynamic
+  // tag-name wall). When fine-grained (morph-OFF), route a function tag through
+  // a reactive wrapper: a `formula` over `() => tag()` subscribes to the tag's
+  // tracked deps and an opcode tears down + rebuilds the element (re-running the
+  // children thunks) whenever the resolved tag-name changes. A tag that reads no
+  // tracked state captures no deps → const → renders once + tears the opcode
+  // down (zero overhead, byte-identical to the static path for `(element "h1")`
+  // literals). Gated on __GXT_SPIKE_SKIP_MORPH so the shipped morph-ON path
+  // keeps the eager single resolve (the whole-template morph owns tag updates).
+  if (
+    typeof tag === 'function' &&
+    (globalThis as any).__GXT_SPIKE_SKIP_MORPH
+  ) {
+    return reactiveTagElement(tag as () => string, tagProps, ctx, children, api);
   }
   const resolvedTag = typeof tag === 'function' ? tag() : tag;
   // Validation for `(element ...)` helper: when the resolved tag is not a
