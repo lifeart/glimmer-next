@@ -916,6 +916,24 @@ function rewriteOnEventAttributes(node: ASTv1.ElementNode): void {
 
     // Build an {{on "eventName" expr}} modifier
     const mustache = attr.value as ASTv1.MustacheStatement;
+    // When the value mustache carries params or hash (e.g.
+    // onclick={{fn this.x row}}), the handler expression is a helper
+    // invocation. Carrying only `mustache.path` discards the args and
+    // resolves `fn`/etc. to a bare path → "this.fn is not a function".
+    // Wrap the whole invocation as a SubExpression so we emit the
+    // proven-correct {{on "click" (fn this.x row)}} form. Zero-arg
+    // (onclick={{this.create}}) keeps the bare path.
+    const handlerHasArgs =
+      mustache.params.length > 0 || mustache.hash.pairs.length > 0;
+    const handlerExpr: ASTv1.Expression = handlerHasArgs
+      ? ({
+          type: 'SubExpression',
+          path: mustache.path,
+          params: mustache.params,
+          hash: mustache.hash,
+          loc: mustache.loc,
+        } as ASTv1.SubExpression)
+      : (mustache.path as ASTv1.Expression);
     const onModifier: ASTv1.ElementModifierStatement = {
       type: 'ElementModifierStatement',
       path: {
@@ -935,7 +953,7 @@ function rewriteOnEventAttributes(node: ASTv1.ElementNode): void {
           original: eventName,
           loc: attr.loc,
         } as ASTv1.StringLiteral,
-        mustache.path as ASTv1.Expression,
+        handlerExpr,
       ],
       hash: {
         type: 'Hash',
