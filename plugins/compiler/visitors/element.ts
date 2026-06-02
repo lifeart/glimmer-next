@@ -643,7 +643,17 @@ function visitAttributeValue(
     }
     // Use wrap=true to ensure helper results are wrapped in getters for reactivity
     // This is critical for dynamic values like {{if condition 'a' 'b'}} or {{fn this.handler arg}}
-    const result = getVisit(ctx)(ctx, value, true);
+    // Mark that we are inside an attribute/named-arg value so the fine-grained
+    // 0-arg helper getter-wrap is suppressed here (the bare $_maybeHelper form
+    // must survive so the Ember-side ambiguous-named-arg-helper guard matches).
+    const _prevInAttr = ctx.inAttributeValue;
+    ctx.inAttributeValue = true;
+    let result: ReturnType<ReturnType<typeof getVisit>>;
+    try {
+      result = getVisit(ctx)(ctx, value, true);
+    } finally {
+      ctx.inAttributeValue = _prevInAttr;
+    }
     if (result !== null && isSerializedValue(result)) {
       return result;
     }

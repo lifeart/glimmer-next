@@ -225,6 +225,16 @@ export interface CompilerContext {
   /** Counter for unbound helper cache IDs (IS_GLIMMER_COMPAT_MODE) */
   unboundCounter: number;
 
+  /**
+   * Transient flag: true while visiting an attribute/named-arg value
+   * (e.g. `@content={{foo}}`). Used to suppress the fine-grained 0-arg
+   * helper getter-wrap in arg position, where the bare `$_maybeHelper`
+   * form must be preserved so the Ember-side "resolved helper cannot be
+   * passed as a named argument" guard (gxt-backend compile.ts) can match
+   * and throw. Set/restored by visitAttributeValue.
+   */
+  inAttributeValue: boolean;
+
   /** Set of already-processed nodes (prevents double processing) */
   readonly seenNodes: Set<ASTv1.Node>;
 
@@ -297,6 +307,7 @@ export function createContext(
     letBlockCounter: 0,
     logSiteCounter: 0,
     unboundCounter: 0,
+    inAttributeValue: false,
     seenNodes: new Set(),
     formatter,
     visitors: {
