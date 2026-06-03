@@ -297,6 +297,10 @@ export class BasicListComponent<T extends { id: number }> {
   // Track per-item markers for stable relocation boundaries
   itemMarkers: Map<string, Comment> = new Map();
   markerSet: Set<Comment> = new Set();
+  // P7: per-update cache of the install-once-stable `__gxtRegisterListMarker`
+  // host hook (resolved at the top of updateItems). undefined when no hook
+  // installed (shipping default → no-op).
+  private _registerMarkerHook: ((m: Comment) => void) | undefined = undefined;
   // Reusable arrays/sets — cleared per update to avoid GC pressure
   private _existKeys: string[] = [];
   private _existNewIdx: number[] = [];
@@ -873,11 +877,13 @@ export class BasicListComponent<T extends { id: number }> {
       marker = IS_DEV_MODE ? api.comment(`list item ${key}`) : api.comment();
       itemMarkers.set(key, marker);
       markerSet.add(marker);
-      const _reg = (
-        globalThis as {
-          __gxtRegisterListMarker?: (m: Comment) => void;
-        }
-      ).__gxtRegisterListMarker;
+      // P7: reuse the hook hoisted by updateItems (this method is only called
+      // from updateItems, after `_registerMarkerHook` is set). Fall back to a
+      // direct read if invoked out of band.
+      const _reg =
+        this._registerMarkerHook ??
+        (globalThis as { __gxtRegisterListMarker?: (m: Comment) => void })
+          .__gxtRegisterListMarker;
       if (_reg) _reg(marker);
     }
     let idx: number | MergedCell = index;
@@ -956,6 +962,15 @@ export class BasicListComponent<T extends { id: number }> {
       _moveSet: moveSet,
       _freshMoveKeys: freshMoveKeys,
     } = this;
+    // P7: hoist the per-marker consumer-registry lookup. `__gxtRegisterListMarker`
+    // is install-once-stable (manager.ts installs it idempotently at boot), so
+    // reading it once per updateItems (instead of once per new marker) removes a
+    // global-property lookup per row on the create/append path. Stashed on the
+    // instance so `_buildAndInsertRow` (the append fast-path) reuses it too.
+    this._registerMarkerHook = (
+      globalThis as { __gxtRegisterListMarker?: (m: Comment) => void }
+    ).__gxtRegisterListMarker;
+    const _registerMarker = this._registerMarkerHook;
     existKeys.length = 0;
     existNewIdx.length = 0;
     existOldIdx.length = 0;
@@ -1063,13 +1078,9 @@ export class BasicListComponent<T extends { id: number }> {
           itemMarkers.set(key, marker);
           markerSet.add(marker);
           // Register per-item marker with the consumer registry (no-op when
-          // no consumer hook is installed). See constructor for rationale.
-          const _reg = (
-            globalThis as {
-              __gxtRegisterListMarker?: (m: Comment) => void;
-            }
-          ).__gxtRegisterListMarker;
-          if (_reg) _reg(marker);
+          // no consumer hook is installed). P7: hook hoisted to `_registerMarker`
+          // at the top of updateItems (install-once-stable).
+          if (_registerMarker) _registerMarker(marker);
         }
         // Provide a reactive `index` cell only when the compiled body
         // actually reads `index.value` (compiler sets `hasIndex` for that

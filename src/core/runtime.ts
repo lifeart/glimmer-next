@@ -96,6 +96,15 @@ function sortSharedTags(sharedTags: MergedCell[]) {
   }
 }
 
+// P8: instance-of-the-module scratch buffer for the derived-tag fan-out, reused
+// across flushes (like the LIS buffers in list.ts) instead of allocating a
+// fresh array per flush. syncDomSync is non-reentrant (executeTag never calls
+// back into syncDomSync synchronously — cell writes during a flush only set the
+// external-schedule pending flag), so a single shared buffer is safe. Cleared
+// (length = 0) before use; the entries are released at the end of the flush so
+// the buffer doesn't retain MergedCell references between ticks.
+const _sharedTagsScratch: MergedCell[] = [];
+
 /**
  * Fully synchronous DOM sync — no Promise allocation, no async/await overhead.
  */
@@ -123,7 +132,8 @@ function syncDomSync() {
         console.log('[SYNC] cell.id=' + cell.id + ' DELETE relatedTags, had: [' + names.join(',') + ']');
       }
       relatedTags.delete(cell.id);
-      if (sharedTags === null) sharedTags = [];
+      // P8: reuse the module-level scratch buffer instead of allocating.
+      if (sharedTags === null) { sharedTags = _sharedTagsScratch; sharedTags.length = 0; }
       for (const tag of subTags) sharedTags.push(tag);
       subTags.clear();
     } else if (IS_DEV_MODE && (globalThis as any).__gxtDebugSync) {
@@ -141,6 +151,8 @@ function syncDomSync() {
         executeTag(tag, false);
       }
     }
+    // Release MergedCell refs so the scratch doesn't retain them across ticks.
+    sharedTags.length = 0;
   }
   tagsToRevalidate.clear();
   setIsRendering(false);
