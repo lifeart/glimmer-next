@@ -1333,6 +1333,22 @@ export class SyncListComponent<
     ) {
       // Detach CHILD so item destructors skip parent-sibling deletes.
       this.detachTreeChildren();
+      // O(n^2) FIX: bulk-clear the parent's DOM FIRST (innerHTML='' is O(1)),
+      // BEFORE running the per-row destructors. The guard above proves this
+      // list owns the entire parent (its markers are first/last child), so a
+      // bulk clear is safe and removes every row in one reflow. The per-row
+      // `destroyElementSync(value, skipDom=true)` cascade below still runs the
+      // reactive cleanup (registered destructors, cell/formula `.destroy()`),
+      // but each row's top node is a raw <tr>/element passed to
+      // `api.destroy(node)` -> `node.remove()`. When the parent still held all
+      // N siblings, every individual `.remove()` was an O(N) live-childlist
+      // splice + layout invalidation, making a full keyed-each clear O(N^2)
+      // (measured: 1k=32ms, 10k=2980ms ~ 93x for 10x rows). With the parent
+      // already emptied, those `.remove()` calls see `parentNode === null` and
+      // are O(1) no-ops, collapsing teardown to linear.
+      this.api.clearChildren(parent);
+      this.api.insert(parent, topMarker);
+      this.api.insert(parent, bottomMarker);
       for (const value of keyMap.values()) {
         destroyElementSync(value as ComponentLike, true, this.api);
       }
@@ -1343,9 +1359,6 @@ export class SyncListComponent<
         }
         indexFormulaMap.clear();
       }
-      this.api.clearChildren(parent);
-      this.api.insert(parent, topMarker);
-      this.api.insert(parent, bottomMarker);
       keyMap.clear();
       indexMap.clear();
       if (this.boundItemMap !== null) this.boundItemMap.clear();
