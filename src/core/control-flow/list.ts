@@ -32,6 +32,7 @@ import {
   COMPONENT_ID_PROPERTY,
   isEmpty,
 } from '@/core/shared';
+import { RENDERING_CONTEXT_PROPERTY } from '@/core/types';
 import { TREE, CHILD, PARENT, cId, addToTree } from '@/core/tree';
 import { isRehydrationScheduled } from '@/core/ssr/rehydration';
 import { initDOM } from '@/core/context';
@@ -59,6 +60,19 @@ function _fineGrainedEachRebind(): boolean {
   Based on Glimmer-VM list update logic.
 */
 type GenericReturnType = Array<ComponentLike | Node> | ComponentLike | Node;
+
+// Lightweight per-row destructor-owner context. It is a valid render context
+// (carries the list's DOM api + a tree id) but renders NO DOM of its own — the
+// row's actual DOM (the `<tr>` etc.) is tracked + removed by the list's existing
+// keyMap/marker machinery. Its sole job is to OWN the row body's element
+// binding-opcode destructors (and any nested control-flow children) so they
+// tear down per-row instead of leaking onto the surviving list instance.
+type RowContext = {
+  [COMPONENT_ID_PROPERTY]: number;
+  [RENDERED_NODES_PROPERTY]: Array<Node>;
+  [RENDERING_CONTEXT_PROPERTY]: DOMApi;
+  [key: symbol]: unknown;
+};
 
 export type InverseFn = (ctx: Component<any>) => GenericReturnType | null;
 
@@ -294,6 +308,24 @@ export class BasicListComponent<T extends { id: number }> {
   // block-param re-binds to the new object WITHOUT recreating the row. Only
   // populated when `__GXT_SPIKE_SKIP_MORPH` is on. Lazily allocated.
   boundItemMap: Map<string, T> | null = null;
+  // Per-row destructor-owner context.
+  //
+  // The compiled each-body (`ItemComponent`) registers its per-element binding
+  // opcodes (e.g. `class={{if (isSelected row)}}`, attr/text bindings, `{{on}}`
+  // events, modifiers) against the ctx passed as the body's 3rd arg via
+  // `registerDestructorBatch(ctx, destructors)` in `_DOM`. Historically that ctx
+  // was the LIST instance (`self`), which SURVIVES a `data.length=0` clear (the
+  // `{{#each}}` stays mounted) — so on clear those opcodes were NEVER torn down
+  // and their formulas stayed subscribed to shared cells (`selected`, …) forever.
+  // Each later mutation then re-ran every leaked + live formula (cumulative).
+  //
+  // Fix: hand each row a dedicated per-row destroyable ctx (a child of this list
+  // in the TREE) as the body's 3rd arg. On row destroy (`fastCleanup` /
+  // `destroyItem`) we `destroyElementSync(rowCtx, skipDom=true)` so the row's
+  // binding opcodes UNSUBSCRIBE. Keyed by item key, parallel to `keyMap`. Only
+  // allocated in fine-grained mode (`__GXT_SPIKE_SKIP_MORPH`); shipping morph-ON
+  // keeps passing `self` (byte-identical, the whole-template morph owns updates).
+  rowCtxMap: Map<string, RowContext> | null = null;
   // Track per-item markers for stable relocation boundaries
   itemMarkers: Map<string, Comment> = new Map();
   markerSet: Set<Comment> = new Set();
@@ -357,6 +389,103 @@ export class BasicListComponent<T extends { id: number }> {
    */
   protected detachTreeChildren(): void {
     CHILD.delete(this[COMPONENT_ID_PROPERTY]);
+  }
+  /**
+   * Resolve the ctx that the row body (`ItemComponent`) should register its
+   * per-element binding-opcode destructors against.
+   *
+   * Fine-grained (morph-OFF): allocate a per-row {@link RowContext} that is a
+   * child of this list in the TREE and store it by key, so a clear/remove
+   * unsubscribes the row's `class`/attr/text/event/modifier opcodes. Morph-ON
+   * (shipping): return `self` unchanged (byte-identical legacy behaviour).
+   *
+   * IMPORTANT: this does NOT touch `setParentContext`. The leak is confined to
+   * the row body's DIRECT element binding opcodes (which `_DOM` registers
+   * against the ctx ARG, i.e. this returned rowCtx) — for a "stable" each-body
+   * (single element, no `$_ucw` wrapper; the Krausest `<tr>` case). When the
+   * body is `$_ucw`-wrapped (text / multi-child / nested-control rows), the UCW
+   * is ITSELF a per-row destroyable already tracked in `keyMap` and torn down by
+   * the existing `destroyElementSync(keyMapRow)` path, so there is no leak to
+   * fix there — and the UCW must keep attaching to its lexical parent (the list
+   * `self`, via the unchanged ambient `getParentContext()`). Re-parenting the
+   * UCW under rowCtx regressed `toggling {{#each}}` / `{{#each-in}}` inverse
+   * (else-branch) rendering, so we leave the parent-context chain untouched and
+   * let rowCtx own ONLY the opcodes `_DOM` registers directly against it.
+   */
+  protected rowBodyCtx(key: string, self: ComponentLike): ComponentLike {
+    if (!_fineGrainedEachRebind()) {
+      return self;
+    }
+    const rowCtx: RowContext = {
+      [COMPONENT_ID_PROPERTY]: cId(),
+      [RENDERED_NODES_PROPERTY]: [],
+      [RENDERING_CONTEXT_PROPERTY]: this.api,
+      // Mark as a glimmer-next-native block wrapper so host consumers (e.g.
+      // ember.js' gxt-backend `$_tag` / `$_GET_ARGS` path) DON'T re-stamp our
+      // COMPONENT_ID with the shared gxt-root id. Without this, the row body
+      // (rendered with rowCtx as its ctx) re-stamps rowCtx's id to the root id
+      // → rowCtx's CHILD bucket collapses into the root's, so destroying the
+      // row cascades through the ENTIRE root subtree (incl. the list itself).
+      // Symbol.for keeps the contract identical to dom.ts's $BLOCK_WRAPPER_SYMBOL
+      // across the package boundary (no import → no cycle).
+      [Symbol.for('gxt-block-wrapper')]: true,
+    };
+    // @ts-expect-error rowCtx is a minimal ComponentLike for tree bookkeeping
+    addToTree(this, rowCtx, 'from list rowBodyCtx');
+    if (this.rowCtxMap === null) this.rowCtxMap = new Map();
+    this.rowCtxMap.set(key, rowCtx);
+    return rowCtx as unknown as ComponentLike;
+  }
+  /**
+   * Tear down the per-row destructor-owner ctx for `key` (if any), firing the
+   * row body's element binding opcodes AND cascading to its TREE children.
+   *
+   * `skipDom=false`: when the row body is `$_ucw`-wrapped (text / multi-child /
+   * nested-control rows), the UCW component is `addToTree`'d UNDER rowCtx (see
+   * `_component`'s `addToTree(ctx, instance)` with ctx = our rowCtx). So the
+   * UCW (and its yielded/rendered DOM) is a tree child of rowCtx and MUST be
+   * removed by this cascade — `skipDom=true` would mark it destroyed without
+   * removing its DOM, and the caller's separate `destroyElementSync(row)` then
+   * no-ops (the row IS that already-destroyed UCW), leaking the DOM (the
+   * `{{#each}}{{yield}}` accumulation bug). For a stable `<tr>` body rowCtx has
+   * no tree children + empty RENDERED_NODES, so this only fires its opcodes and
+   * the raw `<tr>` node is removed by the caller's row path. Idempotent.
+   */
+  protected destroyRowCtx(key: string): void {
+    const map = this.rowCtxMap;
+    if (map === null) return;
+    const rowCtx = map.get(key);
+    if (rowCtx === undefined) return;
+    map.delete(key);
+    const rowId = rowCtx[COMPONENT_ID_PROPERTY];
+    destroyElementSync(rowCtx as unknown as ComponentLike, false, this.api);
+    // Detach the (now-destroyed) row ctx from the tree maps.
+    CHILD.delete(rowId);
+    TREE.delete(rowId);
+    PARENT.delete(rowId);
+    const childSet = CHILD.get(this[COMPONENT_ID_PROPERTY]);
+    if (childSet !== undefined) childSet.delete(rowId);
+  }
+  /**
+   * Tear down EVERY tracked per-row ctx (used by the bulk clear paths). Runs
+   * each row's element binding opcodes synchronously (skipDom — the row DOM is
+   * removed by the bulk `clearChildren`) and detaches all row ctxs from the
+   * tree, then clears the map. No-op when not tracking per-row ctxs.
+   */
+  protected teardownAllRowCtxs(): void {
+    const rowCtxMap = this.rowCtxMap;
+    if (rowCtxMap === null || rowCtxMap.size === 0) return;
+    const listId = this[COMPONENT_ID_PROPERTY];
+    const childSet = CHILD.get(listId);
+    for (const rowCtx of rowCtxMap.values()) {
+      const rowId = rowCtx[COMPONENT_ID_PROPERTY];
+      destroyElementSync(rowCtx as unknown as ComponentLike, true, this.api);
+      CHILD.delete(rowId);
+      TREE.delete(rowId);
+      PARENT.delete(rowId);
+      if (childSet !== undefined) childSet.delete(rowId);
+    }
+    rowCtxMap.clear();
   }
   /**
    * Fast-path for updates that preserve all existing items and only append
@@ -919,10 +1048,13 @@ export class BasicListComponent<T extends { id: number }> {
       this.indexFormulaMap.set(key, indexFormula);
     }
 
+    // Per-row destructor-owner ctx (fine-grained); `self` otherwise. Owns the
+    // row body's direct element binding opcodes so they unsubscribe on teardown.
+    const bodyCtx = this.rowBodyCtx(key, self);
     const row = this.ItemComponent(
       item,
       idx,
-      self as unknown as Component<any>,
+      bodyCtx as unknown as Component<any>,
     );
 
     keyMap.set(key, row);
@@ -1129,7 +1261,10 @@ export class BasicListComponent<T extends { id: number }> {
           this.indexFormulaMap.set(key, indexFormula);
         }
 
-        const row = ItemComponent(item, idx, self as unknown as Component<any>);
+        // Per-row destructor-owner ctx (fine-grained); `self` otherwise. Owns the
+        // row body's direct element binding opcodes so they unsubscribe on teardown.
+        const bodyCtx = this.rowBodyCtx(key, self);
+        const row = ItemComponent(item, idx, bodyCtx as unknown as Component<any>);
 
         keyMap.set(key, row);
         indexMap.set(key, index);
@@ -1363,6 +1498,10 @@ export class SyncListComponent<
       for (const value of keyMap.values()) {
         destroyElementSync(value as ComponentLike, true, this.api);
       }
+      // Tear down each row's per-row destructor-owner ctx (fine-grained), so the
+      // row body's `class`/attr/text/event/modifier opcodes UNSUBSCRIBE from
+      // shared cells. Without this they leaked onto the surviving list instance.
+      this.teardownAllRowCtxs();
       // Clean up all reactive index formulas
       if (indexFormulaMap) {
         for (const formula of indexFormulaMap.values()) {
@@ -1485,6 +1624,9 @@ export class SyncListComponent<
     keyMap.delete(key);
     indexMap.delete(key);
     if (this.boundItemMap !== null) this.boundItemMap.delete(key);
+    // Tear down this row's per-row destructor-owner ctx (fine-grained) so its
+    // element binding opcodes UNSUBSCRIBE from shared cells. No-op morph-ON.
+    this.destroyRowCtx(key);
     // Clean up reactive index formula if it exists
     if (indexFormulaMap) {
       const formula = indexFormulaMap.get(key);
@@ -1638,14 +1780,33 @@ export class AsyncListComponent<
           }
           indexFormulaMap.clear();
         }
+        // Snapshot + detach the per-row destructor-owner ctxs (fine-grained)
+        // alongside the rows, so the row body's element binding opcodes (incl.
+        // any async modifier teardowns) unsubscribe instead of leaking onto the
+        // surviving list. Mirrors SyncListComponent.teardownAllRowCtxs but async.
+        const rowCtxs: ComponentLike[] = [];
+        const rowCtxMap = this.rowCtxMap;
+        if (rowCtxMap !== null && rowCtxMap.size > 0) {
+          const childSet = CHILD.get(this[COMPONENT_ID_PROPERTY]);
+          for (const rowCtx of rowCtxMap.values()) {
+            const rowId = rowCtx[COMPONENT_ID_PROPERTY];
+            rowCtxs.push(rowCtx as unknown as ComponentLike);
+            CHILD.delete(rowId);
+            TREE.delete(rowId);
+            PARENT.delete(rowId);
+            if (childSet !== undefined) childSet.delete(rowId);
+          }
+          rowCtxMap.clear();
+        }
         keyMap.clear();
         indexMap.clear();
         this.itemMarkers.clear();
         this.markerSet.clear();
         // Run destructors fire-and-forget (DOM already gone → skipDom=true).
-        const teardown: Promise<void[]> = Promise.all(
-          rows.map((row) => destroyElement(row, true, this.api)),
-        );
+        const teardown: Promise<void[]> = Promise.all([
+          ...rows.map((row) => destroyElement(row, true, this.api)),
+          ...rowCtxs.map((rc) => destroyElement(rc, true, this.api)),
+        ]);
         // Track so the list destructor (which returns destroyPromise) can
         // await full teardown if needed; don't block this clear on it.
         this.destroyPromise = teardown;
@@ -1657,14 +1818,30 @@ export class AsyncListComponent<
         return true;
       }
 
-      // Cascade-destruction path (unchanged): await per-row destructors so
-      // async element destructors (e.g. fade-out) finish; the parent cascade
-      // reclaims DOM.
-      const promises = new Array(keyMap.size);
-      let i = 0;
+      // Cascade-destruction path: await per-row destructors so async element
+      // destructors (e.g. fade-out) finish; the parent cascade reclaims DOM.
+      const promises: Array<Promise<void>> = [];
       for (const value of keyMap.values()) {
-        promises[i] = destroyElement(value as ComponentLike, true, this.api);
-        i++;
+        promises.push(destroyElement(value as ComponentLike, true, this.api));
+      }
+      // Per-row destructor-owner ctxs (fine-grained). When the LIST itself is
+      // torn down, the parent cascade also walks these (they are CHILD of the
+      // list); destroyElement is idempotent so awaiting here is safe + ensures
+      // they unsubscribe even on a standalone async clear.
+      const rowCtxMap = this.rowCtxMap;
+      if (rowCtxMap !== null && rowCtxMap.size > 0) {
+        const childSet = CHILD.get(this[COMPONENT_ID_PROPERTY]);
+        for (const rowCtx of rowCtxMap.values()) {
+          const rowId = rowCtx[COMPONENT_ID_PROPERTY];
+          promises.push(
+            destroyElement(rowCtx as unknown as ComponentLike, true, this.api),
+          );
+          CHILD.delete(rowId);
+          TREE.delete(rowId);
+          PARENT.delete(rowId);
+          if (childSet !== undefined) childSet.delete(rowId);
+        }
+        rowCtxMap.clear();
       }
       await Promise.all(promises);
       promises.length = 0;
@@ -1774,6 +1951,24 @@ export class AsyncListComponent<
         formula.destroy();
         indexFormulaMap.delete(key);
       }
+    }
+    // Tear down this row's per-row destructor-owner ctx (fine-grained) FIRST,
+    // with skipDom=false so its cascade removes any `$_ucw`-wrapped child DOM
+    // (the UCW is a tree child of rowCtx — see destroyRowCtx doc) and awaits
+    // async element/modifier destructors. Then destroy the row itself: for a
+    // stable `<tr>` body that removes the raw node; for a UCW body it no-ops
+    // (already destroyed via the cascade). No-op morph-ON.
+    const rowCtxMap = this.rowCtxMap;
+    const rowCtx = rowCtxMap?.get(key);
+    if (rowCtx !== undefined) {
+      const rowId = rowCtx[COMPONENT_ID_PROPERTY];
+      rowCtxMap!.delete(key);
+      const childSet = CHILD.get(this[COMPONENT_ID_PROPERTY]);
+      await destroyElement(rowCtx as unknown as ComponentLike, false, this.api);
+      CHILD.delete(rowId);
+      TREE.delete(rowId);
+      PARENT.delete(rowId);
+      if (childSet !== undefined) childSet.delete(rowId);
     }
     await destroyElement(row as ComponentLike, false, this.api);
     this.removeMarker(key);
