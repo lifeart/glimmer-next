@@ -84,7 +84,7 @@ export function resolveRenderable(
     // the leaf cell and re-wrap; the new formula tracks a real cell so a later
     // `set(context,'<path>',...)` updates the binding. Gated — never morph-ON.
     if (
-      (globalThis as any).__GXT_SPIKE_SKIP_MORPH &&
+      !WITH_MORPH &&
       (isPrimitive(componentProps) || isEmpty(componentProps)) &&
       materializeAbsentPathCell(child)
     ) {
@@ -106,7 +106,7 @@ export function resolveRenderable(
     if (isPrimitive(componentProps) || isEmpty(componentProps)) {
       // Fine-grained (morph-OFF) only: register leaf-object owners so a
       // nested-property `set()` on a held object dirties this cell.
-      if ((globalThis as any).__GXT_SPIKE_SKIP_MORPH) {
+      if (!WITH_MORPH) {
         registerLeafOwnersForFormula(f);
       }
       return f;

@@ -45,11 +45,12 @@ import { setParentContext, getParentContext } from '../tracking';
 // Re-export getFirstNode for backward compatibility
 export { getFirstNode };
 
-// Fine-grained mode gate (host-set). When ON, syncList re-binds a reused row's
-// block-param to a new source object via the host `__gxtRebindEachItem` hook
-// (group-E). OFF (shipping) → none of this runs → byte-identical.
+// Fine-grained mode gate (build-time const). When fine-grained (the default,
+// `!WITH_MORPH`), syncList re-binds a reused row's block-param to a new source
+// object via the host `__gxtRebindEachItem` hook (group-E). Under a host morph
+// (`WITH_MORPH`) none of this runs.
 function _fineGrainedEachRebind(): boolean {
-  return (globalThis as any).__GXT_SPIKE_SKIP_MORPH === true;
+  return !WITH_MORPH;
 }
 
 /*
@@ -430,6 +431,16 @@ export class BasicListComponent<T extends { id: number }> {
       // across the package boundary (no import → no cycle).
       [Symbol.for('gxt-block-wrapper')]: true,
     };
+    // Propagate the dynamic-eval resolver to deferred/appended rows. The list
+    // captured `this.$_eval` from its ctx at construction (see constructor);
+    // rows created AFTER initial render render with rowCtx as their ctx, and
+    // `globalThis.$_eval` is no longer set by then, so without this an
+    // `{{unknownIdentifier}}` in an appended row would resolve to its literal
+    // name instead of the eval'd value. Mirrors dom.ts's deferred-render path.
+    if (WITH_DYNAMIC_EVAL) {
+      // @ts-expect-error $_eval may exist on the list instance
+      if (this.$_eval) (rowCtx as any).$_eval = this.$_eval;
+    }
     // @ts-expect-error rowCtx is a minimal ComponentLike for tree bookkeeping
     addToTree(this, rowCtx, 'from list rowBodyCtx');
     if (this.rowCtxMap === null) this.rowCtxMap = new Map();
@@ -477,15 +488,23 @@ export class BasicListComponent<T extends { id: number }> {
     if (rowCtxMap === null || rowCtxMap.size === 0) return;
     const listId = this[COMPONENT_ID_PROPERTY];
     const childSet = CHILD.get(listId);
+    // First-error-wins: a throwing row destructor must not leak the remaining
+    // rowCtxs. Registry bookkeeping still runs for each row; first error after.
+    let firstError: unknown = undefined;
     for (const rowCtx of rowCtxMap.values()) {
       const rowId = rowCtx[COMPONENT_ID_PROPERTY];
-      destroyElementSync(rowCtx as unknown as ComponentLike, true, this.api);
+      try {
+        destroyElementSync(rowCtx as unknown as ComponentLike, true, this.api);
+      } catch (e) {
+        if (firstError === undefined) firstError = e;
+      }
       CHILD.delete(rowId);
       TREE.delete(rowId);
       PARENT.delete(rowId);
       if (childSet !== undefined) childSet.delete(rowId);
     }
     rowCtxMap.clear();
+    if (firstError !== undefined) throw firstError;
   }
   /**
    * Fast-path for updates that preserve all existing items and only append
@@ -665,7 +684,7 @@ export class BasicListComponent<T extends { id: number }> {
     // re-renders the whole template and is unaffected (the host hook is
     // installed only in fine-grained mode → no-op when flag is off).
     if (
-      (globalThis as any).__GXT_SPIKE_SKIP_MORPH &&
+      !WITH_MORPH &&
       this.tag instanceof MergedCell
     ) {
       // Force the formula to compute once so relatedCells is populated.
@@ -1495,17 +1514,33 @@ export class SyncListComponent<
       this.api.clearChildren(parent);
       this.api.insert(parent, topMarker);
       this.api.insert(parent, bottomMarker);
+      // First-error-wins across the entire teardown: one throwing row
+      // destructor must not leak the remaining rows / rowCtxs / index formulas.
+      // Complete everything, clear the maps, re-throw the first error after.
+      let firstError: unknown = undefined;
       for (const value of keyMap.values()) {
-        destroyElementSync(value as ComponentLike, true, this.api);
+        try {
+          destroyElementSync(value as ComponentLike, true, this.api);
+        } catch (e) {
+          if (firstError === undefined) firstError = e;
+        }
       }
       // Tear down each row's per-row destructor-owner ctx (fine-grained), so the
       // row body's `class`/attr/text/event/modifier opcodes UNSUBSCRIBE from
       // shared cells. Without this they leaked onto the surviving list instance.
-      this.teardownAllRowCtxs();
+      try {
+        this.teardownAllRowCtxs();
+      } catch (e) {
+        if (firstError === undefined) firstError = e;
+      }
       // Clean up all reactive index formulas
       if (indexFormulaMap) {
         for (const formula of indexFormulaMap.values()) {
-          formula.destroy();
+          try {
+            formula.destroy();
+          } catch (e) {
+            if (firstError === undefined) firstError = e;
+          }
         }
         indexFormulaMap.clear();
       }
@@ -1514,6 +1549,7 @@ export class SyncListComponent<
       if (this.boundItemMap !== null) this.boundItemMap.clear();
       this.itemMarkers.clear();
       this.markerSet.clear();
+      if (firstError !== undefined) throw firstError;
       return true;
     } else {
       return false;

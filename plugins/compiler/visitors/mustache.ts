@@ -511,7 +511,7 @@ function visitSimpleMustache(
     // passed by reference and throw the standard ambiguous-named-arg error.
     // Reactivity for arg values is already provided by the component arg
     // getter, so wrapping here is both unnecessary and harmful.
-    if (_wrap && !ctx.inAttributeValue && (globalThis as any).__GXT_SPIKE_SKIP_MORPH) {
+    if (_wrap && !ctx.inAttributeValue && !WITH_MORPH) {
       return getter(noArgHelper, range);
     }
     return noArgHelper;

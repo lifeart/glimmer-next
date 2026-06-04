@@ -264,7 +264,7 @@ function resolveBindingValue(
     // computation, and when it really is const + empty, materialize the leaf
     // cell and re-wrap so the binding becomes genuinely reactive. Gated; the
     // morph-ON path is the original `if (f.isConst)` fast-path (byte-identical).
-    if ((globalThis as any).__GXT_SPIKE_SKIP_MORPH) {
+    if (!WITH_MORPH) {
       const v0 = f.value; // side effect: computes f.isConst + relatedCells
       if (f.isConst) {
         if (
@@ -335,7 +335,7 @@ function $prop(
         // `attrs: {}` instead of relying on the async MutationObserver fallback.
         // Gated so morph-ON stays byte-identical.
         if (
-          (globalThis as any).__GXT_SPIKE_SKIP_MORPH &&
+          !WITH_MORPH &&
           key === 'style' &&
           (val === '' || val === null || val === undefined) &&
           (element as HTMLElement).removeAttribute
@@ -409,7 +409,7 @@ function mergeClassModifiers(
     // object (e.g. `is.enabled` where the binding reads `this.is.enabled`)
     // dirties the modifier cell. The $prop read above has populated each
     // formula's relatedCells. Gated — never reached morph-ON.
-    if ((globalThis as any).__GXT_SPIKE_SKIP_MORPH) {
+    if (!WITH_MORPH) {
       for (const f of formulasToDestroy) {
         registerLeafOwnersForFormula(f);
       }
@@ -487,7 +487,7 @@ function $ev(
           // stale. Re-registering here (idempotent — host dedupes by
           // (obj,key)) picks up the swapped object. Gated; morph-ON never
           // reaches this branch with the hook installed.
-          if ((globalThis as any).__GXT_SPIKE_SKIP_MORPH) {
+          if (!WITH_MORPH) {
             registerLeafOwnersForFormula(result as MergedCell);
           }
         }),
@@ -792,7 +792,7 @@ function _DOM(
   // keeps the eager single resolve (the whole-template morph owns tag updates).
   if (
     typeof tag === 'function' &&
-    (globalThis as any).__GXT_SPIKE_SKIP_MORPH
+    !WITH_MORPH
   ) {
     return reactiveTagElement(tag as () => string, tagProps, ctx, children, api);
   }
@@ -1615,7 +1615,7 @@ function ifCond(
   // be stripped as before. `condition.isConst` is reliable here: the constructor's
   // initial `syncState(condition.value)` already evaluated it. The registry hook
   // is a no-op when the host hasn't installed it (morph-ON / classic).
-  if ((globalThis as any).__GXT_SPIKE_SKIP_MORPH) {
+  if (!WITH_MORPH) {
     const cond = instance.condition as { isConst?: boolean };
     if (cond && cond.isConst !== true) {
       const _reg = (globalThis as { __gxtRegisterListMarker?: (m: Comment) => void })

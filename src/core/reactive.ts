@@ -288,14 +288,16 @@ export function relatedTagsForCell(cell: Cell) {
  * `{{this.salutation}}` text node) would never re-render this tick. This flushes
  * those opcodes immediately. The related-tag set for the cell is consumed
  * (deleted) the same way the normal drain consumes it, so a subsequent drain
- * does not double-execute. Best-effort: opcode errors are swallowed so a single
- * bad binding can't abort the flush.
+ * does not double-execute. A single bad binding can't abort the flush, but its
+ * error is surfaced to the host via the opcode-error reporter (NOT swallowed).
  */
 export function flushCellOpcodes(cell: Cell | MergedCell): void {
   try {
     executeTagSync(cell);
-  } catch {
-    /* ignore — opcode error must not abort the flush */
+  } catch (e) {
+    // Don't abort the flush, but report to the host (mirrors the normal drain's
+    // handleOpcodeError reporter path) rather than silently swallowing.
+    reportOpcodeError(e, cell);
   }
   const subTags = relatedTags.get((cell as Cell).id);
   if (subTags === undefined) {
@@ -310,8 +312,8 @@ export function flushCellOpcodes(cell: Cell | MergedCell): void {
   for (const tag of ordered) {
     try {
       executeTagSync(tag);
-    } catch {
-      /* ignore */
+    } catch (e) {
+      reportOpcodeError(e, tag);
     }
   }
 }
@@ -514,6 +516,24 @@ function handleOpcodeError(e: any, tag: Cell | MergedCell, opcode: tagOp | null,
   if (_opcodeErrorReporter !== null) {
     try {
       _opcodeErrorReporter(e, { tag, opcode });
+    } catch (reporterErr) {
+      if (IS_DEV_MODE) {
+        console.error('OpcodeErrorReporter threw:', reporterErr);
+      }
+    }
+  }
+}
+
+// Surface an opcode error from a context that has no `ops` array to splice
+// (e.g. the synchronous `flushCellOpcodes` path). Dev-logs and forwards to the
+// host reporter; never throws. Keeps flush errors from being silently dropped.
+function reportOpcodeError(e: any, tag: Cell | MergedCell): void {
+  if (IS_DEV_MODE) {
+    console.error({ message: 'Error executing tag (flush)', error: e, tag });
+  }
+  if (_opcodeErrorReporter !== null) {
+    try {
+      _opcodeErrorReporter(e, { tag, opcode: null });
     } catch (reporterErr) {
       if (IS_DEV_MODE) {
         console.error('OpcodeErrorReporter threw:', reporterErr);

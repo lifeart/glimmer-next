@@ -103,7 +103,7 @@ export class IfCondition {
     // parent-context stack pushed by the outer's renderState / $_ucw), so we use
     // it. GATED: morph-ON keeps the legacy `parentContext` (byte-identical).
     let treeParent: Component<any> = parentContext;
-    if ((globalThis as any).__GXT_SPIKE_SKIP_MORPH) {
+    if (!WITH_MORPH) {
       const activeParent = getParentContext();
       if (
         activeParent &&
@@ -145,7 +145,7 @@ export class IfCondition {
     // destructor here makes destroySync(this) tear down the live branch content.
     // GATED on fine-grained mode: with the morph ON the whole-template re-render
     // owns teardown, so this is a no-op there (byte-identical to baseline).
-    if ((globalThis as any).__GXT_SPIKE_SKIP_MORPH) {
+    if (!WITH_MORPH) {
       registerDestructor(this, this.destroyBranchSync.bind(this));
     }
     if (IS_DEV_MODE) {
@@ -191,7 +191,7 @@ export class IfCondition {
     // and proceeds, so concurrent-flip detection is preserved. GATED so the
     // morph-ON path is byte-identical (increment-then-check, as before).
     if (
-      (globalThis as any).__GXT_SPIKE_SKIP_MORPH &&
+      !WITH_MORPH &&
       this.runNumber > 0 &&
       this.lastValue === !!value
     ) {
@@ -300,7 +300,7 @@ export class IfCondition {
     nextBranch: (ifContext: IfCondition) => GenericReturnType,
     runNumber: number,
   ) {
-    if ((globalThis as any).__GXT_SPIKE_SKIP_MORPH) {
+    if (!WITH_MORPH) {
       this.reanchorPlaceholderIfOrphaned();
     }
     if (this.destroyPromise) {
@@ -453,7 +453,7 @@ export class IfCondition {
     // our captured tree parent so the resolution chain is intact. No-op when the
     // entry is already present. GATED so morph-ON is byte-identical.
     if (
-      (globalThis as any).__GXT_SPIKE_SKIP_MORPH &&
+      !WITH_MORPH &&
       this._treeParent &&
       TREE.get(this[COMPONENT_ID_PROPERTY]) !== (this as unknown as ComponentLike)
     ) {

@@ -75,9 +75,19 @@ export function destroyElementSync(
     // Slice to prevent mutation during iteration
     const componentsCopy = component.slice();
     const len = componentsCopy.length;
+    // First-error-wins: a throwing destructor on one element must NOT leak the
+    // remaining siblings (the dominant high-N {{#each}} clear path). Complete
+    // all, re-throw the first error after — matching destroyable.ts semantics so
+    // the abort isn't asymmetric between layers.
+    let firstError: unknown = undefined;
     for (let i = 0; i < len; i++) {
-      destroyElementSync(componentsCopy[i], skipDom, api);
+      try {
+        destroyElementSync(componentsCopy[i], skipDom, api);
+      } catch (e) {
+        if (firstError === undefined) firstError = e;
+      }
     }
+    if (firstError !== undefined) throw firstError;
   } else if (component) {
     // Direct property access is faster than 'in' operator
     const renderedNodes = (component as ComponentLike)[RENDERED_NODES_PROPERTY];
@@ -180,13 +190,22 @@ function runDestructorsSync(
 ): void {
   const stack = [targetNode];
 
+  // First-error-wins: one node's destructor / DOM removal throwing must NOT
+  // abort the rest of the teardown stack (sibling subtrees). Children are still
+  // pushed even if the current node threw, so the whole tree is walked; the
+  // first error is re-thrown after the walk completes.
+  let firstError: unknown = undefined;
   while (stack.length > 0) {
     const currentNode = stack.pop()!;
     const nodesToRemove = CHILD.get(currentNode[COMPONENT_ID_PROPERTY]);
 
-    destroySync(currentNode);
-    if (skipDom !== true) {
-      destroyNodes(api, currentNode![RENDERED_NODES_PROPERTY]);
+    try {
+      destroySync(currentNode);
+      if (skipDom !== true) {
+        destroyNodes(api, currentNode![RENDERED_NODES_PROPERTY]);
+      }
+    } catch (e) {
+      if (firstError === undefined) firstError = e;
     }
     if (nodesToRemove) {
       for (const childId of nodesToRemove) {
@@ -198,6 +217,7 @@ function runDestructorsSync(
       }
     }
   }
+  if (firstError !== undefined) throw firstError;
 }
 
 /**
