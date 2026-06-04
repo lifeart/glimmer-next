@@ -3269,8 +3269,11 @@ describe('PURE Annotations', () => {
     expect(compile('{{array 1 2 3}}').code).toContain('$__array');
     expect(compile('{{array 1 2 3}}').code).not.toContain('/*#__PURE__*/$__array');
 
-    // hash is at root level (not inside getter), so it DOES get PURE
-    expect(compile('{{hash a=1}}').code).toContain('/*#__PURE__*/$__hash');
+    // A named-args-only mustache like {{hash a=1}} is wrapped in a getter for
+    // fine-grained reactivity (() => $__hash({ a: () => 1 })), so the same rule
+    // applies: no PURE annotation inside the getter body.
+    expect(compile('{{hash a=1}}').code).toContain('$__hash');
+    expect(compile('{{hash a=1}}').code).not.toContain('/*#__PURE__*/$__hash');
   });
 
   test('helpers as @arg values do NOT get PURE annotation (inside getter)', () => {

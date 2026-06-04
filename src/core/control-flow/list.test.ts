@@ -3420,12 +3420,14 @@ describe('DOM mutation counting', () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder()).toEqual(['10', '20', '30']);
-    // clearChildren destroys all nodes in container (topMarker + bottomMarker + 3 markers + 3 divs = 8)
-    // plus fragment target marker destroy = 9 total
-    expect(getDestroyCount()).toBe(9);
-    // 3 new items rendered into fragment, 1 batch insert into container,
-    // plus topMarker + bottomMarker re-insert = 3
-    expect(getInsertCount()).toBe(3);
+    // Only the old rows are torn down: 3 item markers + 3 divs = 6 destroys.
+    // The list's persistent topMarker/bottomMarker boundary anchors are
+    // preserved across a full replace (no longer destroyed and recreated).
+    expect(getDestroyCount()).toBe(6);
+    // All 3 new rows are built in a DocumentFragment and committed with a
+    // single batched insert into the container. Boundary markers stay put,
+    // so there are no marker re-inserts.
+    expect(getInsertCount()).toBe(1);
   });
 });
 
