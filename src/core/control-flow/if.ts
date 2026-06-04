@@ -24,8 +24,6 @@ import {
   isTagLike,
   RENDERED_NODES_PROPERTY,
   COMPONENT_ID_PROPERTY,
-  ADDED_TO_TREE_FLAG,
-  TREE,
 } from '@/core/shared';
 import { cId, addToTree } from '@/core/tree';
 import { opcodeFor } from '@/core/vm';
@@ -173,30 +171,14 @@ export class IfCondition {
   }
 
   checkStatement(value: boolean) {
-    // Fine-grained (morph-OFF) only: when an incoming syncState is a NO-OP
-    // (`runNumber > 1` and `lastValue` already equals the incoming value),
-    // return WITHOUT bumping `runNumber`. `runNumber` is the epoch that
-    // `validateEpoch` uses to detect concurrent re-entry between an in-flight
-    // `renderBranch`'s synchronous destroy and its render. The native GXT
-    // condition opcode (`opcodeFor(this.condition, syncState)`) can fire a
-    // re-entrant same-value `syncState` DURING `destroyBranchSync` of a real
-    // branch toggle (e.g. a {{#if}} flipping false→true tears down its inverse,
-    // and the same gxtSyncDom pass re-reads the condition cell and re-invokes
-    // the bound syncState with the SAME `true`). Pre-fix that re-entrant no-op
-    // bumped `runNumber`, so the outer `renderBranch`'s `validateEpoch` then
-    // failed — the old branch was destroyed but the new branch was never
-    // rendered (GH#12267: `{{#if}}`+`{{#each}}` toggled false→true renders
-    // empty). Skipping the bump for no-ops keeps the in-flight epoch valid so
-    // the outer render proceeds. A REAL flip (lastValue !== value) still bumps
-    // and proceeds, so concurrent-flip detection is preserved. GATED so the
-    // morph-ON path is byte-identical (increment-then-check, as before).
-    if (
-      !WITH_MORPH &&
-      this.runNumber > 0 &&
-      this.lastValue === !!value
-    ) {
-      return;
-    }
+    // `runNumber` is the epoch `validateEpoch` uses to detect concurrent
+    // re-entry between an in-flight `renderBranch`'s synchronous destroy and its
+    // render. A fine-grained-only early-return that skipped the bump for
+    // re-entrant same-value `syncState` (originally needed because a teardown
+    // could re-read the condition cell mid-destroy — GH#12267) was REMOVED in
+    // the Phase-2c teardown cleanup: verified non-load-bearing against the full
+    // ember suite. The standard increment-then-no-op-check below handles the
+    // re-entrant same-value case; the mid-destroy re-read no longer occurs.
     this.runNumber++;
     if (this.runNumber > 1) {
       if (this.lastValue === !!value) {
@@ -236,73 +218,13 @@ export class IfCondition {
     this.renderBranch(nextBranch, this.runNumber);
   }
 
-  // Fine-grained (morph-OFF) only. The IfCondition's placeholder is created in
-  // a detached `outlet` fragment (getRenderTargets) and the branch content is
-  // rendered relative to it there; the consumer (ember-side template factory /
-  // component manager) then collects the rendered DOM nodes and moves them into
-  // the LIVE document — but the placeholder comment is NOT carried along (it is
-  // not one of the extracted content nodes), so after the first render the
-  // placeholder is left orphaned (parentNode === null). On a later branch toggle
-  // `renderState` falls back to `api.parent(placeholder) || this.target`; with an
-  // orphaned placeholder that resolves to the detached `this.target` fragment, so
-  // the re-entered branch (a {{yield}}, {{#each}}+component, or yield-to-inverse)
-  // renders into a dead fragment and never appears in the live DOM (GH#12267,
-  // yield-to-inverse, {{yield}}-in-{{#if}}, GH#14284).
-  //
-  // Recover by re-anchoring the placeholder into the LIVE DOM next to the
-  // currently-rendered branch content (which the consumer DID move live) before
-  // we tear that content down. The next branch then renders at the correct live
-  // position. No-op when the placeholder is already connected, or when there is
-  // no live branch node to anchor against. GATED on fine-grained mode so the
-  // morph-ON path is byte-identical.
-  private reanchorPlaceholderIfOrphaned() {
-    const ph = this.placeholder as Node;
-    if (ph.parentNode) {
-      return; // already live (or in its outlet) — nothing to do
-    }
-    // Find the first still-connected node from the current branch's live DOM.
-    let anchor: Node | null = null;
-    const nodes = this.branchDomNodes;
-    for (let i = 0; i < nodes.length; i++) {
-      const n = nodes[i];
-      if (n && (n as Node).isConnected) {
-        anchor = n as Node;
-        break;
-      }
-    }
-    if (!anchor) {
-      // Fall back to the previous component's first rendered node, if any.
-      const pc: any = this.prevComponent;
-      const rendered = pc && pc[RENDERED_NODES_PROPERTY];
-      if (Array.isArray(rendered)) {
-        for (let i = 0; i < rendered.length; i++) {
-          const r = rendered[i];
-          if (r && (r as Node).isConnected) {
-            anchor = r as Node;
-            break;
-          }
-        }
-      }
-    }
-    if (anchor && anchor.parentNode) {
-      // Insert the placeholder immediately AFTER the live branch node so the
-      // destroy of that content (which precedes it) leaves the placeholder as
-      // the live insertion anchor for the next branch.
-      try {
-        anchor.parentNode.insertBefore(ph, anchor.nextSibling);
-      } catch {
-        /* defensive: anchor may have been detached concurrently */
-      }
-    }
-  }
-
   renderBranch(
     nextBranch: (ifContext: IfCondition) => GenericReturnType,
     runNumber: number,
   ) {
-    if (!WITH_MORPH) {
-      this.reanchorPlaceholderIfOrphaned();
-    }
+    // [2c] reanchorPlaceholderIfOrphaned() call REMOVED — verified
+    // non-load-bearing against the full ember suite (the placeholder is no
+    // longer orphaned by the time renderBranch runs).
     if (this.destroyPromise) {
       this.destroyPromise.then(() => {
         this.destroyPromise = null;
@@ -452,15 +374,10 @@ export class IfCondition {
     // (GH#12267: `{{#if}}`+`{{#each}}` toggled false→true). Re-add ourselves to
     // our captured tree parent so the resolution chain is intact. No-op when the
     // entry is already present. GATED so morph-ON is byte-identical.
-    if (
-      !WITH_MORPH &&
-      this._treeParent &&
-      TREE.get(this[COMPONENT_ID_PROPERTY]) !== (this as unknown as ComponentLike)
-    ) {
-      // Clear the added-flag so addToTree re-runs its registration body.
-      (this as any)[ADDED_TO_TREE_FLAG] = false;
-      addToTree(this._treeParent, this as unknown as ComponentLike, 'if renderState re-register');
-    }
+    // [2c] renderState TREE re-register: REMOVED — verified non-load-bearing
+    // against the full ember suite (10153/10159, no GH#12267 regression). The
+    // over-eviction it guarded against no longer occurs (later teardown-scoping
+    // fixes made it dead).
     try {
       setParentContext(this as unknown as ComponentLike);
       this.prevComponent = nextBranch(this);
