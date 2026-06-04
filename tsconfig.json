@@ -30,7 +30,7 @@
       "@lifeart/gxt/glimmer-compatibility": ["./src/core/glimmer/glimmer-compat"],
       "@lifeart/gxt": ["./src/core/index"]
     },
-    "types": ["vite/client", "./types/index.d.ts"]
+    "types": ["vite/client", "./types"]
   },
   "include": ["src", "plugins"],
   "glint": {
