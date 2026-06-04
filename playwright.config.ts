@@ -34,7 +34,23 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        // Headless Chrome (110+) no longer enables the SwiftShader WebGL
+        // fallback by default, so GPU-less CI runners can't create a WebGL
+        // context and the three.js/Tres <canvas> never becomes visible
+        // (e2e/flows/canvas-spa.spec.ts would time out on waitForSelector).
+        // Force software WebGL via ANGLE/SwiftShader. No effect locally where
+        // a real GPU is available.
+        launchOptions: {
+          args: [
+            '--use-gl=angle',
+            '--use-angle=swiftshader',
+            '--enable-unsafe-swiftshader',
+            '--ignore-gpu-blocklist',
+          ],
+        },
+      },
     },
 
     // {
