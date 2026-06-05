@@ -395,9 +395,26 @@ export class MergedCell {
       return this.fn();
     }
 
-    let $tracker!: Set<Cell>;
-    try {
+    // Reuse this formula's existing `relatedCells` Set as the tracker buffer
+    // when one is already present. A reactive binding's formula has its
+    // `.value` read TWICE on create while `_isRendering` is true (once for the
+    // const-check in `resolveBindingValue`/`resolveRenderable`, then again by
+    // the binding opcode's own render-time read in `evaluateOpcode`). The first
+    // read allocated `relatedCells`; the second read would otherwise allocate a
+    // fresh Set and replace it, making the first Set transient garbage. Clearing
+    // and refilling the SAME Set recycles it across reads (one fewer Set
+    // allocation per reactive binding per row). Behavior-preserving: the final
+    // `relatedCells` content is identical, and `bindAllCellsToTag` re-adds `this`
+    // to each tracked cell's subscriber set idempotently (this path never
+    // unbound dropped deps before either — a re-read with stable deps re-adds
+    // the same cells).
+    let $tracker = this.relatedCells;
+    if ($tracker === null) {
       $tracker = tracker();
+    } else {
+      $tracker.clear();
+    }
+    try {
       setTracker($tracker);
       return this.fn();
     } finally {
