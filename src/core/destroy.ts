@@ -9,6 +9,7 @@ import {
   destroy,
   destroySync,
   isDestructionStarted,
+  reportDestructionError,
 } from '@/core/glimmer/destroyable';
 import {
   RENDERED_NODES_PROPERTY,
@@ -87,7 +88,12 @@ export function destroyElementSync(
         if (firstError === undefined) firstError = e;
       }
     }
-    if (firstError !== undefined) throw firstError;
+    // Propagation policy: standalone glimmer-next SWALLOWS (dev-logs) the first
+    // error so a throwing teardown can't abort an enclosing flow (master
+    // behavior); an Ember host that registered `setDestructionErrorReporter`
+    // receives it and may re-throw. (The leak fix — completing every sibling
+    // above — is unconditional and unchanged.)
+    if (firstError !== undefined) reportDestructionError(firstError);
   } else if (component) {
     // Direct property access is faster than 'in' operator
     const renderedNodes = (component as ComponentLike)[RENDERED_NODES_PROPERTY];
@@ -95,19 +101,13 @@ export function destroyElementSync(
       try {
         runDestructorsSync(component as ComponentLike, skipDom, api);
       } catch (e) {
-        if (IS_DEV_MODE) {
-          console.error('Error during destruction:', e);
-        }
-        throw e;
+        reportDestructionError(e);
       }
     } else {
       try {
         (api as DOMApi).destroy(component as Node);
       } catch (e) {
-        if (IS_DEV_MODE) {
-          console.error('Error destroying node:', e);
-        }
-        throw e;
+        reportDestructionError(e);
       }
     }
   }
@@ -193,7 +193,8 @@ function runDestructorsSync(
   // First-error-wins: one node's destructor / DOM removal throwing must NOT
   // abort the rest of the teardown stack (sibling subtrees). Children are still
   // pushed even if the current node threw, so the whole tree is walked; the
-  // first error is re-thrown after the walk completes.
+  // first error is surfaced after the walk completes via the host-policy
+  // reporter (swallow+log standalone; host may re-throw).
   let firstError: unknown = undefined;
   while (stack.length > 0) {
     const currentNode = stack.pop()!;
@@ -217,7 +218,7 @@ function runDestructorsSync(
       }
     }
   }
-  if (firstError !== undefined) throw firstError;
+  if (firstError !== undefined) reportDestructionError(firstError);
 }
 
 /**

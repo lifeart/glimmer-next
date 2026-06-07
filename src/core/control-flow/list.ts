@@ -32,14 +32,15 @@ import {
   COMPONENT_ID_PROPERTY,
   isEmpty,
 } from '@/core/shared';
-import { RENDERING_CONTEXT_PROPERTY, ADDED_TO_TREE_FLAG } from '@/core/types';
-import { TREE, CHILD, PARENT, cId, addToTree, releaseId } from '@/core/tree';
+import { RENDERING_CONTEXT_PROPERTY } from '@/core/types';
+import { TREE, CHILD, PARENT, cId, addToTree } from '@/core/tree';
 import { isRehydrationScheduled } from '@/core/ssr/rehydration';
 import { initDOM } from '@/core/context';
 import {
   registerDestructor,
   isDestructionStarted,
-  destroySync,
+  isDestroyed,
+  reportDestructionError,
 } from '../glimmer/destroyable';
 import { setParentContext, getParentContext } from '../tracking';
 
@@ -61,12 +62,6 @@ function _fineGrainedEachRebind(): boolean {
   Based on Glimmer-VM list update logic.
 */
 type GenericReturnType = Array<ComponentLike | Node> | ComponentLike | Node;
-
-// Hoisted out of the per-row `rowBodyCtx` hot path: `Symbol.for(...)` is a
-// global-registry lookup, so calling it once per row added a registry probe to
-// every keyed-each create. Resolving it once at module load and reusing the
-// cached symbol removes that per-row lookup.
-const BLOCK_WRAPPER_SYMBOL = Symbol.for('gxt-block-wrapper');
 
 // Lightweight per-row destructor-owner context. It is a valid render context
 // (carries the list's DOM api + a tree id) but renders NO DOM of its own — the
@@ -434,9 +429,8 @@ export class BasicListComponent<T extends { id: number }> {
       // → rowCtx's CHILD bucket collapses into the root's, so destroying the
       // row cascades through the ENTIRE root subtree (incl. the list itself).
       // Symbol.for keeps the contract identical to dom.ts's $BLOCK_WRAPPER_SYMBOL
-      // across the package boundary (no import → no cycle). Cached at module
-      // load (BLOCK_WRAPPER_SYMBOL) to avoid a per-row registry lookup.
-      [BLOCK_WRAPPER_SYMBOL]: true,
+      // across the package boundary (no import → no cycle).
+      [Symbol.for('gxt-block-wrapper')]: true,
     };
     // Propagate the dynamic-eval resolver to deferred/appended rows. The list
     // captured `this.$_eval` from its ctx at construction (see constructor);
@@ -448,40 +442,8 @@ export class BasicListComponent<T extends { id: number }> {
       // @ts-expect-error $_eval may exist on the list instance
       if (this.$_eval) (rowCtx as any).$_eval = this.$_eval;
     }
-    // Wire rowCtx into the tree DIRECTLY instead of via `addToTree`. The generic
-    // `addToTree` registers a per-node tree-cleanup DESTRUCTOR closure (pool-
-    // acquires a destructor array + WeakMap-set per row), which means even a
-    // component-bodied row — whose body registers NO opcode destructors against
-    // rowCtx (they live on the row Component, torn down via keyMap) — pays a full
-    // `destroySync` (WeakMap get/delete + array pool release + 3 Map deletes +
-    // releaseId) per row on clear. By owning the tree bookkeeping in the list's
-    // own teardown paths (`destroyRowCtx`/`teardownAllRowCtxs`) and NOT
-    // registering a cleanup destructor, a component-bodied rowCtx has an empty
-    // `$dfi` entry, so its `destroySync` is a cheap WeakMap-miss no-op on clear.
-    // This is the dominant cost in the high-N clear/render regression.
-    const rowId = rowCtx[COMPONENT_ID_PROPERTY];
-    const listId = this[COMPONENT_ID_PROPERTY];
-    let ch = CHILD.get(listId);
-    if (ch === undefined) {
-      ch = new Set();
-      ch.add(rowId);
-      CHILD.set(listId, ch);
-    } else {
-      ch.add(rowId);
-    }
-    TREE.set(rowId, rowCtx as unknown as ComponentLike);
-    if (WITH_CONTEXT_API) {
-      PARENT.set(rowId, listId);
-    }
-    // Keep host-compat with addToTree's contract (prevents a re-add).
-    rowCtx[ADDED_TO_TREE_FLAG] = true;
-    if (IS_DEV_MODE) {
-      Object.defineProperty(rowCtx, '_debugName', {
-        value: 'from list rowBodyCtx',
-        enumerable: false,
-        configurable: true,
-      });
-    }
+    // @ts-expect-error rowCtx is a minimal ComponentLike for tree bookkeeping
+    addToTree(this, rowCtx, 'from list rowBodyCtx');
     if (this.rowCtxMap === null) this.rowCtxMap = new Map();
     this.rowCtxMap.set(key, rowCtx);
     return rowCtx as unknown as ComponentLike;
@@ -509,15 +471,12 @@ export class BasicListComponent<T extends { id: number }> {
     map.delete(key);
     const rowId = rowCtx[COMPONENT_ID_PROPERTY];
     destroyElementSync(rowCtx as unknown as ComponentLike, false, this.api);
-    // Detach the row ctx from the tree maps. rowCtx is wired into the tree
-    // directly (no `addToTree` cleanup destructor — see `rowBodyCtx`), so the
-    // list owns this bookkeeping. `releaseId` recycles the id for the pool.
+    // Detach the (now-destroyed) row ctx from the tree maps.
     CHILD.delete(rowId);
     TREE.delete(rowId);
     PARENT.delete(rowId);
     const childSet = CHILD.get(this[COMPONENT_ID_PROPERTY]);
     if (childSet !== undefined) childSet.delete(rowId);
-    releaseId(rowId);
   }
   /**
    * Tear down EVERY tracked per-row ctx (used by the bulk clear paths). Runs
@@ -525,39 +484,18 @@ export class BasicListComponent<T extends { id: number }> {
    * removed by the bulk `clearChildren`) and detaches all row ctxs from the
    * tree, then clears the map. No-op when not tracking per-row ctxs.
    */
-  protected teardownAllRowCtxs(cascade = false): void {
+  protected teardownAllRowCtxs(): void {
     const rowCtxMap = this.rowCtxMap;
     if (rowCtxMap === null || rowCtxMap.size === 0) return;
     const listId = this[COMPONENT_ID_PROPERTY];
     const childSet = CHILD.get(listId);
     // First-error-wins: a throwing row destructor must not leak the remaining
     // rowCtxs. Registry bookkeeping still runs for each row; first error after.
-    // rowCtx is wired into the tree directly (no `addToTree` cleanup destructor —
-    // see `rowBodyCtx`), so the list does the Map cleanup here.
-    //
-    // `cascade=false` (the bulk-clear `fastCleanup` path): run ONLY rowCtx's OWN
-    // destructors (the body's direct element binding opcodes — `class`/attr/text/
-    // event/modifier registered against the ctx arg by `_DOM` for inline-element
-    // bodies). The row's actual content (the `<Row>` component / `$_ucw` wrapper)
-    // is independently tracked in `keyMap` and was already torn down by the
-    // keyMap loop that runs BEFORE this in `fastCleanup`, so cascading into
-    // rowCtx's tree children would re-walk + double-destroy already-dead nodes.
-    // For a component-bodied row (no opcodes on rowCtx) `destroySync` is a cheap
-    // `$dfi` WeakMap-miss no-op — the dominant clear-path saving.
-    //
-    // `cascade=true` (the constructor safety-net path): the keyMap teardown may
-    // have been SKIPPED (the `_syncInProgress` guard drops `syncList([])` during
-    // a parent cascade), so the row children are NOT guaranteed gone — use the
-    // full `destroyElementSync` cascade to reach them and avoid an orphan leak.
     let firstError: unknown = undefined;
     for (const rowCtx of rowCtxMap.values()) {
       const rowId = rowCtx[COMPONENT_ID_PROPERTY];
       try {
-        if (cascade) {
-          destroyElementSync(rowCtx as unknown as ComponentLike, true, this.api);
-        } else {
-          destroySync(rowCtx as object);
-        }
+        destroyElementSync(rowCtx as unknown as ComponentLike, true, this.api);
       } catch (e) {
         if (firstError === undefined) firstError = e;
       }
@@ -565,10 +503,9 @@ export class BasicListComponent<T extends { id: number }> {
       TREE.delete(rowId);
       PARENT.delete(rowId);
       if (childSet !== undefined) childSet.delete(rowId);
-      releaseId(rowId);
     }
     rowCtxMap.clear();
-    if (firstError !== undefined) throw firstError;
+    if (firstError !== undefined) reportDestructionError(firstError);
   }
   /**
    * Fast-path for updates that preserve all existing items and only append
@@ -639,19 +576,6 @@ export class BasicListComponent<T extends { id: number }> {
     // part of its parent's child teardown (see parentCtx handling above).
     const listId = this[COMPONENT_ID_PROPERTY];
     registerDestructor(this, () => {
-      // Safety net: rowCtx tree entries are owned by the list (no per-row
-      // `addToTree` cleanup destructor — see `rowBodyCtx`). The normal teardown
-      // routes (`fastCleanup`/`destroyItem`) already clear them, but if the
-      // list is torn down by a parent cascade while a sync is in progress
-      // (the `_syncInProgress` guard skips `syncList([])`), tear any survivors
-      // down here so they don't leak. Idempotent: no-op once rowCtxMap is empty.
-      // `cascade=true`: keyMap teardown may have been skipped, so fully cascade
-      // to reach the row children (avoid orphaning them).
-      try {
-        this.teardownAllRowCtxs(true);
-      } catch {
-        /* best-effort: don't let a row teardown error abort list cleanup */
-      }
       CHILD.delete(listId);
       TREE.delete(listId);
       PARENT.delete(listId);
@@ -1625,7 +1549,7 @@ export class SyncListComponent<
       if (this.boundItemMap !== null) this.boundItemMap.clear();
       this.itemMarkers.clear();
       this.markerSet.clear();
-      if (firstError !== undefined) throw firstError;
+      if (firstError !== undefined) reportDestructionError(firstError);
       return true;
     } else {
       return false;
@@ -1907,7 +1831,6 @@ export class AsyncListComponent<
             TREE.delete(rowId);
             PARENT.delete(rowId);
             if (childSet !== undefined) childSet.delete(rowId);
-            releaseId(rowId);
           }
           rowCtxMap.clear();
         }
@@ -1916,9 +1839,17 @@ export class AsyncListComponent<
         this.itemMarkers.clear();
         this.markerSet.clear();
         // Run destructors fire-and-forget (DOM already gone → skipDom=true).
+        // Skip rows/ctxs already torn down by a concurrent parent cascade — a
+        // fire-and-forget re-destroy is idempotent (the destroyable layer
+        // early-returns) but trips the dev double-destroy detector with noisy
+        // `console.error`s; the guard keeps the standalone teardown quiet.
         const teardown: Promise<void[]> = Promise.all([
-          ...rows.map((row) => destroyElement(row, true, this.api)),
-          ...rowCtxs.map((rc) => destroyElement(rc, true, this.api)),
+          ...rows
+            .filter((row) => !isDestroyed(row as object))
+            .map((row) => destroyElement(row, true, this.api)),
+          ...rowCtxs
+            .filter((rc) => !isDestroyed(rc as object))
+            .map((rc) => destroyElement(rc, true, this.api)),
         ]);
         // Track so the list destructor (which returns destroyPromise) can
         // await full teardown if needed; don't block this clear on it.
@@ -1933,22 +1864,28 @@ export class AsyncListComponent<
 
       // Cascade-destruction path: await per-row destructors so async element
       // destructors (e.g. fade-out) finish; the parent cascade reclaims DOM.
+      // Skip rows already torn down by the in-flight parent cascade — the
+      // re-destroy is idempotent but trips the dev double-destroy detector.
       const promises: Array<Promise<void>> = [];
       for (const value of keyMap.values()) {
+        if (isDestroyed(value as object)) continue;
         promises.push(destroyElement(value as ComponentLike, true, this.api));
       }
       // Per-row destructor-owner ctxs (fine-grained). When the LIST itself is
       // torn down, the parent cascade also walks these (they are CHILD of the
       // list); destroyElement is idempotent so awaiting here is safe + ensures
-      // they unsubscribe even on a standalone async clear.
+      // they unsubscribe even on a standalone async clear. Skip already-destroyed
+      // ones to keep the dev double-destroy detector quiet.
       const rowCtxMap = this.rowCtxMap;
       if (rowCtxMap !== null && rowCtxMap.size > 0) {
         const childSet = CHILD.get(this[COMPONENT_ID_PROPERTY]);
         for (const rowCtx of rowCtxMap.values()) {
           const rowId = rowCtx[COMPONENT_ID_PROPERTY];
-          promises.push(
-            destroyElement(rowCtx as unknown as ComponentLike, true, this.api),
-          );
+          if (!isDestroyed(rowCtx as object)) {
+            promises.push(
+              destroyElement(rowCtx as unknown as ComponentLike, true, this.api),
+            );
+          }
           CHILD.delete(rowId);
           TREE.delete(rowId);
           PARENT.delete(rowId);
@@ -2018,8 +1955,26 @@ export class AsyncListComponent<
         keysToRemove.push(key);
         rowsToRemove.push(row);
       }
+      // A FULL SWAP (every existing key removed AND a non-empty replacement
+      // set incoming) must NOT take the fire-and-forget bulk-clear `fastCleanup`
+      // path. `fastCleanup`'s standalone-clear fast path (FIX 4) bulk-clears the
+      // DOM and runs the old rows' destructors fire-and-forget on a later
+      // microtask. For a swap, `updateItems` synchronously renders the NEW rows
+      // into the SAME parent immediately afterwards — then the deferred old-row
+      // destructors fire and a nested-list row destructor (`syncList([])` →
+      // `fastCleanup` → `clearChildren(parent)`) wipes the freshly rendered new
+      // content. (Regression: `each >> it able to render nested each` — the
+      // matrix.update swap left 0 cells.) So restrict the bulk `fastCleanup` to
+      // the true full-clear (`items.length === 0`); for a swap, tear the old
+      // rows down per-item with `destroyItem` (scoped, node-specific DOM removal)
+      // and AWAIT that teardown BEFORE rendering the new rows so the orderings
+      // can't interleave. The empty-clear hot path (the FIX-4 perf win) is
+      // unchanged — it goes through the early `fastCleanup` at the top of
+      // syncList.
+      const isFullSwap =
+        keysToRemove.length === amountOfKeys && items.length > 0;
       if (keysToRemove.length) {
-        if (keysToRemove.length === amountOfKeys) {
+        if (keysToRemove.length === amountOfKeys && items.length === 0) {
           if (await this.fastCleanup()) {
             amountOfKeys = 0;
             keysToRemove.length = 0;
@@ -2028,6 +1983,9 @@ export class AsyncListComponent<
             // to skip parent-sibling delete work in each item's destructor.
             this.detachTreeChildren();
           }
+        } else if (isFullSwap) {
+          // Detach CHILD to skip parent-sibling delete work per row.
+          this.detachTreeChildren();
         }
         removedCount = keysToRemove.length;
 
@@ -2045,6 +2003,12 @@ export class AsyncListComponent<
         removePromise.then(() => {
           this.destroyPromise = null;
         });
+      }
+      // Full swap: complete the old-row teardown (incl. nested-list
+      // destructors that touch the shared parent DOM) BEFORE rendering the
+      // replacement set, so a deferred destructor can't clobber new content.
+      if (isFullSwap) {
+        await removePromise;
       }
     }
     this.updateItems(items, amountOfKeys, removedCount);
@@ -2077,14 +2041,19 @@ export class AsyncListComponent<
       const rowId = rowCtx[COMPONENT_ID_PROPERTY];
       rowCtxMap!.delete(key);
       const childSet = CHILD.get(this[COMPONENT_ID_PROPERTY]);
-      await destroyElement(rowCtx as unknown as ComponentLike, false, this.api);
+      // Skip if a concurrent parent cascade already tore this ctx down — the
+      // re-destroy is idempotent but trips the dev double-destroy detector.
+      if (!isDestroyed(rowCtx as object)) {
+        await destroyElement(rowCtx as unknown as ComponentLike, false, this.api);
+      }
       CHILD.delete(rowId);
       TREE.delete(rowId);
       PARENT.delete(rowId);
       if (childSet !== undefined) childSet.delete(rowId);
-      releaseId(rowId);
     }
-    await destroyElement(row as ComponentLike, false, this.api);
+    if (!isDestroyed(row as object)) {
+      await destroyElement(row as ComponentLike, false, this.api);
+    }
     this.removeMarker(key);
   }
 }

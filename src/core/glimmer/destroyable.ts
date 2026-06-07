@@ -22,6 +22,49 @@ function releaseDestructorArray(arr: Destructors) {
   destructorPool.release(arr);
 }
 
+// Host-registerable destruction-error reporter. Mirrors `setOpcodeErrorReporter`
+// in reactive.ts. The destruction layer is FIRST-ERROR-WINS: every sibling
+// destructor / DOM removal always runs to completion (a throwing row-3
+// destructor must not leak rows 4..N — the leak fix), and the FIRST captured
+// error is surfaced here exactly once per teardown scope.
+//
+// Policy (the propagation decision, NOT the completion guarantee):
+//   * NO reporter registered (standalone glimmer-next, the default): the error
+//     is dev-logged and SWALLOWED — matching pre-PR master behavior, so a
+//     throwing teardown can't abort an enclosing standalone flow / test.
+//   * Reporter registered (the Ember host installs one at gxt-backend init): the
+//     reporter receives the first error and decides what to do — record it,
+//     forward it to Ember's `runTask`/`assert.throws`, and/or RE-THROW to
+//     propagate. Whatever the reporter throws propagates to the caller.
+//
+// The reporter is the ONLY thing that can cause a destruction error to escape
+// the teardown; `reportDestructionError` itself never throws on its own.
+export type DestructionErrorReporter = (error: unknown) => void;
+
+let _destructionErrorReporter: DestructionErrorReporter | null = null;
+
+export function setDestructionErrorReporter(
+  reporter: DestructionErrorReporter | null,
+): void {
+  _destructionErrorReporter = reporter;
+}
+
+// Surface the first error captured during a first-error-wins teardown scope.
+// Call this instead of `throw firstError`. When a host reporter is installed it
+// is invoked with the error (and may re-throw to propagate); otherwise the
+// error is dev-logged and swallowed (master-compatible standalone default).
+export function reportDestructionError(error: unknown): void {
+  if (_destructionErrorReporter !== null) {
+    // The reporter owns the propagation policy; if it re-throws, that escapes
+    // by design (the Ember host wants the error surfaced to runTask/assert).
+    _destructionErrorReporter(error);
+    return;
+  }
+  if (IS_DEV_MODE) {
+    console.error('Error during destruction:', error);
+  }
+}
+
 if (!import.meta.env.SSR) {
   if (IS_DEV_MODE) {
     window['getDestructors'] = () => $dfi;
@@ -62,7 +105,7 @@ export function destroySync(ctx: object) {
   // Return array to pool for reuse
   releaseDestructorArray(destructors);
   if (firstError !== undefined) {
-    throw firstError;
+    reportDestructionError(firstError);
   }
 }
 export function destroy(ctx: object, promises: Array<Promise<void>> = []) {
@@ -103,7 +146,7 @@ export function destroy(ctx: object, promises: Array<Promise<void>> = []) {
   // Return array to pool for reuse
   releaseDestructorArray(destructors);
   if (firstError !== undefined) {
-    throw firstError;
+    reportDestructionError(firstError);
   }
 }
 export function registerDestructor(ctx: object, ...fn: Destructors) {
