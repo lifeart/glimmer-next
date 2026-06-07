@@ -100,8 +100,19 @@ export class IfCondition {
     // correctly reports the enclosing branch wrapper here (it is on the active
     // parent-context stack pushed by the outer's renderState / $_ucw), so we use
     // it. GATED: morph-ON keeps the legacy `parentContext` (byte-identical).
+    //
+    // GATE on Ember integration (`__GXT_MODE__`): this re-parent is needed ONLY
+    // there, because the gxt-backend's compiled `$_if` passes the gxt-root as
+    // `ctx`. STANDALONE glimmer-next passes the correct immediate parent, so the
+    // re-parent is unnecessary — and HARMFUL with custom renderers: a sibling
+    // renderer (e.g. PdfViewer) whose active parent-context is still on the stack
+    // would be adopted as this {{#if}}'s tree parent, so `initDOM(this)` resolves
+    // that FOREIGN DOMApi while `target`/`placeholder` are DOM nodes → pdfApi.insert
+    // gets a DocumentFragment → "parentNode.children.includes is not a function"
+    // and a blank render (renderers.spec.ts). Ember renders DOM-only, so under
+    // `__GXT_MODE__` the re-parent never crosses a renderer boundary.
     let treeParent: Component<any> = parentContext;
-    {
+    if ((globalThis as any).__GXT_MODE__) {
       const activeParent = getParentContext();
       if (
         activeParent &&
