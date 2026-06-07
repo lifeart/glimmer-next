@@ -101,7 +101,7 @@ export class IfCondition {
     // parent-context stack pushed by the outer's renderState / $_ucw), so we use
     // it. GATED: morph-ON keeps the legacy `parentContext` (byte-identical).
     let treeParent: Component<any> = parentContext;
-    if (!WITH_MORPH) {
+    {
       const activeParent = getParentContext();
       if (
         activeParent &&
@@ -143,7 +143,7 @@ export class IfCondition {
     // destructor here makes destroySync(this) tear down the live branch content.
     // GATED on fine-grained mode: with the morph ON the whole-template re-render
     // owns teardown, so this is a no-op there (byte-identical to baseline).
-    if (!WITH_MORPH) {
+    {
       registerDestructor(this, this.destroyBranchSync.bind(this));
     }
     if (IS_DEV_MODE) {

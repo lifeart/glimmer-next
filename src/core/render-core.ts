@@ -205,7 +205,6 @@ export function renderElement(
           renderedNodes[i] = node as Node;
           api.insert(target, node as Node, placeholder);
         } else if (
-          !WITH_MORPH &&
           isTagLike(node)
         ) {
           // Fine-grained mode (gated): the renderable resolved to a REACTIVE
@@ -258,7 +257,7 @@ export function renderElement(
         // Fine-grained GH#14332: re-register leaf-object owners each tick so a
         // parent ref-swap of the held object re-subscribes the reverse-lookup
         // (see dom.ts $ev TEXT_CONTENT for rationale).
-        if (!WITH_MORPH) {
+        {
           registerLeafOwnersForFormula(el as MergedCell);
         }
       }),

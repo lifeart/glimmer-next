@@ -46,12 +46,11 @@ import { setParentContext, getParentContext } from '../tracking';
 // Re-export getFirstNode for backward compatibility
 export { getFirstNode };
 
-// Fine-grained mode gate (build-time const). When fine-grained (the default,
-// `!WITH_MORPH`), syncList re-binds a reused row's block-param to a new source
-// object via the host `__gxtRebindEachItem` hook (group-E). Under a host morph
-// (`WITH_MORPH`) none of this runs.
+// Fine-grained mode gate. Fine-grained is the committed default: syncList
+// re-binds a reused row's block-param to a new source object via the host
+// `__gxtRebindEachItem` hook (group-E).
 function _fineGrainedEachRebind(): boolean {
-  return !WITH_MORPH;
+  return true;
 }
 
 /*
@@ -762,7 +761,6 @@ export class BasicListComponent<T extends { id: number }> {
     // re-renders the whole template and is unaffected (the host hook is
     // installed only in fine-grained mode → no-op when flag is off).
     if (
-      !WITH_MORPH &&
       this.tag instanceof MergedCell
     ) {
       // Force the formula to compute once so relatedCells is populated.

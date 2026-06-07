@@ -11,15 +11,6 @@ export type Flags = {
   ASYNC_COMPILE_TRANSFORMS: boolean;
   WITH_DYNAMIC_EVAL: boolean;
   WITH_TYPE_CHECKER_HINTS: boolean;
-  // When true, the host (e.g. Ember) drives DOM updates via a coarse
-  // full-template re-render ("the morph"), and GXT skips its fine-grained
-  // compensation paths (per-row destructor ownership, control-flow re-anchor,
-  // KVO leaf-owner subscription, etc.). When false (the default), GXT owns the
-  // DOM with fine-grained reactivity. Build-time const so the unused branch
-  // tree-shakes out of the dist. (Replaced the former runtime
-  // `globalThis.__GXT_SPIKE_SKIP_MORPH` host-global read — `!WITH_MORPH` is the
-  // old `__GXT_SPIKE_SKIP_MORPH === true`.)
-  WITH_MORPH: boolean;
 };
 
 export function defaultFlags() {
@@ -36,6 +27,5 @@ export function defaultFlags() {
     ASYNC_COMPILE_TRANSFORMS: true,
     WITH_DYNAMIC_EVAL: false,
     WITH_TYPE_CHECKER_HINTS: false,
-    WITH_MORPH: false,
   } as Flags;
 }

@@ -67,12 +67,7 @@ export function compiler(mode: string, options: Options = {}): Plugin {
         // is correct: the consumer's `define` inlines them. (Verified: inlining
         // them produced a runtime dom chunk with zero WITH_* branches and the
         // GXT-on-Ember benchmark vehicle failed to boot — empty table.)
-        //
-        // WITH_MORPH is the exception: it is NOT consumer-controlled. We commit
-        // to fine-grained, so bake `false` into the published dist (tree-shakes
-        // the morph branches out) and avoid a bare-identifier ReferenceError in
-        // consumers that never define it.
-        defineValues = { IS_DEV_MODE: false, WITH_MORPH: false };
+        defineValues = { IS_DEV_MODE: false };
       }
 
       return {
