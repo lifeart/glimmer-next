@@ -141,6 +141,18 @@ export default defineConfig(({ mode }) => ({
         "src/server.ts",
         "**/*.d.ts",
         "plugins/**/*.test.ts",
+        // Environmental quarantine: on the Linux CI runner the v8 coverage
+        // provider attempts to resolve/read the tres renderer's `./types`
+        // entry as a FILE while instrumenting this tree, which throws
+        // `EISDIR: illegal operation on a directory, read ./types` and fails
+        // the whole tres suite to LOAD (0 tests collected). It is a tangential
+        // three.js renderer test, byte-identical to master (this PR does not
+        // touch it), and passes locally on macOS even under full coverage.
+        // Excluding the tres tree from coverage instrumentation lets the
+        // substantive suite run on CI without hitting the dir-read path.
+        // NOTE: environmental coverage-instrumentation quarantine, not a
+        // behavioural fix — the tres tests themselves still run and pass.
+        "src/core/renderers/tres/**",
       ],
     },
   },
