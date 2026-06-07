@@ -511,7 +511,15 @@ function visitSimpleMustache(
     // passed by reference and throw the standard ambiguous-named-arg error.
     // Reactivity for arg values is already provided by the component arg
     // getter, so wrapping here is both unnecessary and harmful.
-    if (_wrap && !ctx.inAttributeValue && !WITH_MORPH) {
+    // `WITH_MORPH` is a build-time const in the RUNTIME (vite `define`), but the
+    // compiler runs in a Node process where it isn't injected — a bare reference
+    // throws `WITH_MORPH is not defined` and breaks the prod build. The compiler
+    // always commits to fine-grained (the runtime bakes `WITH_MORPH: false`), so
+    // read it defensively: absent ⇒ treat as `false` (fine-grained), which is
+    // the committed default.
+    const _withMorph =
+      typeof WITH_MORPH !== 'undefined' ? WITH_MORPH : false;
+    if (_wrap && !ctx.inAttributeValue && !_withMorph) {
       return getter(noArgHelper, range);
     }
     return noArgHelper;
