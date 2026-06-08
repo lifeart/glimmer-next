@@ -9,6 +9,7 @@ import {
   destroy,
   destroySync,
   isDestructionStarted,
+  reportDestructionError,
 } from '@/core/glimmer/destroyable';
 import {
   RENDERED_NODES_PROPERTY,
@@ -75,9 +76,24 @@ export function destroyElementSync(
     // Slice to prevent mutation during iteration
     const componentsCopy = component.slice();
     const len = componentsCopy.length;
+    // First-error-wins: a throwing destructor on one element must NOT leak the
+    // remaining siblings (the dominant high-N {{#each}} clear path). Complete
+    // all, re-throw the first error after — matching destroyable.ts semantics so
+    // the abort isn't asymmetric between layers.
+    let firstError: unknown = undefined;
     for (let i = 0; i < len; i++) {
-      destroyElementSync(componentsCopy[i], skipDom, api);
+      try {
+        destroyElementSync(componentsCopy[i], skipDom, api);
+      } catch (e) {
+        if (firstError === undefined) firstError = e;
+      }
     }
+    // Propagation policy: standalone glimmer-next SWALLOWS (dev-logs) the first
+    // error so a throwing teardown can't abort an enclosing flow (master
+    // behavior); an Ember host that registered `setDestructionErrorReporter`
+    // receives it and may re-throw. (The leak fix — completing every sibling
+    // above — is unconditional and unchanged.)
+    if (firstError !== undefined) reportDestructionError(firstError);
   } else if (component) {
     // Direct property access is faster than 'in' operator
     const renderedNodes = (component as ComponentLike)[RENDERED_NODES_PROPERTY];
@@ -85,18 +101,13 @@ export function destroyElementSync(
       try {
         runDestructorsSync(component as ComponentLike, skipDom, api);
       } catch (e) {
-        if (IS_DEV_MODE) {
-          console.error('Error during destruction:', e);
-        }
-        // Continue destruction even if there's an error
+        reportDestructionError(e);
       }
     } else {
       try {
         (api as DOMApi).destroy(component as Node);
       } catch (e) {
-        if (IS_DEV_MODE) {
-          console.error('Error destroying node:', e);
-        }
+        reportDestructionError(e);
       }
     }
   }
@@ -179,13 +190,23 @@ function runDestructorsSync(
 ): void {
   const stack = [targetNode];
 
+  // First-error-wins: one node's destructor / DOM removal throwing must NOT
+  // abort the rest of the teardown stack (sibling subtrees). Children are still
+  // pushed even if the current node threw, so the whole tree is walked; the
+  // first error is surfaced after the walk completes via the host-policy
+  // reporter (swallow+log standalone; host may re-throw).
+  let firstError: unknown = undefined;
   while (stack.length > 0) {
     const currentNode = stack.pop()!;
     const nodesToRemove = CHILD.get(currentNode[COMPONENT_ID_PROPERTY]);
 
-    destroySync(currentNode);
-    if (skipDom !== true) {
-      destroyNodes(api, currentNode![RENDERED_NODES_PROPERTY]);
+    try {
+      destroySync(currentNode);
+      if (skipDom !== true) {
+        destroyNodes(api, currentNode![RENDERED_NODES_PROPERTY]);
+      }
+    } catch (e) {
+      if (firstError === undefined) firstError = e;
     }
     if (nodesToRemove) {
       for (const childId of nodesToRemove) {
@@ -197,6 +218,7 @@ function runDestructorsSync(
       }
     }
   }
+  if (firstError !== undefined) reportDestructionError(firstError);
 }
 
 /**

@@ -32,6 +32,8 @@ import {
   deepFnValue,
   getTagId,
   tagsFromRange,
+  materializeAbsentPathCell,
+  registerLeafOwnersForFormula,
 } from '@/core/reactive';
 import { opcodeFor } from '@/core/vm';
 import {
@@ -104,6 +106,16 @@ export const $_emptySlot = Object.seal(Object.freeze({}));
 
 export const $SLOTS_SYMBOL = Symbol.for('gxt-slots');
 export const $PROPS_SYMBOL = Symbol.for('gxt-props');
+// Marks glimmer-next-native block wrappers ($_ucw / $_inElement). These
+// instances are real, TREE-registered nodes with their own COMPONENT_ID and
+// their own CHILD bucket. Consumers (e.g. ember.js' gxt-backend $_tag path)
+// that re-stamp arbitrary render contexts with the shared gxt-root id MUST
+// skip wrappers carrying this flag — overwriting their id collapses their
+// CHILD bucket into the root's, so destroying the wrapper (e.g. an {{#if}}
+// branch toggling off) cascades through the ENTIRE root subtree instead of
+// just the wrapper's own children. Symbol.for so the contract crosses the
+// package boundary (mirrors $SLOTS_SYMBOL / $PROPS_SYMBOL).
+export const $BLOCK_WRAPPER_SYMBOL = Symbol.for('gxt-block-wrapper');
 export const $_SVGProvider = SVGProvider;
 export const $_HTMLProvider = HTMLProvider;
 export const $_MathMLProvider = MathMLProvider;
@@ -243,11 +255,37 @@ function resolveBindingValue(
 ): { result: unknown; isReactive: boolean } {
   if (isFn(value)) {
     const f = formula(() => deepFnValue(value as Function), debugName);
+    // A fresh formula's `isConst` is the default `false` until its `.value` has
+    // been read once during render (the getter populates it as a side effect).
+    // Treating any not-yet-computed formula as reactive and registering an opcode
+    // is wrong when the binding is an initially-undefined `this.<path>` that
+    // reads NO cell: that opcode tracks nothing and never fires on a later
+    // `set()`. Force the `isConst` computation, and when it really is const +
+    // empty, materialize the leaf cell and re-wrap so the binding becomes
+    // genuinely reactive.
+    const v0 = f.value; // side effect: computes f.isConst + relatedCells
     if (f.isConst) {
-      const constValue = f.value;
+      if (
+        (v0 === null || v0 === undefined || v0 === '') &&
+        materializeAbsentPathCell(value as Function)
+      ) {
+        f.destroy();
+        const f2 = formula(() => deepFnValue(value as Function), debugName);
+        f2.value;
+        if (!f2.isConst) {
+          registerLeafOwnersForFormula(f2);
+          return { result: f2, isReactive: true };
+        }
+        const v2b = f2.value;
+        f2.destroy();
+        return { result: v2b, isReactive: false };
+      }
       f.destroy();
-      return { result: constValue, isReactive: false };
+      return { result: v0, isReactive: false };
     }
+    // Reactive: register leaf-object owners so a nested-property `set()` on a
+    // held object (e.g. `this.nullObject.message`) dirties this cell.
+    registerLeafOwnersForFormula(f);
     return { result: f, isReactive: true };
   }
 
@@ -277,6 +315,23 @@ function $prop(
       opcodeFor(result as AnyCell, (resolvedValue) => {
         const val = resolvedValue === null ? '' : resolvedValue;
         if (val === prevPropValue) {
+          return;
+        }
+        // When a reactive `style` prop binding transitions to empty, setting
+        // `element.style = ''` leaves a stale `style=""` attribute on the
+        // in-place element. Ember removes the attribute entirely for empty
+        // values, so remove it synchronously here too — the assertion right
+        // after `runTask` then sees `attrs: {}` instead of relying on the async
+        // MutationObserver fallback.
+        if (
+          key === 'style' &&
+          (val === '' || val === null || val === undefined) &&
+          (element as HTMLElement).removeAttribute
+        ) {
+          prevPropValue = api.prop(element, key, val);
+          if ((element as HTMLElement).getAttribute('style') === '') {
+            (element as HTMLElement).removeAttribute('style');
+          }
           return;
         }
         prevPropValue = api.prop(element, key, val);
@@ -337,6 +392,13 @@ function mergeClassModifiers(
       outerFormula,
       destructors,
     );
+    // Register leaf-object owners for each reactive class-name modifier so a
+    // nested-property `set()` on a held object (e.g. `is.enabled` where the
+    // binding reads `this.is.enabled`) dirties the modifier cell. The $prop read
+    // above has populated each formula's relatedCells.
+    for (const f of formulasToDestroy) {
+      registerLeafOwnersForFormula(f);
+    }
     if (formulasToDestroy.length > 0) {
       destructors.push(() => {
         for (const f of formulasToDestroy) {
@@ -399,6 +461,16 @@ function $ev(
       destructors.push(
         opcodeFor(result as AnyCell, (value) => {
           api.textContent(element, String(value ?? ''));
+          // Re-register leaf-object owners on every opcode tick.
+          // `resolveRenderable` registered owners on first render, but when a
+          // parent ref-swaps the held object (`set(context,'page',newPage)`) the
+          // formula re-tracks `cellFor(context,'page')` with `_value=newPage`,
+          // yet newPage was never registered as that cell's value-owner — so a
+          // subsequent `set(newPage,'title',…)` reverse-looks-up nothing and the
+          // element's text content (`<h1>{{this.page.title}}</h1>`) stays stale.
+          // Re-registering here (idempotent — host dedupes by (obj,key)) picks up
+          // the swapped object.
+          registerLeafOwnersForFormula(result as MergedCell);
         }),
       );
     }
@@ -541,6 +613,139 @@ function addProperties(
   }
 }
 
+/**
+ * Reactive dynamic tag-name wrapper for `$_tag(() => tagName, ...)`
+ * (the `(element this.tag)` helper). Builds the element via the normal `_DOM`
+ * path with the CURRENT resolved tag-name, then watches the tag-name formula:
+ * when it changes, the old element subtree is torn down and a fresh element is
+ * built (re-running the children thunks) and swapped in at a stable anchor.
+ * Returns a carrier (`RENDERED_NODES_PROPERTY`) so the caller's `renderElement`
+ * positions the element + anchor like any other component output.
+ */
+function reactiveTagElement(
+  fn: () => string,
+  tagProps: Props,
+  ctx: any,
+  children: (ComponentReturnType | string | Cell | MergedCell | Function)[],
+  api: DOMApi,
+): any {
+  // Subscribe to the tag-name's tracked deps. Pass the RAW resolved value to
+  // `_DOM` (no coercion) so `_DOM`'s own validation throws the Ember-compatible
+  // assertion for null/undefined/number/boolean tags (the throws-on-* tests).
+  const tagCell = formula(() => fn(), 'reactive-element-tag');
+
+  // Build the initial element subtree at the current tag-name into its own
+  // child sub-context so a later swap can tear down exactly this element's
+  // registrations (child slots/modifiers). `_DOM` returns the element Node (or
+  // a fragment for the empty-tag no-wrapper case).
+  const buildChildCtx = () => {
+    const childCtx: any = {
+      [$args]: {},
+      [RENDERED_NODES_PROPERTY]: [] as Node[],
+      [COMPONENT_ID_PROPERTY]: cId(),
+      [RENDERING_CONTEXT_PROPERTY]: (ctx as any)[RENDERING_CONTEXT_PROPERTY] ?? null,
+    };
+    return childCtx;
+  };
+
+  // Collect the top-level DOM nodes a `_DOM` result occupies. For an element it
+  // is the element itself; for the empty-tag fragment it is the fragment's
+  // children captured BEFORE insertion empties the fragment.
+  const topNodesOf = (node: Node): Node[] => {
+    if (node && (node as any).nodeType === 11 /* DocumentFragment */) {
+      return Array.from((node as DocumentFragment).childNodes);
+    }
+    return [node];
+  };
+
+  let childCtx = buildChildCtx();
+  const initialTag = tagCell.value;
+  const initialNode = _DOM(initialTag as any, tagProps, childCtx, children);
+  const initialTopNodes = topNodesOf(initialNode);
+
+  // Carrier holds the live nodes for positioning + teardown by the caller.
+  // A trailing anchor comment is the stable swap target.
+  const anchor = IS_DEV_MODE ? api.comment('element-tag') : api.comment();
+  const carrier: any = {
+    [$args]: {},
+    [RENDERED_NODES_PROPERTY]: [...initialTopNodes, anchor] as Node[],
+    [COMPONENT_ID_PROPERTY]: cId(),
+    [RENDERING_CONTEXT_PROPERTY]: null,
+  };
+  addToTree(ctx, carrier);
+  addToTree(carrier, childCtx);
+
+  let lastTag: any = initialTag;
+  let currentChildCtx: any = childCtx;
+  let currentTopNodes: Node[] = initialTopNodes;
+  let firstRun = true;
+
+  const destructor = opcodeFor(tagCell, (value: any) => {
+    if (firstRun) {
+      firstRun = false;
+      return;
+    }
+    // Reference-stable comparison; identical tag-name => nothing to do.
+    if (value === lastTag) {
+      return;
+    }
+    lastTag = value;
+    // Tear down the previous element subtree (slots/modifiers) then remove its
+    // DOM nodes.
+    const oldChildCtx = currentChildCtx;
+    const oldTopNodes = currentTopNodes;
+    // Determine the live insertion point. Prefer the anchor (a stable trailing
+    // comment); if it is detached (some host insertion paths drop trailing
+    // anchors), fall back to the old element's parent + next sibling so the new
+    // element lands in the same position.
+    let parent = api.parent(anchor);
+    let insertBefore: Node | null = anchor;
+    if (!parent && oldTopNodes.length > 0) {
+      const ref = oldTopNodes[0];
+      parent = api.parent(ref);
+      insertBefore = (ref as any).nextSibling ?? null;
+    }
+    // Build the replacement BEFORE removing the old nodes so a build-time throw
+    // (invalid tag) leaves the existing DOM intact.
+    const newChildCtx = buildChildCtx();
+    const newNode = _DOM(value as any, tagProps, newChildCtx, children);
+    const newTopNodes = topNodesOf(newNode);
+    addToTree(carrier, newChildCtx);
+    // Insert the new nodes at the live insertion point.
+    if (parent) {
+      for (let i = 0; i < newTopNodes.length; i++) {
+        api.insert(parent, newTopNodes[i], insertBefore);
+      }
+    }
+    // Remove + destroy the old subtree.
+    if (oldChildCtx) {
+      unregisterFromParent(oldChildCtx);
+      destroyElementSync(oldChildCtx, false, api);
+    }
+    for (let i = 0; i < oldTopNodes.length; i++) {
+      const n = oldTopNodes[i];
+      if (api.parent(n)) {
+        api.destroy(n);
+      }
+    }
+    currentChildCtx = newChildCtx;
+    currentTopNodes = newTopNodes;
+    carrier[RENDERED_NODES_PROPERTY] = [...newTopNodes, anchor];
+  });
+
+  if (!tagCell.isConst) {
+    registerDestructor(ctx, destructor);
+    registerDestructor(ctx, () => {
+      tagCell.destroy();
+    });
+  } else {
+    tagCell.destroy();
+    destructor();
+  }
+
+  return carrier;
+}
+
 function _DOM(
   tag: string | (() => string),
   tagProps: Props,
@@ -554,7 +759,44 @@ function _DOM(
       console.error('Unable to resolve root rendering context');
     }
   }
-  const resolvedTag = typeof tag === 'function' ? tag() : tag;
+  // Reactive dynamic tag-name (`{{#let (element this.tag) as |Tag|}}<Tag>`):
+  // the `(element ...)` helper compiles to `$_tag(() => this.tag, ...)`, i.e. a
+  // FUNCTION tag. Route a function tag through a reactive wrapper: a `formula`
+  // over `() => tag()` subscribes to the tag's tracked deps and an opcode tears
+  // down + rebuilds the element (re-running the children thunks) whenever the
+  // resolved tag-name changes. A tag that reads no tracked state captures no
+  // deps → const → renders once + tears the opcode down (zero overhead, behaves
+  // like a static element for `(element "h1")` literals).
+  if (typeof tag === 'function') {
+    return reactiveTagElement(tag as () => string, tagProps, ctx, children, api);
+  }
+  // `tag` is guaranteed non-function here (the branch above returned), so it is
+  // already the resolved tag value.
+  const resolvedTag = tag;
+  // Validation for `(element ...)` helper: when the resolved tag is not a
+  // non-empty string, surface the Ember-compatible assertion message so
+  // assert.throws(/.../) in element-helper tests matches. Static elements
+  // always pass `"h1"` / `"div"` literals, so this check is invisible to
+  // them. Not gated on IS_DEV_MODE because lib builds tree-shake those.
+  if (typeof resolvedTag !== 'string') {
+    const detail =
+      resolvedTag === null || resolvedTag === undefined || typeof resolvedTag === 'object'
+        ? ''
+        : ` (you passed \`${resolvedTag}\`)`;
+    throw new Error(
+      `The argument passed to the \`element\` helper must be a string${detail}`
+    );
+  }
+  // Empty-string tag: `(element "")` renders children without a wrapping
+  // element (matches Ember's element-helper semantics — the manager returns
+  // null tagName, producing fragment-only output and discarding attributes).
+  if (resolvedTag === '') {
+    const fragment = api.fragment() as unknown as HTMLElement;
+    for (let i = 0; i < children.length; i++) {
+      renderElement(api, ctx, fragment, children[i] as any, null, true);
+    }
+    return fragment;
+  }
   const element = api.element(resolvedTag) as HTMLElement;
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.push(`${resolvedTag}`);
@@ -673,6 +915,10 @@ export function $_inElement(
   return component(
     function UnstableChildWrapper(this: Component<any>) {
       $_GET_ARGS(this, arguments);
+      // See $BLOCK_WRAPPER_SYMBOL doc — native wrapper; don't let consumers
+      // re-stamp our COMPONENT_ID with their root id.
+      // @ts-expect-error symbol index
+      this[$BLOCK_WRAPPER_SYMBOL] = true;
       if (IS_DEV_MODE) {
         // @ts-expect-error construct signature
         this.debugName = `InElement-${unstableWrapperId++}`;
@@ -725,6 +971,12 @@ export function $_ucw(
   return component(
     function UnstableChildWrapper(this: Component<any>) {
       $_GET_ARGS(this, arguments);
+      // Tag this as a native block wrapper so consumers don't re-stamp our
+      // COMPONENT_ID with their root id (see $BLOCK_WRAPPER_SYMBOL doc). Set
+      // BEFORE the body (`roots(this)`) runs, since the body may invoke a
+      // consumer tag-render path that reads this flag off `this` (ctx).
+      // @ts-expect-error symbol index
+      this[$BLOCK_WRAPPER_SYMBOL] = true;
       if (IS_DEV_MODE) {
         // @ts-expect-error construct signature
         this.debugName = `UnstableChildWrapper-${unstableWrapperId++}`;
@@ -970,6 +1222,24 @@ export function $_unwrapArgs(args: any[]): any[] {
   return args;
 }
 
+// Host-registerable reporter for component-construction errors. Hosts (e.g.
+// the Ember integration) call `setComponentRenderErrorReporter` once at module
+// init to be notified when a thrown error from inside `_component(...)` is
+// about to be silently recovered with a placeholder. The reporter MAY throw to
+// bypass the recovery and propagate the error up to the caller. The reporter
+// MUST NOT throw a non-Error; reporter throws of any other type are caught and
+// dev-logged so they don't replace the original error path silently.
+export type ComponentRenderErrorReporter = (
+  error: unknown,
+  context: { component: unknown; args: Record<string, unknown> },
+) => void;
+
+let _componentRenderErrorReporter: ComponentRenderErrorReporter | null = null;
+
+export function setComponentRenderErrorReporter(reporter: ComponentRenderErrorReporter | null): void {
+  _componentRenderErrorReporter = reporter;
+}
+
 function component(
   comp: ComponentReturnType | Component | typeof Component,
   args: Record<string, unknown>,
@@ -1009,6 +1279,16 @@ function component(
       }
       if (isRehydrationScheduled()) {
         throw e;
+      }
+      // Notify the host-registered reporter (if any) BEFORE the dev/prod
+      // recovery substitution. The reporter MAY throw to bypass recovery —
+      // a re-throw here propagates out of this catch, replacing the original
+      // exception. Hosts use this to maintain integration-side state (queues,
+      // counters) and/or to force the original error to surface for
+      // `assert.throws`-style tests. No reporter registered = no behavior
+      // change (current dev overlay / prod placeholder paths run unchanged).
+      if (_componentRenderErrorReporter !== null) {
+        _componentRenderErrorReporter(e, { component: comp, args });
       }
       if (IS_DEV_MODE) {
         debugger;
@@ -1297,6 +1577,30 @@ function ifCond(
     trueBranch,
     falseBranch,
   );
+  // When the condition is REACTIVE (can re-enter), register the IfCondition
+  // placeholder with the host's list-marker registry so the ember-side
+  // `removeGxtArtifacts` keeps it live. In a production gxt build the placeholder
+  // is an EMPTY comment (IS_DEV_MODE === false) and removeGxtArtifacts strips
+  // empty comments, orphaning it; an orphaned placeholder makes branch re-entry
+  // render into the detached `this.target` instead of the live DOM (GH#14284
+  // if-in-yielded-block toggle, {{yield}}-in-{{#if}} toggle).
+  // Only for non-const conditions: a CONSTANT condition (e.g.
+  // `{{#if (has-block)}}`) never re-enters, so its placeholder is pure artifact —
+  // keeping it would leave a stray `<!---->` that breaks exact-content assertions
+  // (`assertComponentElement(..., { content: 'No' })`). Const ifs let the comment
+  // be stripped. `condition.isConst` is reliable here: the constructor's initial
+  // `syncState(condition.value)` already evaluated it. The registry hook is a
+  // no-op when the host hasn't installed it (standalone glimmer-next).
+  {
+    const cond = instance.condition as { isConst?: boolean };
+    if (cond && cond.isConst !== true) {
+      const _reg = (globalThis as { __gxtRegisterListMarker?: (m: Comment) => void })
+        .__gxtRegisterListMarker;
+      if (_reg) {
+        _reg(placeholder);
+      }
+    }
+  }
   // @ts-expect-error outlet
   return toNodeReturnType(outlet, instance);
 }

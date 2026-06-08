@@ -32,19 +32,22 @@ describe('Element helper - compiler integration', () => {
     expect(result.code).toContain('() => tagName');
   });
 
-  test('element helper ignores extra arguments', () => {
-    // The element helper should only use the first argument (tag name)
-    // Extra arguments should be ignored (they're not part of the element helper API)
+  test('element helper rejects more than one positional argument', () => {
+    // Matches Ember's element helper contract (RFC 0389): it takes exactly one
+    // positional argument. Extra arguments are an authoring error, so the
+    // compiled code throws at runtime rather than silently using the first arg.
+    // See ember.js integration/helpers/element-test.js
+    // ("it requires no more than one argument").
     const result = compile(`
       {{#let (element 'div' 'extra') as |Tag|}}
         <Tag>content</Tag>
       {{/let}}
     `);
 
-    // Should still compile without errors
     expect(result.code).toContain('$_tag');
-    // The tag should be 'div', not affected by 'extra'
-    expect(result.code).toContain('"div"');
+    // Arity is validated rather than coerced to "div".
+    expect(result.code).toContain('takes a single positional argument');
+    expect(result.code).not.toContain('"div"');
   });
 
   test('element helper with path expression', () => {
@@ -74,15 +77,20 @@ describe('Element helper - compiler integration', () => {
 });
 
 describe('Element helper - edge cases', () => {
-  test('element helper defaults to div when no argument provided', () => {
+  test('element helper requires at least one positional argument', () => {
+    // Matches Ember's element helper contract (RFC 0389): a bare {{element}}
+    // with no tag name is an authoring error, so the compiled code throws at
+    // runtime rather than defaulting to "div".
+    // See ember.js integration/helpers/element-test.js
+    // ("it requires at least one argument").
     const result = compile(`
       {{#let (element) as |Tag|}}
         <Tag>content</Tag>
       {{/let}}
     `);
 
-    // Should default to 'div'
-    expect(result.code).toContain('"div"');
+    expect(result.code).toContain('takes a single positional argument');
+    expect(result.code).not.toContain('"div"');
   });
 
   test('element helper works with custom element names', () => {

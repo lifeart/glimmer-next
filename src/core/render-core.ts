@@ -23,6 +23,7 @@ import {
 } from './shared';
 import { opcodeFor } from './vm';
 import type { MergedCell } from './reactive';
+import { registerLeafOwnersForFormula } from './reactive';
 
 // Import resolveRenderable from root.ts
 import { resolveRenderable } from './root';
@@ -203,6 +204,32 @@ export function renderElement(
         } else if (api.isNode(node as Node)) {
           renderedNodes[i] = node as Node;
           api.insert(target, node as Node, placeholder);
+        } else if (
+          isTagLike(node)
+        ) {
+          // The renderable resolved to a REACTIVE tag (a non-const formula —
+          // e.g. an each-body `{{item.text}}` whose item is cell-backed). The
+          // generic `else` path below would call renderElement with
+          // skipRegistration=true, which creates the bound text node but
+          // registers it NOWHERE — `renderedNodes[i]` keeps the raw function, so
+          // the LIVE text node would be invisible to teardown and leak when the
+          // row is destroyed (rows would stack on keyed update / ref-swap).
+          // Create the bound text node here, write it back into renderedNodes[i]
+          // so destroyElementSync removes it, and register the update opcode on
+          // the row (`el`).
+          const textNode = api.text('');
+          renderedNodes[i] = textNode;
+          api.insert(target, textNode, placeholder);
+          registerDestructor(
+            el as ComponentLike,
+            opcodeFor(node as MergedCell, (value) => {
+              api.textContent(textNode, String(value ?? ''));
+              // Re-register leaf-object owners each tick so a parent ref-swap of
+              // the held object re-subscribes the reverse-lookup (see dom.ts $ev
+              // TEXT_CONTENT for rationale).
+              registerLeafOwnersForFormula(node as MergedCell);
+            }),
+          );
         } else if (isArray(node)) {
           renderElement(api, el as ComponentLike, target, node as RenderableElement[], placeholder, true);
         } else {
@@ -225,6 +252,12 @@ export function renderElement(
       ctx,
       opcodeFor(el, (value) => {
         api.textContent(node, String(value ?? ''));
+        // Fine-grained GH#14332: re-register leaf-object owners each tick so a
+        // parent ref-swap of the held object re-subscribes the reverse-lookup
+        // (see dom.ts $ev TEXT_CONTENT for rationale).
+        {
+          registerLeafOwnersForFormula(el as MergedCell);
+        }
       }),
     );
     return;

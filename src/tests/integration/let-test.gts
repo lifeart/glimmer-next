@@ -39,7 +39,7 @@ module('Integration | InternalComponent | let', function () {
       <span>
         <div data-test-1>hello world!{{ifs @value}}</div>
         {{#let 'div' as |tagName|}}
-          {{#let (element tagName @value) as |Tag|}}
+          {{#let (element tagName) as |Tag|}}
             <Tag data-test-2>inside {{ifs @value}}</Tag>
           {{/let}}
         {{/let}}

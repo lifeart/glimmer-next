@@ -9,6 +9,7 @@ import type { CompilerContext, VisitFn } from '../context';
 import type { SerializedValue, HBSControlExpression, HBSNode, SourceRange } from '../types';
 import { literal, path, helper, getter, raw, isSerializedValue } from '../types';
 import { getNodeRange, resolvePath, serializeValueToString, getPathPartRanges, getPathExpressionString } from './utils';
+import { INTERNAL_HELPERS } from '../serializers/symbols';
 
 /**
  * Get the visit function from context.
@@ -120,6 +121,37 @@ export function visitMustache(
   // Handle yield/outlet
   if (pathName === 'yield' || pathName === 'outlet') {
     return createYieldExpression(ctx, node, range);
+  }
+
+  // Mirror the SubExpression handler for `(element "tag")` (visitors/index.ts).
+  // The `element` keyword (Ember keyword helper + `@ember/helper` export)
+  // produces a component-like value: a function that, when invoked as a
+  // component, renders its block wrapped in the given tag. In SubExpression
+  // form `(element "h1")` we emit `elementHelperWrapper`. In MustacheStatement
+  // form `{{element "p"}}` (e.g. in attribute position `@tag={{element "p"}}`)
+  // the runtime path routes through `$_maybeHelper("element", ...)` which
+  // either fails ("element not in scope") or invokes Ember's helper and
+  // returns an ElementComponentDefinition instance — neither shape works as
+  // a `<Tag>` component invocation downstream. Intercept the keyword here so
+  // BOTH forms produce the same elementHelperWrapper function value.
+  // Skip when `element` resolves to a local binding (e.g. user-shadowed).
+  if (pathName === 'element' && !ctx.scopeTracker.hasBinding('element')) {
+    const pathRange = getNodeRange(node.path);
+    let tagValue: SerializedValue;
+    if (node.params.length !== 1) {
+      tagValue = raw('(()=>{throw new Error("The `element` helper takes a single positional argument")})()');
+    } else if (node.hash.pairs.length !== 0) {
+      tagValue = raw('(()=>{throw new Error("The `element` helper does not take any named arguments")})()');
+    } else {
+      const tagParam = node.params[0];
+      const tagResult = getVisit(ctx)(ctx, tagParam, false);
+      tagValue = tagResult && isSerializedValue(tagResult) ? tagResult : literal('div');
+    }
+    const helperResult = helper(INTERNAL_HELPERS.ELEMENT_HELPER, [tagValue], new Map(), range, pathRange);
+    if (wrap) {
+      return getter(helperResult, range);
+    }
+    return helperResult;
   }
 
   // Collect hash arguments
@@ -455,7 +487,32 @@ function visitSimpleMustache(
 
     // Unknown binding without hash args - return as helper value.
     // buildHelper handles: builtin detection, maybeHelper for unknowns, $_ prefixes.
-    return helper(pathName, [], new Map(), range, pathRange);
+    const noArgHelper = helper(pathName, [], new Map(), range, pathRange);
+    // Wrap a 0-arg helper mustache (e.g. `{{hello}}` where `hello` is an unknown
+    // name resolved as a custom helper) in a getter, mirroring the named-args
+    // path above and the positional-args path in visitHelperMustache. Without
+    // this, the runtime const-folds the bare value — `$_maybeHelper("hello", [],
+    // this)` is called ONCE outside any tracker frame, so the helper's internal
+    // `@tracked` reads (and the helperCell the manager-bucket path returns) are
+    // never subscribed, and a later tracked mutation (which dirties the cell +
+    // fires PROPERTY_DID_CHANGE) updates a cell nobody listens to. Wrapping in a
+    // getter makes the binding re-evaluable inside the text-binding effect's
+    // tracker frame, so the helperCell read registers and the binding re-fires
+    // on the tracked change. Reactive ≠ eagerly re-evaluated: a helper that
+    // reads no tracked state captures no deps → its effect is const → never
+    // re-fires (so `{{unique-id}}`, `{{has-block}}`, and the classic-Helper
+    // compute-count bouncer stay stable).
+    //
+    // Skip in attribute/named-arg position (`@content={{foo}}`): there the
+    // bare `$_maybeHelper("foo", [], this)` form must survive so the
+    // Ember-side guard (gxt-backend compile.ts) can detect a resolved helper
+    // passed by reference and throw the standard ambiguous-named-arg error.
+    // Reactivity for arg values is already provided by the component arg
+    // getter, so wrapping here is both unnecessary and harmful.
+    if (_wrap && !ctx.inAttributeValue) {
+      return getter(noArgHelper, range);
+    }
+    return noArgHelper;
   }
 
   // Has hash args - helper call.
@@ -463,7 +520,17 @@ function visitSimpleMustache(
   // - Known bindings (direct call or maybeHelper with WITH_HELPER_MANAGER)
   // - Unknown helpers (maybeHelper with scope resolution)
   // - Built-in helpers (symbol lookup)
-  return helper(pathName, [], hashArgs, range, pathRange);
+  const helperValue = helper(pathName, [], hashArgs, range, pathRange);
+  // Wrap in a getter for reactivity, mirroring visitHelperMustache (the
+  // positional-args path). Without this, a named-args-only helper mustache
+  // like `{{hello foo=this.foo}}` is emitted as a bare value and the runtime
+  // const-folds it (the hash getters read once, producing a static value),
+  // so changes to `this.foo` never re-invoke the helper. Wrapping makes the
+  // hash-value path reads reactive exactly like positional params.
+  if (_wrap) {
+    return getter(helperValue, range);
+  }
+  return helperValue;
 }
 
 

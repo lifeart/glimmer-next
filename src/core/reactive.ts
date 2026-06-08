@@ -153,6 +153,12 @@ export class Cell<T extends unknown = unknown> {
   // cached() uses this to decide whether a dependency has changed.
   _revision = 0;
   declare toHTML: () => string;
+  // Optional back-reference to the (object, key) this cell was created for via
+  // `rawCellFor`. Lets a host (Ember's fine-grained capture path) reverse a
+  // captured cell to its owner so it can register value→owner mappings for
+  // nested-object subscription. Purely metadata — never read by update().
+  _relatedObj?: object;
+  _relatedKey?: string | number | symbol;
   [Symbol.toPrimitive]() {
     return this.value;
   }
@@ -182,6 +188,31 @@ export class Cell<T extends unknown = unknown> {
     this.update(value);
   }
   update(value: T) {
+    // Optional host-registered defer hook.
+    // The hook lets an integration (e.g. Ember) take ownership of Cell.update
+    // work and queue it for later application from inside the host's drain
+    // phase (e.g. runloop end). When no hook is registered, behavior is
+    // identical to the pre-hook code path. The hook MUST return `true` if it
+    // accepted ownership (in which case it is responsible for eventually
+    // calling `applyDeferredCellUpdate(this, value)` to actually mutate the
+    // cell), or `false` to fall through to the synchronous path below.
+    // The hook MUST NOT throw — throws are caught and logged in DEV.
+    if (_cellUpdateDeferralHook !== null) {
+      let accepted = false;
+      try {
+        accepted = _cellUpdateDeferralHook(
+          this as unknown as Cell<unknown>,
+          value as unknown,
+        );
+      } catch (hookErr) {
+        if (IS_DEV_MODE) {
+          console.error('CellUpdateDeferralHook threw:', hookErr);
+        }
+      }
+      if (accepted) {
+        return;
+      }
+    }
     // Value-equality guard for revision bumps. Downstream `cached()` uses
     // `_revision` to detect dep invalidation; bumping it on a no-op write
     // (e.g., Ember's sync layer reapplying the same arg) would cause
@@ -246,6 +277,45 @@ export function relatedTagsForCell(cell: Cell) {
     relatedTags.set(cell.id, tags);
   }
   return tags;
+}
+
+/**
+ * Synchronously run a cell's own opcodes and the opcodes of every formula that
+ * depends on it. Intended for hosts (Ember's fine-grained sync) that update a
+ * cell from INSIDE the current `syncDomSync` drain — at that point the drain
+ * has already snapshotted its work list and its terminal `tagsToRevalidate`
+ * clear would otherwise discard the just-dirtied cell, so its bound DOM (e.g. a
+ * `{{this.salutation}}` text node) would never re-render this tick. This flushes
+ * those opcodes immediately. The related-tag set for the cell is consumed
+ * (deleted) the same way the normal drain consumes it, so a subsequent drain
+ * does not double-execute. A single bad binding can't abort the flush, but its
+ * error is surfaced to the host via the opcode-error reporter (NOT swallowed).
+ */
+export function flushCellOpcodes(cell: Cell | MergedCell): void {
+  try {
+    executeTagSync(cell);
+  } catch (e) {
+    // Don't abort the flush, but report to the host (mirrors the normal drain's
+    // handleOpcodeError reporter path) rather than silently swallowing.
+    reportOpcodeError(e, cell);
+  }
+  const subTags = relatedTags.get((cell as Cell).id);
+  if (subTags === undefined) {
+    return;
+  }
+  relatedTags.delete((cell as Cell).id);
+  const ordered = [...subTags];
+  subTags.clear();
+  if (ordered.length > 1) {
+    ordered.sort((a, b) => a.id - b.id);
+  }
+  for (const tag of ordered) {
+    try {
+      executeTagSync(tag);
+    } catch (e) {
+      reportOpcodeError(e, tag);
+    }
+  }
 }
 
 function bindAllCellsToTag(cells: Set<Cell>, tag: MergedCell) {
@@ -325,9 +395,26 @@ export class MergedCell {
       return this.fn();
     }
 
-    let $tracker!: Set<Cell>;
-    try {
+    // Reuse this formula's existing `relatedCells` Set as the tracker buffer
+    // when one is already present. A reactive binding's formula has its
+    // `.value` read TWICE on create while `_isRendering` is true (once for the
+    // const-check in `resolveBindingValue`/`resolveRenderable`, then again by
+    // the binding opcode's own render-time read in `evaluateOpcode`). The first
+    // read allocated `relatedCells`; the second read would otherwise allocate a
+    // fresh Set and replace it, making the first Set transient garbage. Clearing
+    // and refilling the SAME Set recycles it across reads (one fewer Set
+    // allocation per reactive binding per row). Behavior-preserving: the final
+    // `relatedCells` content is identical, and `bindAllCellsToTag` re-adds `this`
+    // to each tracked cell's subscriber set idempotently (this path never
+    // unbound dropped deps before either — a re-read with stable deps re-adds
+    // the same cells).
+    let $tracker = this.relatedCells;
+    if ($tracker === null) {
       $tracker = tracker();
+    } else {
+      $tracker.clear();
+    }
+    try {
       setTracker($tracker);
       return this.fn();
     } finally {
@@ -346,6 +433,87 @@ export class MergedCell {
 // this function is called when we need to update DOM, values represented by tags are changed
 export type tagOp = (...values: unknown[]) => Promise<void> | void;
 
+// Host-registerable error reporter. Hosts (e.g. the Ember integration) call
+// `setOpcodeErrorReporter` once at module init to receive opcode errors that
+// would otherwise be silently dropped. The reporter MUST NOT throw; if it
+// does, the throw is caught and logged in DEV.
+export type OpcodeErrorReporter = (
+  error: unknown,
+  context: { tag: Cell | MergedCell; opcode: tagOp | null },
+) => void;
+
+let _opcodeErrorReporter: OpcodeErrorReporter | null = null;
+
+export function setOpcodeErrorReporter(reporter: OpcodeErrorReporter | null): void {
+  _opcodeErrorReporter = reporter;
+}
+
+// Host-registerable Cell.update deferral hook.
+// Hosts (e.g. the Ember integration) call `setCellUpdateDeferralHook` once at
+// module init to take ownership of `Cell.update` work and defer it to a host-
+// owned drain phase (e.g. runloop end). The hook receives the target cell and
+// the proposed new value, and MUST return:
+//   * `true` — hook accepted ownership; the synchronous `Cell.update` path is
+//     skipped. The hook is responsible for eventually calling
+//     `applyDeferredCellUpdate(cell, value)` to actually mutate the cell.
+//   * `false` — hook declined; `Cell.update` falls through to the existing
+//     synchronous path (mutate + bump revision + schedule revalidation).
+// The hook MUST NOT throw; throws are caught and logged in DEV, and the
+// synchronous fallback path runs.
+// When no hook is registered (default), `Cell.update` behavior is unchanged.
+export type CellUpdateDeferralHook = (
+  cell: Cell<unknown>,
+  newValue: unknown,
+) => boolean;
+
+let _cellUpdateDeferralHook: CellUpdateDeferralHook | null = null;
+
+export function setCellUpdateDeferralHook(
+  hook: CellUpdateDeferralHook | null,
+): void {
+  _cellUpdateDeferralHook = hook;
+}
+
+/**
+ * Apply a deferred cell update from the host's drain phase.
+ *
+ * Mirrors the synchronous body of `Cell.update` (mutate value + bump revision
+ * when changed + enqueue for revalidation + schedule), but bypasses the
+ * deferral-hook check so it can be called from inside the hook's queue
+ * flusher without re-entering the hook (which would loop).
+ *
+ * The host owns the queue of `(cell, value)` pairs. This function exposes the
+ * primitive that applies a single pair. Typical host pattern:
+ *
+ *   setCellUpdateDeferralHook((cell, value) => {
+ *     hostQueue.push([cell, value]);
+ *     scheduleHostDrain();
+ *     return true;
+ *   });
+ *
+ *   function drain() {
+ *     while (hostQueue.length) {
+ *       const [cell, value] = hostQueue.shift()!;
+ *       applyDeferredCellUpdate(cell, value);
+ *     }
+ *   }
+ */
+export function applyDeferredCellUpdate(
+  cell: Cell<unknown>,
+  value: unknown,
+): void {
+  // Same body as Cell.update's synchronous path, intentionally without the
+  // deferral-hook check (the hook is the CALLER here — re-entering it would
+  // loop forever).
+  const changed = cell._value !== value;
+  cell._value = value;
+  if (changed) {
+    cell._revision = bumpGlobalRevision();
+  }
+  tagsToRevalidate.add(cell);
+  scheduleRevalidate();
+}
+
 // Shared error handler for executeTag variants — avoids code duplication
 function handleOpcodeError(e: any, tag: Cell | MergedCell, opcode: tagOp | null, ops: tagOp[]) {
   if (IS_DEV_MODE) {
@@ -360,6 +528,33 @@ function handleOpcodeError(e: any, tag: Cell | MergedCell, opcode: tagOp | null,
     const index = ops.indexOf(opcode);
     if (index > -1) {
       ops.splice(index, 1);
+    }
+  }
+  if (_opcodeErrorReporter !== null) {
+    try {
+      _opcodeErrorReporter(e, { tag, opcode });
+    } catch (reporterErr) {
+      if (IS_DEV_MODE) {
+        console.error('OpcodeErrorReporter threw:', reporterErr);
+      }
+    }
+  }
+}
+
+// Surface an opcode error from a context that has no `ops` array to splice
+// (e.g. the synchronous `flushCellOpcodes` path). Dev-logs and forwards to the
+// host reporter; never throws. Keeps flush errors from being silently dropped.
+function reportOpcodeError(e: any, tag: Cell | MergedCell): void {
+  if (IS_DEV_MODE) {
+    console.error({ message: 'Error executing tag (flush)', error: e, tag });
+  }
+  if (_opcodeErrorReporter !== null) {
+    try {
+      _opcodeErrorReporter(e, { tag, opcode: null });
+    } catch (reporterErr) {
+      if (IS_DEV_MODE) {
+        console.error('OpcodeErrorReporter threw:', reporterErr);
+      }
     }
   }
 }
@@ -473,8 +668,14 @@ export function rawCellFor<T extends object, K extends keyof T>(
   }
   const cellValue = new Cell<T[K]>(
     obj[key],
-    `${obj.constructor.name}.${String(key)}`,
+    // `obj.constructor` is undefined for `Object.create(null)` — guard it so
+    // null-proto objects (e.g. Ember's `it can read from a null object`
+    // dynamic-content case) don't throw during cell creation.
+    `${(obj as any).constructor?.name ?? 'NullProto'}.${String(key)}`,
   );
+  // Record the owner so hosts can reverse a captured cell back to (obj, key).
+  cellValue._relatedObj = obj;
+  cellValue._relatedKey = key;
   refs.set(key, cellValue);
   return cellValue;
 }
@@ -658,6 +859,94 @@ export function deepFnValue(fn: Function | Fn) {
 
 export function cell<T>(value: T, debugName?: string) {
   return new Cell(value, debugName);
+}
+
+// For a reactive binding formula, register every LEAF object held by a tracked
+// cell as a value-owner of that cell with the Ember host (via the
+// `globalThis.__gxtRegisterObjectValueOwner` hook). This lets
+// `set(leafObj,'key',...)` reach the cell through Ember's SyncCore reverse
+// lookup — the attribute / inside-element analogue of the content-position
+// null-object fix. No-op when the hook is absent (standalone glimmer-next) or
+// the formula tracked no object-valued cells.
+export function registerLeafOwnersForFormula(f: MergedCell): void {
+  try {
+    const hook = (globalThis as any).__gxtRegisterObjectValueOwner;
+    if (typeof hook !== 'function') return;
+    const cells = (f as any).relatedCells as Set<Cell> | undefined;
+    if (!cells || cells.size === 0) return;
+    cells.forEach((c) => {
+      const v = (c as any)._value;
+      const ro = (c as any)._relatedObj;
+      const rk = (c as any)._relatedKey;
+      if (
+        v &&
+        typeof v === 'object' &&
+        ro &&
+        typeof ro === 'object' &&
+        typeof rk === 'string'
+      ) {
+        hook(v, ro, rk);
+      }
+    });
+  } catch {
+    /* best-effort */
+  }
+}
+
+// When a `this.<path>` binding resolves off an ABSENT property the getter
+// touches no cell, so its wrapping formula reports `isConst` and the binding is
+// set ONCE and never updates (Ember's dynamic-content "undefined dynamic paths"
+// cases for attribute / inside-an-element positions). Materialize the leaf cell
+// on the current template `this` (exposed by the Ember host as
+// `globalThis.__gxtCurrentTemplateThis`) by reading it through `cellFor`, so a
+// re-evaluated formula now tracks a real cell that `set(context,'<path>',...)`
+// will dirty. Returns true if a cell was materialized (caller should treat the
+// binding as reactive). Best-effort: a no-op when the host hasn't exposed the
+// current template `this` (standalone glimmer-next).
+export function materializeAbsentPathCell(child: Function): boolean {
+  try {
+    // Prefer an explicit path stamp (set by the Ember host when the getter is
+    // wrapped — e.g. the attribute `_attrNormalize` wrapper whose own toString
+    // hides the inner `this.<path>`). Fall back to scanning the getter source.
+    let path = (child as any).__gxtPath as string | undefined;
+    if (!path) {
+      const str = String(child);
+      const marker = 'this.';
+      const idx = str.indexOf(marker);
+      if (idx === -1) return false;
+      let end = idx + marker.length;
+      while (end < str.length) {
+        const c = str[end]!;
+        if (
+          (c >= 'a' && c <= 'z') ||
+          (c >= 'A' && c <= 'Z') ||
+          (c >= '0' && c <= '9') ||
+          c === '_' ||
+          c === '$' ||
+          c === '.'
+        ) {
+          end++;
+        } else {
+          break;
+        }
+      }
+      path = str.slice(idx + marker.length, end);
+    }
+    if (!path) return false;
+    const ctx = (globalThis as any).__gxtCurrentTemplateThis;
+    if (!ctx || typeof ctx !== 'object') return false;
+    let cur: any = ctx;
+    let materialized = false;
+    for (const seg of path.split('.')) {
+      if (!cur || typeof cur !== 'object') break;
+      const segCell = (cellFor as any)(cur, seg, /* skipDefine */ false);
+      materialized = true;
+      cur = segCell ? segCell.value : cur[seg];
+    }
+    return materialized;
+  } catch {
+    return false;
+  }
 }
 
 export function inNewTrackingFrame(callback: () => void) {

@@ -54,6 +54,19 @@ export function compiler(mode: string, options: Options = {}): Plugin {
         // tree-shake debug-only code. Previously this was left undefined,
         // but with the single-chunk build, the core module gets loaded
         // by Node during Vite config resolution.
+        //
+        // NB: we must NOT inline the full `flags` object here (the
+        // `{ ...flags, IS_DEV_MODE: false }` form proposed as a hygiene fix).
+        // The lib build's `flags` carries `defaultFlags()` values for the
+        // CONSUMER-controlled integration flags (WITH_EMBER_INTEGRATION,
+        // WITH_HELPER_MANAGER, WITH_MODIFIER_MANAGER) as `false`. Inlining
+        // those into the published runtime dist HARD-CODES them off, which
+        // tree-shakes the Ember-integration / helper-manager / modifier-manager
+        // code paths OUT of the runtime — breaking every consumer (e.g. Ember)
+        // that sets them `true` at its OWN build time. Leaving them undefined
+        // is correct: the consumer's `define` inlines them. (Verified: inlining
+        // them produced a runtime dom chunk with zero WITH_* branches and the
+        // GXT-on-Ember benchmark vehicle failed to boot — empty table.)
         defineValues = { IS_DEV_MODE: false };
       }
 

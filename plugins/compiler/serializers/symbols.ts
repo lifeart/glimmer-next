@@ -172,6 +172,11 @@ export const INTERNAL_HELPERS = {
   ON_CREATED_HANDLER: '$__on_created_handler',
   STYLE_SETTER: '$__style_setter',
   ELEMENT_HELPER: '$__element_helper',
+  // Sentinel name for element-modifier slots whose modifier reference is a
+  // SubExpression (e.g. `<el {{(if c (modifier "on" "click" cb))}}>`). The
+  // element serializer detects this name and emits a $_maybeModifier wrap
+  // with the SubExpression as the modifier reference.
+  DYNAMIC_MODIFIER: '$__dynamic_modifier',
 } as const;
 
 /**

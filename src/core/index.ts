@@ -40,6 +40,18 @@ export * from '@/core/helpers/index';
 export { $template, $args, $fwProp } from '@/core/shared';
 export { syncDom, takeRenderingControl } from '@/core/runtime';
 export { setIsRendering, isRendering } from '@/core/reactive';
+export { flushCellOpcodes } from '@/core/reactive';
+export { setOpcodeErrorReporter, type OpcodeErrorReporter } from '@/core/reactive';
+export {
+  setCellUpdateDeferralHook,
+  applyDeferredCellUpdate,
+  type CellUpdateDeferralHook,
+} from '@/core/reactive';
+export { setComponentRenderErrorReporter, type ComponentRenderErrorReporter } from '@/core/dom';
+export {
+  setDestructionErrorReporter,
+  type DestructionErrorReporter,
+} from '@/core/glimmer/destroyable';
 
 // Export decorator-free suspense utilities from suspense-utils
 // For Suspense and lazy components, import directly from '@lifeart/gxt/suspense'

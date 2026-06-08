@@ -643,7 +643,17 @@ function visitAttributeValue(
     }
     // Use wrap=true to ensure helper results are wrapped in getters for reactivity
     // This is critical for dynamic values like {{if condition 'a' 'b'}} or {{fn this.handler arg}}
-    const result = getVisit(ctx)(ctx, value, true);
+    // Mark that we are inside an attribute/named-arg value so the fine-grained
+    // 0-arg helper getter-wrap is suppressed here (the bare $_maybeHelper form
+    // must survive so the Ember-side ambiguous-named-arg-helper guard matches).
+    const _prevInAttr = ctx.inAttributeValue;
+    ctx.inAttributeValue = true;
+    let result: ReturnType<ReturnType<typeof getVisit>>;
+    try {
+      result = getVisit(ctx)(ctx, value, true);
+    } finally {
+      ctx.inAttributeValue = _prevInAttr;
+    }
     if (result !== null && isSerializedValue(result)) {
       return result;
     }
@@ -732,13 +742,57 @@ function processEvents(
       }
     }
 
+    // Dynamic modifier via SubExpression in element-modifier position.
+    // E.g. `<button {{ (if cond (modifier on "click" cb)) }}>...`
+    // The SubExpression evaluates to a "curried modifier" reference at render
+    // time, which must be installed via $_maybeModifier. We compile the
+    // SubExpression as a value and emit an EVENT tuple whose helper carries
+    // the compiled expression as positional[0] under the special name
+    // `$__dynamic_modifier`. The element serializer (buildEvents) recognizes
+    // this name and emits `($n) => $_maybeModifier(expr, $n, [extra], hash)`.
+    if (mod.path.type === 'SubExpression') {
+      // Skip the existing `(modifier "name" ...)` literal-name shortcut above;
+      // that branch already `continue`d when matched. Anything left here is a
+      // dynamic SubExpression in modifier position.
+      const modRange = getNodeRange(mod);
+      const subValue = getVisit(ctx)(ctx, mod.path, false);
+      const subSerialized: SerializedValue =
+        subValue && isSerializedValue(subValue) ? subValue : literal(null);
+      // Trailing positional/named args become invocation args for the curried
+      // modifier (merged with curried args by createEmberModifierHelper).
+      const extraPositional: SerializedValue[] = mod.params.map((p) => {
+        const result = getVisit(ctx)(ctx, p, false);
+        return result && isSerializedValue(result) ? result : literal(null);
+      });
+      const namedMap = new Map<string, SerializedValue>();
+      for (const pair of mod.hash.pairs) {
+        const value = getVisit(ctx)(ctx, pair.value, false);
+        if (value && isSerializedValue(value)) namedMap.set(pair.key, value);
+      }
+      // positional[0] = the dynamic modifier expression
+      // positional[1..] = extra invocation args
+      const dynModValue = helper(
+        INTERNAL_HELPERS.DYNAMIC_MODIFIER,
+        [subSerialized, ...extraPositional],
+        namedMap,
+        modRange,
+      );
+      events.push([EVENT_TYPE.ON_CREATED, dynModValue, modRange]);
+      continue;
+    }
+
     if (mod.path.type !== 'PathExpression') continue;
 
     const modRange = getNodeRange(mod);
     const modPathRange = getNodeRange(mod.path);
     const modName = getPathExpressionString(mod.path);
 
-    if (modName === 'on') {
+    // Native-on fast path only when `on` is the keyword (not a scope shadow).
+    // If a scope binding named `on` exists (e.g. via setModifierManager + strict-mode
+    // scope: () => ({ on })), the user's modifier must take effect — fall through to
+    // the generic custom-modifier path which respects scope bindings.
+    const isShadowedOn = modName === 'on' && ctx.scopeTracker.hasBinding('on');
+    if (modName === 'on' && !isShadowedOn) {
       // Native event handler
       const eventName = mod.params[0];
       if (eventName?.type === 'StringLiteral') {
@@ -862,6 +916,24 @@ function rewriteOnEventAttributes(node: ASTv1.ElementNode): void {
 
     // Build an {{on "eventName" expr}} modifier
     const mustache = attr.value as ASTv1.MustacheStatement;
+    // When the value mustache carries params or hash (e.g.
+    // onclick={{fn this.x row}}), the handler expression is a helper
+    // invocation. Carrying only `mustache.path` discards the args and
+    // resolves `fn`/etc. to a bare path → "this.fn is not a function".
+    // Wrap the whole invocation as a SubExpression so we emit the
+    // proven-correct {{on "click" (fn this.x row)}} form. Zero-arg
+    // (onclick={{this.create}}) keeps the bare path.
+    const handlerHasArgs =
+      mustache.params.length > 0 || mustache.hash.pairs.length > 0;
+    const handlerExpr: ASTv1.Expression = handlerHasArgs
+      ? ({
+          type: 'SubExpression',
+          path: mustache.path,
+          params: mustache.params,
+          hash: mustache.hash,
+          loc: mustache.loc,
+        } as ASTv1.SubExpression)
+      : (mustache.path as ASTv1.Expression);
     const onModifier: ASTv1.ElementModifierStatement = {
       type: 'ElementModifierStatement',
       path: {
@@ -881,7 +953,7 @@ function rewriteOnEventAttributes(node: ASTv1.ElementNode): void {
           original: eventName,
           loc: attr.loc,
         } as ASTv1.StringLiteral,
-        mustache.path as ASTv1.Expression,
+        handlerExpr,
       ],
       hash: {
         type: 'Hash',

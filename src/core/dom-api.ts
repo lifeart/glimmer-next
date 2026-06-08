@@ -42,7 +42,20 @@ export class HTMLBrowserDOMApi implements DOMApi {
   destroy(node: Node): void {
     // Skip if node is undefined (isConnected check handled by caller)
     if (!node) return;
-    // @ts-expect-error
+    // A DocumentFragment (nodeType 11) has no `.remove()` — and once its
+    // children have been moved into the live DOM (every `api.insert` of a
+    // fragment empties it), there is nothing to reclaim here anyway. Calling
+    // `.remove()` on it throws `node.remove is not a function`, which (when it
+    // happens mid-`syncList` row teardown for an `{{{value}}}` each-body that
+    // returned a fragment) aborts the entire reconcile — leaving stale rows
+    // un-removed AND new rows un-rendered (GH#16314). Skip non-removable nodes
+    // defensively; the real content reclamation is handled by the html-raw
+    // teardown destructor (gxt-backend compile.ts) / the row's other rendered
+    // nodes.
+    if (typeof (node as unknown as { remove?: unknown }).remove !== 'function') {
+      return;
+    }
+    // @ts-expect-error remove() exists on Element/CharacterData, not on Node
     node.remove();
   }
   clearChildren(element: Node): void {

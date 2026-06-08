@@ -10,7 +10,11 @@ import {
   TREE,
   CHILD,
 } from '../shared';
-import { cleanupFastContext, provideContext, RENDERING_CONTEXT } from '../context';
+import {
+  cleanupFastContext,
+  provideContext,
+  RENDERING_CONTEXT,
+} from '../context';
 import { Root } from '../dom';
 import type { Cell } from '../reactive';
 
@@ -1038,7 +1042,7 @@ describe('List Component Destruction', () => {
     );
 
     // Wait for initial render
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Should have 3 items in keyMap
     expect(listInstance.keyMap.size).toBe(3);
@@ -1046,7 +1050,7 @@ describe('List Component Destruction', () => {
 
     // Update to empty list
     items.update([]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // keyMap and indexMap should be cleared
     expect(listInstance.keyMap.size).toBe(0);
@@ -1233,7 +1237,7 @@ describe('List Component Destruction', () => {
     );
 
     // Wait for initial render
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Both items should have opcodes registered
     expect(itemCells.length).toBe(2);
@@ -1242,7 +1246,7 @@ describe('List Component Destruction', () => {
 
     // Remove first item
     items.update([{ id: 2 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Note: The item's cell opcode cleanup depends on how ItemComponent
     // registers destructors. This test documents current behavior.
@@ -1281,7 +1285,7 @@ describe('List Component Destruction', () => {
         topMarker,
       );
 
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await new Promise((resolve) => setTimeout(resolve, 10));
 
       // Destroy parent (which should clean up list and all children)
       destroyElementSync(parentComponent, true, api);
@@ -1350,8 +1354,12 @@ describe('Item Markers', () => {
   }
 
   test('markers are created for each item on initial render', async () => {
-    const { listInstance } = await createList([{ id: 1 }, { id: 2 }, { id: 3 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    const { listInstance } = await createList([
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(listInstance.itemMarkers.size).toBe(3);
     expect(listInstance.markerSet.size).toBe(3);
@@ -1359,7 +1367,7 @@ describe('Item Markers', () => {
 
   test('item markers are present in the DOM and connected', async () => {
     const { listInstance } = await createList([{ id: 1 }, { id: 2 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Each item marker should be connected to the DOM
     for (const marker of listInstance.itemMarkers.values()) {
@@ -1381,8 +1389,12 @@ describe('Item Markers', () => {
   });
 
   test('each marker appears before its item content in DOM order', async () => {
-    const { listInstance } = await createList([{ id: 1 }, { id: 2 }, { id: 3 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    const { listInstance } = await createList([
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Collect element nodes in DOM order and verify order is 1, 2, 3
     const divs: HTMLElement[] = [];
@@ -1400,7 +1412,7 @@ describe('Item Markers', () => {
 
     // Each item's marker should appear before its div in DOM order
     for (const [key, marker] of listInstance.itemMarkers.entries()) {
-      const div = divs.find(d => d.getAttribute('data-id') === String(key));
+      const div = divs.find((d) => d.getAttribute('data-id') === String(key));
       expect(div).toBeDefined();
       // marker should be a preceding sibling of div
       let found = false;
@@ -1420,14 +1432,18 @@ describe('Item Markers', () => {
   });
 
   test('markers are cleaned up when items are removed', async () => {
-    const { listInstance, itemsCell } = await createList([{ id: 1 }, { id: 2 }, { id: 3 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    const { listInstance, itemsCell } = await createList([
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(listInstance.itemMarkers.size).toBe(3);
 
     // Remove middle item
     itemsCell.update([{ id: 1 }, { id: 3 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(listInstance.itemMarkers.size).toBe(2);
     expect(listInstance.markerSet.size).toBe(2);
@@ -1436,26 +1452,33 @@ describe('Item Markers', () => {
   });
 
   test('markers are cleaned up on fastCleanup (empty list)', async () => {
-    const { listInstance, itemsCell } = await createList([{ id: 1 }, { id: 2 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    const { listInstance, itemsCell } = await createList([
+      { id: 1 },
+      { id: 2 },
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(listInstance.itemMarkers.size).toBe(2);
 
     // Empty the list
     itemsCell.update([]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(listInstance.itemMarkers.size).toBe(0);
     expect(listInstance.markerSet.size).toBe(0);
   });
 
   test('reordering items preserves markers and moves nodes correctly', async () => {
-    const { listInstance, itemsCell } = await createList([{ id: 1 }, { id: 2 }, { id: 3 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    const { listInstance, itemsCell } = await createList([
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Reverse order
     itemsCell.update([{ id: 3 }, { id: 2 }, { id: 1 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Still 3 markers
     expect(listInstance.itemMarkers.size).toBe(3);
@@ -1477,25 +1500,28 @@ describe('Item Markers', () => {
 
   test('adding new items creates new markers', async () => {
     const { listInstance, itemsCell } = await createList([{ id: 1 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(listInstance.itemMarkers.size).toBe(1);
 
     // Add more items
     itemsCell.update([{ id: 1 }, { id: 2 }, { id: 3 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(listInstance.itemMarkers.size).toBe(3);
     expect(listInstance.markerSet.size).toBe(3);
   });
 
   test('interleaving new and existing items positions correctly', async () => {
-    const { listInstance, itemsCell } = await createList([{ id: 1 }, { id: 3 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    const { listInstance, itemsCell } = await createList([
+      { id: 1 },
+      { id: 3 },
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Insert id:2 between id:1 and id:3
     itemsCell.update([{ id: 1 }, { id: 2 }, { id: 3 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(listInstance.itemMarkers.size).toBe(3);
 
@@ -1515,12 +1541,15 @@ describe('Item Markers', () => {
   });
 
   test('inserting at beginning shifts existing items', async () => {
-    const { listInstance, itemsCell } = await createList([{ id: 2 }, { id: 3 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    const { listInstance, itemsCell } = await createList([
+      { id: 2 },
+      { id: 3 },
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Insert at beginning
     itemsCell.update([{ id: 1 }, { id: 2 }, { id: 3 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     const divs: HTMLElement[] = [];
     let node: Node | null = listInstance.topMarker.nextSibling;
@@ -1537,12 +1566,15 @@ describe('Item Markers', () => {
   });
 
   test('swap two items relocates correctly', async () => {
-    const { listInstance, itemsCell } = await createList([{ id: 1 }, { id: 2 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    const { listInstance, itemsCell } = await createList([
+      { id: 1 },
+      { id: 2 },
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Swap
     itemsCell.update([{ id: 2 }, { id: 1 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     const divs: HTMLElement[] = [];
     let node: Node | null = listInstance.topMarker.nextSibling;
@@ -1558,8 +1590,12 @@ describe('Item Markers', () => {
   });
 
   test('DOM elements are moved, not recreated, during reorder', async () => {
-    const { listInstance, itemsCell } = await createList([{ id: 1 }, { id: 2 }, { id: 3 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    const { listInstance, itemsCell } = await createList([
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Grab references to the original DOM elements
     const originalDivs: HTMLElement[] = [];
@@ -1574,7 +1610,7 @@ describe('Item Markers', () => {
 
     // Reverse order
     itemsCell.update([{ id: 3 }, { id: 2 }, { id: 1 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Verify same DOM nodes were moved (not recreated)
     const divs: HTMLElement[] = [];
@@ -1592,18 +1628,22 @@ describe('Item Markers', () => {
     expect(divs[1]).toBe(originalDivs[1]); // id:2 stayed at index 1
     expect(divs[2]).toBe(originalDivs[0]); // id:1 was at index 0
     // All should still have the marked attribute
-    divs.forEach(div => {
+    divs.forEach((div) => {
       expect(div.getAttribute('data-marked')).toBe('true');
     });
   });
 
   test('remove and add in same update works correctly', async () => {
-    const { listInstance, itemsCell } = await createList([{ id: 1 }, { id: 2 }, { id: 3 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    const { listInstance, itemsCell } = await createList([
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Remove id:2, add id:4
     itemsCell.update([{ id: 1 }, { id: 4 }, { id: 3 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(listInstance.itemMarkers.size).toBe(3);
     // keys are raw item.id values (numbers)
@@ -1626,44 +1666,48 @@ describe('Item Markers', () => {
 
   test('single item list works with markers', async () => {
     const { listInstance, itemsCell } = await createList([{ id: 1 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(listInstance.itemMarkers.size).toBe(1);
 
     // Remove the only item
     itemsCell.update([]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(listInstance.itemMarkers.size).toBe(0);
 
     // Add it back
     itemsCell.update([{ id: 1 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(listInstance.itemMarkers.size).toBe(1);
   });
 
   test('markerSet stays in sync with itemMarkers', async () => {
-    const { listInstance, itemsCell } = await createList([{ id: 1 }, { id: 2 }, { id: 3 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    const { listInstance, itemsCell } = await createList([
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(listInstance.markerSet.size).toBe(listInstance.itemMarkers.size);
 
     // Remove one
     itemsCell.update([{ id: 1 }, { id: 3 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(listInstance.markerSet.size).toBe(listInstance.itemMarkers.size);
 
     // Add two
     itemsCell.update([{ id: 1 }, { id: 3 }, { id: 4 }, { id: 5 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(listInstance.markerSet.size).toBe(listInstance.itemMarkers.size);
 
     // Clear all
     itemsCell.update([]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(listInstance.markerSet.size).toBe(0);
     expect(listInstance.itemMarkers.size).toBe(0);
@@ -1671,9 +1715,13 @@ describe('Item Markers', () => {
 
   test('multiple sequential reorders maintain correct DOM order', async () => {
     const { listInstance, itemsCell } = await createList([
-      { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 },
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+      { id: 4 },
+      { id: 5 },
     ]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     const getDivOrder = () => {
       const divs: string[] = [];
@@ -1689,17 +1737,17 @@ describe('Item Markers', () => {
 
     // Reorder 1: reverse
     itemsCell.update([{ id: 5 }, { id: 4 }, { id: 3 }, { id: 2 }, { id: 1 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
     expect(getDivOrder()).toEqual(['5', '4', '3', '2', '1']);
 
     // Reorder 2: move last to first
     itemsCell.update([{ id: 1 }, { id: 5 }, { id: 4 }, { id: 3 }, { id: 2 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
     expect(getDivOrder()).toEqual(['1', '5', '4', '3', '2']);
 
     // Reorder 3: original order
     itemsCell.update([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
     expect(getDivOrder()).toEqual(['1', '2', '3', '4', '5']);
   });
 
@@ -1734,11 +1782,11 @@ describe('Item Markers', () => {
       topMarker,
     );
 
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Swap items
     itemsCell.update([{ id: 2 }, { id: 1 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Verify all nodes are in correct order
     const elements: HTMLElement[] = [];
@@ -1758,8 +1806,11 @@ describe('Item Markers', () => {
   });
 
   test('removed item marker is disconnected from DOM', async () => {
-    const { listInstance, itemsCell } = await createList([{ id: 1 }, { id: 2 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    const { listInstance, itemsCell } = await createList([
+      { id: 1 },
+      { id: 2 },
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Get reference to marker before removal (key is raw item.id, a number)
     const marker2 = listInstance.itemMarkers.get(2 as any);
@@ -1768,7 +1819,7 @@ describe('Item Markers', () => {
 
     // Remove item 2
     itemsCell.update([{ id: 1 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Marker should be disconnected
     expect(marker2!.isConnected).toBe(false);
@@ -1793,7 +1844,9 @@ describe('Item Markers', () => {
         ctx: parentComponent,
         ItemComponent: (item: { id: number }) => {
           // Simulate a closed if: only a comment placeholder, no visible content
-          const ifPlaceholder = document.createComment(`if-placeholder-${item.id}`);
+          const ifPlaceholder = document.createComment(
+            `if-placeholder-${item.id}`,
+          );
           return [ifPlaceholder];
         },
       },
@@ -1801,13 +1854,13 @@ describe('Item Markers', () => {
       topMarker,
     );
 
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Each item has: item marker + if placeholder = 2 comments
     // Plus topMarker and bottomMarker
     // Reverse the list
     itemsCell.update([{ id: 3 }, { id: 2 }, { id: 1 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Verify comment order: each item marker should precede its if-placeholder
     const comments: Comment[] = [];
@@ -1822,7 +1875,7 @@ describe('Item Markers', () => {
     expect(comments.length).toBeGreaterThanOrEqual(6);
 
     // Verify the if-placeholders are in the reversed order
-    const ifPlaceholders = comments.filter(c =>
+    const ifPlaceholders = comments.filter((c) =>
       c.textContent?.startsWith('if-placeholder-'),
     );
     expect(ifPlaceholders.length).toBe(3);
@@ -1862,11 +1915,11 @@ describe('Item Markers', () => {
       topMarker,
     );
 
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Reverse the list: [3, 2, 1]
     itemsCell.update([{ id: 3 }, { id: 2 }, { id: 1 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Now simulate "if opens" for item 2: insert content before its placeholder
     const ph2 = placeholders.get(2)!;
@@ -1931,7 +1984,7 @@ describe('Item Markers', () => {
       topMarker,
     );
 
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Verify initial DOM order
     const getInnerOrder = () => {
@@ -1950,7 +2003,7 @@ describe('Item Markers', () => {
 
     // Swap items
     itemsCell.update([{ id: 2 }, { id: 1 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // All inner nodes should move together
     expect(getInnerOrder()).toEqual(['2-a', '2-b', '1-a', '1-b']);
@@ -1959,15 +2012,20 @@ describe('Item Markers', () => {
     const innerComments: string[] = [];
     let node: Node | null = listInstance.topMarker.nextSibling;
     while (node && node !== listInstance.bottomMarker) {
-      if (node.nodeType === 8 && (node as Comment).textContent?.startsWith('inner-')) {
+      if (
+        node.nodeType === 8 &&
+        (node as Comment).textContent?.startsWith('inner-')
+      ) {
         innerComments.push((node as Comment).textContent!);
       }
       node = node.nextSibling;
     }
     // Inner markers for id:2 should come before id:1
     expect(innerComments).toEqual([
-      'inner-top-2', 'inner-bottom-2',
-      'inner-top-1', 'inner-bottom-1',
+      'inner-top-2',
+      'inner-bottom-2',
+      'inner-top-1',
+      'inner-bottom-1',
     ]);
   });
 
@@ -2005,7 +2063,7 @@ describe('Item Markers', () => {
       topMarker,
     );
 
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Verify initial visible elements: only even ids
     const getVisibleOrder = () => {
@@ -2024,7 +2082,7 @@ describe('Item Markers', () => {
 
     // Reverse: [4, 3, 2, 1]
     itemsCell.update([{ id: 4 }, { id: 3 }, { id: 2 }, { id: 1 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Visible elements should be reversed: 4, 2
     expect(getVisibleOrder()).toEqual(['4', '2']);
@@ -2101,37 +2159,47 @@ describe('AsyncListComponent markers', () => {
   };
 
   test('async list creates markers for each item', async () => {
-    const { listInstance } = await createAsyncList([{ id: 1 }, { id: 2 }, { id: 3 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    const { listInstance } = await createAsyncList([
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(listInstance.itemMarkers.size).toBe(3);
     expect(listInstance.markerSet.size).toBe(3);
   });
 
   test('async list reorders items correctly', async () => {
-    const { listInstance, itemsCell } = await createAsyncList([{ id: 1 }, { id: 2 }, { id: 3 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    const { listInstance, itemsCell } = await createAsyncList([
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder(listInstance)).toEqual(['1', '2', '3']);
 
     // Reverse
     itemsCell.update([{ id: 3 }, { id: 2 }, { id: 1 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder(listInstance)).toEqual(['3', '2', '1']);
     expect(listInstance.itemMarkers.size).toBe(3);
   });
 
   test('async append-only update skips removal scan', async () => {
-    const { listInstance, itemsCell } = await createAsyncList([{ id: 1 }, { id: 2 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    const { listInstance, itemsCell } = await createAsyncList([
+      { id: 1 },
+      { id: 2 },
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     const listInstanceInternal = listInstance as unknown as {
       keysForItems: (...args: unknown[]) => unknown;
     };
-    const originalKeysForItems = listInstanceInternal.keysForItems.bind(
-      listInstanceInternal,
-    );
+    const originalKeysForItems =
+      listInstanceInternal.keysForItems.bind(listInstanceInternal);
     let removalScanCalls = 0;
 
     listInstanceInternal.keysForItems = (...args: unknown[]) => {
@@ -2140,19 +2208,23 @@ describe('AsyncListComponent markers', () => {
     };
 
     itemsCell.update([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder(listInstance)).toEqual(['1', '2', '3', '4']);
     expect(removalScanCalls).toBe(0);
   });
 
   test('async list cleans up markers on item removal', async () => {
-    const { listInstance, itemsCell } = await createAsyncList([{ id: 1 }, { id: 2 }, { id: 3 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    const { listInstance, itemsCell } = await createAsyncList([
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Remove middle item
     itemsCell.update([{ id: 1 }, { id: 3 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(listInstance.itemMarkers.size).toBe(2);
     expect(listInstance.markerSet.size).toBe(2);
@@ -2160,13 +2232,16 @@ describe('AsyncListComponent markers', () => {
   });
 
   test('async list cleans up all markers on empty list (fastCleanup)', async () => {
-    const { listInstance, itemsCell } = await createAsyncList([{ id: 1 }, { id: 2 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    const { listInstance, itemsCell } = await createAsyncList([
+      { id: 1 },
+      { id: 2 },
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(listInstance.itemMarkers.size).toBe(2);
 
     itemsCell.update([]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(listInstance.itemMarkers.size).toBe(0);
     expect(listInstance.markerSet.size).toBe(0);
@@ -2174,20 +2249,28 @@ describe('AsyncListComponent markers', () => {
 
   test('async list move-to-front with LIS optimization', async () => {
     const { listInstance, itemsCell } = await createAsyncList([
-      { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 },
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+      { id: 4 },
+      { id: 5 },
     ]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Move last to front
     itemsCell.update([{ id: 5 }, { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder(listInstance)).toEqual(['5', '1', '2', '3', '4']);
   });
 
   test('async list DOM elements are moved, not recreated', async () => {
-    const { listInstance, itemsCell } = await createAsyncList([{ id: 1 }, { id: 2 }, { id: 3 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    const { listInstance, itemsCell } = await createAsyncList([
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Mark original DOM nodes
     const originalNodes = new Map<string, Node>();
@@ -2203,7 +2286,7 @@ describe('AsyncListComponent markers', () => {
 
     // Reverse
     itemsCell.update([{ id: 3 }, { id: 2 }, { id: 1 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Verify same DOM nodes
     node = listInstance.topMarker.nextSibling;
@@ -2280,7 +2363,7 @@ describe('longestIncreasingSubsequence', () => {
       expect(pos).toBeLessThan(arr.length);
     }
     // Verify the values at returned positions form an increasing sequence
-    const values = [...result].sort((a, b) => a - b).map(i => arr[i]);
+    const values = [...result].sort((a, b) => a - b).map((i) => arr[i]);
     for (let i = 1; i < values.length; i++) {
       expect(values[i]).toBeGreaterThan(values[i - 1]);
     }
@@ -2412,15 +2495,19 @@ describe('LIS move-phase anchor bug regression', () => {
     // LIS of length 1 (only 1 item is "stable"), so 4 items must be relocated.
     // The old bug used stale anchors for those 4 moves, producing wrong order.
     const { itemsCell, getDivOrder } = await createListHelper([
-      { id: 0 }, { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 },
+      { id: 0 },
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+      { id: 4 },
     ]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder()).toEqual(['0', '1', '2', '3', '4']);
 
     // Full reverse
     itemsCell.update([{ id: 4 }, { id: 3 }, { id: 2 }, { id: 1 }, { id: 0 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder()).toEqual(['4', '3', '2', '1', '0']);
   });
@@ -2429,20 +2516,42 @@ describe('LIS move-phase anchor bug regression', () => {
     // Same reversal, but each item renders two spans. This tests that
     // relocateItem correctly collects ALL nodes between markers when moving.
     const { itemsCell, getElementOrder } = await createMultiRootListHelper([
-      { id: 0 }, { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 },
+      { id: 0 },
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+      { id: 4 },
     ]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getElementOrder()).toEqual([
-      '0-a', '0-b', '1-a', '1-b', '2-a', '2-b', '3-a', '3-b', '4-a', '4-b',
+      '0-a',
+      '0-b',
+      '1-a',
+      '1-b',
+      '2-a',
+      '2-b',
+      '3-a',
+      '3-b',
+      '4-a',
+      '4-b',
     ]);
 
     // Full reverse
     itemsCell.update([{ id: 4 }, { id: 3 }, { id: 2 }, { id: 1 }, { id: 0 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getElementOrder()).toEqual([
-      '4-a', '4-b', '3-a', '3-b', '2-a', '2-b', '1-a', '1-b', '0-a', '0-b',
+      '4-a',
+      '4-b',
+      '3-a',
+      '3-b',
+      '2-a',
+      '2-b',
+      '1-a',
+      '1-b',
+      '0-a',
+      '0-b',
     ]);
   });
 
@@ -2451,17 +2560,27 @@ describe('LIS move-phase anchor bug regression', () => {
     // This exercises the combination of LIS-based moves, new item insertion,
     // and removed item cleanup in a single update cycle.
     const { itemsCell, getDivOrder } = await createListHelper([
-      { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }, { id: 6 },
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+      { id: 4 },
+      { id: 5 },
+      { id: 6 },
     ]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder()).toEqual(['1', '2', '3', '4', '5', '6']);
 
     // Remove 2 and 5, add 7 and 8, shuffle: [4, 7, 1, 6, 8, 3]
     itemsCell.update([
-      { id: 4 }, { id: 7 }, { id: 1 }, { id: 6 }, { id: 8 }, { id: 3 },
+      { id: 4 },
+      { id: 7 },
+      { id: 1 },
+      { id: 6 },
+      { id: 8 },
+      { id: 3 },
     ]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder()).toEqual(['4', '7', '1', '6', '8', '3']);
   });
@@ -2471,15 +2590,19 @@ describe('LIS move-phase anchor bug regression', () => {
     // The old bug could misplace item 0 because the anchor for it was
     // a stable item whose marker had not yet been relocated.
     const { itemsCell, getDivOrder } = await createListHelper([
-      { id: 0 }, { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 },
+      { id: 0 },
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+      { id: 4 },
     ]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder()).toEqual(['0', '1', '2', '3', '4']);
 
     // Move first to end
     itemsCell.update([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 0 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder()).toEqual(['1', '2', '3', '4', '0']);
   });
@@ -2489,15 +2612,19 @@ describe('LIS move-phase anchor bug regression', () => {
     // With the old bug, item 4's anchor would be the marker of item 0 which
     // was still at its old position, placing item 4 incorrectly.
     const { itemsCell, getDivOrder } = await createListHelper([
-      { id: 0 }, { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 },
+      { id: 0 },
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+      { id: 4 },
     ]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder()).toEqual(['0', '1', '2', '3', '4']);
 
     // Move last to start
     itemsCell.update([{ id: 4 }, { id: 0 }, { id: 1 }, { id: 2 }, { id: 3 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder()).toEqual(['4', '0', '1', '2', '3']);
   });
@@ -2506,18 +2633,22 @@ describe('LIS move-phase anchor bug regression', () => {
     // Two consecutive reorderings: reverse, then back to original.
     // This ensures the fix works across multiple update cycles.
     const { itemsCell, getDivOrder } = await createListHelper([
-      { id: 0 }, { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 },
+      { id: 0 },
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+      { id: 4 },
     ]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Reverse
     itemsCell.update([{ id: 4 }, { id: 3 }, { id: 2 }, { id: 1 }, { id: 0 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
     expect(getDivOrder()).toEqual(['4', '3', '2', '1', '0']);
 
     // Restore original
     itemsCell.update([{ id: 0 }, { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
     expect(getDivOrder()).toEqual(['0', '1', '2', '3', '4']);
   });
 
@@ -2525,65 +2656,118 @@ describe('LIS move-phase anchor bug regression', () => {
     // Smaller reversal (3 items) with multi-root to ensure the boundary
     // detection in relocateItem works at every scale.
     const { itemsCell, getElementOrder } = await createMultiRootListHelper([
-      { id: 1 }, { id: 2 }, { id: 3 },
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
     ]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
-    expect(getElementOrder()).toEqual(['1-a', '1-b', '2-a', '2-b', '3-a', '3-b']);
+    expect(getElementOrder()).toEqual([
+      '1-a',
+      '1-b',
+      '2-a',
+      '2-b',
+      '3-a',
+      '3-b',
+    ]);
 
     itemsCell.update([{ id: 3 }, { id: 2 }, { id: 1 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
-    expect(getElementOrder()).toEqual(['3-a', '3-b', '2-a', '2-b', '1-a', '1-b']);
+    expect(getElementOrder()).toEqual([
+      '3-a',
+      '3-b',
+      '2-a',
+      '2-b',
+      '1-a',
+      '1-b',
+    ]);
   });
 
   test('shuffle with append and removal - multi root nodes', async () => {
     // Combines removal, insertion, and reordering with multi-root items.
     const { itemsCell, getElementOrder } = await createMultiRootListHelper([
-      { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 },
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+      { id: 4 },
     ]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getElementOrder()).toEqual([
-      '1-a', '1-b', '2-a', '2-b', '3-a', '3-b', '4-a', '4-b',
+      '1-a',
+      '1-b',
+      '2-a',
+      '2-b',
+      '3-a',
+      '3-b',
+      '4-a',
+      '4-b',
     ]);
 
     // Remove 2, add 5, reorder: [3, 5, 1, 4]
     itemsCell.update([{ id: 3 }, { id: 5 }, { id: 1 }, { id: 4 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getElementOrder()).toEqual([
-      '3-a', '3-b', '5-a', '5-b', '1-a', '1-b', '4-a', '4-b',
+      '3-a',
+      '3-b',
+      '5-a',
+      '5-b',
+      '1-a',
+      '1-b',
+      '4-a',
+      '4-b',
     ]);
   });
 
   test('move start-to-end with multi root nodes', async () => {
     const { itemsCell, getElementOrder } = await createMultiRootListHelper([
-      { id: 0 }, { id: 1 }, { id: 2 }, { id: 3 },
+      { id: 0 },
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
     ]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Move item 0 from start to end
     itemsCell.update([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 0 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getElementOrder()).toEqual([
-      '1-a', '1-b', '2-a', '2-b', '3-a', '3-b', '0-a', '0-b',
+      '1-a',
+      '1-b',
+      '2-a',
+      '2-b',
+      '3-a',
+      '3-b',
+      '0-a',
+      '0-b',
     ]);
   });
 
   test('move end-to-start with multi root nodes', async () => {
     const { itemsCell, getElementOrder } = await createMultiRootListHelper([
-      { id: 0 }, { id: 1 }, { id: 2 }, { id: 3 },
+      { id: 0 },
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
     ]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Move item 3 from end to start
     itemsCell.update([{ id: 3 }, { id: 0 }, { id: 1 }, { id: 2 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getElementOrder()).toEqual([
-      '3-a', '3-b', '0-a', '0-b', '1-a', '1-b', '2-a', '2-b',
+      '3-a',
+      '3-b',
+      '0-a',
+      '0-b',
+      '1-a',
+      '1-b',
+      '2-a',
+      '2-b',
     ]);
   });
 
@@ -2591,9 +2775,13 @@ describe('LIS move-phase anchor bug regression', () => {
     // Ensures the fix relocates DOM nodes rather than recreating them,
     // preserving event listeners and state.
     const { listInstance, itemsCell, getDivOrder } = await createListHelper([
-      { id: 0 }, { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 },
+      { id: 0 },
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+      { id: 4 },
     ]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Grab references to original DOM nodes
     const originalNodes = new Map<string, Node>();
@@ -2610,7 +2798,7 @@ describe('LIS move-phase anchor bug regression', () => {
 
     // Full reverse
     itemsCell.update([{ id: 4 }, { id: 3 }, { id: 2 }, { id: 1 }, { id: 0 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder()).toEqual(['4', '3', '2', '1', '0']);
 
@@ -2620,7 +2808,9 @@ describe('LIS move-phase anchor bug regression', () => {
       if (node.nodeType === 1) {
         const id = (node as HTMLElement).getAttribute('data-id')!;
         expect(node).toBe(originalNodes.get(id));
-        expect((node as HTMLElement).getAttribute('data-original')).toBe('true');
+        expect((node as HTMLElement).getAttribute('data-original')).toBe(
+          'true',
+        );
       }
       node = node.nextSibling;
     }
@@ -2632,14 +2822,15 @@ describe('LIS move-phase anchor bug regression', () => {
     // (seenKeys === 2). This exercises the interaction between fragment-appended
     // items and move-phase items.
     const { itemsCell, getDivOrder } = await createListHelper([
-      { id: 1 }, { id: 2 },
+      { id: 1 },
+      { id: 2 },
     ]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder()).toEqual(['1', '2']);
 
     itemsCell.update([{ id: 3 }, { id: 1 }, { id: 2 }, { id: 4 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder()).toEqual(['3', '1', '2', '4']);
   });
@@ -2722,21 +2913,35 @@ describe('LIS-based move minimization', () => {
       return divs;
     };
 
-    const resetInsertCount = () => { insertCount = 0; };
+    const resetInsertCount = () => {
+      insertCount = 0;
+    };
     const getInsertCount = () => insertCount;
 
-    return { listInstance, itemsCell, getDivOrder, resetInsertCount, getInsertCount };
+    return {
+      listInstance,
+      itemsCell,
+      getDivOrder,
+      resetInsertCount,
+      getInsertCount,
+    };
   }
 
   test('move-to-front: only moved item is relocated', async () => {
     const { itemsCell, getDivOrder, resetInsertCount, getInsertCount } =
-      await createTrackedList([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+      await createTrackedList([
+        { id: 1 },
+        { id: 2 },
+        { id: 3 },
+        { id: 4 },
+        { id: 5 },
+      ]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     resetInsertCount();
     // Move last item to front: [5, 1, 2, 3, 4]
     itemsCell.update([{ id: 5 }, { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder()).toEqual(['5', '1', '2', '3', '4']);
     // With LIS, only item 5 needs to move (1 fragment insertion to container)
@@ -2746,50 +2951,70 @@ describe('LIS-based move minimization', () => {
 
   test('move-to-back: only moved item is relocated', async () => {
     const { itemsCell, getDivOrder, resetInsertCount, getInsertCount } =
-      await createTrackedList([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+      await createTrackedList([
+        { id: 1 },
+        { id: 2 },
+        { id: 3 },
+        { id: 4 },
+        { id: 5 },
+      ]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     resetInsertCount();
     // Move first item to back: [2, 3, 4, 5, 1]
     itemsCell.update([{ id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }, { id: 1 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder()).toEqual(['2', '3', '4', '5', '1']);
     expect(getInsertCount()).toBeLessThanOrEqual(2);
   });
 
   test('adjacent swap produces correct result with minimal moves', async () => {
-    const { itemsCell, getDivOrder } =
-      await createTrackedList([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    const { itemsCell, getDivOrder } = await createTrackedList([
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+      { id: 4 },
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Swap middle pair: [1, 3, 2, 4]
     itemsCell.update([{ id: 1 }, { id: 3 }, { id: 2 }, { id: 4 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder()).toEqual(['1', '3', '2', '4']);
   });
 
   test('rotation produces correct DOM order', async () => {
-    const { itemsCell, getDivOrder } =
-      await createTrackedList([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    const { itemsCell, getDivOrder } = await createTrackedList([
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+      { id: 4 },
+      { id: 5 },
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Rotate left by 2: [3, 4, 5, 1, 2]
     itemsCell.update([{ id: 3 }, { id: 4 }, { id: 5 }, { id: 1 }, { id: 2 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder()).toEqual(['3', '4', '5', '1', '2']);
   });
 
   test('full reversal produces correct DOM order', async () => {
-    const { itemsCell, getDivOrder } =
-      await createTrackedList([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    const { itemsCell, getDivOrder } = await createTrackedList([
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+      { id: 4 },
+      { id: 5 },
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Full reverse
     itemsCell.update([{ id: 5 }, { id: 4 }, { id: 3 }, { id: 2 }, { id: 1 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder()).toEqual(['5', '4', '3', '2', '1']);
   });
@@ -2797,8 +3022,9 @@ describe('LIS-based move minimization', () => {
   test('stable items are not relocated when only one item moves', async () => {
     // With 10 items, moving just one should leave 9 untouched
     const items = Array.from({ length: 10 }, (_, i) => ({ id: i + 1 }));
-    const { listInstance, itemsCell, getDivOrder } = await createTrackedList(items);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    const { listInstance, itemsCell, getDivOrder } =
+      await createTrackedList(items);
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Grab original DOM references for items 1-9
     const originalNodes = new Map<string, Node>();
@@ -2815,9 +3041,20 @@ describe('LIS-based move minimization', () => {
     // Move item 10 to front
     const newItems = [{ id: 10 }, ...items.slice(0, 9)];
     itemsCell.update(newItems);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
-    expect(getDivOrder()).toEqual(['10', '1', '2', '3', '4', '5', '6', '7', '8', '9']);
+    expect(getDivOrder()).toEqual([
+      '10',
+      '1',
+      '2',
+      '3',
+      '4',
+      '5',
+      '6',
+      '7',
+      '8',
+      '9',
+    ]);
 
     // Verify items 1-9 are the same DOM nodes (not recreated)
     node = listInstance.topMarker.nextSibling;
@@ -2951,16 +3188,21 @@ describe('DOM mutation counting', () => {
   }
 
   test('no-op update (same items, same order) — 0 container inserts, 0 destroys', async () => {
-    const { itemsCell, getDivOrder, resetCounts, getInsertCount, getDestroyCount } =
-      await createMutationTrackedList([{ id: 1 }, { id: 2 }, { id: 3 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    const {
+      itemsCell,
+      getDivOrder,
+      resetCounts,
+      getInsertCount,
+      getDestroyCount,
+    } = await createMutationTrackedList([{ id: 1 }, { id: 2 }, { id: 3 }]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder()).toEqual(['1', '2', '3']);
     resetCounts();
 
     // Update with identical items
     itemsCell.update([{ id: 1 }, { id: 2 }, { id: 3 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder()).toEqual(['1', '2', '3']);
     expect(getInsertCount()).toBe(0);
@@ -2968,16 +3210,21 @@ describe('DOM mutation counting', () => {
   });
 
   test('append items at end — only new item inserts, 0 destroys', async () => {
-    const { itemsCell, getDivOrder, resetCounts, getInsertCount, getDestroyCount } =
-      await createMutationTrackedList([{ id: 1 }, { id: 2 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    const {
+      itemsCell,
+      getDivOrder,
+      resetCounts,
+      getInsertCount,
+      getDestroyCount,
+    } = await createMutationTrackedList([{ id: 1 }, { id: 2 }]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder()).toEqual(['1', '2']);
     resetCounts();
 
     // Append two items
     itemsCell.update([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder()).toEqual(['1', '2', '3', '4']);
     expect(getDestroyCount()).toBe(0);
@@ -2986,16 +3233,17 @@ describe('DOM mutation counting', () => {
   });
 
   test('append-only update skips removal scan', async () => {
-    const { itemsCell, listInstance } =
-      await createMutationTrackedList([{ id: 1 }, { id: 2 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    const { itemsCell, listInstance } = await createMutationTrackedList([
+      { id: 1 },
+      { id: 2 },
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     const listInstanceInternal = listInstance as unknown as {
       keysForItems: (...args: unknown[]) => unknown;
     };
-    const originalKeysForItems = listInstanceInternal.keysForItems.bind(
-      listInstanceInternal,
-    );
+    const originalKeysForItems =
+      listInstanceInternal.keysForItems.bind(listInstanceInternal);
     let removalScanCalls = 0;
 
     listInstanceInternal.keysForItems = (...args: unknown[]) => {
@@ -3004,22 +3252,32 @@ describe('DOM mutation counting', () => {
     };
 
     itemsCell.update([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(removalScanCalls).toBe(0);
   });
 
   test('remove items from end — 0 container inserts, destroys equal to removed count', async () => {
-    const { itemsCell, getDivOrder, resetCounts, getInsertCount, getDestroyCount } =
-      await createMutationTrackedList([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    const {
+      itemsCell,
+      getDivOrder,
+      resetCounts,
+      getInsertCount,
+      getDestroyCount,
+    } = await createMutationTrackedList([
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+      { id: 4 },
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder()).toEqual(['1', '2', '3', '4']);
     resetCounts();
 
     // Remove last two items
     itemsCell.update([{ id: 1 }, { id: 2 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder()).toEqual(['1', '2']);
     expect(getInsertCount()).toBe(0);
@@ -3028,16 +3286,27 @@ describe('DOM mutation counting', () => {
   });
 
   test('full reversal (5 items) — correct order, 0 destroys', async () => {
-    const { itemsCell, getDivOrder, resetCounts, getInsertCount, getDestroyCount } =
-      await createMutationTrackedList([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    const {
+      itemsCell,
+      getDivOrder,
+      resetCounts,
+      getInsertCount,
+      getDestroyCount,
+    } = await createMutationTrackedList([
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+      { id: 4 },
+      { id: 5 },
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder()).toEqual(['1', '2', '3', '4', '5']);
     resetCounts();
 
     // Full reverse
     itemsCell.update([{ id: 5 }, { id: 4 }, { id: 3 }, { id: 2 }, { id: 1 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder()).toEqual(['5', '4', '3', '2', '1']);
     expect(getDestroyCount()).toBe(0);
@@ -3046,16 +3315,27 @@ describe('DOM mutation counting', () => {
   });
 
   test('single move start-to-end — minimal inserts, 0 destroys', async () => {
-    const { itemsCell, getDivOrder, resetCounts, getInsertCount, getDestroyCount } =
-      await createMutationTrackedList([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    const {
+      itemsCell,
+      getDivOrder,
+      resetCounts,
+      getInsertCount,
+      getDestroyCount,
+    } = await createMutationTrackedList([
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+      { id: 4 },
+      { id: 5 },
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder()).toEqual(['1', '2', '3', '4', '5']);
     resetCounts();
 
     // Move first item to end: [2, 3, 4, 5, 1]
     itemsCell.update([{ id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }, { id: 1 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder()).toEqual(['2', '3', '4', '5', '1']);
     expect(getDestroyCount()).toBe(0);
@@ -3064,16 +3344,27 @@ describe('DOM mutation counting', () => {
   });
 
   test('single move end-to-start — minimal inserts, 0 destroys', async () => {
-    const { itemsCell, getDivOrder, resetCounts, getInsertCount, getDestroyCount } =
-      await createMutationTrackedList([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    const {
+      itemsCell,
+      getDivOrder,
+      resetCounts,
+      getInsertCount,
+      getDestroyCount,
+    } = await createMutationTrackedList([
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+      { id: 4 },
+      { id: 5 },
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder()).toEqual(['1', '2', '3', '4', '5']);
     resetCounts();
 
     // Move last item to start: [5, 1, 2, 3, 4]
     itemsCell.update([{ id: 5 }, { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder()).toEqual(['5', '1', '2', '3', '4']);
     expect(getDestroyCount()).toBe(0);
@@ -3082,16 +3373,27 @@ describe('DOM mutation counting', () => {
   });
 
   test('shuffle with removals and additions — destroys match removed, inserts cover new + moved', async () => {
-    const { itemsCell, getDivOrder, resetCounts, getInsertCount, getDestroyCount } =
-      await createMutationTrackedList([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    const {
+      itemsCell,
+      getDivOrder,
+      resetCounts,
+      getInsertCount,
+      getDestroyCount,
+    } = await createMutationTrackedList([
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+      { id: 4 },
+      { id: 5 },
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder()).toEqual(['1', '2', '3', '4', '5']);
     resetCounts();
 
     // Remove 2, 4; add 6, 7; reorder remaining: [5, 6, 1, 7, 3]
     itemsCell.update([{ id: 5 }, { id: 6 }, { id: 1 }, { id: 7 }, { id: 3 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder()).toEqual(['5', '6', '1', '7', '3']);
     // 2 items removed (id:2, id:4), each has div + marker = 4 destroys
@@ -3101,24 +3403,31 @@ describe('DOM mutation counting', () => {
   });
 
   test('replace all items — destroys for all old, inserts for all new', async () => {
-    const { itemsCell, getDivOrder, resetCounts, getInsertCount, getDestroyCount } =
-      await createMutationTrackedList([{ id: 1 }, { id: 2 }, { id: 3 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    const {
+      itemsCell,
+      getDivOrder,
+      resetCounts,
+      getInsertCount,
+      getDestroyCount,
+    } = await createMutationTrackedList([{ id: 1 }, { id: 2 }, { id: 3 }]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder()).toEqual(['1', '2', '3']);
     resetCounts();
 
     // Replace all items
     itemsCell.update([{ id: 10 }, { id: 20 }, { id: 30 }]);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getDivOrder()).toEqual(['10', '20', '30']);
-    // clearChildren destroys all nodes in container (topMarker + bottomMarker + 3 markers + 3 divs = 8)
-    // plus fragment target marker destroy = 9 total
-    expect(getDestroyCount()).toBe(9);
-    // 3 new items rendered into fragment, 1 batch insert into container,
-    // plus topMarker + bottomMarker re-insert = 3
-    expect(getInsertCount()).toBe(3);
+    // Only the old rows are torn down: 3 item markers + 3 divs = 6 destroys.
+    // The list's persistent topMarker/bottomMarker boundary anchors are
+    // preserved across a full replace (no longer destroyed and recreated).
+    expect(getDestroyCount()).toBe(6);
+    // All 3 new rows are built in a DocumentFragment and committed with a
+    // single batched insert into the container. Boundary markers stay put,
+    // so there are no marker re-inserts.
+    expect(getInsertCount()).toBe(1);
   });
 });
 
@@ -3193,7 +3502,12 @@ describe('SyncListComponent — Ember each-test parity', () => {
       return out;
     };
 
-    return { listInstance, itemsCell, parentComponent, textNodesBetweenMarkers };
+    return {
+      listInstance,
+      itemsCell,
+      parentComponent,
+      textNodesBetweenMarkers,
+    };
   }
 
   test('it maintains DOM stability for stable keys when list is updated', async () => {
@@ -3227,7 +3541,13 @@ describe('SyncListComponent — Ember each-test parity', () => {
     const newSnapshot = textNodesBetweenMarkers();
     expect(newSnapshot.length).toBe(7);
     expect(newSnapshot.map((n) => n.textContent)).toEqual([
-      'Hi', ', ', 'Hello', ' ', 'world', '!', 'earth',
+      'Hi',
+      ', ',
+      'Hello',
+      ' ',
+      'world',
+      '!',
+      'earth',
     ]);
     // The middle 3 nodes must be the SAME Text instances as the old ones.
     expect(newSnapshot[2]).toBe(oldSnapshot[0]);
@@ -3250,7 +3570,10 @@ describe('SyncListComponent — Ember each-test parity', () => {
     parentComponent[RENDERED_NODES_PROPERTY] = [];
     addToTree(root, parentComponent);
 
-    const items: Array<{ text: string }> = [{ text: 'hello' }, { text: 'world' }];
+    const items: Array<{ text: string }> = [
+      { text: 'hello' },
+      { text: 'world' },
+    ];
     const itemsCell = cell(items);
     const topMarker = document.createComment('list top');
 
@@ -3285,11 +3608,17 @@ describe('SyncListComponent — Ember each-test parity', () => {
 
     // Capture the cell for `world` BEFORE we mutate, so we can assert it
     // recomputes after `my` is inserted at index 1.
-    const worldCell = captured.find((c) => c.key === 'world')!.cell as { value: number };
+    const worldCell = captured.find((c) => c.key === 'world')!.cell as {
+      value: number;
+    };
     expect(worldCell.value).toBe(1);
 
     // Insert `my` at index 1 — `world` should now be at index 2.
-    itemsCell.update([{ text: 'hello' }, { text: 'my' }, { text: 'world' }] as any);
+    itemsCell.update([
+      { text: 'hello' },
+      { text: 'my' },
+      { text: 'world' },
+    ] as any);
     await new Promise((r) => setTimeout(r, 10));
 
     // Pre-existing rows are NOT re-invoked; only the new `my` row joins
@@ -3310,7 +3639,11 @@ describe('SyncListComponent — Ember each-test parity', () => {
     parentComponent[RENDERED_NODES_PROPERTY] = [];
     addToTree(root, parentComponent);
 
-    const items: Array<{ text: string }> = [{ text: 'a' }, { text: 'b' }, { text: 'c' }];
+    const items: Array<{ text: string }> = [
+      { text: 'a' },
+      { text: 'b' },
+      { text: 'c' },
+    ];
     const itemsCell = cell(items);
     const topMarker = document.createComment('list top');
 
@@ -3339,5 +3672,112 @@ describe('SyncListComponent — Ember each-test parity', () => {
     }
     // No indexFormulaMap allocated when index cells aren't needed.
     expect(listInstance.indexFormulaMap).toBeNull();
+  });
+});
+
+// Regression: ember.js's gxt-backend `removeGxtArtifacts` strips empty
+// comments from rendered output to make HTML-equality assertions succeed.
+// In production builds (IS_DEV_MODE=false) our list markers are unlabelled
+// `<!---->` comments, so they get stripped — but the list keeps internal
+// references to them in itemMarkers / markerSet / topMarker / bottomMarker.
+// Subsequent insert/move calls then pass detached anchors to insertBefore
+// and silently corrupt the DOM order.
+//
+// The fix is a consumer-installable registry hook: the host environment
+// installs `globalThis.__gxtRegisterListMarker` (and its unregister twin),
+// the list calls them whenever it allocates / disposes a marker, and the
+// host then knows which empty comments to spare. This test verifies the
+// hook is invoked for top, bottom, and every per-item marker — and ONLY
+// for those — when the registry is installed.
+describe('List marker consumer registry', () => {
+  let window: Window;
+  let document: Document;
+  let api: DOMApi;
+  let root: Root;
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    window = new Window();
+    document = window.document as unknown as Document;
+    api = new HTMLBrowserDOMApi(document);
+    cleanupFastContext();
+    root = new Root(document);
+    provideContext(root, RENDERING_CONTEXT, api);
+    container = document.createElement('div');
+    document.body.appendChild(container);
+  });
+
+  afterEach(() => {
+    cleanupFastContext();
+    TREE.clear();
+    PARENT.clear();
+    CHILD.clear();
+    delete (globalThis as Record<string, unknown>).__gxtRegisterListMarker;
+    delete (globalThis as Record<string, unknown>).__gxtUnregisterListMarker;
+    window.close();
+  });
+
+  test('top, bottom, and per-item markers are registered (and only those)', async () => {
+    const { SyncListComponent } = await import('./list');
+    const { cell } = await import('../reactive');
+
+    const registered = new Set<Comment>();
+    const unregistered = new Set<Comment>();
+    (
+      globalThis as { __gxtRegisterListMarker?: (m: Comment) => void }
+    ).__gxtRegisterListMarker = (m) => {
+      registered.add(m);
+    };
+    (
+      globalThis as { __gxtUnregisterListMarker?: (m: Comment) => void }
+    ).__gxtUnregisterListMarker = (m) => {
+      unregistered.add(m);
+    };
+
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, parentComponent);
+
+    const items = cell<{ id: number }[]>([{ id: 1 }, { id: 2 }]);
+    const topMarker = document.createComment('list top');
+    container.appendChild(topMarker);
+
+    const listInstance = new SyncListComponent(
+      {
+        tag: items,
+        key: 'id',
+        ctx: parentComponent,
+        ItemComponent: (item) => {
+          const div = document.createElement('div');
+          div.textContent = String(item.id);
+          return [div];
+        },
+      },
+      container,
+      topMarker,
+    );
+
+    // Wait for initial render to settle.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Initial render: top + bottom + 2 per-item = 4.
+    expect(registered.size).toBe(4);
+    expect(registered.has(listInstance.topMarker)).toBe(true);
+    expect(registered.has(listInstance.bottomMarker)).toBe(true);
+    for (const marker of listInstance.markerSet) {
+      expect(registered.has(marker)).toBe(true);
+    }
+
+    // Append a third item — exactly one new marker should be registered.
+    items.update([{ id: 1 }, { id: 2 }, { id: 3 }]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(registered.size).toBe(5);
+    // Every per-item marker for the new list is registered.
+    for (const marker of listInstance.markerSet) {
+      expect(registered.has(marker)).toBe(true);
+    }
+    // No spurious registrations: total registered == top + bottom + items.
+    expect(registered.size).toBe(2 + listInstance.markerSet.size);
   });
 });
