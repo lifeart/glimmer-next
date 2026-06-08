@@ -377,7 +377,7 @@ describe('If condition - throwing-proxy parent (a128135 guard)', () => {
  * The flow is:
  *
  *   renderBranch(nextBranch, runNumber)
- *     └─ if (__GXT_MODE__) {
+ *     └─ if (isHostMode()) {       // reads globalThis.__GXT_MODE__ fresh
  *          this.destroyBranchSync();      // (A)
  *          // (B) ← without the fix, no epoch check here
  *          this.renderState(nextBranch);  // (C)
@@ -407,16 +407,16 @@ describe('If condition - throwing-proxy parent (a128135 guard)', () => {
  */
 describe('If condition - sync destroy path validateEpoch (Ember mode)', () => {
   let fixture: DOMFixture;
-  let prevGxtMode: unknown;
+  let prevGxtMode: boolean | undefined;
 
   beforeEach(() => {
     fixture = createDOMFixture();
-    prevGxtMode = (globalThis as any).__GXT_MODE__;
-    (globalThis as any).__GXT_MODE__ = true;
+    prevGxtMode = globalThis.__GXT_MODE__;
+    globalThis.__GXT_MODE__ = true;
   });
 
   afterEach(() => {
-    (globalThis as any).__GXT_MODE__ = prevGxtMode;
+    globalThis.__GXT_MODE__ = prevGxtMode;
     fixture.cleanup();
   });
 

@@ -32,6 +32,18 @@ import { setParentContext, getParentContext } from '../tracking';
 
 export type IfFunction = () => boolean;
 
+/**
+ * Host-detection: is glimmer-next running embedded inside an Ember app?
+ *
+ * The Ember integration (gxt-backend) sets `globalThis.__GXT_MODE__ = true` at
+ * runtime; standalone glimmer-next apps leave it unset. Because the same library
+ * build serves both contexts, this MUST be read fresh on every call — caching it
+ * in a module const risks reading before the host has set it.
+ */
+function isHostMode(): boolean {
+  return globalThis.__GXT_MODE__ === true;
+}
+
 export class IfCondition {
   isDestructorRunning = false;
   prevComponent: GenericReturnType | null = null;
@@ -53,8 +65,9 @@ export class IfCondition {
   branchDomNodes: Array<Node> = [];
   trueBranch: (ifContext: IfCondition) => GenericReturnType;
   falseBranch: (ifContext: IfCondition) => GenericReturnType;
-  // Tree parent captured at construction; used to re-register this IfCondition
-  // in the TREE map when a teardown cascade evicted it (fine-grained GH#12267).
+  // Tree parent captured at construction (see the re-parent logic in the
+  // constructor). Retained so the async destroy registers on the same node used
+  // for the tree parent.
   _treeParent: Component<any> | null = null;
   declare api: DOMApi;
 
@@ -85,34 +98,33 @@ export class IfCondition {
       // @ts-expect-error $_eval is host-extension state, untyped on the parent.
       this.$_eval = parentContext.$_eval;
     }
-    // Fine-grained (morph-OFF) mode: prefer the ACTIVE render parent-context as
-    // the GXT tree parent when it differs from the passed `parentContext`.
+    // Under Ember integration, prefer the ACTIVE render parent-context as the
+    // GXT tree parent when it differs from the passed `parentContext`.
     //
-    // Under Ember integration the compiled `$_if(cond, t, f, ctx)` passes the
-    // user component (often the gxt-root) as `ctx`, so a nested {{#if}} inside an
-    // outer {{#if}}'s branch is registered as a SIBLING of the outer if under the
-    // root — not as a descendant of the outer branch's wrapper. With the morph ON
-    // that's harmless (the whole-template re-render rebuilds everything). With the
-    // morph OFF it breaks cascade teardown: when the outer branch collapses,
-    // `destroyElementSync(branchWrapper)` walks only the wrapper's TREE subtree;
-    // the orphaned inner if (registered under root) is never reached, leaving its
-    // rendered content (e.g. `F-inner`) stranded in the DOM. `getParentContext()`
+    // The gxt-backend's compiled `$_if(cond, t, f, ctx)` passes the user
+    // component (often the gxt-root) as `ctx`, so a nested {{#if}} inside an
+    // outer {{#if}}'s branch would otherwise register as a SIBLING of the outer
+    // if under the root — not as a descendant of the outer branch's wrapper. That
+    // breaks cascade teardown: when the outer branch collapses,
+    // `destroyElementSync(branchWrapper)` walks only the wrapper's TREE subtree,
+    // so the orphaned inner if (registered under root) is never reached and its
+    // rendered content (e.g. `F-inner`) is stranded in the DOM. `getParentContext()`
     // correctly reports the enclosing branch wrapper here (it is on the active
     // parent-context stack pushed by the outer's renderState / $_ucw), so we use
-    // it. GATED: morph-ON keeps the legacy `parentContext` (byte-identical).
+    // it as the tree parent.
     //
-    // GATE on Ember integration (`__GXT_MODE__`): this re-parent is needed ONLY
-    // there, because the gxt-backend's compiled `$_if` passes the gxt-root as
-    // `ctx`. STANDALONE glimmer-next passes the correct immediate parent, so the
-    // re-parent is unnecessary — and HARMFUL with custom renderers: a sibling
-    // renderer (e.g. PdfViewer) whose active parent-context is still on the stack
-    // would be adopted as this {{#if}}'s tree parent, so `initDOM(this)` resolves
-    // that FOREIGN DOMApi while `target`/`placeholder` are DOM nodes → pdfApi.insert
-    // gets a DocumentFragment → "parentNode.children.includes is not a function"
-    // and a blank render (renderers.spec.ts). Ember renders DOM-only, so under
-    // `__GXT_MODE__` the re-parent never crosses a renderer boundary.
+    // This re-parent is gated on host mode because it is needed ONLY under Ember
+    // (where `$_if` passes the gxt-root as `ctx`). STANDALONE glimmer-next passes
+    // the correct immediate parent, so the re-parent is unnecessary there — and
+    // HARMFUL with custom renderers: a sibling renderer (e.g. PdfViewer) whose
+    // active parent-context is still on the stack would be adopted as this
+    // {{#if}}'s tree parent, so `initDOM(this)` resolves that FOREIGN DOMApi while
+    // `target`/`placeholder` are DOM nodes → `pdfApi.insert` gets a
+    // DocumentFragment → "parentNode.children.includes is not a function" and a
+    // blank render (renderers.spec.ts). Ember renders DOM-only, so under host mode
+    // the re-parent never crosses a renderer boundary.
     let treeParent: Component<any> = parentContext;
-    if ((globalThis as any).__GXT_MODE__) {
+    if (isHostMode()) {
       const activeParent = getParentContext();
       if (
         activeParent &&
@@ -124,8 +136,8 @@ export class IfCondition {
         treeParent = activeParent;
       }
     }
-    // Remember the tree parent so renderState can re-register this IfCondition
-    // in the TREE if a teardown cascade evicted it (GH#12267 — see renderState).
+    // Remember the resolved tree parent so the async destroy below registers on
+    // the same node we register against in the TREE.
     this._treeParent = treeParent;
     // @ts-expect-error typings error
     addToTree(treeParent, this, 'from if constructor');
@@ -140,23 +152,19 @@ export class IfCondition {
     }
     // Register the async destroy on the SAME node we used as the tree parent so
     // the parent's teardown reaches this if in both the sync-cascade and the
-    // async-destructor paths (morph-OFF re-parents to the enclosing branch
-    // wrapper above; morph-ON keeps `parentContext`).
+    // async-destructor paths (the re-parent above may move it to the enclosing
+    // branch wrapper).
     registerDestructor(treeParent, this.destroy.bind(this));
-    // Fine-grained (morph-OFF) mode: when this IfCondition is torn down as part
-    // of a PARENT cascade (e.g. an outer {{#if}} collapsing to its inverse via
-    // destroyBranchSync → destroyElementSync → runDestructorsSync), the walker
-    // only removes nodes reachable from this instance's RENDERED_NODES (just the
-    // placeholder) and recurses into TREE children. The current branch's content
-    // lives in `prevComponent`/`branchDomNodes`, which the sync walker never
-    // touches — so an inner {{#if}}'s rendered text (e.g. `F-inner`) is orphaned
-    // and left in the DOM after the outer branch swap. Registering a SELF sync
+    // When this IfCondition is torn down as part of a PARENT cascade (e.g. an
+    // outer {{#if}} collapsing to its inverse via destroyBranchSync →
+    // destroyElementSync → runDestructorsSync), the walker only removes nodes
+    // reachable from this instance's RENDERED_NODES (just the placeholder) and
+    // recurses into TREE children. The current branch's content lives in
+    // `prevComponent`/`branchDomNodes`, which the sync walker never touches — so
+    // an inner {{#if}}'s rendered text (e.g. `F-inner`) would be orphaned and
+    // left in the DOM after the outer branch swap. Registering a SELF sync
     // destructor here makes destroySync(this) tear down the live branch content.
-    // GATED on fine-grained mode: with the morph ON the whole-template re-render
-    // owns teardown, so this is a no-op there (byte-identical to baseline).
-    {
-      registerDestructor(this, this.destroyBranchSync.bind(this));
-    }
+    registerDestructor(this, this.destroyBranchSync.bind(this));
     if (IS_DEV_MODE) {
       const instance = () => {
         return {
@@ -184,12 +192,9 @@ export class IfCondition {
   checkStatement(value: boolean) {
     // `runNumber` is the epoch `validateEpoch` uses to detect concurrent
     // re-entry between an in-flight `renderBranch`'s synchronous destroy and its
-    // render. A fine-grained-only early-return that skipped the bump for
-    // re-entrant same-value `syncState` (originally needed because a teardown
-    // could re-read the condition cell mid-destroy — GH#12267) was REMOVED in
-    // the Phase-2c teardown cleanup: verified non-load-bearing against the full
-    // ember suite. The standard increment-then-no-op-check below handles the
-    // re-entrant same-value case; the mid-destroy re-read no longer occurs.
+    // render. Always bump it, then no-op when the value is unchanged: this
+    // increment-then-compare handles re-entrant same-value `syncState` correctly
+    // without a special-case early-return.
     this.runNumber++;
     if (this.runNumber > 1) {
       if (this.lastValue === !!value) {
@@ -233,9 +238,6 @@ export class IfCondition {
     nextBranch: (ifContext: IfCondition) => GenericReturnType,
     runNumber: number,
   ) {
-    // [2c] reanchorPlaceholderIfOrphaned() call REMOVED — verified
-    // non-load-bearing against the full ember suite (the placeholder is no
-    // longer orphaned by the time renderBranch runs).
     if (this.destroyPromise) {
       this.destroyPromise.then(() => {
         this.destroyPromise = null;
@@ -249,13 +251,13 @@ export class IfCondition {
       return;
     } else if (this.prevComponent || this.branchDomNodes.length > 0) {
       const isEmptyArray = Array.isArray(this.prevComponent) && this.prevComponent.length === 0;
-      // In Ember integration mode, use synchronous destroy for immediate DOM updates.
+      // Under Ember integration, use synchronous destroy for immediate DOM updates.
       // Re-check the epoch between destroy and render: a destructor (or any side
       // effect of `destroyBranchSync`) can synchronously flip the condition again
       // and re-enter `syncState`, advancing `runNumber`. Without the recheck the
       // outer (now-stale) call would still proceed to render its branch, clobbering
       // the inner (newer) render. The async sibling path below uses the same guard.
-      if ((globalThis as any).__GXT_MODE__) {
+      if (isHostMode()) {
         this.destroyBranchSync();
         if (!this.validateEpoch(runNumber)) {
           return;
@@ -372,23 +374,11 @@ export class IfCondition {
     const anchorBefore: Node | null = placeholderParent
       ? (this.placeholder as Node).previousSibling
       : null;
-    // Fine-grained (morph-OFF) only: ensure THIS IfCondition is registered in
-    // the TREE before rendering the branch. `setParentContext(this)` pushes our
-    // COMPONENT_ID onto the parent-context stack, and `getParentContext()`
-    // resolves it back via `TREE.get(id)`. A prior teardown cascade (e.g. an
-    // earlier branch toggle that tore down a child {{#each}}, whose destructor
-    // deleted its own + cleaned tree entries) can evict THIS IfCondition's TREE
-    // entry. When that happens, `getParentContext()` returns `undefined`, and a
-    // child created during the new branch render (a {{#each}} row component)
-    // calls `addToTree(undefined, ...)` → `undefined[COMPONENT_ID_PROPERTY]`
-    // throws "reading 'Symbol()'" → the branch render aborts → renders EMPTY
-    // (GH#12267: `{{#if}}`+`{{#each}}` toggled false→true). Re-add ourselves to
-    // our captured tree parent so the resolution chain is intact. No-op when the
-    // entry is already present. GATED so morph-ON is byte-identical.
-    // [2c] renderState TREE re-register: REMOVED — verified non-load-bearing
-    // against the full ember suite (10153/10159, no GH#12267 regression). The
-    // over-eviction it guarded against no longer occurs (later teardown-scoping
-    // fixes made it dead).
+    // Push THIS IfCondition onto the parent-context stack while the branch
+    // renders. `setParentContext(this)` makes `getParentContext()` resolve back
+    // to this if, so children created during the branch render (e.g. a {{#each}}
+    // row component) attach to it as their tree parent rather than to whatever
+    // context happened to be active before.
     try {
       setParentContext(this as unknown as ComponentLike);
       this.prevComponent = nextBranch(this);

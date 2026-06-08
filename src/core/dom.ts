@@ -255,46 +255,37 @@ function resolveBindingValue(
 ): { result: unknown; isReactive: boolean } {
   if (isFn(value)) {
     const f = formula(() => deepFnValue(value as Function), debugName);
-    // Fine-grained (morph-OFF) only: a fresh formula's `isConst` is the default
-    // `false` until its `.value` has been read once during render (the getter
-    // populates it as a side effect). The shipping path treats any not-yet-
-    // computed formula as reactive and registers an opcode — but if the binding
-    // is an initially-undefined `this.<path>` that reads NO cell, that opcode
-    // tracks nothing and never fires on a later `set()`. Force the `isConst`
-    // computation, and when it really is const + empty, materialize the leaf
-    // cell and re-wrap so the binding becomes genuinely reactive. Gated; the
-    // morph-ON path is the original `if (f.isConst)` fast-path (byte-identical).
-    {
-      const v0 = f.value; // side effect: computes f.isConst + relatedCells
-      if (f.isConst) {
-        if (
-          (v0 === null || v0 === undefined || v0 === '') &&
-          materializeAbsentPathCell(value as Function)
-        ) {
-          f.destroy();
-          const f2 = formula(() => deepFnValue(value as Function), debugName);
-          f2.value;
-          if (!f2.isConst) {
-            registerLeafOwnersForFormula(f2);
-            return { result: f2, isReactive: true };
-          }
-          const v2b = f2.value;
-          f2.destroy();
-          return { result: v2b, isReactive: false };
-        }
-        f.destroy();
-        return { result: v0, isReactive: false };
-      }
-      // Reactive: register leaf-object owners so a nested-property `set()` on a
-      // held object (e.g. `this.nullObject.message`) dirties this cell.
-      registerLeafOwnersForFormula(f);
-      return { result: f, isReactive: true };
-    }
+    // A fresh formula's `isConst` is the default `false` until its `.value` has
+    // been read once during render (the getter populates it as a side effect).
+    // Treating any not-yet-computed formula as reactive and registering an opcode
+    // is wrong when the binding is an initially-undefined `this.<path>` that
+    // reads NO cell: that opcode tracks nothing and never fires on a later
+    // `set()`. Force the `isConst` computation, and when it really is const +
+    // empty, materialize the leaf cell and re-wrap so the binding becomes
+    // genuinely reactive.
+    const v0 = f.value; // side effect: computes f.isConst + relatedCells
     if (f.isConst) {
-      const constValue = f.value;
+      if (
+        (v0 === null || v0 === undefined || v0 === '') &&
+        materializeAbsentPathCell(value as Function)
+      ) {
+        f.destroy();
+        const f2 = formula(() => deepFnValue(value as Function), debugName);
+        f2.value;
+        if (!f2.isConst) {
+          registerLeafOwnersForFormula(f2);
+          return { result: f2, isReactive: true };
+        }
+        const v2b = f2.value;
+        f2.destroy();
+        return { result: v2b, isReactive: false };
+      }
       f.destroy();
-      return { result: constValue, isReactive: false };
+      return { result: v0, isReactive: false };
     }
+    // Reactive: register leaf-object owners so a nested-property `set()` on a
+    // held object (e.g. `this.nullObject.message`) dirties this cell.
+    registerLeafOwnersForFormula(f);
     return { result: f, isReactive: true };
   }
 
@@ -326,14 +317,12 @@ function $prop(
         if (val === prevPropValue) {
           return;
         }
-        // Fine-grained (morph-OFF) only: when a reactive `style` prop binding
-        // transitions to empty, GXT sets `element.style = ''`, which leaves a
-        // stale `style=""` attribute on the in-place element. Ember removes the
-        // attribute entirely for empty values (the morph-ON path rebuilds the
-        // element from scratch where the empty binding is never applied). Remove
-        // it synchronously here so the assertion right after `runTask` sees
-        // `attrs: {}` instead of relying on the async MutationObserver fallback.
-        // Gated so morph-ON stays byte-identical.
+        // When a reactive `style` prop binding transitions to empty, setting
+        // `element.style = ''` leaves a stale `style=""` attribute on the
+        // in-place element. Ember removes the attribute entirely for empty
+        // values, so remove it synchronously here too — the assertion right
+        // after `runTask` then sees `attrs: {}` instead of relying on the async
+        // MutationObserver fallback.
         if (
           key === 'style' &&
           (val === '' || val === null || val === undefined) &&
@@ -403,15 +392,12 @@ function mergeClassModifiers(
       outerFormula,
       destructors,
     );
-    // Fine-grained (morph-OFF) only: register leaf-object owners for each
-    // reactive class-name modifier so a nested-property `set()` on a held
-    // object (e.g. `is.enabled` where the binding reads `this.is.enabled`)
-    // dirties the modifier cell. The $prop read above has populated each
-    // formula's relatedCells. Gated — never reached morph-ON.
-    {
-      for (const f of formulasToDestroy) {
-        registerLeafOwnersForFormula(f);
-      }
+    // Register leaf-object owners for each reactive class-name modifier so a
+    // nested-property `set()` on a held object (e.g. `is.enabled` where the
+    // binding reads `this.is.enabled`) dirties the modifier cell. The $prop read
+    // above has populated each formula's relatedCells.
+    for (const f of formulasToDestroy) {
+      registerLeafOwnersForFormula(f);
     }
     if (formulasToDestroy.length > 0) {
       destructors.push(() => {
@@ -475,20 +461,16 @@ function $ev(
       destructors.push(
         opcodeFor(result as AnyCell, (value) => {
           api.textContent(element, String(value ?? ''));
-          // Fine-grained (morph-OFF) GH#14332: re-register leaf-object owners
-          // on every opcode tick. `resolveRenderable` registered owners on
-          // first render, but when a parent ref-swaps the held object
-          // (`set(context,'page',newPage)`) the formula re-tracks
-          // `cellFor(context,'page')` with `_value=newPage`, yet newPage was
-          // never registered as that cell's value-owner — so a subsequent
-          // `set(newPage,'title',…)` reverse-looks-up nothing and the
-          // element's text content (`<h1>{{this.page.title}}</h1>`) stays
-          // stale. Re-registering here (idempotent — host dedupes by
-          // (obj,key)) picks up the swapped object. Gated; morph-ON never
-          // reaches this branch with the hook installed.
-          {
-            registerLeafOwnersForFormula(result as MergedCell);
-          }
+          // Re-register leaf-object owners on every opcode tick.
+          // `resolveRenderable` registered owners on first render, but when a
+          // parent ref-swaps the held object (`set(context,'page',newPage)`) the
+          // formula re-tracks `cellFor(context,'page')` with `_value=newPage`,
+          // yet newPage was never registered as that cell's value-owner — so a
+          // subsequent `set(newPage,'title',…)` reverse-looks-up nothing and the
+          // element's text content (`<h1>{{this.page.title}}</h1>`) stays stale.
+          // Re-registering here (idempotent — host dedupes by (obj,key)) picks up
+          // the swapped object.
+          registerLeafOwnersForFormula(result as MergedCell);
         }),
       );
     }
@@ -779,16 +761,12 @@ function _DOM(
   }
   // Reactive dynamic tag-name (`{{#let (element this.tag) as |Tag|}}<Tag>`):
   // the `(element ...)` helper compiles to `$_tag(() => this.tag, ...)`, i.e. a
-  // FUNCTION tag. The static path below resolves it ONCE (`tag()`), so a later
-  // `this.tag` mutation never re-creates the element (the `{{element}}` dynamic
-  // tag-name wall). When fine-grained (morph-OFF), route a function tag through
-  // a reactive wrapper: a `formula` over `() => tag()` subscribes to the tag's
-  // tracked deps and an opcode tears down + rebuilds the element (re-running the
-  // children thunks) whenever the resolved tag-name changes. A tag that reads no
-  // tracked state captures no deps → const → renders once + tears the opcode
-  // down (zero overhead, byte-identical to the static path for `(element "h1")`
-  // literals). Gated on __GXT_SPIKE_SKIP_MORPH so the shipped morph-ON path
-  // keeps the eager single resolve (the whole-template morph owns tag updates).
+  // FUNCTION tag. Route a function tag through a reactive wrapper: a `formula`
+  // over `() => tag()` subscribes to the tag's tracked deps and an opcode tears
+  // down + rebuilds the element (re-running the children thunks) whenever the
+  // resolved tag-name changes. A tag that reads no tracked state captures no
+  // deps → const → renders once + tears the opcode down (zero overhead, behaves
+  // like a static element for `(element "h1")` literals).
   if (typeof tag === 'function') {
     return reactiveTagElement(tag as () => string, tagProps, ctx, children, api);
   }
@@ -1599,20 +1577,20 @@ function ifCond(
     trueBranch,
     falseBranch,
   );
-  // Fine-grained (morph-OFF) only: when the condition is REACTIVE (can re-enter),
-  // register the IfCondition placeholder with the host's list-marker registry so
-  // the ember-side `removeGxtArtifacts` keeps it live. In a production gxt build
-  // the placeholder is an EMPTY comment (IS_DEV_MODE === false) and removeGxtArtifacts
-  // strips empty comments, orphaning it; an orphaned placeholder makes branch
-  // re-entry render into the detached `this.target` instead of the live DOM
-  // (GH#14284 if-in-yielded-block toggle, {{yield}}-in-{{#if}} toggle, GH#12267).
-  // GATED additionally on `!condition.isConst`: a CONSTANT condition (e.g.
+  // When the condition is REACTIVE (can re-enter), register the IfCondition
+  // placeholder with the host's list-marker registry so the ember-side
+  // `removeGxtArtifacts` keeps it live. In a production gxt build the placeholder
+  // is an EMPTY comment (IS_DEV_MODE === false) and removeGxtArtifacts strips
+  // empty comments, orphaning it; an orphaned placeholder makes branch re-entry
+  // render into the detached `this.target` instead of the live DOM (GH#14284
+  // if-in-yielded-block toggle, {{yield}}-in-{{#if}} toggle).
+  // Only for non-const conditions: a CONSTANT condition (e.g.
   // `{{#if (has-block)}}`) never re-enters, so its placeholder is pure artifact —
   // keeping it would leave a stray `<!---->` that breaks exact-content assertions
   // (`assertComponentElement(..., { content: 'No' })`). Const ifs let the comment
-  // be stripped as before. `condition.isConst` is reliable here: the constructor's
-  // initial `syncState(condition.value)` already evaluated it. The registry hook
-  // is a no-op when the host hasn't installed it (morph-ON / classic).
+  // be stripped. `condition.isConst` is reliable here: the constructor's initial
+  // `syncState(condition.value)` already evaluated it. The registry hook is a
+  // no-op when the host hasn't installed it (standalone glimmer-next).
   {
     const cond = instance.condition as { isConst?: boolean };
     if (cond && cond.isConst !== true) {

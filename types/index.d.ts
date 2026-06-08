@@ -13,6 +13,16 @@ declare global {
     ) => void;
   }
 
+  // Runtime host-detection flag (NOT a build-time const). The published
+  // `@lifeart/gxt` library is built ONCE and runs in two contexts: standalone
+  // glimmer-next apps (where this is unset/`false`) and embedded inside Ember
+  // (where the gxt-backend sets `globalThis.__GXT_MODE__ = true` at runtime).
+  // Because the value depends on the host, it must be read FRESH at call time
+  // (see `isHostMode()` in control-flow/if.ts) and must never be baked via a
+  // `define`. Declared as `var` so `globalThis.__GXT_MODE__` is typed without an
+  // `as any` cast.
+  var __GXT_MODE__: boolean | undefined;
+
   const IS_DEV_MODE: boolean;
   const IS_GLIMMER_COMPAT_MODE: boolean;
   const RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES: boolean;

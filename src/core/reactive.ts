@@ -188,7 +188,7 @@ export class Cell<T extends unknown = unknown> {
     this.update(value);
   }
   update(value: T) {
-    // Cluster A Phase 1: optional host-registered defer hook.
+    // Optional host-registered defer hook.
     // The hook lets an integration (e.g. Ember) take ownership of Cell.update
     // work and queue it for later application from inside the host's drain
     // phase (e.g. runloop end). When no hook is registered, behavior is
@@ -448,7 +448,7 @@ export function setOpcodeErrorReporter(reporter: OpcodeErrorReporter | null): vo
   _opcodeErrorReporter = reporter;
 }
 
-// Cluster A Phase 1: host-registerable Cell.update deferral hook.
+// Host-registerable Cell.update deferral hook.
 // Hosts (e.g. the Ember integration) call `setCellUpdateDeferralHook` once at
 // module init to take ownership of `Cell.update` work and defer it to a host-
 // owned drain phase (e.g. runloop end). The hook receives the target cell and
@@ -861,13 +861,13 @@ export function cell<T>(value: T, debugName?: string) {
   return new Cell(value, debugName);
 }
 
-// Fine-grained (morph-OFF) only. For a reactive binding formula, register every
-// LEAF object held by a tracked cell as a value-owner of that cell with the
-// Ember host (via the gated `globalThis.__gxtRegisterObjectValueOwner` hook).
-// This lets `set(leafObj,'key',...)` reach the cell through Ember's SyncCore
-// reverse lookup — the attribute / inside-element analogue of the
-// content-position null-object fix. No-op when the hook is absent (shipping
-// build) or the formula tracked no object-valued cells. Gated by the caller.
+// For a reactive binding formula, register every LEAF object held by a tracked
+// cell as a value-owner of that cell with the Ember host (via the
+// `globalThis.__gxtRegisterObjectValueOwner` hook). This lets
+// `set(leafObj,'key',...)` reach the cell through Ember's SyncCore reverse
+// lookup — the attribute / inside-element analogue of the content-position
+// null-object fix. No-op when the hook is absent (standalone glimmer-next) or
+// the formula tracked no object-valued cells.
 export function registerLeafOwnersForFormula(f: MergedCell): void {
   try {
     const hook = (globalThis as any).__gxtRegisterObjectValueOwner;
@@ -893,17 +893,16 @@ export function registerLeafOwnersForFormula(f: MergedCell): void {
   }
 }
 
-// Fine-grained (morph-OFF) only. When a `this.<path>` binding resolves off an
-// ABSENT property the getter touches no cell, so its wrapping formula reports
-// `isConst` and the binding is set ONCE and never updates (Ember's
-// dynamic-content "undefined dynamic paths" cases for attribute / inside-an-
-// element positions). Materialize the leaf cell on the current template `this`
-// (exposed by the Ember host as `globalThis.__gxtCurrentTemplateThis`) by
-// reading it through `cellFor`, so a re-evaluated formula now tracks a real
-// cell that `set(context,'<path>',...)` will dirty. Returns true if a cell was
-// materialized (caller should treat the binding as reactive). Best-effort and
-// gated by the caller on `globalThis.__GXT_SPIKE_SKIP_MORPH`; never reached in
-// the shipping (morph-ON) build.
+// When a `this.<path>` binding resolves off an ABSENT property the getter
+// touches no cell, so its wrapping formula reports `isConst` and the binding is
+// set ONCE and never updates (Ember's dynamic-content "undefined dynamic paths"
+// cases for attribute / inside-an-element positions). Materialize the leaf cell
+// on the current template `this` (exposed by the Ember host as
+// `globalThis.__gxtCurrentTemplateThis`) by reading it through `cellFor`, so a
+// re-evaluated formula now tracks a real cell that `set(context,'<path>',...)`
+// will dirty. Returns true if a cell was materialized (caller should treat the
+// binding as reactive). Best-effort: a no-op when the host hasn't exposed the
+// current template `this` (standalone glimmer-next).
 export function materializeAbsentPathCell(child: Function): boolean {
   try {
     // Prefer an explicit path stamp (set by the Ember host when the getter is

@@ -48,13 +48,6 @@ import { setParentContext, getParentContext } from '../tracking';
 // Re-export getFirstNode for backward compatibility
 export { getFirstNode };
 
-// Fine-grained mode gate. Fine-grained is the committed default: syncList
-// re-binds a reused row's block-param to a new source object via the host
-// `__gxtRebindEachItem` hook (group-E).
-function _fineGrainedEachRebind(): boolean {
-  return true;
-}
-
 /*
   List manager for rendering and syncing arrays of items.
   Uses per-item comment markers for stable DOM boundaries,
@@ -168,8 +161,8 @@ export function normalizeIterableValue<T>(value: unknown): T[] {
     return [];
   }
   if (Array.isArray(value)) {
-    // FIX 3b: an `@ember/reactive` collection proxy (trackedArray) reports as
-    // an Array (its getPrototypeOf returns Array.prototype). Returning it
+    // An `@ember/reactive` collection proxy (trackedArray) reports as an Array
+    // (its getPrototypeOf returns Array.prototype). Returning it
     // unchanged means updateItems' per-element `items[index]` reads — run
     // ×passes ×N — hit the proxy `get` trap (readStorageFor + consumeTag per
     // index), ballooning the backing `storages` map and dominating large-list
@@ -310,12 +303,11 @@ export class BasicListComponent<T extends { id: number }> {
   indexMap: Map<string, number> = new Map();
   // Track reactive index formulas for cleanup (dev mode only, lazily initialized)
   indexFormulaMap: Map<string, MergedCell> | null = null;
-  // Fine-grained mode (gated): the RAW source object currently bound to each
-  // key's row body. On a keyed REUSE where the source object changed by ref
-  // (group-E: in-place mutation of the keyed property stales the key, then a
-  // ref-swap reuses by the stale key), we notify the host so the row's
-  // block-param re-binds to the new object WITHOUT recreating the row. Only
-  // populated when `__GXT_SPIKE_SKIP_MORPH` is on. Lazily allocated.
+  // The RAW source object currently bound to each key's row body. On a keyed
+  // REUSE where the source object changed by ref (in-place mutation of the keyed
+  // property stales the key, then a ref-swap reuses by the stale key), we notify
+  // the host so the row's block-param re-binds to the new object WITHOUT
+  // recreating the row. Lazily allocated.
   boundItemMap: Map<string, T> | null = null;
   // Per-row destructor-owner context.
   //
@@ -331,16 +323,14 @@ export class BasicListComponent<T extends { id: number }> {
   // Fix: hand each row a dedicated per-row destroyable ctx (a child of this list
   // in the TREE) as the body's 3rd arg. On row destroy (`fastCleanup` /
   // `destroyItem`) we `destroyElementSync(rowCtx, skipDom=true)` so the row's
-  // binding opcodes UNSUBSCRIBE. Keyed by item key, parallel to `keyMap`. Only
-  // allocated in fine-grained mode (`__GXT_SPIKE_SKIP_MORPH`); shipping morph-ON
-  // keeps passing `self` (byte-identical, the whole-template morph owns updates).
+  // binding opcodes UNSUBSCRIBE. Keyed by item key, parallel to `keyMap`.
   rowCtxMap: Map<string, RowContext> | null = null;
   // Track per-item markers for stable relocation boundaries
   itemMarkers: Map<string, Comment> = new Map();
   markerSet: Set<Comment> = new Set();
-  // P7: per-update cache of the install-once-stable `__gxtRegisterListMarker`
-  // host hook (resolved at the top of updateItems). undefined when no hook
-  // installed (shipping default → no-op).
+  // Per-update cache of the install-once-stable `__gxtRegisterListMarker` host
+  // hook (resolved once at the top of updateItems instead of per new marker).
+  // undefined when no hook is installed (standalone default → no-op).
   private _registerMarkerHook: ((m: Comment) => void) | undefined = undefined;
   // Reusable arrays/sets — cleared per update to avoid GC pressure
   private _existKeys: string[] = [];
@@ -356,11 +346,11 @@ export class BasicListComponent<T extends { id: number }> {
   private _processedKeys: Set<string> = new Set();
   protected _keysToRemove: string[] = [];
   protected _rowsToRemove: GenericReturnType[] = [];
-  // FIX 3a: set by syncList when the incoming items are a strict
-  // append-only superset of the current rows (existing prefix unchanged +
-  // in order) AND nothing was removed. updateItems reads this to take the
-  // O(added) incremental-append path (skip existing-key bookkeeping + LIS +
-  // full move scan). Reset to false at the start of every syncList.
+  // Set by syncList when the incoming items are a strict append-only superset of
+  // the current rows (existing prefix unchanged + in order) AND nothing was
+  // removed. updateItems reads this to take the O(added) incremental-append path
+  // (skip existing-key bookkeeping + LIS + full move scan). Reset to false at the
+  // start of every syncList.
   protected _appendOnlyVerdict = false;
   [RENDERED_NODES_PROPERTY]: Array<Node> = [];
   [COMPONENT_ID_PROPERTY] = cId();
@@ -403,10 +393,9 @@ export class BasicListComponent<T extends { id: number }> {
    * Resolve the ctx that the row body (`ItemComponent`) should register its
    * per-element binding-opcode destructors against.
    *
-   * Fine-grained (morph-OFF): allocate a per-row {@link RowContext} that is a
-   * child of this list in the TREE and store it by key, so a clear/remove
-   * unsubscribes the row's `class`/attr/text/event/modifier opcodes. Morph-ON
-   * (shipping): return `self` unchanged (byte-identical legacy behaviour).
+   * Allocate a per-row {@link RowContext} that is a child of this list in the
+   * TREE and store it by key, so a clear/remove unsubscribes the row's
+   * `class`/attr/text/event/modifier opcodes.
    *
    * IMPORTANT: this does NOT touch `setParentContext`. The leak is confined to
    * the row body's DIRECT element binding opcodes (which `_DOM` registers
@@ -421,10 +410,7 @@ export class BasicListComponent<T extends { id: number }> {
    * (else-branch) rendering, so we leave the parent-context chain untouched and
    * let rowCtx own ONLY the opcodes `_DOM` registers directly against it.
    */
-  protected rowBodyCtx(key: string, self: ComponentLike): ComponentLike {
-    if (!_fineGrainedEachRebind()) {
-      return self;
-    }
+  protected rowBodyCtx(key: string): ComponentLike {
     const rowCtx: RowContext = {
       [COMPONENT_ID_PROPERTY]: cId(),
       [RENDERED_NODES_PROPERTY]: [],
@@ -666,8 +652,8 @@ export class BasicListComponent<T extends { id: number }> {
           // dirties that native GXT cell → this formula invalidates → the list
           // opcode re-runs `syncList` → keyed LIS diff (move/insert/remove by
           // key). Without this read the source `() => this.foo` returns a stable
-          // proxy reference → the formula is const → the each freezes on
-          // in-place mutation (it relied on the now-deleted morph full-rebuild).
+          // proxy reference → the formula is const → the each would freeze on
+          // in-place mutation.
           subscribeReactiveCollection(v);
           return v;
         }, 'list tag');
@@ -682,16 +668,15 @@ export class BasicListComponent<T extends { id: number }> {
       }
     }
     this.tag = tag;
-    // Fine-grained (morph-OFF) only: when the each source is a dynamic
-    // expression (a MergedCell formula) whose deps include a LEAF object read
-    // off the render context (e.g. `{{#each-in (get this.hashes this.hashes.type)}}`
-    // — the source reads `this.hashes` then `.type` on the raw held object,
-    // which taps no cell), register each tracked cell's held object as a
-    // value-owner of its (ownerObj, ownerKey) with the Ember host. Then a
-    // nested `set(this.hashes, 'type', ...)` reaches the source formula through
-    // SyncCore's reverse lookup → the list re-iterates. The morph-ON path
-    // re-renders the whole template and is unaffected (the host hook is
-    // installed only in fine-grained mode → no-op when flag is off).
+    // When the each source is a dynamic expression (a MergedCell formula) whose
+    // deps include a LEAF object read off the render context (e.g.
+    // `{{#each-in (get this.hashes this.hashes.type)}}` — the source reads
+    // `this.hashes` then `.type` on the raw held object, which taps no cell),
+    // register each tracked cell's held object as a value-owner of its
+    // (ownerObj, ownerKey) with the Ember host. Then a nested
+    // `set(this.hashes, 'type', ...)` reaches the source formula through
+    // SyncCore's reverse lookup → the list re-iterates. The host hook is a no-op
+    // when the host hasn't installed it (standalone glimmer-next).
     if (
       this.tag instanceof MergedCell
     ) {
@@ -1014,11 +999,11 @@ export class BasicListComponent<T extends { id: number }> {
       return marker;
     }
   }
-  // FIX 3a helper: construct a NEW row for `key`/`item` at `index`, register
-  // its maps + marker, and (when appending) insert + render it before
-  // `targetNode`. Extracted from updateItems' new-row branch so the
-  // incremental append fast-path shares one source of truth. Returns the row
-  // (or null/undefined when ItemComponent produced no output).
+  // Construct a NEW row for `key`/`item` at `index`, register its maps + marker,
+  // and (when appending) insert + render it before `targetNode`. Extracted from
+  // updateItems' new-row branch so the incremental append fast-path shares one
+  // source of truth. Returns the row (or null/undefined when ItemComponent
+  // produced no output).
   private _buildAndInsertRow(
     item: T,
     index: number,
@@ -1033,9 +1018,9 @@ export class BasicListComponent<T extends { id: number }> {
       marker = IS_DEV_MODE ? api.comment(`list item ${key}`) : api.comment();
       itemMarkers.set(key, marker);
       markerSet.add(marker);
-      // P7: reuse the hook hoisted by updateItems (this method is only called
-      // from updateItems, after `_registerMarkerHook` is set). Fall back to a
-      // direct read if invoked out of band.
+      // Reuse the hook hoisted by updateItems (this method is only called from
+      // updateItems, after `_registerMarkerHook` is set). Fall back to a direct
+      // read if invoked out of band.
       const _reg =
         this._registerMarkerHook ??
         (globalThis as { __gxtRegisterListMarker?: (m: Comment) => void })
@@ -1075,9 +1060,9 @@ export class BasicListComponent<T extends { id: number }> {
       this.indexFormulaMap.set(key, indexFormula);
     }
 
-    // Per-row destructor-owner ctx (fine-grained); `self` otherwise. Owns the
-    // row body's direct element binding opcodes so they unsubscribe on teardown.
-    const bodyCtx = this.rowBodyCtx(key, self);
+    // Per-row destructor-owner ctx. Owns the row body's direct element binding
+    // opcodes so they unsubscribe on teardown.
+    const bodyCtx = this.rowBodyCtx(key);
     const row = this.ItemComponent(
       item,
       idx,
@@ -1086,10 +1071,11 @@ export class BasicListComponent<T extends { id: number }> {
 
     keyMap.set(key, row);
     indexMap.set(key, index);
-    if (_fineGrainedEachRebind()) {
-      if (!this.boundItemMap) this.boundItemMap = new Map();
-      this.boundItemMap.set(key, item);
-    }
+    // Track the source object currently bound to this key so a later keyed
+    // REUSE with a ref-swapped object can re-bind the row's block-param in place
+    // (see the reuse branch below).
+    if (!this.boundItemMap) this.boundItemMap = new Map();
+    this.boundItemMap.set(key, item);
     if (isAppendOnly) {
       const parent = api.parent(targetNode)!;
       api.insert(parent, marker, targetNode);
@@ -1121,7 +1107,7 @@ export class BasicListComponent<T extends { id: number }> {
       _moveSet: moveSet,
       _freshMoveKeys: freshMoveKeys,
     } = this;
-    // P7: hoist the per-marker consumer-registry lookup. `__gxtRegisterListMarker`
+    // Hoist the per-marker consumer-registry lookup. `__gxtRegisterListMarker`
     // is install-once-stable (manager.ts installs it idempotently at boot), so
     // reading it once per updateItems (instead of once per new marker) removes a
     // global-property lookup per row on the create/append path. Stashed on the
@@ -1141,9 +1127,9 @@ export class BasicListComponent<T extends { id: number }> {
 
     const self = this as unknown as ComponentLike;
 
-    // FIX 3a — incremental append-only fast path. When syncList determined the
-    // incoming items are a strict append-only superset (existing prefix
-    // unchanged + in order) and nothing was removed, the existing rows
+    // Incremental append-only fast path. When syncList determined the incoming
+    // items are a strict append-only superset (existing prefix unchanged + in
+    // order) and nothing was removed, the existing rows
     // `[0, amountOfExistingKeys)` need no diff / LIS / move work: they are
     // provably stable and in order. We only construct + append the new tail
     // rows `[amountOfExistingKeys, items.length)`. O(added) instead of
@@ -1236,9 +1222,9 @@ export class BasicListComponent<T extends { id: number }> {
             : api.comment();
           itemMarkers.set(key, marker);
           markerSet.add(marker);
-          // Register per-item marker with the consumer registry (no-op when
-          // no consumer hook is installed). P7: hook hoisted to `_registerMarker`
-          // at the top of updateItems (install-once-stable).
+          // Register per-item marker with the consumer registry (no-op when no
+          // consumer hook is installed). The hook was hoisted to
+          // `_registerMarker` at the top of updateItems (install-once-stable).
           if (_registerMarker) _registerMarker(marker);
         }
         // Provide a reactive `index` cell only when the compiled body
@@ -1288,17 +1274,18 @@ export class BasicListComponent<T extends { id: number }> {
           this.indexFormulaMap.set(key, indexFormula);
         }
 
-        // Per-row destructor-owner ctx (fine-grained); `self` otherwise. Owns the
-        // row body's direct element binding opcodes so they unsubscribe on teardown.
-        const bodyCtx = this.rowBodyCtx(key, self);
+        // Per-row destructor-owner ctx. Owns the row body's direct element
+        // binding opcodes so they unsubscribe on teardown.
+        const bodyCtx = this.rowBodyCtx(key);
         const row = ItemComponent(item, idx, bodyCtx as unknown as Component<any>);
 
         keyMap.set(key, row);
         indexMap.set(key, index);
-        if (_fineGrainedEachRebind()) {
-          if (!this.boundItemMap) this.boundItemMap = new Map();
-          this.boundItemMap.set(key, item);
-        }
+        // Track the source object currently bound to this key so a later keyed
+        // REUSE with a ref-swapped object can re-bind the row's block-param in
+        // place (see the reuse branch below).
+        if (!this.boundItemMap) this.boundItemMap = new Map();
+        this.boundItemMap.set(key, item);
         if (isAppendOnly) {
           // TODO: in ssr parentNode may not exist
           const parent = api.parent(targetNode)!;
@@ -1324,12 +1311,12 @@ export class BasicListComponent<T extends { id: number }> {
         if (oldIndex !== index) {
           indexMap.set(key, index);
         }
-        // Group-E: keyed REUSE. If the source object bound to this key changed
-        // by reference (e.g. the keyed property was mutated in place, staling
-        // the key, then a ref-swap reused the row by that stale key), re-bind
-        // the row's block-param to the NEW object IN PLACE — preserving DOM
-        // identity (no recreate). The host hook swaps the body-proxy's holder
-        // target + re-fires the body. Gated to fine-grained mode.
+        // Keyed REUSE. If the source object bound to this key changed by
+        // reference (e.g. the keyed property was mutated in place, staling the
+        // key, then a ref-swap reused the row by that stale key), re-bind the
+        // row's block-param to the NEW object IN PLACE — preserving DOM identity
+        // (no recreate). The host hook swaps the body-proxy's holder target +
+        // re-fires the body; a no-op when the host hasn't installed it.
         if (this.boundItemMap !== null) {
           const boundItem = this.boundItemMap.get(key);
           if (boundItem !== item) {
@@ -1533,9 +1520,9 @@ export class SyncListComponent<
           if (firstError === undefined) firstError = e;
         }
       }
-      // Tear down each row's per-row destructor-owner ctx (fine-grained), so the
-      // row body's `class`/attr/text/event/modifier opcodes UNSUBSCRIBE from
-      // shared cells. Without this they leaked onto the surviving list instance.
+      // Tear down each row's per-row destructor-owner ctx, so the row body's
+      // `class`/attr/text/event/modifier opcodes UNSUBSCRIBE from shared cells.
+      // Without this they would leak onto the surviving list instance.
       try {
         this.teardownAllRowCtxs();
       } catch (e) {
@@ -1596,10 +1583,10 @@ export class SyncListComponent<
       let amountOfKeys = keyMap.size;
       let removedCount = 0;
 
-      // FIX 3a: when the new items are a strict append-only superset of the
-      // current rows, the removal/diff block below is skipped and updateItems
-      // can take the O(added) incremental path. Compute the verdict once and
-      // record it for updateItems (reset to false otherwise).
+      // When the new items are a strict append-only superset of the current
+      // rows, the removal/diff block below is skipped and updateItems can take
+      // the O(added) incremental path. Compute the verdict once and record it
+      // for updateItems (reset to false otherwise).
       const appendOnly =
         amountOfKeys > 0 &&
         this.isAppendOnlySuperset(items, amountOfKeys, keyForItem);
@@ -1668,8 +1655,8 @@ export class SyncListComponent<
     keyMap.delete(key);
     indexMap.delete(key);
     if (this.boundItemMap !== null) this.boundItemMap.delete(key);
-    // Tear down this row's per-row destructor-owner ctx (fine-grained) so its
-    // element binding opcodes UNSUBSCRIBE from shared cells. No-op morph-ON.
+    // Tear down this row's per-row destructor-owner ctx so its element binding
+    // opcodes UNSUBSCRIBE from shared cells.
     this.destroyRowCtx(key);
     // Clean up reactive index formula if it exists
     if (indexFormulaMap) {
@@ -1789,7 +1776,7 @@ export class AsyncListComponent<
       // Detach CHILD so item destructors skip parent-sibling deletes.
       this.detachTreeChildren();
 
-      // FIX 4 — full-clear fast path. On a stand-alone full clear
+      // Full-clear fast path. On a stand-alone full clear
       // (`!cascadeDestruction`) the DOM is reclaimed in ONE bulk
       // `clearChildren(parent)` (innerHTML='', O(1)). Awaiting a graph of
       // per-row destructor promises (one per row, each resolving its async
@@ -1824,9 +1811,9 @@ export class AsyncListComponent<
           }
           indexFormulaMap.clear();
         }
-        // Tear down the per-row destructor-owner ctxs (fine-grained) so the row
-        // body's element binding opcodes unsubscribe instead of leaking onto the
-        // surviving list. This is a STANDALONE clear (the list itself survives —
+        // Tear down the per-row destructor-owner ctxs so the row body's element
+        // binding opcodes unsubscribe instead of leaking onto the surviving
+        // list. This is a STANDALONE clear (the list itself survives —
         // not a parent cascade), so there is no cascade-ordering hazard: the row
         // CONTENT (the `<Row>` component / `$_ucw` wrapper) is independently
         // tracked in `keyMap` and torn down by the `rows` fire-and-forget map
@@ -1907,9 +1894,9 @@ export class AsyncListComponent<
         if (isDestroyed(value as object)) continue;
         promises.push(destroyElement(value as ComponentLike, true, this.api));
       }
-      // Per-row destructor-owner ctxs (fine-grained). When the LIST itself is
-      // torn down, the parent cascade also walks these (they are CHILD of the
-      // list); destroyElement is idempotent so awaiting here is safe + ensures
+      // Per-row destructor-owner ctxs. When the LIST itself is torn down, the
+      // parent cascade also walks these (they are CHILD of the list);
+      // destroyElement is idempotent so awaiting here is safe + ensures
       // they unsubscribe even on a standalone async clear. Skip already-destroyed
       // ones to keep the dev double-destroy detector quiet.
       const rowCtxMap = this.rowCtxMap;
@@ -1969,8 +1956,8 @@ export class AsyncListComponent<
     let amountOfKeys = keyMap.size;
     let removedCount = 0;
 
-    // FIX 3a: see SyncListComponent.syncList — record the append-only verdict
-    // so updateItems can take the O(added) incremental path.
+    // See SyncListComponent.syncList — record the append-only verdict so
+    // updateItems can take the O(added) incremental path.
     const appendOnly =
       amountOfKeys > 0 &&
       this.isAppendOnlySuperset(items, amountOfKeys, keyForItem);
@@ -1993,8 +1980,8 @@ export class AsyncListComponent<
       }
       // A FULL SWAP (every existing key removed AND a non-empty replacement
       // set incoming) must NOT take the fire-and-forget bulk-clear `fastCleanup`
-      // path. `fastCleanup`'s standalone-clear fast path (FIX 4) bulk-clears the
-      // DOM and runs the old rows' destructors fire-and-forget on a later
+      // path. `fastCleanup`'s standalone-clear fast path bulk-clears the DOM and
+      // runs the old rows' destructors fire-and-forget on a later
       // microtask. For a swap, `updateItems` synchronously renders the NEW rows
       // into the SAME parent immediately afterwards — then the deferred old-row
       // destructors fire and a nested-list row destructor (`syncList([])` →
@@ -2065,12 +2052,12 @@ export class AsyncListComponent<
         indexFormulaMap.delete(key);
       }
     }
-    // Tear down this row's per-row destructor-owner ctx (fine-grained) FIRST,
-    // with skipDom=false so its cascade removes any `$_ucw`-wrapped child DOM
-    // (the UCW is a tree child of rowCtx — see destroyRowCtx doc) and awaits
-    // async element/modifier destructors. Then destroy the row itself: for a
-    // stable `<tr>` body that removes the raw node; for a UCW body it no-ops
-    // (already destroyed via the cascade). No-op morph-ON.
+    // Tear down this row's per-row destructor-owner ctx FIRST, with
+    // skipDom=false so its cascade removes any `$_ucw`-wrapped child DOM (the UCW
+    // is a tree child of rowCtx — see destroyRowCtx doc) and awaits async
+    // element/modifier destructors. Then destroy the row itself: for a stable
+    // `<tr>` body that removes the raw node; for a UCW body it no-ops (already
+    // destroyed via the cascade).
     const rowCtxMap = this.rowCtxMap;
     const rowCtx = rowCtxMap?.get(key);
     if (rowCtx !== undefined) {

@@ -79,10 +79,10 @@ export function resolveRenderable(
     componentProps = value as unknown as RenderableType;
   });
   if (f.isConst) {
-    // Fine-grained (morph-OFF) only: a const formula whose value is empty may be
-    // an initially-undefined `this.<path>` binding that read no cell. Materialize
-    // the leaf cell and re-wrap; the new formula tracks a real cell so a later
-    // `set(context,'<path>',...)` updates the binding. Gated — never morph-ON.
+    // A const formula whose value is empty may be an initially-undefined
+    // `this.<path>` binding that read no cell. Materialize the leaf cell and
+    // re-wrap; the new formula tracks a real cell so a later
+    // `set(context,'<path>',...)` updates the binding.
     if (
       (isPrimitive(componentProps) || isEmpty(componentProps)) &&
       materializeAbsentPathCell(child)
@@ -103,11 +103,9 @@ export function resolveRenderable(
     return componentProps;
   } else {
     if (isPrimitive(componentProps) || isEmpty(componentProps)) {
-      // Fine-grained (morph-OFF) only: register leaf-object owners so a
-      // nested-property `set()` on a held object dirties this cell.
-      {
-        registerLeafOwnersForFormula(f);
-      }
+      // Register leaf-object owners so a nested-property `set()` on a held
+      // object dirties this cell.
+      registerLeafOwnersForFormula(f);
       return f;
     } else {
       // looks like a component

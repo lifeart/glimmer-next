@@ -488,22 +488,20 @@ function visitSimpleMustache(
     // Unknown binding without hash args - return as helper value.
     // buildHelper handles: builtin detection, maybeHelper for unknowns, $_ prefixes.
     const noArgHelper = helper(pathName, [], new Map(), range, pathRange);
-    // Fine-grained mode only: wrap a 0-arg helper mustache (e.g. `{{hello}}`
-    // where `hello` is an unknown name resolved as a custom helper) in a
-    // getter, mirroring the named-args path above and the positional-args
-    // path in visitHelperMustache. Without this, the runtime const-folds the
-    // bare value — `$_maybeHelper("hello", [], this)` is called ONCE outside
-    // any tracker frame, so the helper's internal `@tracked` reads (and the
-    // helperCell the manager-bucket path returns) are never subscribed, and a
-    // later tracked mutation (which dirties the cell + fires
-    // PROPERTY_DID_CHANGE) updates a cell nobody listens to. Wrapping in a
+    // Wrap a 0-arg helper mustache (e.g. `{{hello}}` where `hello` is an unknown
+    // name resolved as a custom helper) in a getter, mirroring the named-args
+    // path above and the positional-args path in visitHelperMustache. Without
+    // this, the runtime const-folds the bare value — `$_maybeHelper("hello", [],
+    // this)` is called ONCE outside any tracker frame, so the helper's internal
+    // `@tracked` reads (and the helperCell the manager-bucket path returns) are
+    // never subscribed, and a later tracked mutation (which dirties the cell +
+    // fires PROPERTY_DID_CHANGE) updates a cell nobody listens to. Wrapping in a
     // getter makes the binding re-evaluable inside the text-binding effect's
     // tracker frame, so the helperCell read registers and the binding re-fires
     // on the tracked change. Reactive ≠ eagerly re-evaluated: a helper that
     // reads no tracked state captures no deps → its effect is const → never
     // re-fires (so `{{unique-id}}`, `{{has-block}}`, and the classic-Helper
-    // compute-count bouncer stay stable). Gated on __GXT_SPIKE_SKIP_MORPH so
-    // the shipped morph-ON path keeps the const-fold byte-identical.
+    // compute-count bouncer stay stable).
     //
     // Skip in attribute/named-arg position (`@content={{foo}}`): there the
     // bare `$_maybeHelper("foo", [], this)` form must survive so the
@@ -511,9 +509,6 @@ function visitSimpleMustache(
     // passed by reference and throw the standard ambiguous-named-arg error.
     // Reactivity for arg values is already provided by the component arg
     // getter, so wrapping here is both unnecessary and harmful.
-    // The runtime is committed to fine-grained reactivity (the former
-    // `WITH_MORPH` build-time const was retired), so always wrap outside
-    // attribute/named-arg position.
     if (_wrap && !ctx.inAttributeValue) {
       return getter(noArgHelper, range);
     }
