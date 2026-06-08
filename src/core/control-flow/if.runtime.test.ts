@@ -377,11 +377,17 @@ describe('If condition - throwing-proxy parent (a128135 guard)', () => {
  * The flow is:
  *
  *   renderBranch(nextBranch, runNumber)
- *     └─ if (isHostMode()) {       // reads globalThis.__GXT_MODE__ fresh
- *          this.destroyBranchSync();      // (A)
- *          // (B) ← without the fix, no epoch check here
- *          this.renderState(nextBranch);  // (C)
+ *     └─ if (WITH_EMBER_INTEGRATION) {        // build-time gate (Ember build only)
+ *          this.renderBranchSyncHost(nextBranch, runNumber):
+ *            this.destroyBranchSync();      // (A)
+ *            // (B) ← without the fix, no epoch check here
+ *            this.renderState(nextBranch);  // (C)
  *        }
+ *
+ * `WITH_EMBER_INTEGRATION` is a build-time constant that folds to `false` in the
+ * standalone test build, so the gated branch is unreachable from `syncState`
+ * here. The sync path therefore lives in the extracted `renderBranchSyncHost`,
+ * which these tests exercise directly (the gate itself is a trivial constant).
  *
  * `destroyBranchSync` runs destructors of the previous branch
  * synchronously. A destructor can flip the condition again (and, under
@@ -407,16 +413,12 @@ describe('If condition - throwing-proxy parent (a128135 guard)', () => {
  */
 describe('If condition - sync destroy path validateEpoch (Ember mode)', () => {
   let fixture: DOMFixture;
-  let prevGxtMode: boolean | undefined;
 
   beforeEach(() => {
     fixture = createDOMFixture();
-    prevGxtMode = globalThis.__GXT_MODE__;
-    globalThis.__GXT_MODE__ = true;
   });
 
   afterEach(() => {
-    globalThis.__GXT_MODE__ = prevGxtMode;
     fixture.cleanup();
   });
 
@@ -488,9 +490,12 @@ describe('If condition - sync destroy path validateEpoch (Ember mode)', () => {
       renderStateCalls.push('<<inner re-entry simulated>>');
     } as typeof ifCond.destroyBranchSync;
 
-    // Trigger the outer flip. checkStatement will advance runNumber
-    // from 1 → 2 and call renderBranch(falseBranch, 2).
-    ifCond.syncState(false);
+    // Drive the sync host path directly with the captured outer runNumber.
+    // (renderBranch's `if (WITH_EMBER_INTEGRATION)` gate folds to false in the
+    // standalone test build, so we exercise the extracted method.) The stubbed
+    // destroyBranchSync simulates a mid-destroy re-entry that advances runNumber
+    // past `outerRunNumber`, so the recheck must bail before renderState.
+    ifCond.renderBranchSyncHost(falseBranch, outerRunNumber);
 
     // The instrumented destroyBranchSync ran and recorded its marker.
     expect(renderStateCalls).toContain('<<inner re-entry simulated>>');
@@ -540,8 +545,10 @@ describe('If condition - sync destroy path validateEpoch (Ember mode)', () => {
       renderStateCalls.push(nextBranch);
     } as typeof ifCond.renderState;
 
-    // Don't override destroyBranchSync — leave the real one in place.
-    ifCond.syncState(false);
+    // Don't override destroyBranchSync — leave the real one in place. Drive the
+    // sync host path directly with the current (matching) runNumber so the epoch
+    // recheck passes and the branch renders normally.
+    ifCond.renderBranchSyncHost(falseBranch, ifCond.runNumber);
 
     // Exactly one call (the falseBranch render) should have been made.
     expect(renderStateCalls).toHaveLength(1);

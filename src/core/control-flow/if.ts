@@ -32,18 +32,6 @@ import { setParentContext, getParentContext } from '../tracking';
 
 export type IfFunction = () => boolean;
 
-/**
- * Host-detection: is glimmer-next running embedded inside an Ember app?
- *
- * The Ember integration (gxt-backend) sets `globalThis.__GXT_MODE__ = true` at
- * runtime; standalone glimmer-next apps leave it unset. Because the same library
- * build serves both contexts, this MUST be read fresh on every call — caching it
- * in a module const risks reading before the host has set it.
- */
-function isHostMode(): boolean {
-  return globalThis.__GXT_MODE__ === true;
-}
-
 export class IfCondition {
   isDestructorRunning = false;
   prevComponent: GenericReturnType | null = null;
@@ -113,18 +101,20 @@ export class IfCondition {
     // parent-context stack pushed by the outer's renderState / $_ucw), so we use
     // it as the tree parent.
     //
-    // This re-parent is gated on host mode because it is needed ONLY under Ember
-    // (where `$_if` passes the gxt-root as `ctx`). STANDALONE glimmer-next passes
-    // the correct immediate parent, so the re-parent is unnecessary there — and
-    // HARMFUL with custom renderers: a sibling renderer (e.g. PdfViewer) whose
-    // active parent-context is still on the stack would be adopted as this
-    // {{#if}}'s tree parent, so `initDOM(this)` resolves that FOREIGN DOMApi while
-    // `target`/`placeholder` are DOM nodes → `pdfApi.insert` gets a
-    // DocumentFragment → "parentNode.children.includes is not a function" and a
-    // blank render (renderers.spec.ts). Ember renders DOM-only, so under host mode
-    // the re-parent never crosses a renderer boundary.
+    // This re-parent is gated on `WITH_EMBER_INTEGRATION` because it is needed
+    // ONLY under Ember (where `$_if` passes the gxt-root as `ctx`). STANDALONE
+    // glimmer-next passes the correct immediate parent, so the re-parent is
+    // unnecessary there — and HARMFUL with custom renderers: a sibling renderer
+    // (e.g. PdfViewer) whose active parent-context is still on the stack would be
+    // adopted as this {{#if}}'s tree parent, so `initDOM(this)` resolves that
+    // FOREIGN DOMApi while `target`/`placeholder` are DOM nodes → `pdfApi.insert`
+    // gets a DocumentFragment → "parentNode.children.includes is not a function"
+    // and a blank render (renderers.spec.ts). Ember renders DOM-only, so the
+    // re-parent never crosses a renderer boundary. The flag is a build-time
+    // constant (folded by the gxt compiler plugin: `false` standalone → this whole
+    // block DCEs away; `true` in the Ember build), so there is no runtime cost.
     let treeParent: Component<any> = parentContext;
-    if (isHostMode()) {
+    if (WITH_EMBER_INTEGRATION) {
       const activeParent = getParentContext();
       if (
         activeParent &&
@@ -251,18 +241,13 @@ export class IfCondition {
       return;
     } else if (this.prevComponent || this.branchDomNodes.length > 0) {
       const isEmptyArray = Array.isArray(this.prevComponent) && this.prevComponent.length === 0;
-      // Under Ember integration, use synchronous destroy for immediate DOM updates.
-      // Re-check the epoch between destroy and render: a destructor (or any side
-      // effect of `destroyBranchSync`) can synchronously flip the condition again
-      // and re-enter `syncState`, advancing `runNumber`. Without the recheck the
-      // outer (now-stale) call would still proceed to render its branch, clobbering
-      // the inner (newer) render. The async sibling path below uses the same guard.
-      if (isHostMode()) {
-        this.destroyBranchSync();
-        if (!this.validateEpoch(runNumber)) {
-          return;
-        }
-        this.renderState(nextBranch);
+      // Under Ember integration, destroy the previous branch synchronously for
+      // immediate DOM updates. Gated on `WITH_EMBER_INTEGRATION` (a build-time
+      // constant folded by the gxt compiler plugin: `true` in the Ember build,
+      // `false` standalone → this branch DCEs away). The sync path lives in
+      // `renderBranchSyncHost` so its epoch-recheck can be unit-tested directly.
+      if (WITH_EMBER_INTEGRATION) {
+        this.renderBranchSyncHost(nextBranch, runNumber);
         return;
       }
       // Fast path: nothing meaningful to async-destroy and no orphan DOM —
@@ -287,6 +272,30 @@ export class IfCondition {
       });
       return;
     }
+    if (!this.validateEpoch(runNumber)) {
+      return;
+    }
+    this.renderState(nextBranch);
+  }
+
+  /**
+   * Synchronous-destroy branch swap used under Ember integration (the
+   * `WITH_EMBER_INTEGRATION` branch of `renderBranch`). Extracted into its own
+   * method so the epoch recheck can be unit-tested directly — `renderBranch`'s
+   * gate folds to `false` in the standalone test build, making the inline path
+   * unreachable from `syncState` there.
+   *
+   * Re-check the epoch between destroy and render: a destructor (or any side
+   * effect of `destroyBranchSync`) can synchronously flip the condition again and
+   * re-enter `syncState`, advancing `runNumber`. Without the recheck the outer
+   * (now-stale) call would still proceed to render its branch, clobbering the
+   * inner (newer) render. The async sibling path uses the same guard.
+   */
+  renderBranchSyncHost(
+    nextBranch: (ifContext: IfCondition) => GenericReturnType,
+    runNumber: number,
+  ) {
+    this.destroyBranchSync();
     if (!this.validateEpoch(runNumber)) {
       return;
     }
