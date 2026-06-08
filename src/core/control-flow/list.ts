@@ -33,7 +33,7 @@ import {
   isEmpty,
 } from '@/core/shared';
 import { RENDERING_CONTEXT_PROPERTY } from '@/core/types';
-import { TREE, CHILD, PARENT, cId, addToTree } from '@/core/tree';
+import { TREE, CHILD, PARENT, cId, addToTree, releaseId } from '@/core/tree';
 import { isRehydrationScheduled } from '@/core/ssr/rehydration';
 import { initDOM } from '@/core/context';
 import {
@@ -41,6 +41,7 @@ import {
   isDestructionStarted,
   isDestroyed,
   reportDestructionError,
+  destroySync,
 } from '../glimmer/destroyable';
 import { setParentContext, getParentContext } from '../tracking';
 
@@ -62,6 +63,12 @@ function _fineGrainedEachRebind(): boolean {
   Based on Glimmer-VM list update logic.
 */
 type GenericReturnType = Array<ComponentLike | Node> | ComponentLike | Node;
+
+// Hoisted out of the per-row `rowBodyCtx` hot path: `Symbol.for(...)` is a
+// global-registry lookup, so calling it once per row added a registry probe to
+// every keyed-each create. Resolving it once at module load and reusing the
+// cached symbol removes that per-row lookup.
+const BLOCK_WRAPPER_SYMBOL = Symbol.for('gxt-block-wrapper');
 
 // Lightweight per-row destructor-owner context. It is a valid render context
 // (carries the list's DOM api + a tree id) but renders NO DOM of its own — the
@@ -429,8 +436,9 @@ export class BasicListComponent<T extends { id: number }> {
       // → rowCtx's CHILD bucket collapses into the root's, so destroying the
       // row cascades through the ENTIRE root subtree (incl. the list itself).
       // Symbol.for keeps the contract identical to dom.ts's $BLOCK_WRAPPER_SYMBOL
-      // across the package boundary (no import → no cycle).
-      [Symbol.for('gxt-block-wrapper')]: true,
+      // across the package boundary (no import → no cycle). Cached at module
+      // load (BLOCK_WRAPPER_SYMBOL) to avoid a per-row registry lookup.
+      [BLOCK_WRAPPER_SYMBOL]: true,
     };
     // Propagate the dynamic-eval resolver to deferred/appended rows. The list
     // captured `this.$_eval` from its ctx at construction (see constructor);
@@ -1816,41 +1824,69 @@ export class AsyncListComponent<
           }
           indexFormulaMap.clear();
         }
-        // Snapshot + detach the per-row destructor-owner ctxs (fine-grained)
-        // alongside the rows, so the row body's element binding opcodes (incl.
-        // any async modifier teardowns) unsubscribe instead of leaking onto the
-        // surviving list. Mirrors SyncListComponent.teardownAllRowCtxs but async.
-        const rowCtxs: ComponentLike[] = [];
+        // Tear down the per-row destructor-owner ctxs (fine-grained) so the row
+        // body's element binding opcodes unsubscribe instead of leaking onto the
+        // surviving list. This is a STANDALONE clear (the list itself survives —
+        // not a parent cascade), so there is no cascade-ordering hazard: the row
+        // CONTENT (the `<Row>` component / `$_ucw` wrapper) is independently
+        // tracked in `keyMap` and torn down by the `rows` fire-and-forget map
+        // below; the rowCtx's CHILD link to it is detached here first. So a rowCtx
+        // teardown only needs to run rowCtx's OWN destructors (the inline-element
+        // body's `class`/attr/text/event/modifier opcodes registered against it,
+        // if any) + reclaim its tree maps. `destroySync` does exactly that
+        // synchronously — for the common component-bodied row (no opcodes on
+        // rowCtx) it runs only the `addToTree` cleanup closure, and for an
+        // inline-element body it runs the opcodes too. Replacing the prior
+        // per-row `destroyElement(rowCtx)` (async `runDestructors` walk + pending-
+        // array alloc + `.filter`/`.map`/Promise churn) with an inline
+        // `destroySync` removes that machinery from the high-N clear path — the
+        // DOM is already bulk-cleared (skipDom), so the teardown was fire-and-
+        // forget regardless; any async modifier on a row body fades nothing here
+        // (its node is already gone). `releaseId` reclaims the id (the closure
+        // can't — we pre-deleted its TREE entry below).
         const rowCtxMap = this.rowCtxMap;
         if (rowCtxMap !== null && rowCtxMap.size > 0) {
           const childSet = CHILD.get(this[COMPONENT_ID_PROPERTY]);
+          // First-error-wins: a throwing rowCtx destructor (only possible if a
+          // host installed a re-throwing destruction-error reporter) must not
+          // leak the remaining rowCtxs. The prior `destroyElement(rowCtx)` map
+          // funnelled rejections into the fire-and-forget `Promise.all`, so it
+          // never aborted the loop either; preserve that.
+          let firstError: unknown = undefined;
           for (const rowCtx of rowCtxMap.values()) {
             const rowId = rowCtx[COMPONENT_ID_PROPERTY];
-            rowCtxs.push(rowCtx as unknown as ComponentLike);
             CHILD.delete(rowId);
             TREE.delete(rowId);
             PARENT.delete(rowId);
             if (childSet !== undefined) childSet.delete(rowId);
+            if (!isDestroyed(rowCtx as object)) {
+              try {
+                destroySync(rowCtx as object);
+              } catch (e) {
+                if (firstError === undefined) firstError = e;
+              }
+            }
+            releaseId(rowId);
           }
           rowCtxMap.clear();
+          if (firstError !== undefined) reportDestructionError(firstError);
         }
         keyMap.clear();
         indexMap.clear();
         this.itemMarkers.clear();
         this.markerSet.clear();
-        // Run destructors fire-and-forget (DOM already gone → skipDom=true).
-        // Skip rows/ctxs already torn down by a concurrent parent cascade — a
+        // Run ROW destructors fire-and-forget (DOM already gone → skipDom=true).
+        // Skip rows already torn down by a concurrent parent cascade — a
         // fire-and-forget re-destroy is idempotent (the destroyable layer
         // early-returns) but trips the dev double-destroy detector with noisy
-        // `console.error`s; the guard keeps the standalone teardown quiet.
-        const teardown: Promise<void[]> = Promise.all([
-          ...rows
+        // `console.error`s; the guard keeps the standalone teardown quiet. Rows
+        // keep the async `destroyElement` path so any async ELEMENT/component
+        // destructor still resolves through `destroyPromise`.
+        const teardown: Promise<void[]> = Promise.all(
+          rows
             .filter((row) => !isDestroyed(row as object))
             .map((row) => destroyElement(row, true, this.api)),
-          ...rowCtxs
-            .filter((rc) => !isDestroyed(rc as object))
-            .map((rc) => destroyElement(rc, true, this.api)),
-        ]);
+        );
         // Track so the list destructor (which returns destroyPromise) can
         // await full teardown if needed; don't block this clear on it.
         this.destroyPromise = teardown;
