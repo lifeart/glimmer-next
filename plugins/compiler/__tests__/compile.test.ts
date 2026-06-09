@@ -4987,3 +4987,125 @@ describe('Compat mode AST transforms', () => {
     });
   });
 });
+
+describe('compile() — transforms hook (CompileOptions.transforms)', () => {
+  test('no transforms: output is byte-identical to baseline', () => {
+    const tpl = '<div class="card">{{this.greeting}}<span>{{count}}</span></div>';
+    const baseline = compile(tpl);
+    // Passing undefined, an empty array, and omitting entirely must all match.
+    expect(compile(tpl, {}).code).toBe(baseline.code);
+    expect(compile(tpl, { transforms: undefined }).code).toBe(baseline.code);
+    expect(compile(tpl, { transforms: [] }).code).toBe(baseline.code);
+    expect(baseline.errors).toHaveLength(0);
+  });
+
+  test('bare NodeVisitor: renames a mustache path before lowering', () => {
+    const tpl = '<div>{{greeting}}</div>';
+    const baseline = compile(tpl);
+    // Baseline references the original free-var helper name.
+    expect(baseline.code).toContain('greeting');
+    expect(baseline.code).not.toContain('salutation');
+
+    const result = compile(tpl, {
+      transforms: [
+        {
+          MustacheStatement(node: any) {
+            if (
+              node.path.type === 'PathExpression' &&
+              node.path.original === 'greeting'
+            ) {
+              node.path.original = 'salutation';
+              node.path.parts = ['salutation'];
+            }
+          },
+        },
+      ],
+    });
+
+    expect(result.errors).toHaveLength(0);
+    // The AST mutation is reflected in the emitted code.
+    expect(result.code).toContain('salutation');
+    expect(result.code).not.toContain('greeting');
+  });
+
+  test('bare NodeVisitor: rewrites an element tag', () => {
+    const tpl = '<div>hello</div>';
+    const result = compile(tpl, {
+      transforms: [
+        {
+          ElementNode(node: any) {
+            if (node.tag === 'div') {
+              node.tag = 'section';
+            }
+          },
+        },
+      ],
+    });
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.code).toContain("'section'");
+    expect(result.code).not.toContain("'div'");
+  });
+
+  test('ASTPluginBuilder shape: (env) => ({ name, visitor }) is supported', () => {
+    const tpl = '<div>{{greeting}}</div>';
+    let seenEnv: any;
+
+    const result = compile(tpl, {
+      transforms: [
+        (env: any) => {
+          seenEnv = env;
+          return {
+            name: 'rename-greeting',
+            visitor: {
+              MustacheStatement(node: any) {
+                if (
+                  node.path.type === 'PathExpression' &&
+                  node.path.original === 'greeting'
+                ) {
+                  node.path.original = 'salutation';
+                  node.path.parts = ['salutation'];
+                }
+              },
+            },
+          };
+        },
+      ],
+    });
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.code).toContain('salutation');
+    expect(result.code).not.toContain('greeting');
+    // env exposes the @glimmer/syntax surface like classic plugins.ast.
+    expect(typeof seenEnv.syntax.builders).toBe('object');
+    expect(typeof seenEnv.syntax.traverse).toBe('function');
+  });
+
+  test('multiple transforms apply in order', () => {
+    const tpl = '<div>{{a}}</div>';
+    const result = compile(tpl, {
+      transforms: [
+        {
+          MustacheStatement(node: any) {
+            if (node.path.type === 'PathExpression' && node.path.original === 'a') {
+              node.path.original = 'b';
+              node.path.parts = ['b'];
+            }
+          },
+        },
+        {
+          MustacheStatement(node: any) {
+            if (node.path.type === 'PathExpression' && node.path.original === 'b') {
+              node.path.original = 'c';
+              node.path.parts = ['c'];
+            }
+          },
+        },
+      ],
+    });
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.code).toContain('c');
+    expect(result.code).not.toMatch(/\b(a|b)\(/);
+  });
+});
