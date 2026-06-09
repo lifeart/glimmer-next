@@ -477,7 +477,7 @@ function extractBlockOptions(
     } else {
       const result = getVisit(ctx)(ctx, keyPair.value, false);
       if (result !== null && isSerializedValue(result)) {
-        keyValue = serializeValueToString(result);
+        keyValue = serializeValueToString(result, ctx);
       }
     }
   }

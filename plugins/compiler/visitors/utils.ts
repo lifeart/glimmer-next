@@ -419,7 +419,7 @@ export function resolvePath(ctx: CompilerContext, pathStr: string): string {
  * Note: For CodeBuilder-based serialization during serialization phase,
  * use serializeValue from serializers/value.ts instead.
  */
-export function serializeValueToString(value: SerializedValue): string {
+export function serializeValueToString(value: SerializedValue, ctx?: CompilerContext): string {
   switch (value.kind) {
     case 'literal':
       if (value.value === undefined) return 'undefined';
@@ -437,13 +437,13 @@ export function serializeValueToString(value: SerializedValue): string {
       return value.code;
 
     case 'helper':
-      return serializeHelperCall(value);
+      return serializeHelperCall(value, ctx);
 
     case 'getter':
-      return `() => ${serializeValueToString(value.value)}`;
+      return `() => ${serializeValueToString(value.value, ctx)}`;
 
     case 'concat':
-      return `[${value.parts.map(p => serializeValueToString(p)).join(',')}].join('')`;
+      return `[${value.parts.map(p => serializeValueToString(p, ctx)).join(',')}].join('')`;
 
     default:
       // Exhaustive check - TypeScript will error if a kind is not handled
@@ -452,7 +452,7 @@ export function serializeValueToString(value: SerializedValue): string {
   }
 }
 
-function buildValueToExpr(value: SerializedValue): JSExpression {
+function buildValueToExpr(value: SerializedValue, ctx?: CompilerContext): JSExpression {
   switch (value.kind) {
     case 'literal':
       if (value.value === undefined) return B.undef(value.sourceRange);
@@ -469,20 +469,20 @@ function buildValueToExpr(value: SerializedValue): JSExpression {
     case 'helper':
       switch (value.name) {
         case INTERNAL_HELPERS.ELEMENT_HELPER:
-          return buildElementHelperExpr(value);
+          return buildElementHelperExpr(value, ctx);
         case INTERNAL_HELPERS.ON_HANDLER:
-          return buildOnHandlerExpr(value);
+          return buildOnHandlerExpr(value, ctx);
         case INTERNAL_HELPERS.ON_CREATED_HANDLER:
-          return buildOnCreatedHandlerExpr(value);
+          return buildOnCreatedHandlerExpr(value, ctx);
         case INTERNAL_HELPERS.STYLE_SETTER:
-          return buildStyleSetterExpr(value);
+          return buildStyleSetterExpr(value, ctx);
         default:
-          return B.raw(serializeHelperCall(value));
+          return B.raw(serializeHelperCall(value, ctx));
       }
     case 'getter':
-      return B.reactiveGetter(buildValueToExpr(value.value), value.sourceRange);
+      return B.reactiveGetter(buildValueToExpr(value.value, ctx), value.sourceRange);
     case 'concat': {
-      const exprs = value.parts.map((part) => buildValueToExpr(part));
+      const exprs = value.parts.map((part) => buildValueToExpr(part, ctx));
       return B.methodCall(B.array(exprs), 'join', [B.string('')], value.sourceRange);
     }
     default:
@@ -490,16 +490,16 @@ function buildValueToExpr(value: SerializedValue): JSExpression {
   }
 }
 
-function buildElementHelperExpr(value: SerializedValue & { kind: 'helper' }): JSExpression {
+function buildElementHelperExpr(value: SerializedValue & { kind: 'helper' }, ctx?: CompilerContext): JSExpression {
   const tagValue = value.positional[0];
   let tagExpr: JSExpression;
 
   if (!tagValue) {
     tagExpr = B.string('div');
   } else if (tagValue.kind === 'literal' || tagValue.kind === 'getter') {
-    tagExpr = buildValueToExpr(tagValue);
+    tagExpr = buildValueToExpr(tagValue, ctx);
   } else {
-    tagExpr = B.reactiveGetter(buildValueToExpr(tagValue));
+    tagExpr = B.reactiveGetter(buildValueToExpr(tagValue, ctx));
   }
 
   return B.elementHelperWrapper(tagExpr, {
@@ -514,28 +514,28 @@ function buildElementHelperExpr(value: SerializedValue & { kind: 'helper' }): JS
   }, value.sourceRange);
 }
 
-function buildOnHandlerExpr(value: SerializedValue & { kind: 'helper' }): JSExpression {
+function buildOnHandlerExpr(value: SerializedValue & { kind: 'helper' }, ctx?: CompilerContext): JSExpression {
   const [handlerArg, ...tailArgs] = value.positional;
-  const handlerExpr = handlerArg ? buildValueToExpr(handlerArg) : B.nil();
-  const tailExprs = tailArgs.map((arg) => buildValueToExpr(arg));
+  const handlerExpr = handlerArg ? buildValueToExpr(handlerArg, ctx) : B.nil();
+  const tailExprs = tailArgs.map((arg) => buildValueToExpr(arg, ctx));
   const callArgs: JSExpression[] = [B.id('$e'), B.id('$n'), ...tailExprs];
   return B.arrow(['$e', '$n'], B.call(handlerExpr, callArgs), value.sourceRange);
 }
 
-function buildOnCreatedHandlerExpr(value: SerializedValue & { kind: 'helper' }): JSExpression {
+function buildOnCreatedHandlerExpr(value: SerializedValue & { kind: 'helper' }, ctx?: CompilerContext): JSExpression {
   const [handlerArg, ...tailArgs] = value.positional;
-  const handlerExpr = handlerArg ? buildValueToExpr(handlerArg) : B.nil();
-  const tailExprs = tailArgs.map((arg) => buildValueToExpr(arg));
+  const handlerExpr = handlerArg ? buildValueToExpr(handlerArg, ctx) : B.nil();
+  const tailExprs = tailArgs.map((arg) => buildValueToExpr(arg, ctx));
   const callArgs: JSExpression[] = [B.id('$n'), ...tailExprs];
   return B.arrow(['$n'], B.call(handlerExpr, callArgs), value.sourceRange);
 }
 
-function buildStyleSetterExpr(value: SerializedValue & { kind: 'helper' }): JSExpression {
+function buildStyleSetterExpr(value: SerializedValue & { kind: 'helper' }, ctx?: CompilerContext): JSExpression {
   const [propValue, styleValue] = value.positional;
   const propertyName = propValue && propValue.kind === 'literal' && typeof propValue.value === 'string'
     ? propValue.value
     : '';
-  const valueExpr = styleValue ? buildValueToExpr(styleValue) : B.nil();
+  const valueExpr = styleValue ? buildValueToExpr(styleValue, ctx) : B.nil();
   return B.styleSetter(propertyName, valueExpr, {
     TO_VALUE: SYMBOLS.TO_VALUE,
     LOCAL_VALUE: SYMBOLS.LOCAL_VALUE,
@@ -548,7 +548,7 @@ function buildStyleSetterExpr(value: SerializedValue & { kind: 'helper' }): JSEx
 /**
  * Serialize a helper call to JavaScript.
  */
-function serializeHelperCall(value: SerializedValue & { kind: 'helper' }): string {
+function serializeHelperCall(value: SerializedValue & { kind: 'helper' }, ctx?: CompilerContext): string {
   let args: string[] = [];
   let helperName = value.name;
 
@@ -558,7 +558,7 @@ function serializeHelperCall(value: SerializedValue & { kind: 'helper' }): strin
     helperName === INTERNAL_HELPERS.ON_CREATED_HANDLER ||
     helperName === INTERNAL_HELPERS.STYLE_SETTER
   ) {
-    return serializeJS(buildValueToExpr(value));
+    return serializeJS(buildValueToExpr(value, ctx));
   }
 
   // Handle @arg-prefixed helper names (helper passed as argument)
@@ -577,24 +577,24 @@ function serializeHelperCall(value: SerializedValue & { kind: 'helper' }): strin
     helperName = 'if';
     // unless(cond, true, false) -> if(cond, false, true)
     if (value.positional.length >= 2) {
-      args.push(serializeValueToString(value.positional[0])); // condition
+      args.push(serializeValueToString(value.positional[0], ctx)); // condition
       if (value.positional.length >= 3) {
-        args.push(serializeValueToString(value.positional[2])); // false value (becomes true branch)
-        args.push(serializeValueToString(value.positional[1])); // true value (becomes false branch)
+        args.push(serializeValueToString(value.positional[2], ctx)); // false value (becomes true branch)
+        args.push(serializeValueToString(value.positional[1], ctx)); // true value (becomes false branch)
       } else {
         args.push('""'); // empty string for false branch
-        args.push(serializeValueToString(value.positional[1])); // true value becomes false branch
+        args.push(serializeValueToString(value.positional[1], ctx)); // true value becomes false branch
       }
     } else {
       // Just condition - pass through
       for (const arg of value.positional) {
-        args.push(serializeValueToString(arg));
+        args.push(serializeValueToString(arg, ctx));
       }
     }
   } else {
     // Add positional args normally
     for (const arg of value.positional) {
-      args.push(serializeValueToString(arg));
+      args.push(serializeValueToString(arg, ctx));
     }
   }
 
@@ -607,7 +607,7 @@ function serializeHelperCall(value: SerializedValue & { kind: 'helper' }): strin
     const namedPairs: string[] = [];
     for (const [key, val] of value.named) {
       // Wrap each value in a getter
-      namedPairs.push(`${quoteKey(key)}: () => ${serializeValueToString(val)}`);
+      namedPairs.push(`${quoteKey(key)}: () => ${serializeValueToString(val, ctx)}`);
     }
     return `${symbolName}({ ${namedPairs.join(', ')} })`;
   }
@@ -616,7 +616,7 @@ function serializeHelperCall(value: SerializedValue & { kind: 'helper' }): strin
   if (value.named.size > 0) {
     const namedPairs: string[] = [];
     for (const [key, val] of value.named) {
-      namedPairs.push(`${quoteKey(key)}: ${serializeValueToString(val)}`);
+      namedPairs.push(`${quoteKey(key)}: ${serializeValueToString(val, ctx)}`);
     }
     args.push(`{ ${namedPairs.join(', ')} }`);
   }
@@ -644,17 +644,46 @@ function serializeHelperCall(value: SerializedValue & { kind: 'helper' }): strin
     symbolName === SYMBOLS.MODIFIER_HELPER
   ) {
     // Build positional as array
-    const positionalArgs = value.positional.map(arg => serializeValueToString(arg));
-    // Build named as object
+    const positionalArgs = value.positional.map(arg => serializeValueToString(arg, ctx));
+    // Build named as object.
+    //
+    // Parity with the JSExpression serializer (serializers/value.ts
+    // buildBuiltInHelper -> buildNamedArgsObject -> buildValue): in compat mode,
+    // path-kind hash values are wrapped in `() => expr` getters so curried
+    // component/helper/modifier args stay reactive. Only `path` values are
+    // wrapped — literals/helpers/hash are emitted directly, exactly matching
+    // buildValue's compat-mode behavior (which getter-wraps only paths).
+    // $_componentHelper unwraps each value through $_unwrapHelperArg (which calls
+    // function values), so this is snapshot-equivalent for standalone; we still
+    // gate on compat mode to byte-match the JSExpression path, which only wraps
+    // when IS_GLIMMER_COMPAT_MODE is set.
+    const wrapNamed = ctx?.flags.IS_GLIMMER_COMPAT_MODE === true;
     const namedPairs: string[] = [];
     for (const [key, val] of value.named) {
-      namedPairs.push(`${quoteKey(key)}: ${serializeValueToString(val)}`);
+      const serialized = serializeValueToString(val, ctx);
+      const emitted = wrapNamed && val.kind === 'path' ? `() => ${serialized}` : serialized;
+      namedPairs.push(`${quoteKey(key)}: ${emitted}`);
     }
     const namedObj = namedPairs.length > 0 ? `{ ${namedPairs.join(', ')} }` : '{}';
     return `${symbolName}([${positionalArgs.join(', ')}], ${namedObj})`;
   }
 
-  return `${symbolName}(${args.join(', ')})`;
+  const callStr = `${symbolName}(${args.join(', ')})`;
+
+  // Parity with the JSExpression serializer (serializers/value.ts:441-448): wrap
+  // an inline `{{unbound X}}` sub-expression (e.g. `{{yield (unbound this.x)}}`)
+  // in the same caching wrapper the top-level mustache form emits, so the value
+  // is snapshot once instead of re-read on every consumer evaluation. Uses the
+  // shared ctx.unboundCounter (cache keys stay unique across both serializers)
+  // and the same `()=>(…)` arrow shape. Gated on compat mode — the only mode in
+  // which the Ember host defines globalThis.__gxtUnboundEval / __ubCache — so
+  // standalone output keeps the bare form, exactly as the value.ts path does.
+  if (ctx?.flags.IS_GLIMMER_COMPAT_MODE && value.name === 'unbound') {
+    const ubId = `__ub${ctx.unboundCounter++}`;
+    return `globalThis.__gxtUnboundEval(__ubCache,"${ubId}",()=>(${callStr}))`;
+  }
+
+  return callStr;
 }
 
 /**
