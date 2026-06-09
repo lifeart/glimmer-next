@@ -3,6 +3,11 @@
  * All types are explicitly defined here to ensure type safety throughout.
  */
 
+// Type-only import: used for the public `CompileOptions.transforms` hook so
+// callers can supply standard `@glimmer/syntax` AST plugins/visitors. This is
+// erased at build time and adds no runtime dependency.
+import type { ASTPluginBuilder, NodeVisitor } from '@glimmer/syntax';
+
 // ============================================================================
 // Source Range & Mapping Types
 // ============================================================================
@@ -499,6 +504,22 @@ export interface TypeHints {
 }
 
 /**
+ * A single AST transform that runs on the parsed `@glimmer/syntax` AST after
+ * `preprocess` and before glimmer-next's own lowering/codegen.
+ *
+ * Two shapes are accepted — the same ones classic Ember AST plugins use:
+ *
+ * - A bare {@link NodeVisitor} object, e.g.
+ *   `{ MustacheStatement(node) { … }, ElementNode(node) { … } }`.
+ * - An {@link ASTPluginBuilder} factory `(env) => ({ name, visitor })`, where
+ *   `env` exposes `{ syntax, meta }` (`env.syntax.builders` mirrors
+ *   `@glimmer/syntax`'s builders).
+ *
+ * Transforms mutate the AST in place; their return values are ignored.
+ */
+export type AstTransform = NodeVisitor | ASTPluginBuilder;
+
+/**
  * Options for the compile() function.
  */
 export interface CompileOptions {
@@ -520,6 +541,32 @@ export interface CompileOptions {
   readonly lexicalScope?: (variable: string) => boolean;
   /** Type hints for type-directed optimization. Only used when WITH_TYPE_OPTIMIZATION is true. */
   readonly typeHints?: TypeHints;
+  /**
+   * Public AST-transform hook. Standard `@glimmer/syntax`-style visitors/plugins
+   * (the same shape classic Ember AST plugins use) that run on the parsed AST
+   * **after `preprocess`, before lowering/codegen**, applied in order via
+   * `@glimmer/syntax`'s `traverse`.
+   *
+   * When absent or empty, compilation behaves byte-for-byte identically to
+   * having no hook at all — this is an opt-in feature.
+   *
+   * @example
+   * ```typescript
+   * compile('<div>{{greeting}}</div>', {
+   *   transforms: [
+   *     {
+   *       MustacheStatement(node) {
+   *         if (node.path.type === 'PathExpression' && node.path.original === 'greeting') {
+   *           node.path.original = 'salutation';
+   *           node.path.parts = ['salutation'];
+   *         }
+   *       },
+   *     },
+   *   ],
+   * });
+   * ```
+   */
+  readonly transforms?: readonly AstTransform[];
 }
 
 // ============================================================================

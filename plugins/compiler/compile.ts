@@ -5,7 +5,18 @@
  * This provides a clean, dependency-injected interface for template compilation.
  */
 
-import { preprocess, type ASTv1 } from '@glimmer/syntax';
+import {
+  preprocess,
+  traverse,
+  builders,
+  print,
+  Walker,
+  type ASTv1,
+  type ASTPlugin,
+  type ASTPluginBuilder,
+  type ASTPluginEnvironment,
+  type NodeVisitor,
+} from '@glimmer/syntax';
 
 /**
  * Find the index of the first whitespace character in a string, or -1 if none.
@@ -88,7 +99,7 @@ function parseModuleName(msg: string): string | null {
   if (endQuote === -1) return null;
   return afterMarker.substring(0, endQuote);
 }
-import type { CompileOptions, CompileResult, HBSChild, SourceMapV3, SourceMapOptions } from './types';
+import type { AstTransform, CompileOptions, CompileResult, HBSChild, SourceMapV3, SourceMapOptions } from './types';
 import { createContext, initializeVisitors, setSerializeChildFunction, type CompilerContext } from './context';
 import { visit, visitChildren, setSourceForRanges } from './visitors';
 import { serialize, build, B, serializeJS } from './serializers';
@@ -142,6 +153,12 @@ export function compile(
 
     // Set source for accurate line/column to offset conversion
     setSourceForRanges(template);
+
+    // Public AST-transform hook: run any caller-supplied `@glimmer/syntax`
+    // visitors/plugins on the parsed AST before lowering/codegen. When no
+    // transforms are passed this is a no-op (the `for` loop never runs), so
+    // behavior is byte-identical to today.
+    applyTransforms(ast, options.transforms, options.filename);
 
     // Visit and convert the AST
     const children = visitAndFilter(ctx, ast.body);
@@ -313,6 +330,60 @@ export function compile(
       warnings: ctx.warnings,
       bindings: ctx.scopeTracker.getAllBindingNames(),
     };
+  }
+}
+
+/**
+ * Apply caller-supplied AST transforms to the parsed template AST.
+ *
+ * Accepts the standard `@glimmer/syntax` AST-plugin shapes (the same ones
+ * classic Ember AST plugins use):
+ *   - a bare `NodeVisitor` object, or
+ *   - an `ASTPluginBuilder` factory `(env) => ({ name, visitor })`.
+ *
+ * Each transform is applied in order via `@glimmer/syntax`'s `traverse`, which
+ * mutates the AST in place. When `transforms` is `undefined`/empty the loop
+ * never runs, so this is a true no-op (the critical behavior-neutral invariant).
+ *
+ * @internal
+ */
+function applyTransforms(
+  ast: ASTv1.Template,
+  transforms: readonly AstTransform[] | undefined,
+  filename: string | undefined
+): void {
+  if (!transforms || transforms.length === 0) {
+    return;
+  }
+
+  // A `Syntax` environment mirroring `@glimmer/syntax`'s public surface, so
+  // builder-style plugins can use `env.syntax.builders` etc. just like they
+  // would inside Ember's classic `plugins.ast` pipeline.
+  const syntax = {
+    parse: preprocess,
+    builders,
+    print,
+    traverse,
+    Walker,
+  };
+
+  for (const transform of transforms) {
+    let visitor: NodeVisitor;
+
+    if (typeof transform === 'function') {
+      // ASTPluginBuilder: (env) => { name, visitor }
+      const env: ASTPluginEnvironment = {
+        meta: { moduleName: filename } as object,
+        syntax: syntax as ASTPluginEnvironment['syntax'],
+      };
+      const plugin: ASTPlugin = (transform as ASTPluginBuilder)(env);
+      visitor = plugin.visitor;
+    } else {
+      // Bare NodeVisitor object
+      visitor = transform as NodeVisitor;
+    }
+
+    traverse(ast, visitor);
   }
 }
 

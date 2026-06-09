@@ -40,12 +40,12 @@
  * Using eval with untrusted input is a security risk.
  */
 
-import { compile as compilerCompile, type CompileOptions, type CompileResult } from './compiler/index';
+import { compile as compilerCompile, type CompileOptions, type CompileResult, type AstTransform } from './compiler/index';
 import { SYMBOLS, CONSTANTS, EVENT_TYPE } from './symbols';
 import { type Flags } from './flags';
 
 // Re-export types
-export type { CompileOptions, CompileResult, Flags };
+export type { CompileOptions, CompileResult, AstTransform, Flags };
 export { SYMBOLS, CONSTANTS, EVENT_TYPE };
 
 // Import GXT runtime primitives from dom.ts
@@ -205,6 +205,13 @@ export interface RuntimeCompileOptions {
   flags?: Partial<Flags>;
   /** Scope values to make available in the template */
   scopeValues?: Record<string, unknown>;
+  /**
+   * Public AST-transform hook. Standard `@glimmer/syntax`-style visitors/plugins
+   * (the same shape classic Ember AST plugins use) that run on the parsed AST
+   * after `preprocess`, before lowering/codegen. When absent or empty, behavior
+   * is byte-identical to having no hook. See {@link AstTransform}.
+   */
+  transforms?: readonly AstTransform[];
 }
 
 /**
@@ -253,6 +260,9 @@ export function compileTemplate(
     filename: options.moduleName || 'runtime-template',
     bindings: options.bindings || new Set(),
     flags,
+    // Thread the public AST-transform hook through. Undefined when not provided,
+    // keeping the no-transforms path byte-identical.
+    transforms: options.transforms,
   };
 
   const result = compilerCompile(template, compileOptions);
