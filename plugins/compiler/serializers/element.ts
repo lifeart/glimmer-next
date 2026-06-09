@@ -729,8 +729,27 @@ function buildComponentCall(
   if (isDynamic) {
     // Wrap in reactive getter for dynamic component paths
     // This allows re-evaluation when the component reference changes
-    // Use runtimeRef to preserve source map name for debugger hover
-    const tagRef = B.runtimeRef(tag, tagRange);
+    // Use runtimeRef to preserve source map name for debugger hover.
+    //
+    // Normalize an arg-headed dynamic tag (e.g. `<@model.componentName/>` or
+    // `{{component @model.componentName}}`) so the `@` head resolves through the
+    // args alias ($a) instead of leaking a raw `@` token into emitted JS — a bare
+    // `@ident` is only valid in decorator position, so `$_dc(() => @model.x, …)`
+    // is a SyntaxError. Mirrors the @→$a rule used by the path/helper/modifier
+    // serializers (serializers/value.ts:363-370). Non-arg dynamic tags such as
+    // `this.foo.Bar` already emit valid JS and are left untouched.
+    let dynamicTag = tag;
+    if (dynamicTag.startsWith('@')) {
+      const dotIndex = dynamicTag.indexOf('.');
+      const head = dotIndex === -1 ? dynamicTag.slice(1) : dynamicTag.slice(1, dotIndex);
+      const rest = dotIndex === -1 ? '' : dynamicTag.slice(dotIndex);
+      // Use bracket notation for head segments with special characters (hyphens etc.).
+      const needsBracket = !/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(head);
+      dynamicTag = needsBracket
+        ? `${SYMBOLS.ARGS_ALIAS}["${head}"]${rest}`
+        : `${SYMBOLS.ARGS_ALIAS}.${head}${rest}`;
+    }
+    const tagRef = B.runtimeRef(dynamicTag, tagRange);
     const tagGetter = B.reactiveGetter(tagRef, tagRange);
     return B.call(SYMBOLS.DYNAMIC_COMPONENT, [tagGetter, argsExpr, B.id(ctxName)], sourceRange, formatted, 'ElementNode');
   }
