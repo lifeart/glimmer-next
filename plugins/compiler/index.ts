@@ -27,6 +27,7 @@ export type {
   MappingTreeNode,
   CompilerFlags,
   CompileOptions,
+  AstTransform,
   CompileResult,
   CompilerError,
   CompilerWarning,
