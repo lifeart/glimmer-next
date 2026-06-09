@@ -226,7 +226,7 @@ function createYieldExpression(
     } else {
       const result = getVisit(ctx)(ctx, toPair.value, false);
       if (result !== null && isSerializedValue(result)) {
-        slotName = serializeValueToString(result);
+        slotName = serializeValueToString(result, ctx);
       }
     }
   }
@@ -236,7 +236,7 @@ function createYieldExpression(
     const result = getVisit(ctx)(ctx, p, false);
     if (result === null) return '';
     if (typeof result === 'string') return result;
-    if (isSerializedValue(result)) return serializeValueToString(result);
+    if (isSerializedValue(result)) return serializeValueToString(result, ctx);
     return '';
   });
 
