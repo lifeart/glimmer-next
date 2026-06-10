@@ -41,6 +41,11 @@ import {
   AsyncListComponent,
   type InverseFn,
 } from '@/core/control-flow/list';
+// NB: circular-by-design — static-block.ts imports $prop/$attr/$ev back from
+// this module (hoisted function declarations, accessed only at call time),
+// so the slot-binding semantics can never drift from `_DOM`'s.
+import { $_blk, type StaticBlockDef, type StaticBlockSlot } from './static-block';
+export { $_blk, type StaticBlockDef, type StaticBlockSlot };
 import {
   DestructorFn,
   Destructors,
@@ -296,7 +301,9 @@ function resolveBindingValue(
   return { result, isReactive: false };
 }
 
-function $prop(
+// Exported for the static-block fast path (src/core/static-block.ts), which
+// wires cloned-row slot bindings through the EXACT same helpers `_DOM` uses.
+export function $prop(
   api: DOMApi,
   element: Node,
   key: string,
@@ -412,7 +419,8 @@ function mergeClassModifiers(
   }
 }
 
-function $attr(
+// Exported for the static-block fast path (see $prop note above).
+export function $attr(
   api: DOMApi,
   element: HTMLElement,
   key: string,
@@ -438,12 +446,13 @@ function $attr(
   }
 }
 
-const EVENT_TYPE = {
+export const EVENT_TYPE = {
   ON_CREATED: '0',
   TEXT_CONTENT: '1',
 };
 
-function $ev(
+// Exported for the static-block fast path (see $prop note above).
+export function $ev(
   api: DOMApi,
   element: HTMLElement,
   eventName: string,
@@ -1609,6 +1618,15 @@ function ifCond(
   return toNodeReturnType(outlet, instance);
 }
 
+// Static-block fast-path args emitted by the compiler at fixed positional
+// slots 7/8 (after the `inverseFn`/`hasIndex` placeholders). See
+// src/core/static-block.ts.
+type EachBlockValuesFn<T> = (
+  item: T,
+  index: number | MergedCell,
+  ctx: unknown,
+) => readonly unknown[];
+
 export function $_eachSync<T extends { id: number }>(
   items: Cell<T[]> | MergedCell,
   fn: (item: T) => Array<ComponentReturnType | Node>,
@@ -1616,6 +1634,8 @@ export function $_eachSync<T extends { id: number }>(
   ctx: Component<any>,
   inverseFn?: InverseFn,
   hasIndex?: boolean,
+  block?: StaticBlockDef,
+  blockValues?: EachBlockValuesFn<T>,
 ) {
   const api = initDOM(ctx);
   const { outlet, placeholder } = getRenderTargets(
@@ -1630,6 +1650,8 @@ export function $_eachSync<T extends { id: number }>(
       key,
       inverseFn,
       hasIndex,
+      block,
+      blockValues,
     },
     // @ts-expect-error outlet
     outlet,
@@ -1646,6 +1668,8 @@ export function $_each<T extends { id: number }>(
   ctx: Component<any>,
   inverseFn?: InverseFn,
   hasIndex?: boolean,
+  block?: StaticBlockDef,
+  blockValues?: EachBlockValuesFn<T>,
 ) {
   const api = initDOM(ctx);
   const { outlet, placeholder } = getRenderTargets(
@@ -1660,6 +1684,8 @@ export function $_each<T extends { id: number }>(
       ctx,
       inverseFn,
       hasIndex,
+      block,
+      blockValues,
     },
     // @ts-expect-error outlet
     outlet,

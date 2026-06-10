@@ -27,6 +27,9 @@ export const SYMBOLS = {
   SLOT: '$_slot',
   IN_ELEMENT: '$_inElement',
 
+  // Static-block fast path for {{#each}} bodies (cloneNode + slot table)
+  BLOCK: '$_blk',
+
   // Component helpers
   COMPONENT: '$_c',
   DYNAMIC_COMPONENT: '$_dc',
@@ -206,6 +209,7 @@ export const PURE_FUNCTIONS: ReadonlySet<string> = new Set([
   SYMBOLS.EACH_RECYCLED,          // $_eachRecycled
   SYMBOLS.EACH_SYNC_RECYCLED,     // $_eachSyncRecycled
   SYMBOLS.SLOT,                   // $_slot
+  SYMBOLS.BLOCK,                  // $_blk
 
   // Built-in helpers (subexpressions)
   SYMBOLS.IF_HELPER,              // $__if

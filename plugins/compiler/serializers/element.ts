@@ -365,6 +365,33 @@ function buildEvents(
       eventName = name;
     }
 
+    const handlerExpr = buildEventHandlerExpr(ctx, eventName, handler, ctxName);
+
+    return B.array([B.string(eventName), handlerExpr], range, 'AttrNode');
+  });
+
+  // Use formattedArray for better readability when formatting is enabled and there are multiple items
+  if (ctx.formatter.options.enabled && items.length > 1) {
+    return B.formattedArray(items, true);
+  }
+
+  return B.array(items);
+}
+
+/**
+ * Build the handler expression for a single event tuple.
+ *
+ * Shared between `buildEvents` (the `$_tag` props emission) and the
+ * static-block fast-path serializer (serializers/static-block.ts), so the
+ * expression a block slot receives is byte-identical to what `$_tag` would
+ * have received for the same event tuple.
+ */
+export function buildEventHandlerExpr(
+  ctx: CompilerContext,
+  eventName: string,
+  handler: SerializedValue,
+  ctxName: string
+): JSExpression {
     let handlerExpr: JSExpression;
 
     // Native event handlers from {{on}} are stored as helper('$__on_handler', [handler, ...tailArgs])
@@ -442,15 +469,7 @@ function buildEvents(
       handlerExpr = buildValue(ctx, handler, ctxName);
     }
 
-    return B.array([B.string(eventName), handlerExpr], range, 'AttrNode');
-  });
-
-  // Use formattedArray for better readability when formatting is enabled and there are multiple items
-  if (ctx.formatter.options.enabled && items.length > 1) {
-    return B.formattedArray(items, true);
-  }
-
-  return B.array(items);
+    return handlerExpr;
 }
 
 function buildHandlerFunctionExpr(
