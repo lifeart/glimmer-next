@@ -17,6 +17,9 @@ export {
   type CachedCell,
 } from '@/core/reactive';
 
+// Keyed selector primitive (O(2) fan-out for `selected === key` bindings)
+export { keyedSelector, type KeyedSelector } from '@/core/selector';
+
 // Component class and types
 export { Component, type ComponentReturnType } from '@/core/component-class';
 

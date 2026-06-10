@@ -292,12 +292,20 @@ export function relatedTagsForCell(cell: Cell) {
  * error is surfaced to the host via the opcode-error reporter (NOT swallowed).
  */
 export function flushCellOpcodes(cell: Cell | MergedCell): void {
-  try {
-    executeTagSync(cell);
-  } catch (e) {
-    // Don't abort the flush, but report to the host (mirrors the normal drain's
-    // handleOpcodeError reporter path) rather than silently swallowing.
-    reportOpcodeError(e, cell);
+  // Only execute the cell's own opcodes when it actually has some — for cells
+  // that exist purely as subscription targets (selector key cells, recycle
+  // holder cells) an unguarded executeTagSync would MATERIALIZE an empty
+  // pooled ops array into the global opsForTag map per flush.
+  const ownOps = opsForTag.get((cell as Cell).id);
+  if (ownOps !== undefined && ownOps.length > 0) {
+    try {
+      executeTagSync(cell);
+    } catch (e) {
+      // Don't abort the flush, but report to the host (mirrors the normal
+      // drain's handleOpcodeError reporter path) rather than silently
+      // swallowing.
+      reportOpcodeError(e, cell);
+    }
   }
   const subTags = relatedTags.get((cell as Cell).id);
   if (subTags === undefined) {
@@ -315,6 +323,42 @@ export function flushCellOpcodes(cell: Cell | MergedCell): void {
     } catch (e) {
       reportOpcodeError(e, tag);
     }
+  }
+}
+
+/**
+ * Apply a cell update synchronously and deliver it to subscribers NOW.
+ *
+ * The drain-safe sibling of `Cell.update()`: a plain `update()` issued from
+ * inside an active `syncDomSync` lands in `tagsToRevalidate` after the drain
+ * snapshotted its work list, so the terminal clear silently drops it. This
+ * helper instead:
+ *   - mutates `_value`/`_revision` directly, BYPASSING the host
+ *     `_cellUpdateDeferralHook` (a deferred apply would leave `_value` stale
+ *     while the caller immediately re-executes subscribers against it);
+ *   - removes the cell from `tagsToRevalidate` so an in-flight drain doesn't
+ *     double-execute it;
+ *   - flushes its opcodes + subscriber formulas via `flushCellOpcodes` under
+ *     `_isRendering` — REQUIRED: `MergedCell.value` only re-collects deps on
+ *     the tracking path, so flushing while not rendering would permanently
+ *     unsubscribe every re-executed formula.
+ *
+ * Used by `keyedSelector` key-cell flips and the recycle-mode holder swap in
+ * the list control flow. No-op when the value is reference-equal.
+ */
+export function applyCellUpdateSync<T>(cell: Cell<T>, value: T): void {
+  if (cell._value === value) {
+    return;
+  }
+  cell._value = value;
+  cell._revision = bumpGlobalRevision();
+  tagsToRevalidate.delete(cell as Cell<unknown>);
+  const wasRendering = _isRendering;
+  if (!wasRendering) setIsRendering(true);
+  try {
+    flushCellOpcodes(cell);
+  } finally {
+    if (!wasRendering) setIsRendering(false);
   }
 }
 
