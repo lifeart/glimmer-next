@@ -539,6 +539,10 @@ export function getNodeCounter() {
   return NODE_COUNTER;
 }
 
+export function setNodeCounter(n: number): void {
+  NODE_COUNTER = n;
+}
+
 export function $_hasBlock(slots: Record<string, unknown>, name = 'default') {
   return name in slots && slots[name] !== undefined;
 }

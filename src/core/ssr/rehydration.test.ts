@@ -1,6 +1,17 @@
-import { expect, test, describe, beforeEach, afterEach } from 'vitest';
+import {
+  expect,
+  test,
+  describe,
+  beforeEach,
+  beforeAll,
+  afterEach,
+} from 'vitest';
 import { Window } from 'happy-dom';
-import { isRehydrationScheduled, lastItemInStack } from './rehydration';
+import {
+  isRehydrationScheduled,
+  lastItemInStack,
+  withRehydration,
+} from './rehydration';
 import {
   cleanupFastContext,
   provideContext,
@@ -21,8 +32,21 @@ import {
   COMPONENT_ID_PROPERTY,
 } from '../shared';
 import { Component } from '../component';
-import { Root } from '../dom';
+import {
+  Root,
+  getNodeCounter,
+  setNodeCounter,
+  resetNodeCounter,
+} from '../dom';
 import { NS_SVG, NS_MATHML } from '../namespaces';
+import { renderInBrowser } from './ssr';
+import { runDestructors } from '../destroy';
+import { $template } from '../shared';
+import {
+  template,
+  setupGlobalScope,
+  GXT_RUNTIME_SYMBOLS,
+} from '../../../plugins/runtime-compiler';
 
 // Custom DOMApi for testing nested contexts
 class TestCustomDOMApi implements DOMApi {
@@ -989,4 +1013,174 @@ describe('Suspense Rehydration Integration', () => {
       expect(isRehydrationScheduled()).toBe(false);
     });
   });
+});
+
+describe('Node counter seeding (setNodeCounter)', () => {
+  afterEach(() => {
+    resetNodeCounter();
+  });
+
+  test('setNodeCounter / getNodeCounter round-trip', () => {
+    setNodeCounter(5);
+    expect(getNodeCounter()).toBe(5);
+    setNodeCounter(0);
+    expect(getNodeCounter()).toBe(0);
+    setNodeCounter(123);
+    expect(getNodeCounter()).toBe(123);
+  });
+
+  test('setNodeCounter(0) is equivalent to resetNodeCounter()', () => {
+    setNodeCounter(99);
+    resetNodeCounter();
+    const afterReset = getNodeCounter();
+    setNodeCounter(99);
+    setNodeCounter(0);
+    const afterSetZero = getNodeCounter();
+    expect(afterSetZero).toBe(afterReset);
+    expect(afterSetZero).toBe(0);
+  });
+});
+
+describe('withRehydration boundary seeding (baseOffset)', () => {
+  beforeAll(() => {
+    // Runtime-compiled templates need the global GXT symbol table.
+    setupGlobalScope();
+    const g = globalThis as any;
+    Object.entries(GXT_RUNTIME_SYMBOLS).forEach(([name, value]) => {
+      g[name] = value;
+    });
+  });
+
+  // A real SSR -> rehydrate round-trip for a sub-tree that the server rendered
+  // starting at node-id offset `K`. `withRehydration` reads/writes the GLOBAL
+  // `document`/`Node` (it is normally a browser-only path), so we stub them from
+  // happy-dom for the duration and restore in `finally`. Returns the warnings
+  // emitted during rehydration, the counter value after completion, and whether
+  // the server DOM nodes were reused (identity preserved) vs. re-created.
+  async function roundTrip(
+    tmpl: string,
+    args: Record<string, unknown>,
+    K: number,
+    opts: { useBaseOffset: boolean; ambientOuterCounter: number },
+  ): Promise<{
+    warns: string[];
+    counterAfter: number;
+    identityPreserved: boolean;
+    serverHtml: string;
+  }> {
+    const window = new Window();
+    const document = window.document as unknown as Document;
+    const g = globalThis as any;
+    const prev = { d: g.document, n: g.Node, w: g.window };
+    g.document = document;
+    g.Node = (window as any).Node;
+    g.window = window;
+
+    const warns: string[] = [];
+    const origWarn = console.warn;
+    console.warn = (...a: unknown[]) => {
+      warns.push(a.map(String).join(' '));
+    };
+
+    try {
+      class App extends Component {
+        [$template] = template(tmpl);
+      }
+
+      // Server pass: seed the counter to K so the sub-tree's node-ids start at
+      // K+1 (renderInBrowser does NOT reset the counter).
+      cleanupFastContext();
+      setNodeCounter(K);
+      const ssrRoot = new Root(document);
+      const serverHtml = await renderInBrowser(App as any, args, ssrRoot);
+      await Promise.all(runDestructors(ssrRoot));
+
+      const target = document.createElement('section');
+      target.innerHTML = serverHtml;
+      document.body.appendChild(target);
+      const serverFirstChild = target.firstElementChild;
+
+      // Simulate a boundary nested inside a live client root: the ambient
+      // counter is non-zero and must be restored after the boundary completes.
+      setNodeCounter(opts.ambientOuterCounter);
+
+      const clientRoot = new Root(document);
+      withRehydration(
+        App as any,
+        args,
+        target as unknown as HTMLElement,
+        clientRoot,
+        opts.useBaseOffset ? { baseOffset: K } : undefined,
+      );
+
+      return {
+        warns,
+        counterAfter: getNodeCounter(),
+        identityPreserved: target.firstElementChild === serverFirstChild,
+        serverHtml,
+      };
+    } finally {
+      console.warn = origWarn;
+      cleanupFastContext();
+      TREE.clear();
+      PARENT.clear();
+      CHILD.clear();
+      resetNodeCounter();
+      g.document = prev.d;
+      g.Node = prev.n;
+      g.window = prev.w;
+      window.close();
+    }
+  }
+
+  // Dynamic content emits `$[N]` comment markers, which is exactly where the
+  // counter alignment is load-bearing (`lastItemInStack('comment')` searches by
+  // `$[${getNodeCounter()}]`).
+  const DYNAMIC_TMPL =
+    '<div><span>{{@name}}</span>{{#if @b}}<b>Y</b>{{/if}}</div>';
+
+  test('seeding aligns the boundary: no warnings, server DOM reused, outer counter restored', async () => {
+    const K = 5;
+    const M = 77; // ambient outer counter
+    const res = await roundTrip(
+      DYNAMIC_TMPL,
+      { name: 'Bob', b: true },
+      K,
+      { useBaseOffset: true, ambientOuterCounter: M },
+    );
+
+    // The server emitted a `$[K+...]` comment marker for the {{#if}} anchor.
+    expect(res.serverHtml).toMatch(/\$\[\d+\]/);
+    // No misalignment warnings on the seeded path.
+    expect(
+      res.warns.filter((w) => w.includes('Unable to find comment node')),
+    ).toHaveLength(0);
+    expect(
+      res.warns.filter((w) => w.includes('withRehydrationStack is not empty')),
+    ).toHaveLength(0);
+    // The server DOM nodes were rehydrated in place (identity preserved).
+    expect(res.identityPreserved).toBe(true);
+    // The outer (ambient) counter is restored for the enclosing client root.
+    expect(res.counterAfter).toBe(M);
+  }, 15000);
+
+  test('without baseOffset the offset-K boundary misaligns (seeding is load-bearing)', async () => {
+    const K = 5;
+    const M = 77;
+    const res = await roundTrip(
+      DYNAMIC_TMPL,
+      { name: 'Bob', b: true },
+      K,
+      { useBaseOffset: false, ambientOuterCounter: M },
+    );
+
+    // Seeding to 0 (old behavior) looks for `$[<small>]` but the server wrote
+    // `$[K+...]`, so the comment-node lookup misses -> warning fires.
+    expect(
+      res.warns.filter((w) => w.includes('Unable to find comment node')).length,
+    ).toBeGreaterThan(0);
+    // Even on this path the outer counter is restored (no leak into the
+    // enclosing root).
+    expect(res.counterAfter).toBe(M);
+  }, 15000);
 });

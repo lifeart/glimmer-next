@@ -1,7 +1,7 @@
 import { Component } from '@/core/component-class';
 import { renderComponent } from '@/core/dom';
 import { runDestructors } from '@/core/destroy';
-import { createRoot, getNodeCounter, resetNodeCounter, Root } from '@/core/dom';
+import { createRoot, getNodeCounter, setNodeCounter, Root } from '@/core/dom';
 import { HTMLRehydrationBrowserDOMApi } from '@/core/ssr/rehydration-dom-api';
 import { SVGRehydrationBrowserDOMApi } from '@/core/ssr/svg-rehydration-dom-api';
 import { MathMLRehydrationBrowserDOMApi } from '@/core/ssr/mathml-rehydration-dom-api';
@@ -131,6 +131,7 @@ export function withRehydration(
   args: Record<string, unknown>,
   targetNode: HTMLElement, // the node to render the component into
   root: Root = createRoot(),
+  options?: { baseOffset?: number },
 ) {
   const api = new HTMLRehydrationBrowserDOMApi(document);
   // Track all APIs created during rehydration for upgrading after completion
@@ -155,10 +156,20 @@ export function withRehydration(
     },
   };
 
+  // Capture the OUTER counter BEFORE the try (so it is visible on both the
+  // success tail and the catch path — a `const` inside the try block would not
+  // be in scope in `catch`). `pushToStack` does not mutate NODE_COUNTER, so
+  // this value is identical to the counter at the original reset site.
+  const __outerNodeCounter = getNodeCounter();
+
   try {
     setRehydrationScheduled(true);
     pushToStack(targetNode, true);
-    resetNodeCounter();
+    // Seed the counter at the server-recorded base offset (for a nested /
+    // partial-rehydration boundary) instead of resetting to 0. Top-level
+    // rehydration passes no `baseOffset` → seeds to 0 and `__outerNodeCounter`
+    // is 0, so behavior is byte-identical to today.
+    setNodeCounter(options?.baseOffset ?? 0);
     cleanupFastContext();
     provideContext(root, RENDERING_CONTEXT, api);
     provideContext(root, API_FACTORY_CONTEXT, apiFactory);
@@ -193,6 +204,8 @@ export function withRehydration(
     }
     setRehydrationScheduled(false);
     nodesMap.clear();
+    // Restore the outer counter (no-op at top level where it was 0).
+    setNodeCounter(__outerNodeCounter);
 
     // Upgrade all rehydration APIs to standard browser API methods
     // Note: Must use getOwnPropertyNames since class methods are non-enumerable
@@ -217,7 +230,7 @@ export function withRehydration(
     withRehydrationStack.length = 0;
     nodesMap.clear();
     runDestructors(root);
-    resetNodeCounter();
+    setNodeCounter(__outerNodeCounter);
     throw e;
   }
 }

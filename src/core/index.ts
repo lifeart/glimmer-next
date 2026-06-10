@@ -36,6 +36,14 @@ export * from '@/core/dom';
 
 export { Root, createRoot } from '@/core/root';
 
+// Rehydration entry points (close the public-barrel export gap so the ember
+// dual-backend delegate can reach them from `@lifeart/gxt`).
+export {
+  withRehydration,
+  isRehydrationScheduled,
+  lastItemInStack,
+} from '@/core/ssr/rehydration';
+
 export * from '@/core/helpers/index';
 export { $template, $args, $fwProp } from '@/core/shared';
 export { syncDom, takeRenderingControl } from '@/core/runtime';
