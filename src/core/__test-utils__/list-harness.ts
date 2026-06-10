@@ -4,16 +4,17 @@
  * control-flow/list.recycle.test.ts).
  *
  * The perf-harness contract is "identical methodology across variants" —
- * timing, item shape and the mount ritual live HERE so the files can't drift
- * apart silently. Variants differ only in their template string and scenario
- * list.
+ * timing, item shape, the root component and the mount ritual live HERE so
+ * the files can't drift apart silently. Variants differ only in the each key
+ * and their scenario list.
  */
 import { Component } from '../component';
-import { RENDERED_NODES_PROPERTY, addToTree } from '../shared';
+import { RENDERED_NODES_PROPERTY, addToTree, $template } from '../shared';
 import { $_c, $_args, $_edp } from '../dom';
 import { cellFor } from '../reactive';
 import { renderElement } from '../render-core';
 import {
+  template,
   setupGlobalScope,
   GXT_RUNTIME_SYMBOLS,
 } from '../../../plugins/runtime-compiler';
@@ -43,6 +44,45 @@ export function buildItems(count: number, labelFor?: (i: number) => string): Har
     data.push(item);
   }
   return data;
+}
+
+/**
+ * The Krausest-shaped bench root: one static-ish <tr> per item, a reactive
+ * text binding (per-item label cell) and two bindings on the shared
+ * `_selected` cell (the select fan-out path). `eachKey` is the only variant
+ * knob — `"id"` for the keyed harness, `"@recycle"` for the recycling one.
+ */
+export function defineBenchRoot(eachKey: string): new (args: any) => Component<any> & {
+  _items: HarnessItem[];
+  _selected: number;
+  readonly items: HarnessItem[];
+} {
+  const LIST_TEMPLATE = `
+    <table><tbody>
+      {{#each this.items key="${eachKey}" as |item|}}
+        <tr class={{this.rowClass item.id}}>
+          <td>{{item.id}}</td>
+          <td><a class={{this.rowClass item.id}}>{{item.label}}</a></td>
+          <td><span>x</span></td>
+        </tr>
+      {{/each}}
+    </tbody></table>
+  `;
+  class BenchRoot extends Component {
+    _items: HarnessItem[] = [];
+    _selected = 0;
+    constructor(args: any) {
+      super(args);
+      cellFor(this as any, '_items');
+      cellFor(this as any, '_selected');
+    }
+    get items() {
+      return this._items;
+    }
+    rowClass = (id: number) => (this._selected === id ? 'danger' : '');
+    [$template] = template(LIST_TEMPLATE);
+  }
+  return BenchRoot as any;
 }
 
 /** Drain the microtask-scheduled syncDom. */

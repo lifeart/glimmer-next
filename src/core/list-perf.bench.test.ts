@@ -1,69 +1,33 @@
 /**
  * @vitest-environment happy-dom
  *
- * List performance harness — shared measurement methodology for the
- * {{#each}} tracking-context experiments (see RESEARCH_LIST_TRACKING_OPTIMIZATION.md).
+ * List performance harness for the keyed {{#each}} hot paths (see
+ * RESEARCH_LIST_TRACKING_OPTIMIZATION.md for the cost analysis and measured
+ * history). Methodology — item shape, timing, root component, mount ritual —
+ * lives in __test-utils__/list-harness.ts and is shared with the recycle
+ * variant so comparisons stay apples-to-apples. Results print as one JSON
+ * line prefixed with PERF_RESULTS_JSON.
  *
- * IMPORTANT FOR EXPERIMENT BRANCHES: do NOT change the scenarios, item shape,
- * iteration counts, or timing methodology — only the framework internals (or,
- * for opt-in features, the template/flags marked EXPERIMENT-TUNABLE below).
- * The shared methodology helpers live in __test-utils__/list-harness.ts.
- * Results print as a single JSON line prefixed with PERF_RESULTS_JSON so they
- * can be collected mechanically.
- *
- * Caveat: happy-dom measures JS-side cost (which is what these experiments
- * target). Browser-level DOM wins (layout, native cloneNode) are NOT captured.
+ * Caveat: happy-dom measures JS-side cost only — browser-level effects
+ * (layout, native cloneNode) are not captured.
  *
  * Gated behind RUN_LIST_PERF=1: the full matrix takes ~40-90s, which would
  * blow the CI vitest job's 4-minute budget. Run locally with:
  *   RUN_LIST_PERF=1 npx vitest run src/core/list-perf.bench.test.ts
  */
 import { describe, test, beforeEach, afterEach } from 'vitest';
-import { Component } from './component';
-import { $template } from './shared';
 import { createDOMFixture, type DOMFixture } from './__test-utils__';
-import { cellFor } from './reactive';
-import { template } from '../../plugins/runtime-compiler';
 import {
   buildItems,
   settle,
   timed,
   median,
   mountRoot,
+  defineBenchRoot,
   setupRuntimeTemplateGlobals,
-  type HarnessItem,
 } from './__test-utils__/list-harness';
 
-// Each-body shape mirrors the Krausest Row: one static-ish <tr>, a reactive
-// text binding (per-item cell) and TWO bindings on the shared `selected`
-// cell (the select fan-out path). EXPERIMENT-TUNABLE: experiments may render
-// an alternative template variant ADDITIONALLY, never instead.
-const LIST_TEMPLATE = `
-  <table><tbody>
-    {{#each this.items key="id" as |item|}}
-      <tr class={{this.rowClass item.id}}>
-        <td>{{item.id}}</td>
-        <td><a class={{this.rowClass item.id}}>{{item.label}}</a></td>
-        <td><span>x</span></td>
-      </tr>
-    {{/each}}
-  </tbody></table>
-`;
-
-class BenchRoot extends Component {
-  _items: HarnessItem[] = [];
-  _selected = 0;
-  constructor(args: any) {
-    super(args);
-    cellFor(this as any, '_items');
-    cellFor(this as any, '_selected');
-  }
-  get items() {
-    return this._items;
-  }
-  rowClass = (id: number) => (this._selected === id ? 'danger' : '');
-  [$template] = template(LIST_TEMPLATE);
-}
+const BenchRoot = defineBenchRoot('id');
 
 describe('list-perf harness', () => {
   let fixture: DOMFixture;

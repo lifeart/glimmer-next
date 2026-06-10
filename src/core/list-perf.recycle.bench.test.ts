@@ -4,10 +4,10 @@
  * Perf bench: opt-in row recycling — "sliding window of references"
  * (reference-swap variant, RESEARCH_LIST_TRACKING_OPTIMIZATION.md §2.A2).
  *
- * Methodology (timed/settle/median, ROUNDS=5, happy-dom, item shape) is
- * shared with src/core/list-perf.bench.test.ts via
+ * Methodology (timed/settle/median, ROUNDS=5, happy-dom, item shape, root
+ * component) is shared with src/core/list-perf.bench.test.ts via
  * __test-utils__/list-harness.ts — the comparison stays apples-to-apples by
- * construction. The ONLY template difference is the opt-in `key="@recycle"`.
+ * construction. The ONLY difference is the opt-in `key="@recycle"`.
  *
  * Headline comparison: `replaceAll1k` here vs the standard harness's
  * `replace1k` (destroy+create). Correctness-with-reactivity is proven by
@@ -27,49 +27,21 @@
  * recycling runs ungated in src/core/control-flow/list.recycle.test.ts.
  */
 import { describe, test, beforeEach, afterEach } from 'vitest';
-import { Component } from './component';
-import { $template } from './shared';
 import { createDOMFixture, type DOMFixture } from './__test-utils__';
-import { cellFor } from './reactive';
-import { template } from '../../plugins/runtime-compiler';
 import {
   buildItems,
   settle,
   timed,
   median,
   mountRoot,
+  defineBenchRoot,
   setupRuntimeTemplateGlobals,
   type HarnessItem,
 } from './__test-utils__/list-harness';
 
-// Identical body shape to the shared harness; the ONLY change is the opt-in
-// recycle sentinel key (rows are reused by position, never destroyed).
-const LIST_TEMPLATE = `
-  <table><tbody>
-    {{#each this.items key="@recycle" as |item|}}
-      <tr class={{this.rowClass item.id}}>
-        <td>{{item.id}}</td>
-        <td><a class={{this.rowClass item.id}}>{{item.label}}</a></td>
-        <td><span>x</span></td>
-      </tr>
-    {{/each}}
-  </tbody></table>
-`;
-
-class BenchRoot extends Component {
-  _items: HarnessItem[] = [];
-  _selected = 0;
-  constructor(args: any) {
-    super(args);
-    cellFor(this as any, '_items');
-    cellFor(this as any, '_selected');
-  }
-  get items() {
-    return this._items;
-  }
-  rowClass = (id: number) => (this._selected === id ? 'danger' : '');
-  [$template] = template(LIST_TEMPLATE);
-}
+// Identical root/body shape to the keyed harness; the ONLY difference is the
+// opt-in recycle sentinel key (rows are reused by position, never destroyed).
+const BenchRoot = defineBenchRoot('@recycle');
 
 describe('list-perf recycle harness', () => {
   let fixture: DOMFixture;
