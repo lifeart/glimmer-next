@@ -83,6 +83,14 @@ import {
 
 // Import reactive primitives for Ember integration
 import { cellFor, formula, cell, tagsToRevalidate, cellsMap } from '../src/core/reactive';
+
+// Opt-in row recycling entry points (key="@recycle"). Live in a dedicated
+// module so they stay tree-shakable for compiled-ahead apps; the runtime
+// compiler must still expose them for runtime-compiled templates.
+import {
+  $_eachRecycled,
+  $_eachSyncRecycled,
+} from '../src/core/control-flow/list-recycle';
 import { effect } from '../src/core/vm';
 import { syncDom } from '../src/core/runtime';
 import { ensureReactiveCollectionsPatched } from '../src/core/reactive-collections';
@@ -110,6 +118,8 @@ export const GXT_RUNTIME_SYMBOLS = {
   $_if,
   $_each,
   $_eachSync,
+  $_eachRecycled,
+  $_eachSyncRecycled,
   $_slot,
   $_edp,
   $_args,

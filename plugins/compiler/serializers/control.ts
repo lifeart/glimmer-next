@@ -13,6 +13,12 @@ import { SYMBOLS } from './symbols';
 import { buildValue } from './value';
 import { B, serializeJS, type JSExpression, type JSStatement } from '../builder';
 
+// Sentinel each-key that opts a block into row recycling. Mirrors RECYCLE_KEY
+// in src/core/control-flow/list-recycle.ts (no cross-boundary import: plugins
+// must not pull runtime modules). Detected at compile time so the recycle
+// runtime stays tree-shakable — see buildEach.
+const RECYCLE_KEY = '@recycle';
+
 // Forward declarations - set from index.ts to avoid circular dependency
 let buildChildrenExprs: (ctx: CompilerContext, children: readonly HBSChild[], ctxName: string) => JSExpression[];
 let nextCtxName: (ctx: CompilerContext) => string;
@@ -198,7 +204,24 @@ function buildEach(
   // Async iteration is the correct default; opt-in `sync=true` on the
   // block (e.g. `{{#each items sync=true as |item|}}`) keeps the
   // synchronous-teardown variant available for hosts that need it.
-  const fnName = control.isSync ? SYMBOLS.EACH_SYNC : SYMBOLS.EACH;
+  //
+  // Opt-in row recycling: `key="@recycle"` routes through the dedicated
+  // `$_eachRecycled` / `$_eachSyncRecycled` entry points (src/core/
+  // control-flow/list-recycle.ts) instead of `$_each` / `$_eachSync`.
+  // Resolving the sentinel at COMPILE time keeps the ~400-line recycle
+  // runtime tree-shakable: apps that never use key="@recycle" never import
+  // the recycled entry points, so bundlers drop the module entirely; the
+  // list classes themselves carry only a tiny dispatch hook. The runtime
+  // entry points accept the same positional args (the key slot is ignored —
+  // recycled rows are positional).
+  const isRecycled = eachKey === RECYCLE_KEY;
+  const fnName = isRecycled
+    ? control.isSync
+      ? SYMBOLS.EACH_SYNC_RECYCLED
+      : SYMBOLS.EACH_RECYCLED
+    : control.isSync
+      ? SYMBOLS.EACH_SYNC
+      : SYMBOLS.EACH;
 
   // Check for stable children
   const hasStable = hasStableChildsForControlNode(control.children);
