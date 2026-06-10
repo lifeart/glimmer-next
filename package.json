@@ -50,6 +50,9 @@
     "dist/*.d.ts",
     "compiler.d.ts"
   ],
+  "sideEffects": [
+    "./dist/gxt.ember-inspector.es.js"
+  ],
   "module": "./dist/gxt.index.es.js",
   "types": "./dist/index.d.ts",
   "exports": {
