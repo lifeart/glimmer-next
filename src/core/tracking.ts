@@ -61,3 +61,20 @@ export const setParentContext = (value: ComponentLike | null): void => {
 export const getParentContext = (): any => {
   return TREE.get(parentContextStack[parentContextStack.length - 1]!);
 };
+
+/**
+ * Snapshot the parent-context stack contents (root-boundary only, never per-node).
+ */
+export function snapshotParentContext(): number[] {
+  return parentContextStack.slice();
+}
+
+/**
+ * Refill the parent-context stack from a snapshot. Keeps the `const` binding
+ * (and the dev-mode `window.parentContext` reference) valid by mutating in place
+ * rather than reassigning. At a balanced root boundary the depth is ~0.
+ */
+export function restoreParentContext(s: readonly number[]): void {
+  parentContextStack.length = 0;
+  for (let i = 0; i < s.length; i++) parentContextStack.push(s[i]!);
+}

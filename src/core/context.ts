@@ -158,6 +158,14 @@ export function cleanupFastContext(): void {
   rootRenderingContext = null;
 }
 
+export function snapshotRenderingContext(): { fast: unknown; root: unknown } {
+  return { fast: fastRenderingContext, root: rootRenderingContext };
+}
+export function restoreRenderingContext(s: { fast: unknown; root: unknown }): void {
+  fastRenderingContext = s.fast;
+  rootRenderingContext = s.root;
+}
+
 export function provideContext<T>(
   ctx: ComponentLike | RootLike,
   key: symbol,

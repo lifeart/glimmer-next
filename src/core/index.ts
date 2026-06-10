@@ -36,6 +36,13 @@ export * from '@/core/dom';
 
 export { Root, createRoot } from '@/core/root';
 
+// Render-root isolation (synchronous, opt-in) for SSR drivers.
+export {
+  withRenderRoot,
+  createRenderRootState,
+  type RenderRootState,
+} from '@/core/render-root';
+
 // Rehydration entry points (close the public-barrel export gap so the ember
 // dual-backend delegate can reach them from `@lifeart/gxt`).
 export {
