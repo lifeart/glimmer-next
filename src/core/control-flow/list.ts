@@ -18,6 +18,7 @@ import {
   formula,
   deepFnValue,
   registerLeafOwnersForFormula,
+  type AnyCell,
 } from '@/core/reactive';
 import { opcodeFor } from '@/core/vm';
 import {
@@ -46,6 +47,14 @@ import {
   type Destructors,
 } from '../glimmer/destroyable';
 import type { StaticBlockDef } from '@/core/static-block';
+import {
+  framesQualify,
+  frameHostHooksInstalled,
+  syncFrames,
+  destroyFrameState,
+  type EachFrame,
+  type FrameSharedEntry,
+} from './list-frames';
 import { setParentContext, getParentContext } from '../tracking';
 import { HOST_HOOKS } from '@/core/host-hooks';
 
@@ -560,6 +569,14 @@ export class BasicListComponent<T extends { id: number }> {
   blockValues:
     | ((item: T, index: number | MergedCell, ctx: unknown) => readonly unknown[])
     | null = null;
+  // Frame mode (static-block v2, src/core/control-flow/list-frames.ts):
+  // qualifying block-bodied lists keep ONE Frame record per row instead of
+  // the marker + 7-map-entry + rowCtx + per-binding-formula bookkeeping.
+  // Decided once in the constructor; when true, syncList dispatches to
+  // syncFrames and the v1 keyMap/marker machinery is never populated.
+  frameMode = false;
+  frames: Map<string, EachFrame<T>> | null = null;
+  frameShared: Map<AnyCell, FrameSharedEntry> | null = null;
   constructor(
     {
       tag,
@@ -628,6 +645,26 @@ export class BasicListComponent<T extends { id: number }> {
     ) {
       this.block = block;
       this.blockValues = blockValues;
+      // Frame mode (static-block v2): single-root no-event block bodies skip
+      // the per-row marker/map/rowCtx/formula bookkeeping entirely (see
+      // list-frames.ts for the gate rationale). Bodies reading `{{index}}`,
+      // SSR/rehydration renders and Ember hosts stay on v1.
+      if (
+        !this.hasIndex &&
+        !IN_SSR_ENV &&
+        !isRehydrationScheduled() &&
+        framesQualify(block) &&
+        !frameHostHooksInstalled()
+      ) {
+        this.frameMode = true;
+        // Frame teardown is owned by the LIST: when this instance is
+        // destroyed, reclaim every frame's subscriptions + the list-level
+        // shared-dep subscriptions. Idempotent with the subclass destructor's
+        // `syncList([])` (whichever runs first does the work).
+        registerDestructor(this, () => {
+          destroyFrameState(this);
+        });
+      }
     }
     this.setupKeyForItem();
     // Register destructor to clean up the list's own TREE/PARENT/CHILD entries.
@@ -1669,6 +1706,25 @@ export class SyncListComponent<
       this.recycleImpl(this, items);
       return;
     }
+    // Frame mode (static-block v2): the entire keyed sync runs over Frame
+    // records (list-frames.ts). Fully synchronous — frame rows carry no
+    // modifiers/components, so no destructor cascade can re-enter.
+    if (this.frameMode) {
+      this._syncInProgress = true;
+      this._dupItemsRef = null;
+      try {
+        if (items.length > 0 && this.inverseContent !== null) {
+          this.destroyInverseSync();
+        }
+        syncFrames(this, items);
+        if (items.length === 0 && this.inverseFn) {
+          this.renderInverse();
+        }
+      } finally {
+        this._syncInProgress = false;
+      }
+      return;
+    }
     this._syncInProgress = true;
     // Invalidate the duplicate-key detection cache for this sync pass — a
     // mutated-in-place array would otherwise carry stale verdict forward.
@@ -2051,6 +2107,20 @@ export class AsyncListComponent<
     // re-entry guard lives inside the impl, shared with the sync subclass.
     if (this.recycleImpl !== undefined) {
       this.recycleImpl(this, items);
+      return;
+    }
+    // Frame mode (static-block v2): synchronous frame sync (no async
+    // destructors exist on frame rows — modifiers/events bail to v1). The
+    // inverse keeps this subclass's async teardown semantics.
+    if (this.frameMode) {
+      this._dupItemsRef = null;
+      if (items.length > 0 && this.inverseContent !== null) {
+        await this.destroyInverseAsync();
+      }
+      syncFrames(this, items);
+      if (items.length === 0 && this.inverseFn) {
+        this.renderInverse();
+      }
       return;
     }
     // Invalidate per-items-array duplicate-key cache (see SyncListComponent)

@@ -39,6 +39,8 @@ export interface StaticBlockSlot {
 }
 
 export interface StaticBlockDef {
+  /** The static slot table (frame mode reads kinds/names/paths from here). */
+  readonly slots: readonly StaticBlockSlot[];
   /**
    * Clone the block and wire the positional `values` (matching the slot
    * table) into the slot nodes. Binding destructors are pushed into the
@@ -50,6 +52,12 @@ export interface StaticBlockDef {
     values: readonly unknown[],
     destructors: DestructorFn[],
   ): Node;
+  /**
+   * Frame-mode clone (src/core/control-flow/list-frames.ts): clone the block
+   * and resolve every slot node ONCE, WITHOUT wiring any bindings. The frame
+   * runtime applies/updates slot values itself (no per-binding formulas).
+   */
+  cloneFrame(api: DOMApi): { root: Node; nodes: Node[] };
 }
 
 /**
@@ -94,7 +102,7 @@ function resolvePath(root: Node, path: readonly number[]): Node {
 
 class StaticBlock implements StaticBlockDef {
   private html: string;
-  private slots: readonly StaticBlockSlot[];
+  readonly slots: readonly StaticBlockSlot[];
   private roots: WeakMap<Document, Node>;
   constructor(
     html: string,
@@ -105,11 +113,8 @@ class StaticBlock implements StaticBlockDef {
     this.slots = slots;
     this.roots = roots;
   }
-  create(
-    api: DOMApi,
-    values: readonly unknown[],
-    destructors: DestructorFn[],
-  ): Node {
+  /** Parse-once (per document) + cloneNode — shared by create/cloneFrame. */
+  private cloneRoot(api: DOMApi): Node {
     const doc = documentFor(api);
     let proto = this.roots.get(doc);
     if (proto === undefined) {
@@ -129,7 +134,24 @@ class StaticBlock implements StaticBlockDef {
       proto = content.firstChild!;
       this.roots.set(doc, proto);
     }
-    const root = proto.cloneNode(true);
+    return proto.cloneNode(true);
+  }
+  cloneFrame(api: DOMApi): { root: Node; nodes: Node[] } {
+    const root = this.cloneRoot(api);
+    const slots = this.slots;
+    const nodes: Node[] = new Array(slots.length);
+    for (let i = 0; i < slots.length; i++) {
+      const p = slots[i].p;
+      nodes[i] = p.length === 0 ? root : resolvePath(root, p);
+    }
+    return { root, nodes };
+  }
+  create(
+    api: DOMApi,
+    values: readonly unknown[],
+    destructors: DestructorFn[],
+  ): Node {
+    const root = this.cloneRoot(api);
     const slots = this.slots;
     for (let i = 0; i < slots.length; i++) {
       const slot = slots[i];
