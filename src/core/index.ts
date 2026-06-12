@@ -55,6 +55,10 @@ export * from '@/core/helpers/index';
 export { $template, $args, $fwProp } from '@/core/shared';
 export { syncDom, takeRenderingControl } from '@/core/runtime';
 export { registerHostHooks, type HostHooks } from '@/core/host-hooks';
+export {
+  registerHostManagers,
+  type HostManagers,
+} from '@/core/manager-integration';
 export { setIsRendering, isRendering } from '@/core/reactive';
 export { flushCellOpcodes } from '@/core/reactive';
 export { setOpcodeErrorReporter, type OpcodeErrorReporter } from '@/core/reactive';
