@@ -293,37 +293,55 @@ export function relatedTagsForCell(cell: Cell) {
  * error is surfaced to the host via the opcode-error reporter (NOT swallowed).
  */
 export function flushCellOpcodes(cell: Cell | MergedCell): void {
-  // Only execute the cell's own opcodes when it actually has some — for cells
-  // that exist purely as subscription targets (selector key cells, recycle
-  // holder cells) an unguarded executeTagSync would MATERIALIZE an empty
-  // pooled ops array into the global opsForTag map per flush.
-  const ownOps = opsForTag.get((cell as Cell).id);
-  if (ownOps !== undefined && ownOps.length > 0) {
-    try {
-      executeTagSync(cell);
-    } catch (e) {
-      // Don't abort the flush, but report to the host (mirrors the normal
-      // drain's handleOpcodeError reporter path) rather than silently
-      // swallowing.
-      reportOpcodeError(e, cell);
+  // Opcode execution is a drain, NOT part of any tracking scope. A flush can
+  // be triggered from INSIDE an active tracking frame (e.g. a getter read by
+  // a frame-mode slot probe, or a formula evaluation, calling
+  // `applyCellUpdateSync`). Two corruptions follow if the tracker leaks in:
+  //   1. `MergedCell.value` short-circuits dep re-collection while a tracker
+  //      is active — but this flush has already CONSUMED the formula's
+  //      `relatedTags` entry below, so the formula would stay permanently
+  //      unsubscribed from its deps (observed: an {{#each}} source formula
+  //      going dead after a thunk-triggered flush).
+  //   2. every leaf cell read by the executed opcodes would be tracked into
+  //      the CALLER's frame, attributing foreign deps to it.
+  // Suspend the tracker for the duration of the flush; restore after.
+  const prevTracker = getTracker();
+  if (prevTracker !== null) setTracker(null);
+  try {
+    // Only execute the cell's own opcodes when it actually has some — for
+    // cells that exist purely as subscription targets (selector key cells,
+    // recycle holder cells) an unguarded executeTagSync would MATERIALIZE an
+    // empty pooled ops array into the global opsForTag map per flush.
+    const ownOps = opsForTag.get((cell as Cell).id);
+    if (ownOps !== undefined && ownOps.length > 0) {
+      try {
+        executeTagSync(cell);
+      } catch (e) {
+        // Don't abort the flush, but report to the host (mirrors the normal
+        // drain's handleOpcodeError reporter path) rather than silently
+        // swallowing.
+        reportOpcodeError(e, cell);
+      }
     }
-  }
-  const subTags = relatedTags.get((cell as Cell).id);
-  if (subTags === undefined) {
-    return;
-  }
-  relatedTags.delete((cell as Cell).id);
-  const ordered = [...subTags];
-  subTags.clear();
-  if (ordered.length > 1) {
-    ordered.sort((a, b) => a.id - b.id);
-  }
-  for (const tag of ordered) {
-    try {
-      executeTagSync(tag);
-    } catch (e) {
-      reportOpcodeError(e, tag);
+    const subTags = relatedTags.get((cell as Cell).id);
+    if (subTags === undefined) {
+      return;
     }
+    relatedTags.delete((cell as Cell).id);
+    const ordered = [...subTags];
+    subTags.clear();
+    if (ordered.length > 1) {
+      ordered.sort((a, b) => a.id - b.id);
+    }
+    for (const tag of ordered) {
+      try {
+        executeTagSync(tag);
+      } catch (e) {
+        reportOpcodeError(e, tag);
+      }
+    }
+  } finally {
+    if (prevTracker !== null) setTracker(prevTracker);
   }
 }
 
@@ -587,9 +605,10 @@ function handleOpcodeError(e: any, tag: Cell | MergedCell, opcode: tagOp | null,
 }
 
 // Surface an opcode error from a context that has no `ops` array to splice
-// (e.g. the synchronous `flushCellOpcodes` path). Dev-logs and forwards to the
-// host reporter; never throws. Keeps flush errors from being silently dropped.
-function reportOpcodeError(e: any, tag: Cell | MergedCell): void {
+// (e.g. the synchronous `flushCellOpcodes` path, or frame-mode's per-slot
+// isolation in list-frames.ts). Dev-logs and forwards to the host reporter;
+// never throws. Keeps such errors from being silently dropped.
+export function reportOpcodeError(e: any, tag: Cell | MergedCell): void {
   if (IS_DEV_MODE) {
     console.error({ message: 'Error executing tag (flush)', error: e, tag });
   }

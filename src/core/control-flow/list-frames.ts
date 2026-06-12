@@ -79,6 +79,7 @@ import {
   setTracker,
   cellsMap,
   deepFnValue,
+  reportOpcodeError,
 } from '@/core/reactive';
 import { isFn, isEmpty, isTagLike } from '@/core/shared';
 import {
@@ -166,18 +167,45 @@ function subscribeOp(tag: AnyCell, op: tagOp): () => void {
 }
 
 // ---------------------------------------------------------------------------
-// Reusable scratch (module-level; frame syncs never nest: frame bodies contain
-// no control flow, so no inner list can sync while a frame sync is mid-flight,
-// and slot runs are synchronous + non-reentrant)
+// Reusable scratch (module-level). Frame bodies contain no control flow, so
+// no inner list renders DURING a frame sync — but slot thunks run USER
+// getters, and user code can synchronously flush opcodes
+// (`applyCellUpdateSync` → `flushCellOpcodes`), which may re-enter this
+// module: another list's `syncFrames` while ours is mid-pass, or a nested
+// `runSlot` while an outer probe is mid-collection. Both entry points are
+// therefore depth-guarded: the outermost invocation uses the shared
+// module-level scratch (the hot path — zero allocation), any nested
+// invocation falls back to fresh per-call structures.
 // ---------------------------------------------------------------------------
 const PROBE: Set<Cell> = new Set();
-const KEYS: string[] = [];
-const KEYSET: Set<string> = new Set();
-const EXIST_KEYS: string[] = [];
-const EXIST_OLD: number[] = [];
-const EXIST_NEW: number[] = [];
-const LIS_OUT: Set<number> = new Set();
-const MOVE: Set<string> = new Set();
+/** True while the shared PROBE set is mid-collection (see runSlot). */
+let probeBusy = false;
+
+interface FrameSyncScratch {
+  keys: string[];
+  keyset: Set<string>;
+  existKeys: string[];
+  existOld: number[];
+  existNew: number[];
+  lisOut: Set<number>;
+  move: Set<string>;
+}
+
+function makeSyncScratch(): FrameSyncScratch {
+  return {
+    keys: [],
+    keyset: new Set(),
+    existKeys: [],
+    existOld: [],
+    existNew: [],
+    lisOut: new Set(),
+    move: new Set(),
+  };
+}
+
+const SYNC_SCRATCH = makeSyncScratch();
+/** >0 while a syncFramesAny is on the stack (nested syncs get fresh scratch). */
+let syncDepth = 0;
 
 type AnyList = BasicListComponent<any>;
 
@@ -195,11 +223,12 @@ function isItemCell(
   return false;
 }
 
-/** Route the cells PROBE collected for slot `s` (grow-only). */
+/** Route the cells `probe` collected for slot `s` (grow-only). */
 function routeSlotDeps(
   list: AnyList,
   frame: EachFrame<unknown>,
   s: number,
+  probe: Set<Cell>,
 ): void {
   const item = frame.item;
   let bag = frame.bag;
@@ -208,7 +237,7 @@ function routeSlotDeps(
     // `@tracked` getters) — refresh the snapshot before classifying
     bag = frame.bag = cellsMap.get(item as object);
   }
-  for (const cell of PROBE) {
+  for (const cell of probe) {
     if (isItemCell(cell, item, bag)) {
       let cells = frame.itemCells;
       if (cells === null) {
@@ -222,9 +251,10 @@ function routeSlotDeps(
         if (op === null) {
           op = frame.itemOp = () => {
             const slots = frame.itemSlots;
-            if (slots === null) return;
+            const itemCells = frame.itemCells;
+            if (slots === null || itemCells === null) return;
             for (let i = 0; i < slots.length; i++) {
-              runSlot(list, frame, slots[i], false);
+              runSlotGuarded(list, frame, slots[i], itemCells[0]);
             }
           };
         }
@@ -249,7 +279,7 @@ function routeSlotDeps(
               // `cell` is this entry's own dep — when a re-probe yields
               // exactly it again (the overwhelmingly common stable-dep
               // case), routing is provably already in place and skipped.
-              runSlot(list, f, slots[i], false, cell);
+              runSlotGuarded(list, f, slots[i], cell, cell);
             }
           }
         };
@@ -354,22 +384,33 @@ function runSlot(
   let isStatic = false;
   if (isFn(raw) || isTagLike(raw)) {
     const prevTracker = getTracker();
-    PROBE.clear();
-    setTracker(PROBE);
+    // Re-entrancy guard: a thunk getter can synchronously flush opcodes
+    // (`applyCellUpdateSync` → `flushCellOpcodes`) and re-run another slot
+    // while THIS probe is mid-collection. The nested run must not clear the
+    // outer's already-tracked deps — give it a private set instead of the
+    // shared scratch (the outermost run keeps the zero-alloc path).
+    const probe: Set<Cell> = probeBusy ? new Set() : PROBE;
+    const owned = probe === PROBE;
+    if (owned) {
+      probeBusy = true;
+      probe.clear();
+    }
+    setTracker(probe);
     try {
       value = isFn(raw) ? deepFnValue(raw) : (raw as AnyCell).value;
     } finally {
       setTracker(prevTracker);
+      if (owned) probeBusy = false;
     }
-    if (PROBE.size > 0) {
+    if (probe.size > 0) {
       // sweep fast path: the probe re-found exactly the cell whose op is
       // running — its (cell → slot) routing already exists by construction
       if (
-        PROBE.size !== 1 ||
+        probe.size !== 1 ||
         knownCell === undefined ||
-        !PROBE.has(knownCell as Cell)
+        !probe.has(knownCell as Cell)
       ) {
-        routeSlotDeps(list, frame, s);
+        routeSlotDeps(list, frame, s, probe);
       }
     } else if (initial) {
       isStatic = true;
@@ -379,6 +420,33 @@ function runSlot(
     isStatic = initial;
   }
   applySlot(list.api, frame, s, slot, value, initial, isStatic);
+}
+
+/**
+ * Error-isolated slot re-run for the update ops (itemOp / shared sweeps).
+ * Parity with v1's granularity: there each binding is its own formula opcode,
+ * so one throwing binding loses only itself. Frame mode batches many slots
+ * behind ONE op — without isolation a single bad thunk would abort the whole
+ * sweep AND get the batched op spliced out by `handleOpcodeError`, silencing
+ * every row's updates for that cell. Errors are reported through the same
+ * channel the drain uses (dev console + host opcode-error reporter).
+ */
+function runSlotGuarded(
+  list: AnyList,
+  frame: EachFrame<unknown>,
+  s: number,
+  tag: AnyCell,
+  knownCell?: AnyCell,
+): void {
+  if (TRY_CATCH_ERROR_HANDLING) {
+    try {
+      runSlot(list, frame, s, false, knownCell);
+    } catch (e) {
+      reportOpcodeError(e, tag as Cell);
+    }
+  } else {
+    runSlot(list, frame, s, false, knownCell);
+  }
 }
 
 function createFrame(
@@ -516,6 +584,24 @@ export function syncFrames<T extends { id: number }>(
 }
 
 function syncFramesAny(list: AnyList, items: unknown[]): void {
+  // Outermost sync uses the shared zero-alloc scratch; a NESTED sync (user
+  // code inside a slot thunk synchronously flushing another — or this —
+  // list's items cell) gets fresh structures so it can't corrupt the
+  // suspended outer pass.
+  const S = syncDepth === 0 ? SYNC_SCRATCH : makeSyncScratch();
+  syncDepth++;
+  try {
+    syncFramesScratch(list, items, S);
+  } finally {
+    syncDepth--;
+  }
+}
+
+function syncFramesScratch(
+  list: AnyList,
+  items: unknown[],
+  S: FrameSyncScratch,
+): void {
   const api = list.api;
   const bottomMarker = list.bottomMarker;
   let frames = list.frames;
@@ -534,6 +620,8 @@ function syncFramesAny(list: AnyList, items: unknown[]): void {
   }
 
   const keyForItem = list.keyForItem;
+  const KEYS = S.keys;
+  const KEYSET = S.keyset;
 
   // ----- pass 1: keys (position-qualified for duplicates by keyForItem)
   KEYS.length = n;
@@ -579,6 +667,9 @@ function syncFramesAny(list: AnyList, items: unknown[]): void {
   }
 
   // ----- pass 3: create/rebind + collect existing-row order for LIS
+  const EXIST_KEYS = S.existKeys;
+  const EXIST_OLD = S.existOld;
+  const EXIST_NEW = S.existNew;
   EXIST_KEYS.length = 0;
   EXIST_OLD.length = 0;
   EXIST_NEW.length = 0;
@@ -589,21 +680,25 @@ function syncFramesAny(list: AnyList, items: unknown[]): void {
       // built now, inserted by the move phase below (root not yet connected)
       frames.set(key, createFrame(list, items[i], i));
     } else {
-      if (frame.item !== items[i]) {
-        rebindFrame(list, frame, items[i], i);
-      }
+      // Record the OLD position BEFORE any rebind: rebindFrame overwrites
+      // frame.index with the new one, and the LIS below MUST see true old
+      // positions or a ref-swapped row that also moved is never relocated.
       EXIST_KEYS.push(key);
       EXIST_NEW.push(i);
       EXIST_OLD.push(frame.index);
+      if (frame.item !== items[i]) {
+        rebindFrame(list, frame, items[i], i);
+      }
       frame.index = i;
     }
   }
 
   // ----- LIS over the existing rows' old indices (new-list order): only
   // rows OUTSIDE the longest stable subsequence relocate.
+  const MOVE = S.move;
   MOVE.clear();
   if (EXIST_KEYS.length > 1) {
-    const stable = longestIncreasingSubsequence(EXIST_OLD, LIS_OUT);
+    const stable = longestIncreasingSubsequence(EXIST_OLD, S.lisOut);
     for (let j = 0; j < EXIST_KEYS.length; j++) {
       if (!stable.has(j)) {
         MOVE.add(EXIST_KEYS[j]);
