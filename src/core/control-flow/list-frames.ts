@@ -107,6 +107,9 @@ export interface EachFrame<T> {
   itemSlots: number[] | null;
   /** The row's single update op (reused across rebinds). */
   itemOp: tagOp | null;
+  /** `cellsMap.get(item)` snapshot at bind/rebind (item-cell classification —
+   * avoids a WeakMap get per slot run). */
+  bag: Map<string | number | symbol, Cell<unknown>> | undefined;
 }
 
 /** One list-level subscription per distinct shared (non-item) dep cell. */
@@ -199,10 +202,12 @@ function routeSlotDeps(
   s: number,
 ): void {
   const item = frame.item;
-  const bag =
-    item !== null && typeof item === 'object'
-      ? cellsMap.get(item as object)
-      : undefined;
+  let bag = frame.bag;
+  if (bag === undefined && item !== null && typeof item === 'object') {
+    // the probe itself may have materialized the item's first cell (lazy
+    // `@tracked` getters) — refresh the snapshot before classifying
+    bag = frame.bag = cellsMap.get(item as object);
+  }
   for (const cell of PROBE) {
     if (isItemCell(cell, item, bag)) {
       let cells = frame.itemCells;
@@ -241,7 +246,10 @@ function routeSlotDeps(
           if (frames === null) return;
           for (const f of frames.values()) {
             for (let i = 0; i < slots.length; i++) {
-              runSlot(list, f, slots[i], false);
+              // `cell` is this entry's own dep — when a re-probe yields
+              // exactly it again (the overwhelmingly common stable-dep
+              // case), routing is provably already in place and skipped.
+              runSlot(list, f, slots[i], false, cell);
             }
           }
         };
@@ -338,6 +346,7 @@ function runSlot(
   frame: EachFrame<unknown>,
   s: number,
   initial: boolean,
+  knownCell?: AnyCell,
 ): void {
   const slot = list.block!.slots[s];
   const raw = frame.thunks[s];
@@ -353,7 +362,15 @@ function runSlot(
       setTracker(prevTracker);
     }
     if (PROBE.size > 0) {
-      routeSlotDeps(list, frame, s);
+      // sweep fast path: the probe re-found exactly the cell whose op is
+      // running — its (cell → slot) routing already exists by construction
+      if (
+        PROBE.size !== 1 ||
+        knownCell === undefined ||
+        !PROBE.has(knownCell as Cell)
+      ) {
+        routeSlotDeps(list, frame, s);
+      }
     } else if (initial) {
       isStatic = true;
     }
@@ -383,6 +400,10 @@ function createFrame(
     itemUnsubs: null,
     itemSlots: null,
     itemOp: null,
+    bag:
+      item !== null && typeof item === 'object'
+        ? cellsMap.get(item as object)
+        : undefined,
   };
   for (let s = 0; s < k; s++) {
     runSlot(list, frame, s, true);
@@ -418,6 +439,10 @@ function rebindFrame(
   frame.item = item;
   frame.index = index;
   frame.thunks = list.blockValues!(item, index, list);
+  frame.bag =
+    item !== null && typeof item === 'object'
+      ? cellsMap.get(item as object)
+      : undefined;
   const k = list.block!.slots.length;
   for (let s = 0; s < k; s++) {
     runSlot(list, frame, s, false);
