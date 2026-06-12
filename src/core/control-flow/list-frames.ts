@@ -65,6 +65,16 @@
  * Everything else — component bodies, multi-root, nested control flow,
  * modifiers, `...attributes`, duplicate-unsafe constructs — already bailed at
  * the compiler's block extraction and stays on the standard keyed path.
+ *
+ * Dev-tooling caveat: frame rows live ONLY in `list.frames` — the v1 per-row
+ * state (`keyMap` / `indexMap` / `itemMarkers` / rowCtx) is never populated.
+ * Tooling that walks that state sees an empty list: ember-inspector's
+ * render-tree row enumeration (`Array.from(component.keyMap.values())`) shows
+ * no rows for a frame list, and HMR's keyMap component-swap walk has nothing
+ * to visit (benign — frame bodies cannot contain components by
+ * qualification, and a template edit still re-renders through the normal
+ * component-level HMR path). If row-level introspection for frame lists is
+ * ever needed, expose it from `list.frames` directly.
  */
 import type { DOMApi } from '@/core/types';
 import type { StaticBlockDef, StaticBlockSlot } from '@/core/static-block';
