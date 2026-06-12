@@ -743,9 +743,14 @@ export interface CachedCell<T = unknown> {
 export function cached<T>(fn: () => T, debugName?: string): CachedCell<T> {
   let hasValue = false;
   let lastValue: T;
-  let lastDeps: Set<Cell> | null = null;
-  // Per-dep revision snapshot taken when we last ran fn().
-  let lastDepRevisions: Map<number, number> | null = null;
+  // Per-dep revision snapshot taken when we last ran fn(), keyed by the dep
+  // CELL OBJECT (not cell.id): the map doubles as the cache's own dep set for
+  // the clean-read resubscription below and the parent-tracker replay in
+  // `self.value`. Deliberately a SEPARATE container from `tag.relatedCells` —
+  // MergedCell.value reuses/clears `relatedCells` in place as its tracker
+  // buffer, so sharing one Set would wipe the cache's dep bookkeeping right
+  // before a clean read needs it.
+  let lastDepRevisions: Map<Cell, number> | null = null;
   // Global revision at time of last compute. If the global has advanced,
   // SOMETHING has changed (not necessarily a dep we captured). For pure
   // getters that read through non-tracked paths (arrays, plain objects),
@@ -762,16 +767,15 @@ export function cached<T>(fn: () => T, debugName?: string): CachedCell<T> {
   const tag = new MergedCell(() => readThunk(), IS_DEV_MODE ? `cached:${debugName ?? 'unknown'}` : undefined);
 
   function isClean(): boolean {
-    if (!hasValue || lastDeps === null || lastDepRevisions === null) return false;
+    if (!hasValue || lastDepRevisions === null) return false;
     // Fast path: nothing in the whole system has updated since compute.
     if (_globalRevision === lastGlobalRevisionAtCompute) return true;
     // Something moved — if any captured dep's per-cell revision has advanced,
     // the cached value may be stale. Treating zero-dep captures as stale is
     // a safety net for getters that read raw (non-tracked) state.
-    if (lastDeps.size === 0) return false;
-    for (const cell of lastDeps) {
-      const prev = lastDepRevisions.get(cell.id);
-      if (prev === undefined || cell._revision !== prev) return false;
+    if (lastDepRevisions.size === 0) return false;
+    for (const [cell, prev] of lastDepRevisions) {
+      if (cell._revision !== prev) return false;
     }
     return true;
   }
@@ -802,9 +806,8 @@ export function cached<T>(fn: () => T, debugName?: string): CachedCell<T> {
     tag.isConst = localTracker.size === 0;
     tag.relatedCells = localTracker;
     // Snapshot revisions so we can detect staleness cheaply on next read.
-    const snapshot = new Map<number, number>();
-    localTracker.forEach((cell) => snapshot.set(cell.id, cell._revision));
-    lastDeps = localTracker;
+    const snapshot = new Map<Cell, number>();
+    localTracker.forEach((cell) => snapshot.set(cell, cell._revision));
     lastDepRevisions = snapshot;
     lastGlobalRevisionAtCompute = _globalRevision;
     lastValue = value;
@@ -817,7 +820,30 @@ export function cached<T>(fn: () => T, debugName?: string): CachedCell<T> {
   // a single cache-first function prevents the user getter from running
   // an extra time when the sync path invokes tag.value directly.
   function readCached(): T {
-    if (isClean()) return lastValue;
+    if (isClean()) {
+      // Re-establish subscriptions before serving the memoized value. The
+      // drain and flushCellOpcodes CONSUME (clear) a dirty cell's subscriber
+      // set and then re-execute the subscribed tags; a plain formula re-adds
+      // itself via its tracking frame, but this clean path used to return
+      // without touching the dep cells — leaving the tag PERMANENTLY
+      // unsubscribed (a same-value cell.update() triggers exactly that: the
+      // set is consumed, yet no revision moved, so the cache stays clean).
+      // Mirrors bindAllCellsToTag; Set.add is idempotent, so when the sets
+      // were not consumed this is the same hash cost as a membership check.
+      if (lastDepRevisions !== null && lastDepRevisions.size > 0) {
+        lastDepRevisions.forEach((_revision, cell) => {
+          relatedTagsForCell(cell).add(tag);
+          // Keep the inner MergedCell's tracking frame consistent when this
+          // read came through tag.value (executeTag during a drain): forward
+          // the deps so its `finally` re-binds them, keeps isConst false and
+          // leaves tag.relatedCells accurate (destroy() unbinds through it).
+          if (currentTracker !== null) {
+            currentTracker.add(cell);
+          }
+        });
+      }
+      return lastValue;
+    }
     return recompute();
   }
   readThunk = readCached;
@@ -830,15 +856,20 @@ export function cached<T>(fn: () => T, debugName?: string): CachedCell<T> {
     },
     invalidate() {
       hasValue = false;
-      lastDeps = null;
       lastDepRevisions = null;
     },
     get value(): T {
       // Replay known deps into the ambient tracker so outer formulas still
       // depend on the underlying cells even when we short-circuit with the
       // cache. This preserves invalidation semantics for parents.
-      if (currentTracker !== null && lastDeps !== null && lastDeps.size > 0) {
-        lastDeps.forEach((cell) => currentTracker!.add(cell));
+      if (
+        currentTracker !== null &&
+        lastDepRevisions !== null &&
+        lastDepRevisions.size > 0
+      ) {
+        lastDepRevisions.forEach((_revision, cell) =>
+          currentTracker!.add(cell),
+        );
       }
       return readCached();
     },
