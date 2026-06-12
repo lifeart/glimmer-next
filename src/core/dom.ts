@@ -295,7 +295,11 @@ function resolveBindingValue(
   }
 
   const result = $_TO_VALUE(value);
-  if (isTagLike(result)) {
+  // null/undefined const bindings (e.g. `data-x={{undefined}}`, or an inlined
+  // missing @arg) must resolve as empty — `isTagLike` dereferences its
+  // argument and would throw on nullish values. Callers ($attr/$prop) treat
+  // the value via isEmpty and skip the write, matching the lazy-getter path.
+  if (result !== null && result !== undefined && isTagLike(result)) {
     return { result, isReactive: true };
   }
   return { result, isReactive: false };
