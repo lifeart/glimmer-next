@@ -44,6 +44,7 @@ import {
   destroySync,
 } from '../glimmer/destroyable';
 import { setParentContext, getParentContext } from '../tracking';
+import { HOST_HOOKS } from '@/core/host-hooks';
 
 // Re-export getFirstNode for backward compatibility
 export { getFirstNode };
@@ -578,11 +579,13 @@ export class BasicListComponent<T extends { id: number }> {
       // gxt-backend artifact stripper) skip our list-marker comments when
       // pruning empty comments from rendered output. See registration sites
       // in the constructor and updateItems.
-      const _unreg = (
-        globalThis as {
-          __gxtUnregisterListMarker?: (m: Comment) => void;
-        }
-      ).__gxtUnregisterListMarker;
+      const _unreg =
+        HOST_HOOKS.unregisterListMarker ??
+        (
+          globalThis as {
+            __gxtUnregisterListMarker?: (m: Comment) => void;
+          }
+        ).__gxtUnregisterListMarker;
       if (_unreg) {
         for (const marker of this.markerSet) {
           _unreg(marker);
@@ -627,9 +630,10 @@ export class BasicListComponent<T extends { id: number }> {
     // passes (e.g. ember.js's removeGxtArtifacts). The hook is a no-op when
     // no consumer has installed it.
     {
-      const _reg = (
-        globalThis as { __gxtRegisterListMarker?: (m: Comment) => void }
-      ).__gxtRegisterListMarker;
+      const _reg =
+        HOST_HOOKS.registerListMarker ??
+        (globalThis as { __gxtRegisterListMarker?: (m: Comment) => void })
+          .__gxtRegisterListMarker;
       if (_reg) {
         _reg(this.topMarker);
         _reg(this.bottomMarker);
@@ -1023,6 +1027,7 @@ export class BasicListComponent<T extends { id: number }> {
       // read if invoked out of band.
       const _reg =
         this._registerMarkerHook ??
+        HOST_HOOKS.registerListMarker ??
         (globalThis as { __gxtRegisterListMarker?: (m: Comment) => void })
           .__gxtRegisterListMarker;
       if (_reg) _reg(marker);
@@ -1112,9 +1117,10 @@ export class BasicListComponent<T extends { id: number }> {
     // reading it once per updateItems (instead of once per new marker) removes a
     // global-property lookup per row on the create/append path. Stashed on the
     // instance so `_buildAndInsertRow` (the append fast-path) reuses it too.
-    this._registerMarkerHook = (
-      globalThis as { __gxtRegisterListMarker?: (m: Comment) => void }
-    ).__gxtRegisterListMarker;
+    this._registerMarkerHook =
+      HOST_HOOKS.registerListMarker ??
+      (globalThis as { __gxtRegisterListMarker?: (m: Comment) => void })
+        .__gxtRegisterListMarker;
     const _registerMarker = this._registerMarkerHook;
     existKeys.length = 0;
     existNewIdx.length = 0;
@@ -1320,7 +1326,9 @@ export class BasicListComponent<T extends { id: number }> {
         if (this.boundItemMap !== null) {
           const boundItem = this.boundItemMap.get(key);
           if (boundItem !== item) {
-            const rebind = (globalThis as any).__gxtRebindEachItem;
+            const rebind =
+              HOST_HOOKS.rebindEachItem ??
+              (globalThis as any).__gxtRebindEachItem;
             if (typeof rebind === 'function') {
               rebind(boundItem, item);
             }
