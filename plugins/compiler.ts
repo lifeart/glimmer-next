@@ -15,6 +15,21 @@ function toViteResult(result: ReturnType<typeof transform>): ViteTransformResult
 
 const p = new Preprocessor();
 
+/**
+ * Detect a genuine `hbs\`...\`` tagged template in a .ts/.js module.
+ *
+ * The negative lookbehind excludes file-extension / inline-code PROSE in doc
+ * comments — `.hbs`, 'hbs', "hbs", \`hbs — which would otherwise route the
+ * whole module through the template transform and mangle its exports. A docs
+ * sentence like "components were authored in paired \`.hbs\` files" hit
+ * exactly this in emberjs/ember.js#21340 (the closing backtick of the
+ * inline-code span follows "hbs" directly). Genuine tags are preceded by
+ * whitespace, `=`, `(`, `,`, `return`, start-of-file, etc.
+ */
+export function hasHbsTaggedTemplate(code: string): boolean {
+  return /(?<![.\w'"`])hbs\s*`/.test(code);
+}
+
 const extensionsToResolve = [
   '.mjs',
   '.js',
@@ -110,7 +125,7 @@ export function compiler(mode: string, options: Options = {}): Plugin {
       // Only process .ts/.js files that use hbs tagged templates.
       // Files that merely import from @lifeart/gxt don't need the babel transform
       // (which injects symbol imports that may conflict with existing declarations).
-      const hasHbsTemplate = /hbs\s*`/.test(code);
+      const hasHbsTemplate = hasHbsTaggedTemplate(code);
       if (!hasHbsTemplate) {
         return;
       }
