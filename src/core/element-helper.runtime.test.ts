@@ -5,7 +5,7 @@
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { Window } from 'happy-dom';
 import { compile } from '../../plugins/compiler/compile';
-import { cell, Cell, tagsToRevalidate, opsForTag, relatedTags } from './reactive';
+import { cell, Cell, tagsToRevalidate, opsForTag } from './reactive';
 
 // Set up a DOM environment for runtime tests
 let window: Window;
@@ -17,7 +17,6 @@ beforeEach(() => {
   // Clear reactive state between tests
   tagsToRevalidate.clear();
   opsForTag.clear();
-  relatedTags.clear();
 });
 
 afterEach(() => {

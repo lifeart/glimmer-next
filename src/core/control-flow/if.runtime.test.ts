@@ -3,7 +3,7 @@
  * These tests verify actual behavior without mocking.
  */
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
-import { cell, tagsToRevalidate, opsForTag, relatedTags } from '../reactive';
+import { cell, tagsToRevalidate, opsForTag } from '../reactive';
 import { createCallTracker, createTrackedCell, createDOMFixture, type DOMFixture } from '../__test-utils__';
 import { IfCondition } from './if';
 import { Component } from '../component';
@@ -13,7 +13,6 @@ beforeEach(() => {
   // Clear reactive state between tests
   tagsToRevalidate.clear();
   opsForTag.clear();
-  relatedTags.clear();
 });
 
 describe('If condition - reactive behavior', () => {

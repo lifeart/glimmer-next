@@ -23,7 +23,7 @@
  *
  * Lifecycle: `selector.destroy()` removes the source subscription (destroying
  * the internal formula when the source was a function), releases per-key
- * bookkeeping (`opsForTag` arrays, `relatedTags` entries) and clears the map.
+ * bookkeeping (`opsForTag` arrays, per-cell `relatedTags` sets) and clears the map.
  * Pass an `owner` to auto-destroy via `registerDestructor` when the owner
  * (e.g. a component) is destroyed. After destroy, reads return a plain
  * comparison against the last-known key and no longer materialize cells.
@@ -44,7 +44,6 @@ import {
   formula,
   applyCellUpdateSync,
   opsForTag,
-  relatedTags,
   releaseOpArray,
 } from '@/core/reactive';
 import { opcodeFor } from '@/core/vm';
@@ -64,8 +63,8 @@ export interface KeyedSelector<K> {
 // cell's relatedTags set. Ops-array emptiness — not absence — is the liveness
 // signal on the ops side (pooled arrays may linger empty).
 function isKeyCellUnused(keyCell: Cell<boolean>): boolean {
-  const subs = relatedTags.get(keyCell.id);
-  if (subs !== undefined && subs.size > 0) {
+  const subs = keyCell.relatedTags;
+  if (subs !== null && subs.size > 0) {
     return false;
   }
   const ops = opsForTag.get(keyCell.id);
@@ -78,7 +77,8 @@ function releaseKeyCell(keyCell: Cell<boolean>): void {
     opsForTag.delete(keyCell.id);
     releaseOpArray(ops);
   }
-  relatedTags.delete(keyCell.id);
+  // Drop the subscriber set with the cell (it lives ON the cell now).
+  keyCell.relatedTags = null;
 }
 
 // Don't sweep tiny maps — the walk costs more than the memory it frees.

@@ -27,7 +27,7 @@ import {
   setupRuntimeTemplateGlobals,
   type HarnessItem,
 } from './__test-utils__/list-harness';
-import { cellFor, relatedTags } from './reactive';
+import { cellFor } from './reactive';
 import { template, compileTemplate } from '../../plugins/runtime-compiler';
 
 const LIST_TEMPLATE = `
@@ -200,26 +200,26 @@ describe('static-block fast path ({{#each}} cloneNode rows)', () => {
     (root as any)._items = items;
     await settle();
     // text binding formula is subscribed to the per-item label cell
-    expect(relatedTags.get(labelCell.id)?.size ?? 0).toBeGreaterThan(0);
-    const selectedSubsRendered = relatedTags.get(selectedCell.id)?.size ?? 0;
+    expect(labelCell.relatedTags?.size ?? 0).toBeGreaterThan(0);
+    const selectedSubsRendered = selectedCell.relatedTags?.size ?? 0;
     expect(selectedSubsRendered).toBeGreaterThan(0);
 
     (root as any)._items = [];
     await settle();
-    expect(relatedTags.get(labelCell.id)?.size ?? 0).toBe(0);
-    const selectedSubsCleared = relatedTags.get(selectedCell.id)?.size ?? 0;
+    expect(labelCell.relatedTags?.size ?? 0).toBe(0);
+    const selectedSubsCleared = selectedCell.relatedTags?.size ?? 0;
     expect(selectedSubsCleared).toBe(0);
 
     // repeated create/clear cycles stay bounded (no cumulative growth)
     for (let cycle = 0; cycle < 3; cycle++) {
       (root as any)._items = buildItems(5);
       await settle();
-      expect(relatedTags.get(selectedCell.id)?.size ?? 0).toBe(
+      expect(selectedCell.relatedTags?.size ?? 0).toBe(
         selectedSubsRendered,
       );
       (root as any)._items = [];
       await settle();
-      expect(relatedTags.get(selectedCell.id)?.size ?? 0).toBe(0);
+      expect(selectedCell.relatedTags?.size ?? 0).toBe(0);
     }
   });
 
