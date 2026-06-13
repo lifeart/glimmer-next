@@ -13,7 +13,16 @@
  *     uses) does not re-run the user getter an extra time.
  */
 import { describe, test, expect } from 'vitest';
-import { cached, cell, formula, executeTag } from './reactive';
+import {
+  cached,
+  cell,
+  formula,
+  executeTag,
+  flushCellOpcodes,
+  setIsRendering,
+} from './reactive';
+import { opcodeFor } from './vm';
+import { syncDom } from './runtime';
 
 describe('cached() primitive', () => {
   test('memoizes while deps are unchanged: getter runs exactly once across multiple reads', () => {
@@ -192,5 +201,109 @@ describe('cached() primitive', () => {
     expect(runs).toBe(2);
     expect(memo.value).toBe(9);
     expect(runs).toBe(2);
+  });
+});
+
+describe('cached() subscription survives a consume + clean read (regression)', () => {
+  // Root cause: the drain (and flushCellOpcodes) CONSUMES a dirty cell's
+  // subscriber set before re-executing the subscribed tags. A plain formula
+  // re-collects its deps on re-execution and re-adds itself to each dep
+  // cell's subscriber set. But a cached() tag whose readCached() clean path
+  // hits (isClean() === true — e.g. after a same-value cell.update(), which
+  // schedules a drain WITHOUT bumping any revision) returns the memoized
+  // value WITHOUT touching its dep cells, so the tag is never re-added to
+  // the consumed subscriber sets — it is permanently unsubscribed and later
+  // REAL dep updates never reach its opcodes.
+
+  test('same-value update() drain must not permanently unsubscribe the cached tag', async () => {
+    const c = cell(1);
+    let runs = 0;
+    const memo = cached(() => {
+      runs++;
+      return c.value * 10;
+    }, 'memo-sub-drop-drain');
+
+    const seen: number[] = [];
+    const destroy = opcodeFor(memo.tag, (value) => {
+      seen.push(value as number);
+    });
+    expect(seen).toEqual([10]);
+    expect(runs).toBe(1);
+
+    // Same-value update: enqueues the cell for revalidation (observable
+    // side-effect semantics) but does NOT bump _revision, so the cached
+    // read in the drain is CLEAN. The drain consumes c's subscriber set;
+    // the clean read must re-establish the subscription.
+    c.update(1);
+    await syncDom();
+    expect(runs).toBe(1); // cache stayed clean — no recompute
+
+    // REAL change: must reach the opcode through the (re-established)
+    // subscription.
+    c.update(2);
+    await syncDom();
+    expect(seen[seen.length - 1]).toBe(20);
+    expect(runs).toBe(2);
+
+    destroy();
+  });
+
+  test('cache seeded via memo.value (not tag.value) survives the same-value drain too', async () => {
+    const c = cell(1);
+    const memo = cached(() => c.value * 3, 'memo-sub-drop-self-seeded');
+    // Seed through the PUBLIC getter first — this exercises the recompute
+    // path where the cache's dep bookkeeping and tag.relatedCells could
+    // alias the same Set object (and be wiped by the tag's re-tracking).
+    expect(memo.value).toBe(3);
+
+    const seen: number[] = [];
+    const destroy = opcodeFor(memo.tag, (value) => {
+      seen.push(value as number);
+    });
+    expect(seen).toEqual([3]);
+
+    c.update(1); // same value — drain consumes, cache stays clean
+    await syncDom();
+
+    c.update(2); // real change — must still reach the opcode
+    await syncDom();
+    expect(seen[seen.length - 1]).toBe(6);
+
+    destroy();
+  });
+
+  test('flushCellOpcodes consume path also re-subscribes a clean cached tag', async () => {
+    const c = cell(5);
+    let runs = 0;
+    const memo = cached(() => {
+      runs++;
+      return c.value + 1;
+    }, 'memo-sub-drop-flush');
+
+    const seen: number[] = [];
+    const destroy = opcodeFor(memo.tag, (value) => {
+      seen.push(value as number);
+    });
+    expect(seen).toEqual([6]);
+    expect(runs).toBe(1);
+
+    // Host-style synchronous flush (Ember integration path): consumes c's
+    // subscriber set and re-executes the cached tag while its cache is
+    // still clean (no revision bump happened).
+    setIsRendering(true);
+    try {
+      flushCellOpcodes(c);
+    } finally {
+      setIsRendering(false);
+    }
+    expect(runs).toBe(1); // clean — memoized value served
+
+    // Later REAL dep update must still reach the opcode.
+    c.update(7);
+    await syncDom();
+    expect(seen[seen.length - 1]).toBe(8);
+    expect(runs).toBe(2);
+
+    destroy();
   });
 });
