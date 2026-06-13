@@ -304,9 +304,23 @@ export function flushCellOpcodes(cell: Cell | MergedCell): void {
   //      going dead after a thunk-triggered flush).
   //   2. every leaf cell read by the executed opcodes would be tracked into
   //      the CALLER's frame, attributing foreign deps to it.
-  // Suspend the tracker for the duration of the flush; restore after.
+  // Suspend the tracker for the duration of the flush; restore after — EXCEPT
+  // when a host integration (Ember) is installed. A host drives
+  // flushCellOpcodes from its fine-grained double-read RE-TRACK path, which
+  // REQUIRES the tracker active so the re-evaluated getter re-entangles its
+  // deps into the live frame; suspending it drops the re-track and the host's
+  // binding loses an upstream invalidation (Ember's tracked-args double-read
+  // count regressed 3→2). The suspend exists for frame-mode slot probes, and
+  // frame mode bails for hosts via the same sentinel — so the two needs never
+  // overlap. Cross-instance sentinel (not an import — reactive.ts is a leaf).
+  const _g = globalThis as Record<string, unknown>;
+  const _hostInstalled =
+    _g.__gxtHostHooksInstalled === true ||
+    typeof _g.__gxtRegisterObjectValueOwner === 'function' ||
+    _g.__gxtCurrentTemplateThis !== undefined ||
+    typeof _g.__gxtRebindEachItem === 'function';
   const prevTracker = getTracker();
-  if (prevTracker !== null) setTracker(null);
+  if (!_hostInstalled && prevTracker !== null) setTracker(null);
   try {
     // Only execute the cell's own opcodes when it actually has some — for
     // cells that exist purely as subscription targets (selector key cells,
