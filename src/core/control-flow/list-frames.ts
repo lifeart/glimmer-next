@@ -392,7 +392,10 @@ function runSlot(
   const raw = frame.thunks[s];
   let value: unknown;
   let isStatic = false;
-  if (isFn(raw) || isTagLike(raw)) {
+  // Nullish guard before isTagLike — it dereferences its argument, and a
+  // nullish CONST binding (`data-x={{undefined}}`) compiles to the bare value,
+  // not a thunk. Mirrors resolveBindingValue's guard on the v1 path.
+  if (raw !== null && raw !== undefined && (isFn(raw) || isTagLike(raw))) {
     const prevTracker = getTracker();
     // Re-entrancy guard: a thunk getter can synchronously flush opcodes
     // (`applyCellUpdateSync` → `flushCellOpcodes`) and re-run another slot
