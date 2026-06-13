@@ -51,7 +51,10 @@
     "compiler.d.ts"
   ],
   "sideEffects": [
-    "./dist/gxt.ember-inspector.es.js"
+    "./dist/gxt.ember-inspector.es.js",
+    "./src/**",
+    "./plugins/**",
+    "**/*.css"
   ],
   "module": "./dist/gxt.index.es.js",
   "types": "./dist/index.d.ts",
