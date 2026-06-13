@@ -975,7 +975,7 @@ describe('destroyNodes - nested components', () => {
 // ============================================
 
 import { IfCondition } from './control-flow/if';
-import { cell, formula, opsForTag, tagsToRevalidate } from './reactive';
+import { cell, formula, opsForTag, relatedTags, tagsToRevalidate } from './reactive';
 import { opcodeFor } from './vm';
 
 describe('If Component Destruction', () => {
@@ -1066,16 +1066,16 @@ describe('If Component Destruction', () => {
     // Wait for initial render
     await new Promise(resolve => setTimeout(resolve, 10));
 
-    // Verify the cell's subscriber set contains the derived cell
-    const relatedBefore = baseCell.relatedTags;
+    // Verify relatedTags contains the derived cell
+    const relatedBefore = relatedTags.get(baseCell.id);
     expect(relatedBefore?.size).toBeGreaterThan(0);
 
     // Destroy the if component
     await ifInstance.destroy();
 
-    // Verify the subscriber set is cleaned up
-    const relatedAfter = baseCell.relatedTags;
-    // Either never materialized or empty
+    // Verify relatedTags is cleaned up
+    const relatedAfter = relatedTags.get(baseCell.id);
+    // Either deleted or empty
     expect(relatedAfter?.size ?? 0).toBe(0);
   });
 
