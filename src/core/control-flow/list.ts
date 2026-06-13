@@ -38,11 +38,14 @@ import { isRehydrationScheduled } from '@/core/ssr/rehydration';
 import { initDOM } from '@/core/context';
 import {
   registerDestructor,
+  registerDestructorBatch,
   isDestructionStarted,
   isDestroyed,
   reportDestructionError,
   destroySync,
+  type Destructors,
 } from '../glimmer/destroyable';
+import type { StaticBlockDef } from '@/core/static-block';
 import { setParentContext, getParentContext } from '../tracking';
 import { HOST_HOOKS } from '@/core/host-hooks';
 
@@ -98,6 +101,17 @@ type ListComponentArgs<T> = {
   // state, held in a WeakMap inside list-recycle.ts) stays TREE-SHAKABLE —
   // this class carries only this dispatch hook.
   recycle?: (list: BasicListComponent<any>, items: any[]) => void;
+  // Static-block fast path (src/core/static-block.ts,
+  // RESEARCH_LIST_TRACKING_OPTIMIZATION.md §2.A1/§4): when the compiler
+  // qualified the each-body, `block` carries the shared cloneNode template +
+  // slot table and `blockValues` produces the positional slot values for a
+  // row. ItemComponent stays as the fallback (SSR / rehydration / recycle).
+  block?: StaticBlockDef;
+  blockValues?: (
+    item: T,
+    index: number | MergedCell,
+    ctx: unknown,
+  ) => readonly unknown[];
 };
 type RenderTarget = HTMLElement | DocumentFragment;
 
@@ -540,6 +554,12 @@ export class BasicListComponent<T extends { id: number }> {
   // implementation at construction; type-only declaration → zero bytes on
   // the default keyed path.
   recycleImpl?: (list: BasicListComponent<any>, items: any[]) => void;
+  // Static-block fast path (see ListComponentArgs.block). Null when the
+  // compiler bailed or the mode disqualifies it (recycle).
+  block: StaticBlockDef | null = null;
+  blockValues:
+    | ((item: T, index: number | MergedCell, ctx: unknown) => readonly unknown[])
+    | null = null;
   constructor(
     {
       tag,
@@ -549,6 +569,8 @@ export class BasicListComponent<T extends { id: number }> {
       inverseFn,
       hasIndex,
       recycle,
+      block,
+      blockValues,
     }: ListComponentArgs<T>,
     outlet: RenderTarget,
     topMarker: Comment,
@@ -593,6 +615,19 @@ export class BasicListComponent<T extends { id: number }> {
     }
     if (key) {
       this.key = key;
+    }
+    // Static-block fast path: only for the default keyed diff. Recycle mode
+    // (recycleImpl installed by $_eachRecycled) renders against per-row
+    // state-object thunks whose value expressions differ — it keeps the
+    // compiled-callback path. (Belt-and-braces: the compiler also never
+    // emits a block for key="@recycle".)
+    if (
+      block !== undefined &&
+      blockValues !== undefined &&
+      this.recycleImpl === undefined
+    ) {
+      this.block = block;
+      this.blockValues = blockValues;
     }
     this.setupKeyForItem();
     // Register destructor to clean up the list's own TREE/PARENT/CHILD entries.
@@ -1032,6 +1067,38 @@ export class BasicListComponent<T extends { id: number }> {
       return marker;
     }
   }
+  /**
+   * Construct the row body content for `item`.
+   *
+   * When the compiler attached a static-block fast path (see
+   * src/core/static-block.ts), the row DOM is produced via cloneNode + slot
+   * binding and the binding destructors register against the SAME per-row
+   * `bodyCtx` contract `_DOM` uses (`registerDestructorBatch`), so teardown
+   * is identical to the compiled-callback path. SSR and rehydration take the
+   * compiled-callback fallback — the block path builds fresh DOM and cannot
+   * adopt server-rendered nodes.
+   */
+  protected buildRow(
+    item: T,
+    idx: number | MergedCell,
+    bodyCtx: ComponentLike,
+  ): GenericReturnType {
+    const block = this.block;
+    if (block !== null && !IN_SSR_ENV && !isRehydrationScheduled()) {
+      const destructors: Destructors = [];
+      const row = block.create(
+        this.api,
+        this.blockValues!(item, idx, bodyCtx),
+        destructors,
+      );
+      if (destructors.length > 0) {
+        registerDestructorBatch(bodyCtx, destructors);
+      }
+      return row;
+    }
+    return this.ItemComponent(item, idx, bodyCtx as unknown as Component<any>);
+  }
+
   // Construct a NEW row for `key`/`item` at `index`, register its maps + marker,
   // and (when appending) insert + render it before `targetNode`. Extracted from
   // updateItems' new-row branch so the incremental append fast-path shares one
@@ -1097,11 +1164,7 @@ export class BasicListComponent<T extends { id: number }> {
     // Per-row destructor-owner ctx. Owns the row body's direct element binding
     // opcodes so they unsubscribe on teardown.
     const bodyCtx = this.rowBodyCtx(key);
-    const row = this.ItemComponent(
-      item,
-      idx,
-      bodyCtx as unknown as Component<any>,
-    );
+    const row = this.buildRow(item, idx, bodyCtx);
 
     keyMap.set(key, row);
     indexMap.set(key, index);
@@ -1128,7 +1191,6 @@ export class BasicListComponent<T extends { id: number }> {
       keyMap,
       bottomMarker,
       keyForItem,
-      ItemComponent,
       isFirstRender,
       api,
       itemMarkers,
@@ -1312,7 +1374,7 @@ export class BasicListComponent<T extends { id: number }> {
         // Per-row destructor-owner ctx. Owns the row body's direct element
         // binding opcodes so they unsubscribe on teardown.
         const bodyCtx = this.rowBodyCtx(key);
-        const row = ItemComponent(item, idx, bodyCtx as unknown as Component<any>);
+        const row = this.buildRow(item, idx, bodyCtx);
 
         keyMap.set(key, row);
         indexMap.set(key, index);

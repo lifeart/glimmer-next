@@ -11,6 +11,11 @@ import type { HBSControlExpression, HBSChild, HBSNode, SerializedValue } from '.
 import { isHBSControlExpression, isHBSNode, isSerializedValue } from '../types';
 import { SYMBOLS } from './symbols';
 import { buildValue } from './value';
+import {
+  extractStaticBlock,
+  buildStaticBlockDefExpr,
+  buildStaticBlockValueExprs,
+} from './static-block';
 import { B, serializeJS, type JSExpression, type JSStatement } from '../builder';
 
 // Sentinel each-key that opts a block into row recycling. Mirrors RECYCLE_KEY
@@ -237,6 +242,39 @@ function buildEach(
   // Pass all param names so they can be tracked as known bindings during serialization
   const bodyExpr = buildEachBody(ctx, control.children, newCtxName, paramNames, hasStable);
 
+  // Static-block fast path (RESEARCH_LIST_TRACKING_OPTIMIZATION.md §2.A1/§4):
+  // when the body is a single qualifying inline element, ALSO emit a
+  // $_blk(html, slots) definition + a positional values callback so the
+  // runtime can build rows via cloneNode + slot binding. The normal body
+  // callback above is kept untouched as the runtime fallback (SSR,
+  // rehydration). Pure extraction first — a bail (null) leaves the emitted
+  // code byte-identical to not having the fast path. `key="@recycle"` rows
+  // render against per-row state objects, not raw items — keep them on the
+  // compiled-callback path.
+  const staticBlockParts = isRecycled ? null : extractStaticBlock(control);
+  let blockDefExpr: JSExpression | null = null;
+  let blockValuesExpr: JSExpression | null = null;
+  if (staticBlockParts !== null) {
+    // Same scope frame discipline as buildEachBody, so slot-value expressions
+    // resolve block params exactly like the normal body emission.
+    ctx.scopeTracker.enterScope('control-block');
+    for (const param of paramNames) {
+      ctx.scopeTracker.addBinding(param, { kind: 'block-param', name: param });
+    }
+    let valueExprs = buildStaticBlockValueExprs(ctx, staticBlockParts, newCtxName);
+    ctx.scopeTracker.exitScope();
+    if (hasIndex) {
+      valueExprs = valueExprs.map((expr) =>
+        replaceIndexRefsInExpr(expr, indexParamName)
+      );
+    }
+    blockDefExpr = buildStaticBlockDefExpr(staticBlockParts);
+    blockValuesExpr = B.arrow(
+      [...paramNames, newCtxName],
+      B.array(valueExprs)
+    );
+  }
+
   // Build the full callback: (item, index, ctx) => body
   const callbackParams = [
     ...paramNames.map((name, index) => {
@@ -261,17 +299,25 @@ function buildEach(
     const inverseCtxName = nextCtxName(ctx);
     const inverseBranch = buildIfBranch(ctx, control.inverse, inverseCtxName, ctxName);
     eachArgs.push(inverseBranch);
-  } else if (hasIndex) {
-    // Need a placeholder for `inverseFn` so `hasIndex` lands at the
-    // correct positional slot (6th arg).
+  } else if (hasIndex || blockDefExpr !== null) {
+    // Need a placeholder for `inverseFn` so `hasIndex` (and the static
+    // block, when emitted) land at their fixed positional slots.
     eachArgs.push(B.nil());
   }
 
   if (hasIndex) {
     eachArgs.push(B.bool(true));
+  } else if (blockDefExpr !== null) {
+    // `hasIndex` placeholder so BLOCK_DEF lands at the fixed 7th slot.
+    eachArgs.push(B.bool(false));
   }
 
-  // $_each(condition, callback, key, ctx[, inverseFn[, hasIndex]])
+  if (blockDefExpr !== null) {
+    eachArgs.push(blockDefExpr);
+    eachArgs.push(blockValuesExpr!);
+  }
+
+  // $_each(condition, callback, key, ctx[, inverseFn[, hasIndex[, block, blockValues]]])
   return B.call(
     B.id(fnName),
     eachArgs,

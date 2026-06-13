@@ -34,6 +34,7 @@ export const SYMBOLS = {
   $_maybeModifier: '$_maybeModifier',
   $_inElement: '$_inElement',
   $_ucw: '$_ucw',
+  $_blk: '$_blk',
   $__if: '$__if',
   $__eq: '$__eq',
   $__not: '$__not',
