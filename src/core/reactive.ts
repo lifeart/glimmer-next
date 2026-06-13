@@ -29,8 +29,12 @@ export const opsForTag: Map<
 > = new Map();
 // REVISION replacement, we use a set of tags to revalidate
 export const tagsToRevalidate: Set<Cell> = new Set();
-// List of derived tags for each cell
-export const relatedTags: Map<number, Set<MergedCell>> = new Map();
+// D1: the per-cell subscriber set (formulas depending on a cell) used to live
+// in a global `Map<number, Set<MergedCell>>` keyed by cell id. It is now a
+// field on the Cell itself (`cell.relatedTags`) — one property load instead of
+// a Map hash per access on the drain/bind hot paths, and the set's lifetime is
+// tied to the cell (the global map retained entries for cells that were
+// otherwise collectable; numeric keys are never weak).
 
 // Adaptive pool for ops arrays with automatic growth/shrink
 const opsPool = new AdaptivePool<Array<tagOp>>(
@@ -73,10 +77,35 @@ export function getMergedCells() {
   return Array.from(DEBUG_MERGED_CELLS);
 }
 
+// Dev/test introspection: number of cells currently holding a non-empty
+// subscriber set. Replaces the old global `relatedTags.size` after the
+// subscriber set moved onto each cell (per-cell field). Dev-only — relies on
+// DEBUG_CELLS/DEBUG_MERGED_CELLS, which are only populated under IS_DEV_MODE.
+export function activeRelatedTagsCount(): number {
+  let n = 0;
+  DEBUG_CELLS.forEach((c) => {
+    if (c.relatedTags !== null && c.relatedTags.size > 0) n++;
+  });
+  DEBUG_MERGED_CELLS.forEach((c) => {
+    if (c.relatedTags !== null && c.relatedTags.size > 0) n++;
+  });
+  return n;
+}
+
 if (IS_DEV_MODE) {
   if (!import.meta.env.SSR) {
     window['getVM'] = () => ({
-      relatedTags,
+      // Rebuilt on demand from the per-cell fields (dev-only introspection;
+      // the global subscriber map no longer exists at runtime).
+      get relatedTags() {
+        const m = new Map<number, Set<MergedCell>>();
+        DEBUG_CELLS.forEach((cell) => {
+          if (cell.relatedTags !== null && cell.relatedTags.size > 0) {
+            m.set(cell.id, cell.relatedTags);
+          }
+        });
+        return m;
+      },
       tagsToRevalidate,
       opsForTag,
     });
@@ -160,6 +189,13 @@ export class Cell<T extends unknown = unknown> {
   // nested-object subscription. Purely metadata — never read by update().
   _relatedObj?: object;
   _relatedKey?: string | number | symbol;
+  // D1: subscriber formulas (MergedCells whose last execution read this cell).
+  // Lazily allocated on first subscription; CONSUMED (cleared in place, same
+  // Set object kept attached for reuse) by the drain / flushCellOpcodes when
+  // this cell dirties — re-executing formulas that still read the cell re-add
+  // themselves (dynamic dep pruning). Replaces the global
+  // `relatedTags: Map<number, Set<MergedCell>>`.
+  relatedTags: Set<MergedCell> | null = null;
   [Symbol.toPrimitive]() {
     return this.value;
   }
@@ -272,10 +308,10 @@ export function opsFor(cell: AnyCell) {
 }
 
 export function relatedTagsForCell(cell: Cell) {
-  let tags = relatedTags.get(cell.id);
-  if (tags === undefined) {
+  let tags = cell.relatedTags;
+  if (tags === null) {
     tags = new Set<MergedCell>();
-    relatedTags.set(cell.id, tags);
+    cell.relatedTags = tags;
   }
   return tags;
 }
@@ -323,15 +359,32 @@ export function flushCellOpcodes(cell: Cell | MergedCell): void {
         reportOpcodeError(e, cell);
       }
     }
-    const subTags = relatedTags.get((cell as Cell).id);
-    if (subTags === undefined) {
+    // Per-cell subscriber field (D1 drain diet) replaces the global
+    // relatedTags Map. Consume: snapshot subscribers, then clear IN PLACE —
+    // the Set object stays attached to the cell so re-executing formulas
+    // re-add into it without a fresh Set allocation (see Cell.relatedTags).
+    const subTags = cell.relatedTags;
+    if (subTags === null || subTags.size === 0) {
       return;
     }
-    relatedTags.delete((cell as Cell).id);
     const ordered = [...subTags];
     subTags.clear();
     if (ordered.length > 1) {
-      ordered.sort((a, b) => a.id - b.id);
+      // Skip-sort: subscribers iterate in insertion order, which commonly
+      // tracks formula creation (id) order already — O(n) check first.
+      let needsSort = false;
+      let prevId = ordered[0].id;
+      for (let i = 1; i < ordered.length; i++) {
+        const id = ordered[i].id;
+        if (id < prevId) {
+          needsSort = true;
+          break;
+        }
+        prevId = id;
+      }
+      if (needsSort) {
+        ordered.sort((a, b) => a.id - b.id);
+      }
     }
     for (const tag of ordered) {
       try {
@@ -381,9 +434,21 @@ export function applyCellUpdateSync<T>(cell: Cell<T>, value: T): void {
   }
 }
 
+// NB: keeps `Set.prototype.forEach` (NOT for..of) deliberately — the opt-in
+// reactive-collections patch instruments Set ITERATION APIs with consume(),
+// and this runs while the caller's tracker may still be installed (it is the
+// `$tracker` set itself in MergedCell.value's finally), so an instrumented
+// iteration would mutate the set being iterated. forEach is un-instrumented.
 function bindAllCellsToTag(cells: Set<Cell>, tag: MergedCell) {
   cells.forEach((cell) => {
-    const tags = relatedTagsForCell(cell);
+    // Inlined relatedTagsForCell: one field load (+ lazy Set allocation on
+    // first subscriber) + one idempotent Set.add. See the dep-stability note
+    // on MergedCell.value for why the unconditional add IS the fast path.
+    let tags = cell.relatedTags;
+    if (tags === null) {
+      tags = new Set<MergedCell>();
+      cell.relatedTags = tags;
+    }
     tags.add(tag);
     if (IS_DEV_MODE && (globalThis as any).__gxtDebugSync && tag._debugName?.includes('if-condition')) {
       console.log('[BIND] cell.id=' + cell.id + ' → formula=' + tag._debugName + ' (id=' + tag.id + ')');
@@ -418,6 +483,12 @@ export class MergedCell {
   }
   _debugName?: string | undefined;
   relatedCells: Set<Cell> | null = null;
+  // Subscriber-set field mirrored from Cell for shape compatibility with the
+  // `Cell | MergedCell` consumers (flushCellOpcodes, executeTag callers).
+  // Formulas never subscribe to OTHER formulas (trackers only ever collect
+  // raw Cells — a nested formula read forwards the inner cells instead), so
+  // this stays null in practice.
+  relatedTags: Set<MergedCell> | null = null;
   [isTag] = true;
   constructor(fn: Fn | Function, debugName?: string) {
     this.fn = fn;
@@ -431,12 +502,11 @@ export class MergedCell {
     opsForTag.delete(this.id);
     if (this.relatedCells !== null) {
       this.relatedCells.forEach((cell) => {
-        const related = relatedTags.get(cell.id);
-        if (related !== undefined) {
+        const related = cell.relatedTags;
+        if (related !== null) {
           related.delete(this);
-          if (related.size === 0) {
-            relatedTags.delete(cell.id);
-          }
+          // An emptied set stays attached to the cell (owned by it, dies with
+          // it) — no global map entry to reclaim anymore.
         }
       });
       this.relatedCells.clear();
@@ -471,6 +541,21 @@ export class MergedCell {
     // to each tracked cell's subscriber set idempotently (this path never
     // unbound dropped deps before either — a re-read with stable deps re-adds
     // the same cells).
+    //
+    // D1 dep-stability analysis (why there is NO "skip re-subscription when
+    // deps are unchanged" fast path): the drain CONSUMES (clears) the dirty
+    // cell's subscriber set before re-executing its formulas, so this formula
+    // MUST re-add itself to every dep that was consumed — membership is the
+    // only record of subscription. For NON-consumed deps the re-add is a
+    // no-op `Set.add`, and verifying "still subscribed" costs exactly the
+    // same hash lookup (`Set.has`) as the idempotent `Set.add` it would
+    // skip; distinguishing consumed from non-consumed deps with a per-cell
+    // stamp is unsound for NEW deps without a full old-vs-new set comparison
+    // (n× `Set.has`), which costs more than the n× `Set.add` it replaces.
+    // Invariant relied on instead: `cell.relatedTags ∋ formula` iff the
+    // formula's most recent execution read the cell AND the cell has not
+    // been consumed since; every consume site re-executes the affected
+    // formulas under `_isRendering` so they re-establish membership here.
     let $tracker = this.relatedCells;
     if ($tracker === null) {
       $tracker = tracker();

@@ -14,7 +14,6 @@ import {
   formula,
   tagsToRevalidate,
   opsForTag,
-  relatedTags,
   setTracker,
   setIsRendering,
 } from './reactive';
@@ -28,7 +27,6 @@ const settle = () => new Promise<void>((r) => setTimeout(r, 0));
 beforeEach(() => {
   tagsToRevalidate.clear();
   opsForTag.clear();
-  relatedTags.clear();
   setTracker(null);
   setIsRendering(false);
 });

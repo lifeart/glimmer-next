@@ -1,10 +1,10 @@
 import {
   setIsRendering,
+  type Cell,
   type MergedCell,
   executeTag,
   hasAsyncOpcodes,
   tagsToRevalidate,
-  relatedTags,
 } from '@/core/reactive';
 import { isRehydrationScheduled } from './ssr/rehydration-state';
 import { HOST_HOOKS } from '@/core/host-hooks';
@@ -13,25 +13,6 @@ let revalidateScheduled = false;
 let hasExternalUpdate = false;
 type voidFn = () => void;
 let resolveRender: undefined | voidFn = undefined;
-let executionEpoch = 0;
-let executedTagEpoch: WeakMap<MergedCell, number> = new WeakMap();
-
-function nextExecutionEpoch() {
-  executionEpoch++;
-  if (executionEpoch === Number.MAX_SAFE_INTEGER) {
-    executionEpoch = 1;
-    executedTagEpoch = new WeakMap();
-  }
-  return executionEpoch;
-}
-
-function shouldExecuteSharedTag(tag: MergedCell, epoch: number) {
-  if (executedTagEpoch.get(tag) === epoch) {
-    return false;
-  }
-  executedTagEpoch.set(tag, epoch);
-  return true;
-}
 
 export function setResolveRender(value: () => void) {
   resolveRender = value;
@@ -92,11 +73,32 @@ export function scheduleRevalidate() {
 }
 
 /**
- * Sort shared tags by creation order for deterministic evaluation.
+ * Establish creation (id) order for the shared-tag fan-out.
+ *
+ * D1: skip-sort fast path — the buffer is filled by walking dirty cells in
+ * ascending id order, and each cell's subscriber set iterates in insertion
+ * order (subscription order tracks formula creation order), so the combined
+ * buffer is very commonly already sorted. An O(n) sortedness scan is far
+ * cheaper than the O(n log n) comparator-driven sort it replaces.
+ *
+ * POST-CONDITION (relied on by the duplicate-skip in the drains): the buffer
+ * is non-decreasing by id, so duplicate entries (the same formula reached via
+ * several dirty dep cells) are ADJACENT. Ids are unique per tag (shared
+ * monotonic `tagId++`), so `a.id === b.id` implies `a === b`.
  */
 function sortSharedTags(sharedTags: MergedCell[]) {
-  if (sharedTags.length > 1) {
-    sharedTags.sort((a, b) => a.id - b.id);
+  const len = sharedTags.length;
+  if (len < 2) {
+    return;
+  }
+  let prevId = sharedTags[0].id;
+  for (let i = 1; i < len; i++) {
+    const id = sharedTags[i].id;
+    if (id < prevId) {
+      sharedTags.sort((a, b) => a.id - b.id);
+      return;
+    }
+    prevId = id;
   }
 }
 
@@ -109,36 +111,75 @@ function sortSharedTags(sharedTags: MergedCell[]) {
 // the buffer doesn't retain MergedCell references between ticks.
 const _sharedTagsScratch: MergedCell[] = [];
 
+// D1: scratch buffer for the primary dirty-cell snapshot, reused across
+// flushes instead of `Array.from(tagsToRevalidate)` allocating per drain.
+// Same non-reentrancy argument as `_sharedTagsScratch` above; only used by
+// the SYNC drain (the async drain keeps fresh allocations because it yields
+// between executions).
+const _primaryCellsScratch: Cell[] = [];
+
+/**
+ * Snapshot the dirty-cell set into the given buffer in creation (id) order.
+ *
+ * Parent-first rationale: parent opcodes must run before child opcodes. When
+ * two cells are dirtied in the same batch (e.g., outer each source + inner
+ * each source), Set iteration follows insertion order, which can cause a
+ * child effect (e.g., a nested {{#each}}'s syncList) to create items just
+ * before its parent tears it down. Id-ascending order gives parent-first
+ * because parent cells are allocated first during render.
+ *
+ * D1: cells are commonly dirtied in creation order, so the snapshot is
+ * usually already sorted — detect that with an O(n) scan during the copy and
+ * only fall back to the O(n log n) sort when out of order.
+ */
+function snapshotPrimaryCells(buffer: Cell[]): Cell[] {
+  buffer.length = 0;
+  let sorted = true;
+  let prevId = -1;
+  for (const cell of tagsToRevalidate) {
+    const id = cell.id;
+    if (id < prevId) {
+      sorted = false;
+    }
+    prevId = id;
+    buffer.push(cell);
+  }
+  if (!sorted) {
+    buffer.sort((a, b) => a.id - b.id);
+  }
+  return buffer;
+}
+
 /**
  * Fully synchronous DOM sync — no Promise allocation, no async/await overhead.
  */
 function syncDomSync() {
   let sharedTags: MergedCell[] | null = null;
   setIsRendering(true);
-  // Process primary cells in creation (id) order so that parent opcodes
-  // run before child opcodes. Without this, when two cells are dirtied
-  // in the same batch (e.g., outer each source + inner each source),
-  // iteration order follows insertion order, which can cause a child
-  // effect (e.g., a nested {{#each}}'s syncList) to create items just
-  // before its parent tears it down. Sorting by tag.id gives parent-first
-  // ordering because parent cells are allocated first during render.
+  // Process primary cells in creation (id) order (parent-first — see
+  // snapshotPrimaryCells). Size <= 1 keeps the live-set iteration: a single
+  // dirty cell needs no ordering, and live iteration preserves the existing
+  // semantics where a cell dirtied DURING that execution is still visited.
   const primaryCells =
     tagsToRevalidate.size > 1
-      ? Array.from(tagsToRevalidate).sort((a, b) => a.id - b.id)
+      ? snapshotPrimaryCells(_primaryCellsScratch)
       : tagsToRevalidate;
   for (const cell of primaryCells) {
     executeTag(cell, false);
-    const subTags = relatedTags.get(cell.id);
-    if (subTags !== undefined) {
+    const subTags = cell.relatedTags;
+    if (subTags !== null && subTags.size > 0) {
       if (IS_DEV_MODE && (globalThis as any).__gxtDebugSync) {
         const names: string[] = [];
         subTags.forEach(t => names.push(t._debugName || '?'));
-        console.log('[SYNC] cell.id=' + cell.id + ' DELETE relatedTags, had: [' + names.join(',') + ']');
+        console.log('[SYNC] cell.id=' + cell.id + ' CONSUME relatedTags, had: [' + names.join(',') + ']');
       }
-      relatedTags.delete(cell.id);
       // P8: reuse the module-level scratch buffer instead of allocating.
       if (sharedTags === null) { sharedTags = _sharedTagsScratch; sharedTags.length = 0; }
       for (const tag of subTags) sharedTags.push(tag);
+      // Consume the subscriber set: formulas that still depend on this cell
+      // re-add themselves when they re-execute below (dynamic dep pruning).
+      // The Set OBJECT stays attached to the cell for reuse (D1 — no fresh
+      // Set allocation per consumed cell per drain).
       subTags.clear();
     } else if (IS_DEV_MODE && (globalThis as any).__gxtDebugSync) {
       console.log('[SYNC] cell.id=' + cell.id + ' no relatedTags');
@@ -146,18 +187,26 @@ function syncDomSync() {
   }
   if (sharedTags !== null) {
     sortSharedTags(sharedTags);
-    const epoch = nextExecutionEpoch();
+    // D1: duplicate-skip replaces the epoch WeakMap. sortSharedTags
+    // guarantees non-decreasing id order, so duplicates of the same formula
+    // (collected via several dirty dep cells) are adjacent — one pointer
+    // compare dedupes with zero per-tag state and no wraparound concerns.
+    let prevTag: MergedCell | null = null;
     for (const tag of sharedTags) {
-      if (shouldExecuteSharedTag(tag, epoch)) {
-        if (IS_DEV_MODE && (globalThis as any).__gxtDebugSync) {
-          console.log('[SYNC] executeTag formula.id=' + tag.id + ' name=' + tag._debugName);
-        }
-        executeTag(tag, false);
+      if (tag === prevTag) {
+        continue;
       }
+      prevTag = tag;
+      if (IS_DEV_MODE && (globalThis as any).__gxtDebugSync) {
+        console.log('[SYNC] executeTag formula.id=' + tag.id + ' name=' + tag._debugName);
+      }
+      executeTag(tag, false);
     }
     // Release MergedCell refs so the scratch doesn't retain them across ticks.
     sharedTags.length = 0;
   }
+  // Release Cell refs from the primary snapshot for the same reason.
+  _primaryCellsScratch.length = 0;
   tagsToRevalidate.clear();
   setIsRendering(false);
 }
@@ -169,28 +218,33 @@ function syncDomSync() {
 async function syncDomAsync() {
   let sharedTags: MergedCell[] | null = null;
   setIsRendering(true);
-  // See syncDomSync for rationale: parent-first ordering by tag.id.
+  // See snapshotPrimaryCells for rationale: parent-first ordering by tag.id.
+  // Fresh array here (not the module scratch): the async drain yields between
+  // executions, so a shared buffer could be observed mid-flush.
   const primaryCells =
     tagsToRevalidate.size > 1
-      ? Array.from(tagsToRevalidate).sort((a, b) => a.id - b.id)
+      ? snapshotPrimaryCells([])
       : tagsToRevalidate;
   for (const cell of primaryCells) {
     await executeTag(cell, true);
-    const subTags = relatedTags.get(cell.id);
-    if (subTags !== undefined) {
-      relatedTags.delete(cell.id);
+    const subTags = cell.relatedTags;
+    if (subTags !== null && subTags.size > 0) {
       if (sharedTags === null) sharedTags = [];
       for (const tag of subTags) sharedTags.push(tag);
+      // Consume in place — see syncDomSync.
       subTags.clear();
     }
   }
   if (sharedTags !== null) {
     sortSharedTags(sharedTags);
-    const epoch = nextExecutionEpoch();
+    // Duplicate-skip: see syncDomSync (sorted order makes duplicates adjacent).
+    let prevTag: MergedCell | null = null;
     for (const tag of sharedTags) {
-      if (shouldExecuteSharedTag(tag, epoch)) {
-        await executeTag(tag, true);
+      if (tag === prevTag) {
+        continue;
       }
+      prevTag = tag;
+      await executeTag(tag, true);
     }
   }
   tagsToRevalidate.clear();

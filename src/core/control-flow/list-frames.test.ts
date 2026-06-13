@@ -25,7 +25,7 @@ import { $template } from '../shared';
 import {
   cellFor,
   opsForTag,
-  relatedTags,
+  activeRelatedTagsCount,
   applyCellUpdateSync,
   type Cell,
 } from '../reactive';
@@ -618,7 +618,7 @@ describe('frame-mode {{#each}} (static-block v2)', () => {
     let current = root._items[2];
     const stableId = current.id;
     const opsBaseline = opsForTag.size;
-    const relatedBaseline = relatedTags.size;
+    const relatedBaseline = activeRelatedTagsCount();
     for (let cycle = 0; cycle < 25; cycle++) {
       const oldCell = cellFor(current, 'label') as any;
       const replacement: HarnessItem = {
@@ -636,7 +636,7 @@ describe('frame-mode {{#each}} (static-block v2)', () => {
       current = replacement;
     }
     expect(opsForTag.size).toBe(opsBaseline);
-    expect(relatedTags.size).toBe(relatedBaseline);
+    expect(activeRelatedTagsCount()).toBe(relatedBaseline);
     // exactly ONE live subscription on the current item's cell
     const liveCell = cellFor(current, 'label') as any;
     expect(opsForTag.get(liveCell.id)?.length).toBe(1);
@@ -675,7 +675,7 @@ describe('frame-mode {{#each}} (static-block v2)', () => {
     (root as any)._items = [];
     await settle();
     const opsAfterFirst = opsForTag.size;
-    const relatedAfterFirst = relatedTags.size;
+    const relatedAfterFirst = activeRelatedTagsCount();
     for (let cycle = 0; cycle < 5; cycle++) {
       (root as any)._items = buildItems(30);
       await settle();
@@ -683,7 +683,7 @@ describe('frame-mode {{#each}} (static-block v2)', () => {
       await settle();
     }
     expect(opsForTag.size).toBe(opsAfterFirst);
-    expect(relatedTags.size).toBe(relatedAfterFirst);
+    expect(activeRelatedTagsCount()).toBe(relatedAfterFirst);
   });
 
   test('gate: event-bodied each stays on v1 (per-item markers present)', async () => {
