@@ -17,6 +17,18 @@ export {
   type CachedCell,
 } from '@/core/reactive';
 
+// Keyed selector primitive (O(2) fan-out for `selected === key` bindings)
+export { keyedSelector, type KeyedSelector } from '@/core/selector';
+
+// Opt-in row recycling ({{#each items key="@recycle"}}). The compiler emits
+// these entry points instead of $_each/$_eachSync when it sees the sentinel
+// key, so the recycle runtime stays tree-shakable for apps that never use it.
+export {
+  $_eachRecycled,
+  $_eachSyncRecycled,
+  RECYCLE_KEY,
+} from '@/core/control-flow/list-recycle';
+
 // Component class and types
 export { Component, type ComponentReturnType } from '@/core/component-class';
 

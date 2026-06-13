@@ -7,6 +7,10 @@ export const SYMBOLS = {
   IF: '$_if',
   EACH: '$_each',
   EACH_SYNC: '$_eachSync',
+  // Opt-in row recycling (key="@recycle") — emitted by the compiler instead
+  // of EACH/EACH_SYNC so the recycle runtime stays tree-shakable.
+  EACH_RECYCLED: '$_eachRecycled',
+  EACH_SYNC_RECYCLED: '$_eachSyncRecycled',
   SLOT: '$_slot',
   EMPTY_DOM_PROPS: '$_edp',
   ARGS: '$_args',

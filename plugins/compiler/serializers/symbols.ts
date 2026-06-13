@@ -20,6 +20,10 @@ export const SYMBOLS = {
   IF: '$_if',
   EACH: '$_each',
   EACH_SYNC: '$_eachSync',
+  // Opt-in row recycling (key="@recycle") — dedicated entry points so the
+  // recycle runtime module stays tree-shakable (list-recycle.ts).
+  EACH_RECYCLED: '$_eachRecycled',
+  EACH_SYNC_RECYCLED: '$_eachSyncRecycled',
   SLOT: '$_slot',
   IN_ELEMENT: '$_inElement',
 
@@ -199,6 +203,8 @@ export const PURE_FUNCTIONS: ReadonlySet<string> = new Set([
   SYMBOLS.IF,                     // $_if
   SYMBOLS.EACH,                   // $_each
   SYMBOLS.EACH_SYNC,              // $_eachSync
+  SYMBOLS.EACH_RECYCLED,          // $_eachRecycled
+  SYMBOLS.EACH_SYNC_RECYCLED,     // $_eachSyncRecycled
   SYMBOLS.SLOT,                   // $_slot
 
   // Built-in helpers (subexpressions)

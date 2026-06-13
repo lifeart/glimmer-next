@@ -90,6 +90,13 @@ type ListComponentArgs<T> = {
   // index formula and pass the raw number instead — this saves one
   // MergedCell + closure capture per item on every render.
   hasIndex?: boolean;
+  // Opt-in row recycling (key="@recycle"). Installed by the dedicated
+  // `$_eachRecycled` entry points in list-recycle.ts; when set, the subclass
+  // syncList paths route items through it instead of the keyed diff. Kept as
+  // an opaque callback so the entire recycle implementation (and its per-list
+  // state, held in a WeakMap inside list-recycle.ts) stays TREE-SHAKABLE —
+  // this class carries only this dispatch hook.
+  recycle?: (list: BasicListComponent<any>, items: any[]) => void;
 };
 type RenderTarget = HTMLElement | DocumentFragment;
 
@@ -527,8 +534,21 @@ export class BasicListComponent<T extends { id: number }> {
   private _relocateFragment!: DocumentFragment;
   declare api: DOMApi;
   hasIndex = false;
+  // Opt-in row-recycling dispatch hook (see ListComponentArgs.recycle).
+  // Undefined unless a `$_eachRecycled` entry point installed an
+  // implementation at construction; type-only declaration → zero bytes on
+  // the default keyed path.
+  recycleImpl?: (list: BasicListComponent<any>, items: any[]) => void;
   constructor(
-    { tag, ctx, key, ItemComponent, inverseFn, hasIndex }: ListComponentArgs<T>,
+    {
+      tag,
+      ctx,
+      key,
+      ItemComponent,
+      inverseFn,
+      hasIndex,
+      recycle,
+    }: ListComponentArgs<T>,
     outlet: RenderTarget,
     topMarker: Comment,
   ) {
@@ -561,6 +581,15 @@ export class BasicListComponent<T extends { id: number }> {
     // @ts-expect-error typings error
     addToTree(parentCtx, this, 'from list constructor');
     this[RENDERED_NODES_PROPERTY] = [];
+    // Opt-in row recycling (key="@recycle"): the compiler routes such blocks
+    // through `$_eachRecycled` (list-recycle.ts), which threads the recycle
+    // implementation here. NOTE: there is intentionally NO '@recycle' sentinel
+    // check on `key` — constructing a list directly with key='@recycle' (and
+    // no `recycle` callback) treats it as a property-name key; the dev-mode
+    // 'Key for item not found' guard surfaces that misuse.
+    if (recycle !== undefined) {
+      this.recycleImpl = recycle;
+    }
     if (key) {
       this.key = key;
     }
@@ -1563,6 +1592,13 @@ export class SyncListComponent<
     // and corrupts it. Skip nested calls — the outer one is already applying
     // `items`, which is either the final desired state or `[]` (teardown).
     if (this._syncInProgress) return;
+    // Opt-in row recycling bypasses the keyed diff entirely. The dispatch
+    // hook is installed by $_eachRecycled (list-recycle.ts); the re-entry
+    // guard lives inside the impl, shared with the async subclass.
+    if (this.recycleImpl !== undefined) {
+      this.recycleImpl(this, items);
+      return;
+    }
     this._syncInProgress = true;
     // Invalidate the duplicate-key detection cache for this sync pass — a
     // mutated-in-place array would otherwise carry stale verdict forward.
@@ -1938,6 +1974,14 @@ export class AsyncListComponent<
     // Defensive normalization (see SyncListComponent.syncList).
     if (!Array.isArray(items)) {
       items = normalizeIterableValue<T>(items);
+    }
+    // Opt-in row recycling bypasses the keyed diff entirely (fully
+    // synchronous — no destroys in steady state, nothing to await). The
+    // dispatch hook is installed by $_eachRecycled (list-recycle.ts); the
+    // re-entry guard lives inside the impl, shared with the sync subclass.
+    if (this.recycleImpl !== undefined) {
+      this.recycleImpl(this, items);
+      return;
     }
     // Invalidate per-items-array duplicate-key cache (see SyncListComponent)
     this._dupItemsRef = null;

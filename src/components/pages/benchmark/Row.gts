@@ -1,12 +1,12 @@
 import { RemoveIcon } from './RemoveIcon.gts';
 import type { Item } from '@/core/benchmark/data';
 import { Component } from '@lifeart/gxt';
-import { type Cell, cellFor, formula } from '@lifeart/gxt';
+import { cellFor, formula } from '@lifeart/gxt';
 
 type RowArgs = {
   Args: {
     item: Item;
-    selected: number | Cell<number>;
+    isSelected: (id: number) => boolean;
     onRemove: (item: Item) => void;
     onSelect: (item: Item) => void;
   };
@@ -42,12 +42,9 @@ export class Row extends Component<RowArgs> {
     return this.args.item.id;
   }
   get isSelected() {
-    const selected = this.args.selected;
-    if (IS_GLIMMER_COMPAT_MODE) {
-      return (selected as unknown as number) === this.id;
-    } else {
-      return (selected as unknown as Cell<number>).value === this.id;
-    }
+    // Tracked read of THIS row's keyed-selector cell — the row's class
+    // bindings subscribe per-id instead of to the shared selected cell.
+    return this.args.isSelected(this.id);
   }
   get className() {
     if (IS_GLIMMER_COMPAT_MODE) {

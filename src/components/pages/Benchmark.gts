@@ -5,7 +5,13 @@ import {
   type Item,
 } from '@/core/benchmark/data';
 import { Component } from '@lifeart/gxt';
-import { tracked, cellFor, type Cell } from '@lifeart/gxt';
+import {
+  tracked,
+  cellFor,
+  keyedSelector,
+  type Cell,
+  type KeyedSelector,
+} from '@lifeart/gxt';
 import { Header } from './benchmark/Header.gts';
 import { Row } from './benchmark/Row.gts';
 
@@ -35,6 +41,15 @@ export class Benchmark extends Component {
   set selected(value: number) {
     this._selected = value;
   }
+  // Keyed selector over the selected row id: each Row subscribes to its OWN
+  // per-id boolean cell instead of the shared `_selected` cell, so a selection
+  // change re-runs O(2) row bindings instead of O(rows). Keyed {{#each}}
+  // semantics are untouched — this only rewires the fan-out.
+  rowSelected: KeyedSelector<number> = keyedSelector(
+    () => this._selected,
+    this,
+    'benchmark.selected',
+  );
   rootNode!: HTMLElement;
   removeItem = (item: Item) => {
     this._items = this._items.filter((i) => i.id !== item.id);
@@ -103,7 +118,7 @@ export class Benchmark extends Component {
               <Row
                 @item={{item}}
                 @onSelect={{this.onSelect}}
-                @selected={{this.selected}}
+                @isSelected={{this.rowSelected}}
                 @onRemove={{this.removeItem}}
               />
             {{/each}}
