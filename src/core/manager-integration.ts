@@ -93,6 +93,44 @@ export const $_MANAGERS = {
 };
 
 /**
+ * The host-manager table shape accepted by `registerHostManagers`. Each entry
+ * replaces the corresponding `$_MANAGERS` slot wholesale (hosts typically
+ * carry extra private state on their manager objects, e.g. builtin-modifier
+ * registries), so the table is typed by the slots' own shapes.
+ */
+export interface HostManagers {
+  component?: (typeof $_MANAGERS)['component'];
+  modifier?: (typeof $_MANAGERS)['modifier'];
+  helper?: (typeof $_MANAGERS)['helper'];
+}
+
+/**
+ * Formal registration API for host managers (the companion of
+ * `registerHostHooks` in host-hooks.ts). Replaces the legacy contract of
+ * hunting down the module-original `$_MANAGERS` object reference and
+ * mutating it from outside — this function lives in the same module
+ * instance the runtime call sites close over, so registration always
+ * reaches the canonical table regardless of how the host resolved the
+ * package (no object-identity hazards, no deferred-retry dance).
+ *
+ * ```ts
+ * import { registerHostManagers } from '@lifeart/gxt';
+ * registerHostManagers({ component: myComponentManager });
+ * ```
+ */
+export function registerHostManagers(managers: HostManagers): void {
+  if (managers.component !== undefined) {
+    $_MANAGERS.component = managers.component;
+  }
+  if (managers.modifier !== undefined) {
+    $_MANAGERS.modifier = managers.modifier;
+  }
+  if (managers.helper !== undefined) {
+    $_MANAGERS.helper = managers.helper;
+  }
+}
+
+/**
  * Result of attempting to handle via a custom manager.
  * If `handled` is true, `result` contains the manager's output.
  * If `handled` is false, the caller should use default behavior.

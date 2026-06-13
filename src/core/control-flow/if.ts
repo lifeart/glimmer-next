@@ -29,6 +29,7 @@ import { cId, addToTree } from '@/core/tree';
 import { opcodeFor } from '@/core/vm';
 import { initDOM } from '@/core/context';
 import { setParentContext, getParentContext } from '../tracking';
+import { HOST_HOOKS } from '@/core/host-hooks';
 
 export type IfFunction = () => boolean;
 
@@ -456,7 +457,8 @@ export class IfCondition {
       this.condition = formula(() => {
         const v = maybeCondition();
         // Allow external truthiness override (e.g., Ember's special rules)
-        const externalToBool = (globalThis as any).__gxtToBool;
+        const externalToBool =
+          HOST_HOOKS.toBool ?? (globalThis as any).__gxtToBool;
         if (externalToBool) {
           return externalToBool(v);
         }

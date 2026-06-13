@@ -76,6 +76,11 @@ import {
   setParentContext,
   getParentContext,
 } from './tracking';
+import {
+  HOST_HOOKS,
+  isHostFunctionalHelper,
+  markHostFunctionalHelper,
+} from '@/core/host-hooks';
 export { pushParentContext, popParentContext, setParentContext, getParentContext };
 
 
@@ -227,16 +232,14 @@ export function $_helperHelper(params: any[], hash: Record<string, unknown>) {
     }
   }
 
-  // @ts-expect-error EmberFunctionalHelpers global
-  if (typeof EmberFunctionalHelpers !== 'undefined' && EmberFunctionalHelpers.has(helperFn)) {
+  if (isHostFunctionalHelper(helperFn)) {
     function wrappedHelper(_params: any[], _hash: Record<string, unknown>) {
       return $_maybeHelper(helperFn, [...boundParams, ..._params], {
         ...hash,
         ..._hash,
       });
     }
-    // @ts-expect-error EmberFunctionalHelpers global
-    EmberFunctionalHelpers.add(wrappedHelper);
+    markHostFunctionalHelper(wrappedHelper);
     return wrappedHelper;
   }
 
@@ -1126,8 +1129,7 @@ export const $_maybeHelper = (
         return helper.compute.call(helper, $_unwrapArgs(runtimeArgs), hash);
       };
     }
-    // @ts-expect-error EmberFunctionalHelpers global
-    if (typeof EmberFunctionalHelpers !== 'undefined' && EmberFunctionalHelpers.has(value)) {
+    if (isHostFunctionalHelper(value)) {
       // @ts-expect-error amount of args
       const hash = $_args(_hash, false);
       return (...runtimeArgs: any[]) => {
@@ -1183,9 +1185,9 @@ export const $_maybeHelper = (
     if (WITH_DYNAMIC_EVAL) {
       // The outer getter from compiled code handles reactivity
       // Check ctx.$_eval first (passed directly, avoids closure overhead)
-      // Then fall back to globalThis.$_eval for initial render
+      // Then fall back to the host hook / globalThis.$_eval for initial render
       // @ts-expect-error $_eval may exist on ctx
-      const evalFn = _ctx?.$_eval ?? globalThis.$_eval;
+      const evalFn = _ctx?.$_eval ?? HOST_HOOKS.dynamicEval ?? globalThis.$_eval;
       if (typeof evalFn === 'function') {
         try {
           const result = evalFn(value);
@@ -1598,8 +1600,10 @@ function ifCond(
   {
     const cond = instance.condition as { isConst?: boolean };
     if (cond && cond.isConst !== true) {
-      const _reg = (globalThis as { __gxtRegisterListMarker?: (m: Comment) => void })
-        .__gxtRegisterListMarker;
+      const _reg =
+        HOST_HOOKS.registerListMarker ??
+        (globalThis as { __gxtRegisterListMarker?: (m: Comment) => void })
+          .__gxtRegisterListMarker;
       if (_reg) {
         _reg(placeholder);
       }

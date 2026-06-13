@@ -6,6 +6,7 @@
 import { scheduleRevalidate } from '@/core/runtime';
 import { isFn, isTag, isTagLike, debugContext } from '@/core/shared';
 import { AdaptivePool, config } from '@/core/config';
+import { HOST_HOOKS } from '@/core/host-hooks';
 
 // Async opcode support — tree-shaken when ASYNC_COMPILE_TRANSFORMS is false
 const asyncOpcodes = new WeakSet<tagOp>();
@@ -914,7 +915,9 @@ export function cell<T>(value: T, debugName?: string) {
 // the formula tracked no object-valued cells.
 export function registerLeafOwnersForFormula(f: MergedCell): void {
   try {
-    const hook = (globalThis as any).__gxtRegisterObjectValueOwner;
+    const hook =
+      HOST_HOOKS.registerObjectValueOwner ??
+      (globalThis as any).__gxtRegisterObjectValueOwner;
     if (typeof hook !== 'function') return;
     const cells = (f as any).relatedCells as Set<Cell> | undefined;
     if (!cells || cells.size === 0) return;
@@ -977,7 +980,9 @@ export function materializeAbsentPathCell(child: Function): boolean {
       path = str.slice(idx + marker.length, end);
     }
     if (!path) return false;
-    const ctx = (globalThis as any).__gxtCurrentTemplateThis;
+    const ctx = HOST_HOOKS.getCurrentTemplateThis
+      ? HOST_HOOKS.getCurrentTemplateThis()
+      : (globalThis as any).__gxtCurrentTemplateThis;
     if (!ctx || typeof ctx !== 'object') return false;
     let cur: any = ctx;
     let materialized = false;

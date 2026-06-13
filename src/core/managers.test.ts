@@ -2,6 +2,7 @@ import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { Window } from 'happy-dom';
 import {
   $_MANAGERS,
+  registerHostManagers,
   tryComponentManager,
   tryHelperManager,
   tryModifierManager,
@@ -1019,5 +1020,41 @@ describe('$_MANAGERS re-export from dom.ts', () => {
 
     expect(managerModule.$_MANAGERS.helper.canHandle).toBe(customCanHandle);
     // Cleanup handled by afterEach
+  });
+});
+
+describe('registerHostManagers', () => {
+  const savedComponent = $_MANAGERS.component;
+  const savedHelper = $_MANAGERS.helper;
+  const savedModifier = $_MANAGERS.modifier;
+  afterEach(() => {
+    $_MANAGERS.component = savedComponent;
+    $_MANAGERS.helper = savedHelper;
+    $_MANAGERS.modifier = savedModifier;
+  });
+
+  test('replaces only the given slots', () => {
+    const componentManager = {
+      canHandle: (c: unknown) => c === 'mine',
+      handle: () => undefined,
+    };
+    registerHostManagers({ component: componentManager });
+    expect($_MANAGERS.component).toBe(componentManager);
+    expect($_MANAGERS.helper).toBe(savedHelper);
+    expect($_MANAGERS.modifier).toBe(savedModifier);
+  });
+
+  test('runtime try* paths route through a registered manager', () => {
+    registerHostManagers({
+      helper: {
+        canHandle: (h: unknown) => h === 'host-helper',
+        handle: (_h: unknown, params: unknown[]) => `handled:${params.length}`,
+      },
+    });
+    expect(tryHelperManager('host-helper', [1, 2], {})).toEqual({
+      handled: true,
+      result: 'handled:2',
+    });
+    expect(tryHelperManager('other', [], {})).toEqual({ handled: false });
   });
 });

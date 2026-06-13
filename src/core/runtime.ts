@@ -7,6 +7,7 @@ import {
   relatedTags,
 } from '@/core/reactive';
 import { isRehydrationScheduled } from './ssr/rehydration-state';
+import { HOST_HOOKS } from '@/core/host-hooks';
 
 let revalidateScheduled = false;
 let hasExternalUpdate = false;
@@ -45,8 +46,11 @@ export function takeRenderingControl() {
 export function scheduleRevalidate() {
   // External sync hook: allows Ember integration to bypass async scheduling
   // When set, the hook is responsible for calling syncDom() at the right time
-  if ((globalThis as any).__gxtExternalSchedule) {
-    (globalThis as any).__gxtExternalSchedule();
+  const externalSchedule =
+    HOST_HOOKS.scheduleRevalidate ??
+    (globalThis as any).__gxtExternalSchedule;
+  if (externalSchedule) {
+    externalSchedule();
     return;
   }
   if (hasExternalUpdate) {
