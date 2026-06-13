@@ -100,6 +100,13 @@ export function registerHostHooks(hooks: HostHooks): void {
       (HOST_HOOKS as Record<string, unknown>)[key] = value;
     }
   }
+  // Cross-instance host-presence sentinel. HOST_HOOKS is module-local, so a
+  // consumer bundled into a different entry chunk (e.g. the list frame-mode
+  // gate) sees its OWN empty copy. This single globalThis flag — set true the
+  // first time any host registers hooks — is visible regardless of how many
+  // times the package is instantiated, restoring the cross-instance property
+  // the legacy `globalThis.__gxt*` hook slots had.
+  (globalThis as Record<string, unknown>).__gxtHostHooksInstalled = true;
 }
 
 /**

@@ -6,6 +6,7 @@ import {
   executeTagSync,
   tagsToRevalidate,
   opsForTag,
+  relatedTags,
   setTracker,
   setIsRendering,
 } from './reactive';
@@ -15,6 +16,7 @@ import { syncDom } from './runtime';
 beforeEach(() => {
   tagsToRevalidate.clear();
   opsForTag.clear();
+  relatedTags.clear();
   setTracker(null);
   setIsRendering(false);
 });

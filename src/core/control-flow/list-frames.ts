@@ -143,10 +143,20 @@ export function framesQualify(block: StaticBlockDef): boolean {
   return true;
 }
 
-/** Ember-host detection — hosts keep the v1 formula-based bindings. */
+/** Ember-host detection — hosts keep the v1 formula-based bindings.
+ *
+ * Detects host integration via the cross-instance `__gxtHostHooksInstalled`
+ * sentinel (set by `registerHostHooks`, the formal API) OR the legacy
+ * `globalThis.__gxt*` hook slots (pre-API integration that mutates globals).
+ * The sentinel is required: a host that wires its channels through
+ * `registerHostHooks` writes them into the module-local HOST_HOOKS, which a
+ * differently-bundled frame-gate copy cannot see — so a hooks-table probe
+ * would miss it and frame mode would wrongly engage, breaking the host's
+ * formula-based reactivity bridge. */
 export function frameHostHooksInstalled(): boolean {
   const g = globalThis as Record<string, unknown>;
   return (
+    g.__gxtHostHooksInstalled === true ||
     typeof g.__gxtRegisterObjectValueOwner === 'function' ||
     g.__gxtCurrentTemplateThis !== undefined ||
     typeof g.__gxtRebindEachItem === 'function'

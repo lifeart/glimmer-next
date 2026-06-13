@@ -18,6 +18,7 @@ import {
   formula,
   tagsToRevalidate,
   opsForTag,
+  relatedTags,
   setTracker,
   getTracker,
   setIsRendering,
@@ -32,6 +33,7 @@ beforeEach(() => {
   // Clear reactive state between tests
   tagsToRevalidate.clear();
   opsForTag.clear();
+  relatedTags.clear();
   setTracker(null);
   setIsRendering(false);
 });
