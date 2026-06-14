@@ -33,6 +33,21 @@ import { HOST_HOOKS } from '@/core/host-hooks';
 
 export type IfFunction = () => boolean;
 
+// Marks this IfCondition as a glimmer-next-native block wrapper — identical to
+// the contract `list.ts`'s `rowBodyCtx` stamps on each per-row ctx. A host
+// renderer (e.g. ember.js' gxt-backend `$_tag`) that re-stamps a render ctx's
+// COMPONENT_ID with its shared root id MUST skip wrappers carrying this symbol:
+// the IfCondition is already a real, TREE-registered node with its own id and
+// CHILD bucket. Overwriting its id with the root id collapses A's CHILD bucket
+// into the root's AND aliases A's TREE entry, so when a branch tears down
+// (true→false toggle via destroyBranchSync) the cascade drops/over-cascades A's
+// live TREE entry — exactly the breakage the Ember host worked around by
+// re-registering the IfCondition. With the marker the host never re-stamps, so
+// a live IfCondition keeps its TREE entry across a sibling/branch destroy.
+// `Symbol.for` shares one identity with `list.ts` + the host across the package
+// boundary (no import → no cycle). Inert in standalone GXT (nothing reads it).
+const BLOCK_WRAPPER_SYMBOL = Symbol.for('gxt-block-wrapper');
+
 export class IfCondition {
   isDestructorRunning = false;
   prevComponent: GenericReturnType | null = null;
@@ -46,6 +61,9 @@ export class IfCondition {
   destroyPromise: Promise<any> | null = null;
   [RENDERED_NODES_PROPERTY]: Array<Node> = [];
   [COMPONENT_ID_PROPERTY] = cId();
+  // See BLOCK_WRAPPER_SYMBOL above: keeps a host renderer from re-stamping this
+  // IfCondition's COMPONENT_ID, so its TREE entry survives branch teardown.
+  [BLOCK_WRAPPER_SYMBOL] = true;
   // Snapshot of DOM nodes inserted by the most recent branch render. We track
   // these so we can clean them up even when the branch's `prevComponent` is
   // empty (e.g. when the true branch is just `{{yield}}` and the slot runtime
@@ -132,6 +150,15 @@ export class IfCondition {
     this._treeParent = treeParent;
     // @ts-expect-error typings error
     addToTree(treeParent, this, 'from if constructor');
+    // Announce this IfCondition (the branch render scope) to the host so it can
+    // attach pre-destroy work via `registerDestructor(this, …)`, mirroring the
+    // per-row `onRowContextCreated` seam in list.ts. Fired ONCE here at
+    // construction (before the first branch renders) rather than per branch
+    // swap, so a host destructor isn't accumulated on every toggle. No-op when
+    // no host hook is installed.
+    if (HOST_HOOKS.onRowContextCreated) {
+      HOST_HOOKS.onRowContextCreated(this as unknown as object);
+    }
     // @ts-expect-error
     this.api = initDOM(this);
     this.destructors.push(opcodeFor(this.condition, this.syncState.bind(this)));
