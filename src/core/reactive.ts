@@ -973,6 +973,23 @@ export function cached<T>(fn: () => T, debugName?: string): CachedCell<T> {
  * does the subscribing — which keeps it allocation-light and leak-free (no tag
  * lingers in a destroyed component's cell subscriber sets).
  *
+ * WHY NOT reuse `createCache`/`getValue` (core/glimmer/caching-primitives.ts)?
+ * Empirically they cannot do this job: gxt's `createCache` is a PUSH/opcode-based,
+ * lifecycle-owned memo — it installs a persistent `formula`+`opcodeFor`
+ * subscription into each dep cell's `relatedTags` (released only by
+ * `cache.destroy()`), `getValue` reads a `calcVersion` counter WITHOUT entangling
+ * the caller, and recompute is driven ASYNCHRONOUSLY by the `scheduleRevalidate`
+ * microtask drain. For this fire-and-forget arg getter (no destroy hook) that
+ * would (1) LEAK — subscriptions pile up on long-lived parent cells across
+ * keyed-each churn (probed: 50 caches over one cell → relatedTags 0→100, none
+ * released); (2) fail to re-render `(array this.x)` consumers — `getValue`
+ * entangles nothing (probed: 0 cells); (3) flip identity only after a flush,
+ * breaking the synchronous-within-a-render-tick contract the identity tests
+ * assert. This helper is the PULL-based, entangling, synchronous, leak-free
+ * counterpart — faithful to the `@glimmer/tracking/primitives/cache` RFC for the
+ * arg-getter use. Do NOT collapse it into `createCache` without first making
+ * `createCache` itself RFC-faithful (a shared-primitive change, separate PR).
+ *
  * Returns a getter so the existing arg-getter calling convention is preserved
  * (`$_args` invokes the arg as `args[key]()`).
  */
