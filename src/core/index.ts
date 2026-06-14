@@ -96,6 +96,16 @@ export {
 
 export { configureGXT, type GXTConfig, type GXTConfigInput, type PoolConfig } from '@/core/config';
 
+// Redux DevTools integration (opt-in, dev-only, browser-only). The whole module
+// tree-shakes out of production/lib builds because `enableReduxDevtools`'s body
+// folds away when IS_DEV_MODE is inlined to false. See `@/core/redux-devtools`.
+export {
+  enableReduxDevtools,
+  disableReduxDevtools,
+  isDevToolsRestoring,
+  type DevToolsConfig,
+} from '@/core/redux-devtools';
+
 // Context API exports for Ember integration
 export {
   provideContext,
