@@ -48,6 +48,51 @@ export function serializeValue(
 }
 
 /**
+ * `(hash)` / `(array)` are the keyword helpers whose produced object/array
+ * identity must be memoized. Classic Glimmer returns a stable compute-ref for
+ * them; GXT otherwise rebuilds a fresh identity on every read of the arg getter,
+ * which makes reference-comparing consumers (Ember child components, modifiers)
+ * over-invalidate. See `cachedHelper` in src/core/reactive.ts.
+ */
+function isMemoizableIdentityHelper(
+  ctx: CompilerContext,
+  value: SerializedValue
+): boolean {
+  if (value.kind !== 'helper') return false;
+  if (value.name !== 'hash' && value.name !== 'array') return false;
+  // Respect a local binding that shadows the built-in (e.g. block param `hash`).
+  return !ctx.scopeTracker.hasBinding(value.name);
+}
+
+/**
+ * Wrap an already-built value expression in an arg getter, memoizing the
+ * identity when the value is a `(hash)` / `(array)` helper so the produced
+ * reference stays stable across reads. `$__cached` returns a getter, so the
+ * `() => value` calling convention is preserved either way.
+ *
+ * Gated to the Ember dialect (IS_GLIMMER_COMPAT_MODE + WITH_EMBER_INTEGRATION):
+ * the identity-stability contract matters for reference-comparing Ember
+ * consumers (child components, modifiers). gxt-standalone AND non-Ember
+ * glimmer-compat compilation stay byte-identical (plain `() => value` getter,
+ * no `$__cached`).
+ */
+function buildMaybeMemoizedGetter(
+  ctx: CompilerContext,
+  value: SerializedValue,
+  builtVal: JSExpression,
+  sourceRange?: SourceRange
+): JSExpression {
+  if (
+    ctx.flags.IS_GLIMMER_COMPAT_MODE &&
+    ctx.flags.WITH_EMBER_INTEGRATION &&
+    isMemoizableIdentityHelper(ctx, value)
+  ) {
+    return B.call(SYMBOLS.CACHED, [B.getter(builtVal, sourceRange)], sourceRange);
+  }
+  return B.getter(builtVal, sourceRange);
+}
+
+/**
  * Build a JSExpression from a SerializedValue.
  * This is the core transformation that converts the intermediate representation
  * to a CodeBuilder AST node for code generation.
@@ -92,7 +137,18 @@ export function buildValue(
       // Wrap the inner value in an arrow function: () => innerValue
       // Use buildValueNoGetter to avoid double-wrapping: getter(path) should
       // produce () => this.x, NOT () => () => this.x
-      return B.getter(buildValueNoGetter(ctx, value.value, ctxName), value.sourceRange);
+      //
+      // For (hash)/(array) the wrap goes through $__cached so the produced
+      // object/array reference is identity-stable across reads/re-renders (the
+      // arg-access layer re-invokes this getter on every read; a bare arrow
+      // would rebuild a fresh identity each time and over-invalidate
+      // reference-comparing consumers).
+      return buildMaybeMemoizedGetter(
+        ctx,
+        value.value,
+        buildValueNoGetter(ctx, value.value, ctxName),
+        value.sourceRange
+      );
 
     case 'concat':
       // Build [part1, part2, ...].join('') with source mapping for paths.
@@ -763,8 +819,10 @@ function buildBuiltInHelper(
       if (builtVal.type === 'reactiveGetter') {
         builtVal = builtVal.expression;
       }
-      // Use B.getter() to preserve AST structure for sourcemaps
-      hashProps.push(B.prop(key, B.getter(builtVal, val.sourceRange), false, val.sourceRange));
+      // Use B.getter() to preserve AST structure for sourcemaps. A nested
+      // (hash)/(array) prop is memoized through $__cached so reading
+      // `outerHash.nested` returns an identity-stable reference too.
+      hashProps.push(B.prop(key, buildMaybeMemoizedGetter(ctx, val, builtVal, val.sourceRange), false, val.sourceRange));
     }
     return B.call(helperId, [B.object(hashProps)], sourceRange);
   }

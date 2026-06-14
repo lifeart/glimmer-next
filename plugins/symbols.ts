@@ -45,6 +45,9 @@ export const SYMBOLS = {
   $__fn: '$__fn',
   $__or: '$__or',
   $__and: '$__and',
+  // Identity memoization for (hash)/(array) — keeps the produced object/array
+  // reference stable across reads/re-renders (classic compute-ref contract).
+  $__cached: '$__cached',
 };
 
 export const CONSTANTS = {

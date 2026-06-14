@@ -14,6 +14,7 @@ export {
   type MergedCell,
   formula,
   cached,
+  cachedHelper,
   type CachedCell,
 } from '@/core/reactive';
 

@@ -941,6 +941,99 @@ export function cached<T>(fn: () => T, debugName?: string): CachedCell<T> {
   return self;
 }
 
+/**
+ * `cachedHelper(factory)` — identity-stable memoization for the `(hash)` and
+ * `(array)` keyword helpers.
+ *
+ * Classic Glimmer memoizes `(hash)`/`(array)` (a `createComputeRef`-style stable
+ * reference that only changes when an input changes). GXT compiles a `(hash)` /
+ * `(array)` value into a getter (`() => $__hash({...})` / `() => $__array(...)`)
+ * that the arg-access layer (`$_args`) RE-INVOKES on every read, so every read
+ * produced a FRESH object/array identity. Reference-comparing consumers (Ember
+ * child components, modifiers) then saw the arg as perpetually changed and
+ * over-fired `didUpdateAttrs` / `didReceiveAttrs` even on unrelated re-renders.
+ *
+ * This wraps the helper factory so the produced identity is memoized:
+ *   - the value is computed once, capturing the tracked cells read during the
+ *     computation;
+ *   - subsequent reads return the SAME reference while those cells are unchanged
+ *     — and FOREVER when the factory read no tracked cell (e.g. `(hash)`, whose
+ *     properties are live getters, or a constant `(array 1 2)`);
+ *   - the reference is recomputed (yielding a fresh identity) only when a
+ *     captured cell actually changes (e.g. `(array this.x)` when `this.x`
+ *     changes);
+ *   - the captured deps are replayed into the ambient tracker on every read, so
+ *     a consumer formula still depends on the underlying cells and re-runs when
+ *     they change — value-correctness is preserved.
+ *
+ * Unlike `cached()`, a zero-dep capture is treated as STABLE (not stale): the
+ * hash/array factories only read their own tracked-cell args, never raw mutable
+ * state, so there is nothing to miss. The memo deliberately does NOT subscribe a
+ * tag to the dep cells (no `bindAllCellsToTag`) — the consumer's own tracker
+ * does the subscribing — which keeps it allocation-light and leak-free (no tag
+ * lingers in a destroyed component's cell subscriber sets).
+ *
+ * Returns a getter so the existing arg-getter calling convention is preserved
+ * (`$_args` invokes the arg as `args[key]()`).
+ */
+export function cachedHelper<T>(factory: () => T): () => T {
+  let hasValue = false;
+  let lastValue: T;
+  let depRevisions: Map<Cell, number> | null = null;
+
+  function recompute(): T {
+    const priorTracker = currentTracker;
+    const localTracker: Set<Cell> = new Set();
+    setTracker(localTracker);
+    let value: T;
+    try {
+      value = factory();
+    } finally {
+      setTracker(priorTracker);
+      // Forward captured deps to whoever triggered the (re)compute so an outer
+      // formula whose only dep flows through this memo still re-runs.
+      if (priorTracker !== null) {
+        localTracker.forEach((cell) => priorTracker.add(cell));
+      }
+    }
+    const snapshot = new Map<Cell, number>();
+    localTracker.forEach((cell) => snapshot.set(cell, cell._revision));
+    depRevisions = snapshot;
+    lastValue = value;
+    hasValue = true;
+    return value;
+  }
+
+  function isClean(): boolean {
+    if (!hasValue || depRevisions === null) {
+      return false;
+    }
+    // Zero captured deps => stable for the lifetime of this call site.
+    for (const [cell, revision] of depRevisions) {
+      if (cell._revision !== revision) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  return function cachedHelperRead(): T {
+    // Replay known deps into the ambient tracker so a consumer formula depends
+    // on the underlying cells even when we serve the memoized identity.
+    if (
+      currentTracker !== null &&
+      depRevisions !== null &&
+      depRevisions.size > 0
+    ) {
+      depRevisions.forEach((_revision, cell) => currentTracker!.add(cell));
+    }
+    if (isClean()) {
+      return lastValue;
+    }
+    return recompute();
+  };
+}
+
 export function deepFnValue(fn: Function | Fn) {
   const cell = fn();
   if (isFn(cell)) {

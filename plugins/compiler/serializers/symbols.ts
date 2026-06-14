@@ -74,6 +74,9 @@ export const SYMBOLS = {
   FN: '$__fn',
   DEBUGGER: '$__debugger',
   LOG: '$__log',
+  // Identity memoization wrapper for (hash)/(array). Emitted around the arg
+  // getter so the produced object/array reference stays stable across reads.
+  CACHED: '$__cached',
 
   // Unstable child wrapper
   UCW: '$_ucw',

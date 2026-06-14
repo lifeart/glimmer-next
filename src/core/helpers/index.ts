@@ -4,6 +4,7 @@ export { $__log } from './log';
 export { $__debugger } from './debugger';
 export { $__array } from './array';
 export { $__hash } from './hash';
+export { $__cached } from './cached';
 export { $__fn } from './fn';
 export { $__or } from './or';
 export { $__not } from './not';
