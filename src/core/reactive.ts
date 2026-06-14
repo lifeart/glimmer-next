@@ -108,6 +108,15 @@ export function tracked(
             : descriptor?.value,
           `${klass.constructor.name}.${key}.@tracked`,
         );
+        if (IS_DEV_MODE) {
+          // Dev-only owner back-reference (folds out in production). The Redux
+          // DevTools integration uses it to recognise a cell as component-owned
+          // so a torn-down component's @tracked cells are excluded from the
+          // `$globals` bucket instead of lingering. Purely metadata; mirrors
+          // the back-reference `rawCellFor` already records.
+          value._relatedObj = this;
+          value._relatedKey = key;
+        }
         keys.set(key, value);
         return value.value;
       } else {
@@ -117,10 +126,15 @@ export function tracked(
     set(newValue: any) {
       const keys = keysFor(this);
       if (!keys.has(key)) {
-        keys.set(
-          key,
-          cell(newValue, `${klass.constructor.name}.${key}.@tracked`),
+        const created: any = cell(
+          newValue,
+          `${klass.constructor.name}.${key}.@tracked`,
         );
+        if (IS_DEV_MODE) {
+          created._relatedObj = this;
+          created._relatedKey = key;
+        }
+        keys.set(key, created);
         return;
       }
       const _cell = keys.get(key)!;
@@ -220,7 +234,11 @@ export class Cell<T extends unknown = unknown> {
     // spurious recomputes within a single render pass. We still schedule
     // revalidation to preserve observable side-effect semantics — callers
     // that update() a cell explicitly expect the opcode queue to flush.
-    const changed = this._value !== value;
+    // `prevValue` is the single read of `_value` we already needed for the
+    // change check; capturing it in a local is free and lets the dev-only
+    // DevTools notifier report the old→new transition (see below).
+    const prevValue = this._value;
+    const changed = prevValue !== value;
     this._value = value;
     if (changed) {
       this._revision = bumpGlobalRevision();
@@ -231,7 +249,7 @@ export class Cell<T extends unknown = unknown> {
     // Folds away entirely in lib builds (IS_DEV_MODE === false); a single
     // predictable null check when DevTools is off in dev.
     if (IS_DEV_MODE && _devtoolsCellNotifier !== null && changed) {
-      _devtoolsCellNotifier(this as unknown as Cell);
+      _devtoolsCellNotifier(this as unknown as Cell, prevValue);
     }
   }
 }
@@ -561,7 +579,7 @@ export function setCellUpdateDeferralHook(
 // restore (the restore path uses `applyCellUpdateSync`, which bypasses this
 // hook entirely, so it never fires in practice — but the module also keeps an
 // `isDevToolsRestoring()` guard as defence in depth).
-export type DevtoolsCellNotifier = (cell: Cell) => void;
+export type DevtoolsCellNotifier = (cell: Cell, oldValue: unknown) => void;
 let _devtoolsCellNotifier: DevtoolsCellNotifier | null = null;
 export function setDevtoolsCellNotifier(
   notifier: DevtoolsCellNotifier | null,
@@ -602,7 +620,8 @@ export function applyDeferredCellUpdate(
   // Same body as Cell.update's synchronous path, intentionally without the
   // deferral-hook check (the hook is the CALLER here — re-entering it would
   // loop forever).
-  const changed = cell._value !== value;
+  const prevValue = cell._value;
+  const changed = prevValue !== value;
   cell._value = value;
   if (changed) {
     cell._revision = bumpGlobalRevision();
@@ -612,7 +631,7 @@ export function applyDeferredCellUpdate(
   // Mirror Cell.update's dev-only DevTools notification for host-deferred
   // updates (e.g. Ember's runloop drain). Same zero-cost-when-off guard.
   if (IS_DEV_MODE && _devtoolsCellNotifier !== null && changed) {
-    _devtoolsCellNotifier(cell);
+    _devtoolsCellNotifier(cell, prevValue);
   }
 }
 

@@ -1,30 +1,69 @@
 /**
  * Redux DevTools browser-extension integration for gxt's reactive core.
  *
- * Bridges gxt `Cell`s to the Redux DevTools extension
- * (`window.__REDUX_DEVTOOLS_EXTENSION__`) so the whole reactive state tree shows
- * up on the DevTools timeline and supports time-travel debugging: a JUMP in the
- * monitor restores every tracked cell to its recorded value and re-renders the
- * bound DOM, WITHOUT re-dispatching back to the monitor.
+ * Bridges gxt's reactive state to the Redux DevTools extension
+ * (`window.__REDUX_DEVTOOLS_EXTENSION__`) so the whole COMPONENT TREE shows up on
+ * the DevTools timeline and supports time-travel debugging: a JUMP in the
+ * monitor restores every recorded data cell to its value and re-renders the
+ * bound DOM, WITHOUT re-dispatching back to the monitor — backward AND forward.
  *
- * Design / cost model
- * ===================
+ * What you see in the monitor
+ * ===========================
+ * Instead of a flat `"<debugName>#<id>": value` dump, the state mirrors the gxt
+ * component tree, human-readable and diff-friendly:
+ *
+ *   {
+ *     "Application#1": {
+ *       "Benchmark#7": {
+ *         "$state": { "_selected": 5, "_items": [ ... ] },
+ *         "Row#42": { "$state": { "label": "foo" } },
+ *         "Row#43": { "$state": { "label": "bar" } }
+ *       }
+ *     },
+ *     "$globals": { "theme#3": "dark" }
+ *   }
+ *
+ *   * Each node is labelled `<ClassName>#<id>` (id is stable while the component
+ *     is alive, so key paths stay stable across snapshots and the extension's
+ *     diff view highlights exactly the changed leaf).
+ *   * A node's OWN reactive cells live under `$state` (property name -> value),
+ *     read from `cellsMap.get(node)` — NOT from the strong `DEBUG_CELLS` set, so
+ *     destroyed components (removed from `TREE` by their destructor) are absent
+ *     by construction. No retention, no dead-component soup.
+ *   * Cells with no live tree owner (module-level `cell()`, list-item cells,
+ *     `@tracked` on plain objects) go in a separate, labelled `$globals` bucket.
+ *     Cells owned by a component that is no longer in `TREE` are excluded from
+ *     `$globals` too — a torn-down component leaves zero trace.
+ *   * Derived `MergedCell`s recompute from their deps and are not restorable, so
+ *     they are intentionally OMITTED from the state (`cellsMap` only ever holds
+ *     data `Cell`s, so this falls out for free). Data cells are the primary,
+ *     restorable state.
+ *
+ * Action timeline
+ * ===============
+ * Each timeline entry's `type` tells a story about what changed rather than a
+ * generic `cells:changed`:
+ *   * one change   -> `"set Benchmark._selected"`
+ *   * one owner    -> `"update Row#42 (3 cells)"`
+ *   * many owners  -> `"update Row#42 +2 more (3 cells)"`
+ *   * large batch  -> `"update: 100 cells"`
+ * with a structured payload (`{ count, changes: [{ path, from, to }] }`) so the
+ * action inspector is informative. Per-microtask coalescing is preserved (a
+ * 1000-row update is one entry), and the coalesced label still describes it.
+ *
+ * Cost model
+ * ==========
  * The feature is strictly DEV-ONLY and browser-only:
  *   * `enableReduxDevtools()` no-ops (returns a no-op disabler) unless
  *     `IS_DEV_MODE` is true, a `window` exists, and the extension is installed.
  *   * The only hot-path touchpoint — `Cell.update()`'s `_devtoolsCellNotifier`
- *     call — is guarded by `IS_DEV_MODE && notifier !== null`. In a lib /
- *     production build `IS_DEV_MODE` is inlined to `false`, so that branch (and
- *     hence every reference that would pull THIS module into the bundle) folds
- *     away. When DevTools is simply not enabled in dev it costs one predictable
- *     null check. Result: this whole module tree-shakes out of production
- *     consumer bundles.
- *
- * State source
- * ============
- * State is read from the existing dev-only `DEBUG_CELLS` registry (every live
- * data cell) — no parallel "ALIVE_CELLS" registry is introduced. Each cell is
- * keyed by a stable, unique `<debugName>#<id>` string.
+ *     call — is guarded by `IS_DEV_MODE && notifier !== null && changed`. In a
+ *     lib / production build `IS_DEV_MODE` is inlined to `false`, so that branch
+ *     (and hence every reference that would pull THIS module into the bundle)
+ *     folds away. When DevTools is simply not enabled in dev it costs one
+ *     predictable null check. The tree-walk + label-building happen ONLY at
+ *     snapshot time (DevTools connected), never on the cell-update hot path.
+ *     Result: this whole module tree-shakes out of production consumer bundles.
  *
  * Two transports
  * ==============
@@ -38,12 +77,23 @@
  */
 import {
   DEBUG_CELLS,
+  cellsMap,
   applyCellUpdateSync,
   setDevtoolsCellNotifier,
   type Cell,
 } from '@/core/reactive';
+import { TREE, CHILD, PARENT } from '@/core/tree';
+import { COMPONENT_ID_PROPERTY } from '@/core/types';
 
 const noop = () => {};
+
+// Reserved keys in the tree-shaped state. Component nodes are labelled
+// `<ClassName>#<id>` (always containing `#`), so these never collide.
+const STATE_KEY = '$state';
+const GLOBALS_KEY = '$globals';
+// Cap the per-action `changes` payload so a huge batch stays light in the
+// action inspector (the full state still carries every value).
+const CHANGE_CAP = 25;
 
 // ---------------------------------------------------------------------------
 // Public configuration / extension types
@@ -122,50 +172,258 @@ export function isDevToolsRestoring(): boolean {
   return isRestoringState;
 }
 
-/**
- * Stable, unique key for a cell. `id` guarantees uniqueness; the debug name is
- * prepended for human readability in the monitor.
- */
-function cellKey(cell: Cell): string {
-  const name = (cell as { _debugName?: string })._debugName;
+type AnyObj = Record<string, unknown>;
+type CellRecord = { _value: unknown; _debugName?: string; _relatedObj?: object };
+
+/** Human-readable class name for a component node. */
+function nodeClassName(node: unknown): string {
+  const ctorName = (node as { constructor?: { name?: string } })?.constructor
+    ?.name;
+  if (ctorName && ctorName !== 'Object') {
+    return ctorName;
+  }
+  const dbg = (node as { _debugName?: string })?._debugName;
+  return dbg || 'Component';
+}
+
+/** Stable node label, e.g. `BenchRoot#7`. */
+function nodeLabel(node: unknown, id: number): string {
+  return `${nodeClassName(node)}#${id}`;
+}
+
+/** Stable per-session key for a non-tree (global/detached) cell. */
+function globalKey(cell: Cell): string {
+  const name = (cell as CellRecord)._debugName;
   return name ? `${name}#${cell.id}` : `cell#${cell.id}`;
 }
 
-/** Snapshot every live data cell into a plain serializable object. */
-export function snapshotCells(): Record<string, unknown> {
-  const state: Record<string, unknown> = {};
-  DEBUG_CELLS.forEach((cell) => {
-    state[cellKey(cell)] = (cell as { _value: unknown })._value;
-  });
-  return state;
+/** Parse the trailing `#<id>` off a node label; null if not a node label. */
+function parseNodeId(label: string): number | null {
+  const i = label.lastIndexOf('#');
+  if (i === -1) {
+    return null;
+  }
+  const n = Number(label.slice(i + 1));
+  return Number.isInteger(n) ? n : null;
+}
+
+/** A component id is a root of the snapshot when its parent is not a live node. */
+function isRootId(id: number): boolean {
+  const parent = PARENT.get(id);
+  return parent === undefined || !TREE.has(parent);
+}
+
+/** Where a tree-owned cell lives, for action labelling. */
+interface CellPathInfo {
+  className: string;
+  ownerLabel: string;
+  key: string;
 }
 
 /**
- * Restore cell values from a previously snapshotted state (time-travel).
+ * One walk of the live component tree -> a serializable, nested state object
+ * plus a `cell -> path` index (used to label actions) and the set of cells the
+ * tree already covers (so `$globals` doesn't double-count them).
  *
- * Uses `applyCellUpdateSync` so subscribers re-render synchronously and the
- * DevTools-notifier hook in `Cell.update` is NOT triggered (no re-dispatch).
- * The `isRestoringState` guard additionally neutralises any synchronous
- * write-back a subscriber might perform.
+ * Reads each node's own cells from `cellsMap.get(node)` and NEVER from the
+ * strong `DEBUG_CELLS` set, so torn-down components — gone from `TREE` — are
+ * absent by construction. Nothing here is retained past the call.
  */
-export function restoreCells(
-  state: Record<string, unknown> | null | undefined,
+function buildSnapshot(): { state: AnyObj; index: Map<Cell, CellPathInfo> } {
+  const state: AnyObj = {};
+  const index = new Map<Cell, CellPathInfo>();
+  const treeOwned = new Set<Cell>();
+  const visited = new Set<number>();
+  for (const id of TREE.keys()) {
+    if (isRootId(id) && !visited.has(id)) {
+      visited.add(id);
+      const node = TREE.get(id)!;
+      state[nodeLabel(node, id)] = buildNode(node, id, index, treeOwned, visited);
+    }
+  }
+  const globals = buildGlobals(treeOwned);
+  if (globals !== null) {
+    state[GLOBALS_KEY] = globals;
+  }
+  return { state, index };
+}
+
+function buildNode(
+  node: unknown,
+  id: number,
+  index: Map<Cell, CellPathInfo>,
+  treeOwned: Set<Cell>,
+  visited: Set<number>,
+): AnyObj {
+  const obj: AnyObj = {};
+  const cells = cellsMap.get(node as object);
+  if (cells !== undefined && cells.size > 0) {
+    const className = nodeClassName(node);
+    const ownerLabel = `${className}#${id}`;
+    const own: AnyObj = {};
+    let any = false;
+    cells.forEach((cell, key) => {
+      if (typeof key === 'symbol') {
+        return; // symbol-keyed internals don't round-trip through JSON
+      }
+      const k = String(key);
+      own[k] = (cell as unknown as CellRecord)._value;
+      index.set(cell as unknown as Cell, { className, ownerLabel, key: k });
+      treeOwned.add(cell as unknown as Cell);
+      any = true;
+    });
+    if (any) {
+      obj[STATE_KEY] = own;
+    }
+  }
+  const children = CHILD.get(id);
+  if (children !== undefined) {
+    children.forEach((childId) => {
+      const childNode = TREE.get(childId);
+      if (childNode !== undefined && !visited.has(childId)) {
+        visited.add(childId);
+        obj[nodeLabel(childNode, childId)] = buildNode(
+          childNode,
+          childId,
+          index,
+          treeOwned,
+          visited,
+        );
+      }
+    });
+  }
+  return obj;
+}
+
+/**
+ * The `$globals` bucket: live cells with no live tree owner. Sourced from the
+ * dev-only `DEBUG_CELLS` set, but:
+ *   - cells already shown in the tree are skipped (no duplication);
+ *   - cells owned by a COMPONENT that is no longer in `TREE` are skipped — a
+ *     destroyed component leaves zero trace here either.
+ * What remains is module-level `cell()`, list-item cells and `@tracked` on plain
+ * (non-component) objects. `DEBUG_CELLS` is the one pre-existing dev-only set
+ * that grows over a session; the per-component path above never touches it.
+ */
+function buildGlobals(treeOwned: Set<Cell>): AnyObj | null {
+  const out: AnyObj = {};
+  let any = false;
+  DEBUG_CELLS.forEach((cell) => {
+    if (treeOwned.has(cell)) {
+      return;
+    }
+    const owner = (cell as unknown as CellRecord)._relatedObj;
+    if (
+      owner !== undefined &&
+      owner !== null &&
+      typeof owner === 'object' &&
+      (COMPONENT_ID_PROPERTY in owner)
+    ) {
+      // Component-owned but absent from the live TREE => torn down. Exclude.
+      return;
+    }
+    out[globalKey(cell)] = (cell as unknown as CellRecord)._value;
+    any = true;
+  });
+  return any ? out : null;
+}
+
+/** Public snapshot of the whole reactive tree (used by `createCellState`). */
+export function snapshotState(): AnyObj {
+  return buildSnapshot().state;
+}
+
+function stringKeyedCells(
+  cells: Map<string | number | symbol, unknown>,
+): Map<string, Cell> {
+  const m = new Map<string, Cell>();
+  cells.forEach((c, k) => m.set(String(k), c as Cell));
+  return m;
+}
+
+/**
+ * Restore reactive state from a previously snapshotted tree-shaped object
+ * (time-travel — backward OR forward). Navigates the nested state in parallel
+ * with the LIVE component tree, matching nodes by their stable `#<id>` label, and
+ * applies each leaf via `applyCellUpdateSync` (synchronous re-render, no
+ * re-dispatch). The `isRestoringState` guard neutralises any synchronous
+ * write-back a subscriber might perform.
+ *
+ * Entries whose component is no longer live are skipped (you cannot restore a
+ * destroyed component's cells); live nodes absent from the target state are left
+ * untouched. Stable across a session as long as component ids are stable.
+ */
+export function restoreState(
+  state: AnyObj | null | undefined,
 ): void {
   if (!state || typeof state !== 'object') {
     return;
   }
-  const byKey = new Map<string, Cell>();
-  DEBUG_CELLS.forEach((cell) => byKey.set(cellKey(cell), cell));
   isRestoringState = true;
   try {
     for (const key in state) {
-      const cell = byKey.get(key);
-      if (cell !== undefined) {
-        applyCellUpdateSync(cell as Cell<unknown>, state[key]);
+      if (key === GLOBALS_KEY) {
+        restoreGlobals(state[key] as AnyObj);
+        continue;
+      }
+      const id = parseNodeId(key);
+      if (id === null) {
+        continue;
+      }
+      const node = TREE.get(id);
+      if (node !== undefined) {
+        restoreNode(node, state[key] as AnyObj);
       }
     }
   } finally {
     isRestoringState = false;
+  }
+}
+
+function restoreNode(node: unknown, obj: AnyObj | null | undefined): void {
+  if (!obj || typeof obj !== 'object') {
+    return;
+  }
+  const cells = cellsMap.get(node as object);
+  for (const key in obj) {
+    if (key === STATE_KEY) {
+      if (cells === undefined) {
+        continue;
+      }
+      const byStr = stringKeyedCells(cells);
+      const own = obj[key] as AnyObj;
+      if (own && typeof own === 'object') {
+        for (const ck in own) {
+          const cell = byStr.get(ck);
+          if (cell !== undefined) {
+            applyCellUpdateSync(cell as Cell<unknown>, own[ck]);
+          }
+        }
+      }
+      continue;
+    }
+    const id = parseNodeId(key);
+    if (id === null) {
+      continue;
+    }
+    const child = TREE.get(id);
+    if (child !== undefined) {
+      restoreNode(child, obj[key] as AnyObj);
+    }
+  }
+}
+
+function restoreGlobals(globals: AnyObj | null | undefined): void {
+  if (!globals || typeof globals !== 'object') {
+    return;
+  }
+  const byKey = new Map<string, Cell>();
+  DEBUG_CELLS.forEach((cell) => byKey.set(globalKey(cell), cell));
+  for (const k in globals) {
+    const cell = byKey.get(k);
+    if (cell !== undefined) {
+      applyCellUpdateSync(cell as Cell<unknown>, globals[k]);
+    }
   }
 }
 
@@ -175,33 +433,152 @@ export function restoreCells(
 
 let _connection: DevToolsConnection | null = null;
 let _unsubscribe: (() => void) | null = null;
-let _initialSnapshot: Record<string, unknown> = {};
+let _initialSnapshot: AnyObj = {};
 
 // Coalesce per-microtask: one "action" per synchronous batch of cell updates
 // (mirrors gxt's own scheduleRevalidate batching) so a 1000-row update is a
-// single timeline entry instead of 1000.
-const _changedKeys = new Set<string>();
+// single timeline entry instead of 1000. `_changed` maps each changed cell to
+// its FIRST-seen value this batch (the "from"); the "to" is read live at flush.
+// Both the map and the scheduled flag are buffers, cleared every flush — the
+// integration holds nothing across snapshots.
+const _changed = new Map<Cell, unknown>();
 let _sendScheduled = false;
 
-function scheduleDevtoolsSend(cell: Cell): void {
+/** Dev-only introspection for the leak test: count of cells buffered for the
+ * next flush. The integration retains nothing else across snapshots. */
+export function devtoolsPendingCount(): number {
+  return _changed.size;
+}
+
+function isPrimitiveish(v: unknown): boolean {
+  return (
+    v === null ||
+    v === undefined ||
+    typeof v === 'string' ||
+    typeof v === 'number' ||
+    typeof v === 'boolean'
+  );
+}
+
+/** A light, JSON-safe stand-in for a non-primitive value in the action payload
+ * (the full state still carries the real value). */
+function summarizeValue(v: unknown): unknown {
+  if (isPrimitiveish(v)) {
+    return v;
+  }
+  if (Array.isArray(v)) {
+    return `Array(${v.length})`;
+  }
+  if (typeof v === 'function') {
+    return 'ƒ()';
+  }
+  const name = (v as { constructor?: { name?: string } })?.constructor?.name;
+  return `${name || 'Object'}{…}`;
+}
+
+interface ChangeEntry {
+  cell: Cell;
+  from: unknown;
+  to: unknown;
+  /** `Class.prop` (no id) — for the action `type`. */
+  shortLabel: string;
+  /** `Class#id.prop` (precise) — for the payload path. */
+  path: string;
+  /** `Class#id` — to count distinct owners. */
+  ownerLabel: string;
+}
+
+function describeChange(
+  cell: Cell,
+  from: unknown,
+  index: Map<Cell, CellPathInfo>,
+): ChangeEntry {
+  const info = index.get(cell);
+  const to = (cell as unknown as CellRecord)._value;
+  if (info !== undefined) {
+    return {
+      cell,
+      from,
+      to,
+      shortLabel: `${info.className}.${info.key}`,
+      path: `${info.ownerLabel}.${info.key}`,
+      ownerLabel: info.ownerLabel,
+    };
+  }
+  // Non-tree (global/detached) cell.
+  const name =
+    (cell as unknown as CellRecord)._debugName || `cell#${cell.id}`;
+  return {
+    cell,
+    from,
+    to,
+    shortLabel: name,
+    path: globalKey(cell),
+    ownerLabel: GLOBALS_KEY,
+  };
+}
+
+/** Build the timeline label that tells the story of this coalesced batch. */
+function buildActionType(entries: ChangeEntry[]): string {
+  const n = entries.length;
+  if (n === 1) {
+    return `set ${entries[0]!.shortLabel}`;
+  }
+  if (n > 8) {
+    return `update: ${n} cells`;
+  }
+  const owners = new Set(entries.map((e) => e.ownerLabel));
+  if (owners.size === 1) {
+    return `update ${entries[0]!.ownerLabel} (${n} cells)`;
+  }
+  return `update ${entries[0]!.ownerLabel} +${n - 1} more (${n} cells)`;
+}
+
+function scheduleDevtoolsSend(cell: Cell, oldValue: unknown): void {
   if (isRestoringState || _connection === null) {
     return;
   }
-  _changedKeys.add(cellKey(cell));
+  // First-seen old value wins so the coalesced action reports the true
+  // start-of-batch -> end-of-batch transition.
+  if (!_changed.has(cell)) {
+    _changed.set(cell, oldValue);
+  }
   if (_sendScheduled) {
     return;
   }
   _sendScheduled = true;
-  queueMicrotask(() => {
-    _sendScheduled = false;
-    if (_connection === null) {
-      _changedKeys.clear();
-      return;
-    }
-    const changed = Array.from(_changedKeys);
-    _changedKeys.clear();
-    _connection.send({ type: 'cells:changed', changed }, snapshotCells());
-  });
+  queueMicrotask(flushDevtoolsSend);
+}
+
+function flushDevtoolsSend(): void {
+  _sendScheduled = false;
+  if (_connection === null) {
+    _changed.clear();
+    return;
+  }
+  const pending = Array.from(_changed.entries());
+  _changed.clear();
+  if (pending.length === 0) {
+    return;
+  }
+  const { state, index } = buildSnapshot();
+  const entries = pending.map(([cell, from]) =>
+    describeChange(cell, from, index),
+  );
+  const changes = entries.slice(0, CHANGE_CAP).map((e) => ({
+    path: e.path,
+    from: summarizeValue(e.from),
+    to: summarizeValue(e.to),
+  }));
+  const action: DevToolsAction = {
+    type: buildActionType(entries),
+    count: entries.length,
+    changes,
+  };
+  if (entries.length > CHANGE_CAP) {
+    action.truncated = entries.length - CHANGE_CAP;
+  }
+  _connection.send(action, state);
 }
 
 function handleDevToolsMessage(
@@ -216,29 +593,32 @@ function handleDevToolsMessage(
     case 'JUMP_TO_STATE':
     case 'JUMP_TO_ACTION':
     case 'ROLLBACK': {
+      // Restores work for ANY target index — backward or forward — because the
+      // tree-shaped state carries stable `#<id>` key paths that `restoreState`
+      // navigates against the live tree.
       const parsed = parseDevToolsState(connection, message.state);
       if (parsed !== undefined) {
-        restoreCells(parsed);
+        restoreState(parsed);
       }
       break;
     }
     case 'RESET':
       // Revert to the state captured when DevTools connected.
-      restoreCells(_initialSnapshot);
-      connection.init(snapshotCells());
+      restoreState(_initialSnapshot);
+      connection.init(snapshotState());
       break;
     case 'COMMIT':
       // Make the current state the new committed base.
-      _initialSnapshot = snapshotCells();
+      _initialSnapshot = snapshotState();
       connection.init(_initialSnapshot);
       break;
     case 'IMPORT_STATE': {
       const lifted = message.payload.nextLiftedState as
-        | { computedStates?: Array<{ state?: Record<string, unknown> }> }
+        | { computedStates?: Array<{ state?: AnyObj }> }
         | undefined;
       const computed = lifted?.computedStates;
       if (Array.isArray(computed) && computed.length > 0) {
-        restoreCells(computed[computed.length - 1]!.state);
+        restoreState(computed[computed.length - 1]!.state);
       }
       break;
     }
@@ -251,13 +631,13 @@ function handleDevToolsMessage(
 function parseDevToolsState(
   connection: DevToolsConnection,
   state: string | undefined,
-): Record<string, unknown> | undefined {
+): AnyObj | undefined {
   if (typeof state !== 'string') {
     // Some monitors deliver an already-parsed object.
-    return state === undefined ? undefined : (state as Record<string, unknown>);
+    return state === undefined ? undefined : (state as AnyObj);
   }
   try {
-    return JSON.parse(state) as Record<string, unknown>;
+    return JSON.parse(state) as AnyObj;
   } catch (e) {
     // Never swallow: surface to the dev console AND the extension monitor.
     if (IS_DEV_MODE) {
@@ -314,7 +694,7 @@ export function enableReduxDevtools(config?: DevToolsConfig): () => void {
     ...config,
   });
 
-  _initialSnapshot = snapshotCells();
+  _initialSnapshot = snapshotState();
   connection.init(_initialSnapshot);
   const unsub = connection.subscribe((message) =>
     handleDevToolsMessage(connection, message),
@@ -329,10 +709,14 @@ export function enableReduxDevtools(config?: DevToolsConfig): () => void {
   return disableReduxDevtools;
 }
 
-/** Disconnect the DevTools integration and remove the cell-update hook. */
+/**
+ * Disconnect the DevTools integration and remove the cell-update hook. Fully
+ * detaches with zero residue: the notifier, the coalescing buffers, the
+ * subscription, the connection and the committed baseline are all cleared.
+ */
 export function disableReduxDevtools(): void {
   setDevtoolsCellNotifier(null);
-  _changedKeys.clear();
+  _changed.clear();
   _sendScheduled = false;
   if (_unsubscribe !== null) {
     _unsubscribe();
@@ -341,6 +725,7 @@ export function disableReduxDevtools(): void {
   }
   _connection = null;
   _unsubscribe = null;
+  _initialSnapshot = {};
 }
 
 // ---------------------------------------------------------------------------
@@ -368,17 +753,17 @@ export interface FreezerState {
 }
 
 /**
- * A `FreezerState` backed by gxt cells — read snapshots from `DEBUG_CELLS`,
- * write restores through `restoreCells`. Use with `supportChromeExtension` for
- * the enhancer-based transport.
+ * A `FreezerState` backed by gxt cells — read tree-shaped snapshots via
+ * `snapshotState`, write restores through `restoreState`. Use with
+ * `supportChromeExtension` for the enhancer-based transport.
  */
 export function createCellState(): FreezerState {
   return {
     get() {
-      return snapshotCells();
+      return snapshotState();
     },
     set(state: Record<string, unknown>) {
-      restoreCells(state);
+      restoreState(state);
     },
     skipDispatch: 0,
     trigger() {

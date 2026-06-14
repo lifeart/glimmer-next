@@ -6,12 +6,24 @@ import {
   enableReduxDevtools,
   disableReduxDevtools,
   isDevToolsRestoring,
-  snapshotCells,
+  snapshotState,
+  devtoolsPendingCount,
   createCellState,
   type FreezerState,
 } from './redux-devtools';
-import { cell } from './reactive';
-import { opcodeFor } from './vm';
+import { Component } from './component';
+import { RENDERED_NODES_PROPERTY, addToTree, $template } from './shared';
+import { $_c, $_args, $_edp } from './dom';
+import { cell, cellFor } from './reactive';
+import { renderElement } from './render-core';
+import { runDestructors } from './destroy';
+import { TREE } from './tree';
+import { createDOMFixture, type DOMFixture } from './__test-utils__';
+import {
+  template,
+  setupGlobalScope,
+  GXT_RUNTIME_SYMBOLS,
+} from '../../plugins/runtime-compiler';
 
 // `IS_DEV_MODE` is inlined by the compiler: `false` under the default test mode
 // and `true` under `--mode development`. The reactive-core DevTools hook
@@ -291,7 +303,7 @@ describe('Redux DevTools Integration', () => {
       expect(fake.connection.subscribe).toHaveBeenCalledTimes(1);
     });
 
-    devTest('dispatches a snapshot when a cell changes', async () => {
+    devTest('dispatches a snapshot when a (global) cell changes', async () => {
       const fake = installFakeExtension();
       enableReduxDevtools();
 
@@ -300,10 +312,13 @@ describe('Redux DevTools Integration', () => {
       await flushMicrotasks();
 
       expect(fake.connection.send).toHaveBeenCalled();
-      const state = fake.lastSendState();
-      const key = Object.keys(state).find((k) => k.startsWith('devtools-dispatch#'));
+      const state = fake.lastSendState() as any;
+      const globals = state.$globals;
+      const key = Object.keys(globals).find((k) =>
+        k.startsWith('devtools-dispatch#'),
+      );
       expect(key).toBeTruthy();
-      expect(state[key!]).toBe(2);
+      expect(globals[key!]).toBe(2);
     });
 
     devTest('does NOT dispatch when DevTools is off (zero-cost guard)', async () => {
@@ -339,61 +354,23 @@ describe('Redux DevTools Integration', () => {
 
       expect(fake.connection.send).toHaveBeenCalledTimes(1);
       const [action] = fake.connection.send.mock.calls[0];
-      expect(action.type).toBe('cells:changed');
-    });
-
-    devTest('time-travel restores cells + re-renders without re-dispatching', async () => {
-      const fake = installFakeExtension();
-      enableReduxDevtools();
-
-      const c = cell(10, 'devtools-jump');
-      const rendered: unknown[] = [];
-      const teardown = opcodeFor(c as any, (value) => {
-        rendered.push(value);
-      });
-
-      c.update(20);
-      await flushMicrotasks();
-
-      // The opcode saw the initial value and the update.
-      expect(rendered).toContain(20);
-      expect(c.value).toBe(20);
-
-      // Locate the cell's key in the snapshot.
-      const snapshot = snapshotCells();
-      const key = Object.keys(snapshot).find((k) => k.startsWith('devtools-jump#'))!;
-      expect(key).toBeTruthy();
-
-      const sendCallsBeforeJump = fake.connection.send.mock.calls.length;
-
-      // Simulate a JUMP_TO_STATE from the monitor back to value 10.
-      fake.emit({
-        type: 'DISPATCH',
-        payload: { type: 'JUMP_TO_STATE' },
-        state: JSON.stringify({ [key]: 10 }),
-      });
-
-      // Cell restored + subscriber re-rendered synchronously.
-      expect(c.value).toBe(10);
-      expect(rendered[rendered.length - 1]).toBe(10);
-
-      // No re-dispatch as a result of the restore...
-      expect(fake.connection.send.mock.calls.length).toBe(sendCallsBeforeJump);
-      // ...even after pending microtasks flush.
-      await flushMicrotasks();
-      expect(fake.connection.send.mock.calls.length).toBe(sendCallsBeforeJump);
-
-      teardown();
+      // Two distinct cells changed -> a coalesced, informative batch label.
+      // Both are module-level (no tree owner) so they share the $globals owner.
+      expect(action.type).toBe('update $globals (2 cells)');
+      expect(action.count).toBe(2);
+      // Buffer fully drained after the flush — no retention across snapshots.
+      expect(devtoolsPendingCount()).toBe(0);
     });
 
     devTest('createCellState snapshots + restores via the freezer interface', () => {
       const c = cell(100, 'devtools-cellstate');
-      const state = createCellState();
-      const snap = state.get();
-      const key = Object.keys(snap).find((k) => k.startsWith('devtools-cellstate#'))!;
-      expect(snap[key]).toBe(100);
+      const snap = createCellState().get() as any;
+      const key = Object.keys(snap.$globals).find((k) =>
+        k.startsWith('devtools-cellstate#'),
+      )!;
+      expect(snap.$globals[key]).toBe(100);
 
-      state.set({ [key]: 200 });
+      createCellState().set({ $globals: { [key]: 200 } });
       expect(c.value).toBe(200);
     });
 
@@ -410,6 +387,321 @@ describe('Redux DevTools Integration', () => {
         });
       }).not.toThrow();
       expect(fake.connection.error).toHaveBeenCalled();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Tree-shaped state / informative actions / leak-by-construction / redo
+  // (dev-only — these mount a real component tree)
+  // -------------------------------------------------------------------------
+  describe('component-tree state (dev-only)', () => {
+    let fixture: DOMFixture;
+
+    beforeEach(() => {
+      fixture = createDOMFixture();
+      setupGlobalScope();
+      const g = globalThis as Record<string, unknown>;
+      Object.entries(GXT_RUNTIME_SYMBOLS).forEach(([name, value]) => {
+        g[name] = value;
+      });
+    });
+
+    afterEach(() => {
+      disableReduxDevtools();
+      fixture.cleanup();
+    });
+
+    /** Render a (class) component under a fresh parent and return the parent so
+     * the whole subtree can be torn down with `runDestructors`. */
+    function mount(Root: any, args: Record<string, unknown> = {}) {
+      const parent = new Component({});
+      (parent as any)[RENDERED_NODES_PROPERTY] = [];
+      addToTree(fixture.root, parent);
+      const rendered = $_c(
+        Root,
+        $_args(args, false, $_edp as any),
+        parent,
+      );
+      renderElement(fixture.api, parent, fixture.container, rendered);
+      return parent;
+    }
+
+    /** Depth-first search of the tree-shaped state for the first node whose
+     * label starts with `${classPrefix}#`. Skips the `$state`/`$globals` buckets. */
+    function findNode(state: any, classPrefix: string): any {
+      for (const key of Object.keys(state)) {
+        if (key === '$state' || key === '$globals') continue;
+        if (key.startsWith(`${classPrefix}#`)) return state[key];
+        const found = findNode(state[key], classPrefix);
+        if (found) return found;
+      }
+      return null;
+    }
+
+    function Counter() {
+      return class Counter extends Component {
+        _count = 0;
+        constructor(args: any) {
+          super(args);
+          cellFor(this as any, '_count');
+        }
+        [$template] = template('<span class="count">{{this._count}}</span>');
+      };
+    }
+
+    devTest('snapshot mirrors the mounted component tree (nested, readable)', () => {
+      const C = Counter();
+      class App extends Component {
+        _title = 'Hello';
+        constructor(args: any) {
+          super(args);
+          cellFor(this as any, '_title');
+        }
+        [$template] = template(
+          '<div><h1>{{this._title}}</h1><Counter /></div>',
+          { scope: { Counter: C } },
+        );
+      }
+
+      mount(App);
+      const state = snapshotState() as any;
+
+      const app = findNode(state, 'App');
+      expect(app).toBeTruthy();
+      expect(app.$state._title).toBe('Hello');
+
+      // Counter is NESTED under App (not a sibling, not flattened).
+      const counter = findNode(app, 'Counter');
+      expect(counter).toBeTruthy();
+      expect(counter.$state._count).toBe(0);
+    });
+
+    devTest('action label reflects the changed component/prop (single change)', async () => {
+      const fake = installFakeExtension();
+      class App extends Component {
+        _title = 'Hello';
+        constructor(args: any) {
+          super(args);
+          cellFor(this as any, '_title');
+        }
+        [$template] = template('<h1>{{this._title}}</h1>');
+      }
+      mount(App);
+      enableReduxDevtools();
+
+      (fixture.container.querySelector('h1') as any); // ensure rendered
+      // Mutate the tracked prop through its cell-backed accessor.
+      const app = TREE.get(
+        [...TREE.keys()].find(
+          (id) => TREE.get(id)?.constructor?.name === 'App',
+        )!,
+      ) as any;
+      app._title = 'World';
+      await flushMicrotasks();
+
+      const _calls = fake.connection.send.mock.calls;
+      const [action] = _calls[_calls.length - 1];
+      expect(action.type).toBe('set App._title');
+      expect(action.count).toBe(1);
+      expect(action.changes[0].from).toBe('Hello');
+      expect(action.changes[0].to).toBe('World');
+      expect(action.changes[0].path).toMatch(/^App#\d+\._title$/);
+    });
+
+    devTest('action label summarises a single-owner multi-cell batch', async () => {
+      const fake = installFakeExtension();
+      class Multi extends Component {
+        a = 0;
+        b = 0;
+        c = 0;
+        constructor(args: any) {
+          super(args);
+          cellFor(this as any, 'a');
+          cellFor(this as any, 'b');
+          cellFor(this as any, 'c');
+        }
+        [$template] = template('<i>{{this.a}}{{this.b}}{{this.c}}</i>');
+      }
+      mount(Multi);
+      enableReduxDevtools();
+
+      const node = TREE.get(
+        [...TREE.keys()].find(
+          (id) => TREE.get(id)?.constructor?.name === 'Multi',
+        )!,
+      ) as any;
+      node.a = 1;
+      node.b = 2;
+      node.c = 3;
+      await flushMicrotasks();
+
+      const _calls = fake.connection.send.mock.calls;
+      const [action] = _calls[_calls.length - 1];
+      expect(action.type).toMatch(/^update Multi#\d+ \(3 cells\)$/);
+      expect(action.count).toBe(3);
+    });
+
+    devTest('action label collapses a large batch', async () => {
+      const fake = installFakeExtension();
+      enableReduxDevtools();
+
+      const cells = Array.from({ length: 12 }, (_, i) =>
+        cell(0, `big-batch-${i}`),
+      );
+      cells.forEach((c, i) => c.update(i + 1));
+      await flushMicrotasks();
+
+      const _calls = fake.connection.send.mock.calls;
+      const [action] = _calls[_calls.length - 1];
+      expect(action.type).toBe('update: 12 cells');
+      expect(action.count).toBe(12);
+      // Payload capped, with a truncated count.
+      expect(action.changes.length).toBeLessThanOrEqual(12);
+      expect(action.truncated ?? 0).toBe(12 - action.changes.length);
+    });
+
+    // --- Axis 2: leak by construction -------------------------------------
+    devTest('destroyed components leave zero trace in the snapshot (no leak)', async () => {
+      const C = Counter();
+      class App extends Component {
+        _title = 'x';
+        constructor(args: any) {
+          super(args);
+          cellFor(this as any, '_title');
+        }
+        [$template] = template('<div>{{this._title}}<Counter /></div>', {
+          scope: { Counter: C },
+        });
+      }
+
+      const parent = mount(App);
+
+      // Present before destruction.
+      let state = snapshotState() as any;
+      expect(findNode(state, 'App')).toBeTruthy();
+      expect(findNode(state, 'Counter')).toBeTruthy();
+
+      // Tear the whole subtree down (runs the addToTree destructors that drop
+      // the nodes from TREE/CHILD/PARENT).
+      await Promise.all(runDestructors(parent, [], true, fixture.api));
+
+      // Absent after destruction — gone from TREE and from the snapshot, and
+      // NOT resurrected via the $globals bucket either (component-owned cells
+      // of dead components are excluded).
+      state = snapshotState() as any;
+      expect(findNode(state, 'App')).toBeNull();
+      expect(findNode(state, 'Counter')).toBeNull();
+      const globals = state.$globals ?? {};
+      expect(
+        Object.keys(globals).some((k) => k.includes('_title') || k.includes('_count')),
+      ).toBe(false);
+
+      // The integration itself holds nothing across snapshots.
+      expect(devtoolsPendingCount()).toBe(0);
+    });
+
+    // --- Axis 3: redo / forward time-travel -------------------------------
+    devTest('time-travel restores backward AND forward without re-dispatching', async () => {
+      const fake = installFakeExtension();
+      class App extends Component {
+        _count = 0;
+        constructor(args: any) {
+          super(args);
+          cellFor(this as any, '_count');
+        }
+        [$template] = template('<b class="c">{{this._count}}</b>');
+      }
+      mount(App);
+      enableReduxDevtools();
+
+      const node = TREE.get(
+        [...TREE.keys()].find(
+          (id) => TREE.get(id)?.constructor?.name === 'App',
+        )!,
+      ) as any;
+      const dom = () =>
+        fixture.container.querySelector('.c')!.textContent;
+
+      // Build a timeline: 0 -> 1 -> 2 -> 3, capturing each computed state as
+      // the monitor would.
+      const timeline: string[] = [JSON.stringify(snapshotState())]; // value 0
+      for (const v of [1, 2, 3]) {
+        node._count = v;
+        await flushMicrotasks();
+        timeline.push(JSON.stringify(snapshotState()));
+      }
+      expect(node._count).toBe(3);
+      expect(dom()).toBe('3');
+
+      const sendsBefore = fake.connection.send.mock.calls.length;
+      const jump = (i: number) =>
+        fake.emit({
+          type: 'DISPATCH',
+          payload: { type: 'JUMP_TO_STATE' },
+          state: timeline[i],
+        });
+
+      // Step BACKWARD: 3 -> 2 -> 1 -> 0, asserting cell + DOM at each.
+      for (const i of [2, 1, 0]) {
+        jump(i);
+        expect(node._count).toBe(i);
+        expect(dom()).toBe(String(i));
+      }
+
+      // Step FORWARD (redo): 0 -> 1 -> 2 -> 3.
+      for (const i of [1, 2, 3]) {
+        jump(i);
+        expect(node._count).toBe(i);
+        expect(dom()).toBe(String(i));
+      }
+
+      // A jump to an arbitrary index also works.
+      jump(1);
+      expect(node._count).toBe(1);
+      expect(dom()).toBe('1');
+
+      // No re-dispatch happened during ANY restore (notifier stayed silent).
+      expect(fake.connection.send.mock.calls.length).toBe(sendsBefore);
+      await flushMicrotasks();
+      expect(fake.connection.send.mock.calls.length).toBe(sendsBefore);
+      expect(isDevToolsRestoring()).toBe(false);
+    });
+
+    devTest('RESET and COMMIT manage the committed baseline', async () => {
+      const fake = installFakeExtension();
+      class App extends Component {
+        _count = 0;
+        constructor(args: any) {
+          super(args);
+          cellFor(this as any, '_count');
+        }
+        [$template] = template('<b class="c">{{this._count}}</b>');
+      }
+      mount(App);
+      enableReduxDevtools();
+
+      const node = TREE.get(
+        [...TREE.keys()].find(
+          (id) => TREE.get(id)?.constructor?.name === 'App',
+        )!,
+      ) as any;
+
+      node._count = 5;
+      await flushMicrotasks();
+      expect(node._count).toBe(5);
+
+      // RESET -> back to the connect-time baseline (0).
+      fake.emit({ type: 'DISPATCH', payload: { type: 'RESET' } });
+      expect(node._count).toBe(0);
+
+      // COMMIT at 7 -> RESET now returns to 7.
+      node._count = 7;
+      await flushMicrotasks();
+      fake.emit({ type: 'DISPATCH', payload: { type: 'COMMIT' } });
+      node._count = 9;
+      await flushMicrotasks();
+      fake.emit({ type: 'DISPATCH', payload: { type: 'RESET' } });
+      expect(node._count).toBe(7);
     });
   });
 });
