@@ -109,6 +109,7 @@ import {
   $__or,
   $__and,
   $__cached,
+  $__cellFor,
 } from '../src/core/helpers/index';
 
 /**
@@ -153,6 +154,7 @@ export const GXT_RUNTIME_SYMBOLS = {
   $__or,
   $__and,
   $__cached,
+  $__cellFor,
   $_HTMLProvider,
   $_SVGProvider,
   $_MathMLProvider,

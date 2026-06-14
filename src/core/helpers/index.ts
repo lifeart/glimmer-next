@@ -9,3 +9,4 @@ export { $__fn } from './fn';
 export { $__or } from './or';
 export { $__not } from './not';
 export { $__and } from './and';
+export { $__cellFor } from './cell-for';
