@@ -84,6 +84,8 @@ import {
 } from '@/core/reactive';
 import { TREE, CHILD, PARENT } from '@/core/tree';
 import { COMPONENT_ID_PROPERTY } from '@/core/types';
+import { getBounds, type ComponentLike } from '@/core/shared';
+import { inspect } from '@/core/inspector';
 
 const noop = () => {};
 
@@ -94,6 +96,47 @@ const GLOBALS_KEY = '$globals';
 // Cap the per-action `changes` payload so a huge batch stays light in the
 // action inspector (the full state still carries every value).
 const CHANGE_CAP = 25;
+
+// ---------------------------------------------------------------------------
+// Big-value summarization (Feature A)
+// ---------------------------------------------------------------------------
+// A cell value over a size threshold is replaced in the snapshot with a compact
+// summary marker (an object carrying `$summary`) instead of dumping the whole
+// thing into the state inspector. This keeps a list's `_items: Array(1000)`
+// from choking the UI and producing a huge diff on every change. The marker is
+// NOT restorable (the real value was replaced), so `restoreState` skips it — a
+// summarized cell becomes inspect-only and keeps its real runtime value across
+// time-travel. Cells UNDER the cap keep their real value and stay fully
+// restorable. Raise the cap or denylist-exempt a path to keep a big collection
+// restorable. Summarization happens ONLY at snapshot time — zero hot-path cost.
+const SUMMARY_KEY = '$summary';
+// How many leading items/keys/chars a summary marker previews.
+const ARRAY_PREVIEW_COUNT = 5;
+const OBJECT_PREVIEW_COUNT = 5;
+const STRING_PREVIEW_CHARS = 64;
+
+// Sensible defaults (documented in docs/redux-devtools.md).
+const DEFAULT_MAX_ARRAY_ITEMS = 50; // arrays longer than this are summarized
+const DEFAULT_MAX_VALUE_BYTES = 8 * 1024; // ~8KB rough budget for one cell value
+const DEFAULT_MAX_VALUE_DEPTH = 4; // nesting depth before a value is "too big"
+
+interface SummarizeOptions {
+  maxArrayItems: number;
+  maxValueBytes: number;
+  maxValueDepth: number;
+}
+
+function defaultSummarizeOptions(): SummarizeOptions {
+  return {
+    maxArrayItems: DEFAULT_MAX_ARRAY_ITEMS,
+    maxValueBytes: DEFAULT_MAX_VALUE_BYTES,
+    maxValueDepth: DEFAULT_MAX_VALUE_DEPTH,
+  };
+}
+
+// Active config (set on connect from `DevToolsConfig`, reset on disconnect).
+let _summarize: SummarizeOptions = defaultSummarizeOptions();
+let _denyGlobs: RegExp[] = [];
 
 // ---------------------------------------------------------------------------
 // Public configuration / extension types
@@ -119,6 +162,26 @@ export interface DevToolsConfig {
   };
   trace?: boolean;
   traceLimit?: number;
+  // --- gxt extensions (not part of the standard extension config) ---
+  /**
+   * Arrays longer than this are replaced in the snapshot with a compact
+   * `$summary` marker instead of dumping every element. Default `50`.
+   */
+  maxArrayItems?: number;
+  /**
+   * Rough byte budget for a single cell value. Strings / objects / nested
+   * arrays whose estimated size exceeds this are summarized. Default `8192`.
+   */
+  maxValueBytes?: number;
+  /** Nesting depth past which a value is treated as too big. Default `4`. */
+  maxValueDepth?: number;
+  /**
+   * Path globs/prefixes whose cells are excluded from the snapshot AND the
+   * action timeline entirely — for high-frequency / noisy cells (in the spirit
+   * of `actionsDenylist`). `*` matches any run of characters; a prefix matches
+   * any deeper path. E.g. `["*.animationFrame", "Benchmark#*._items"]`.
+   */
+  cellsDenylist?: string[];
 }
 
 /** Action shape we send to the monitor. */
@@ -167,6 +230,10 @@ declare global {
 // belt-and-braces in case a subscriber re-enters `update()` synchronously.
 let isRestoringState = false;
 
+/** Components whose cells actually changed during the most recent restore /
+ * SET — used to auto-flash their DOM so the dev sees what time-travel touched. */
+const _restoreTouched = new Set<object>();
+
 /** Whether the integration is currently restoring cell state (time-travel). */
 export function isDevToolsRestoring(): boolean {
   return isRestoringState;
@@ -213,6 +280,158 @@ function isRootId(id: number): boolean {
   return parent === undefined || !TREE.has(parent);
 }
 
+/** True when `v` is a summary marker produced by `summarizeForSnapshot`. */
+function isSummaryMarker(v: unknown): boolean {
+  return (
+    typeof v === 'object' &&
+    v !== null &&
+    !Array.isArray(v) &&
+    SUMMARY_KEY in (v as object)
+  );
+}
+
+function isPrimitiveValue(v: unknown): boolean {
+  return (
+    v === null ||
+    v === undefined ||
+    typeof v === 'string' ||
+    typeof v === 'number' ||
+    typeof v === 'boolean' ||
+    typeof v === 'bigint'
+  );
+}
+
+/** A small, JSON-safe preview of one value: primitives raw, the rest via the
+ * existing `inspect` helper (bounded by its own depth/list limits). */
+function previewItem(v: unknown): unknown {
+  return isPrimitiveValue(v) ? v : inspect(v);
+}
+
+/**
+ * Cheap, short-circuiting size estimate. Returns as soon as the running total
+ * passes `maxValueBytes`, and treats an over-cap array / over-depth value as
+ * immediately "too big" without walking it — so a 1000-item array never gets
+ * fully traversed just to decide to summarize it.
+ */
+function roughSizeOf(value: unknown, depth: number, opts: SummarizeOptions): number {
+  if (value === null || value === undefined) return 4;
+  const t = typeof value;
+  if (t === 'string') return (value as string).length;
+  if (t === 'number' || t === 'boolean' || t === 'bigint') return 8;
+  if (t === 'function' || t === 'symbol') return 8;
+  if (depth >= opts.maxValueDepth) return opts.maxValueBytes + 1;
+  if (Array.isArray(value)) {
+    if (value.length > opts.maxArrayItems) return opts.maxValueBytes + 1;
+    let total = 2;
+    for (let i = 0; i < value.length; i++) {
+      total += roughSizeOf(value[i], depth + 1, opts);
+      if (total > opts.maxValueBytes) return total;
+    }
+    return total;
+  }
+  const keys = Object.keys(value as object);
+  let total = 2;
+  for (let i = 0; i < keys.length; i++) {
+    total += keys[i].length + 2 + roughSizeOf((value as AnyObj)[keys[i]], depth + 1, opts);
+    if (total > opts.maxValueBytes) return total;
+  }
+  return total;
+}
+
+function makeArraySummary(arr: unknown[]): AnyObj {
+  return {
+    [SUMMARY_KEY]: `Array(${arr.length})`,
+    $len: arr.length,
+    $preview: arr.slice(0, ARRAY_PREVIEW_COUNT).map(previewItem),
+  };
+}
+
+function makeObjectSummary(obj: object): AnyObj {
+  const keys = Object.keys(obj);
+  const ctorName = (obj as { constructor?: { name?: string } })?.constructor?.name;
+  const name = ctorName && ctorName !== 'Object' ? ctorName : 'Object';
+  const preview: AnyObj = {};
+  for (const k of keys.slice(0, OBJECT_PREVIEW_COUNT)) {
+    preview[k] = previewItem((obj as AnyObj)[k]);
+  }
+  return {
+    [SUMMARY_KEY]: `${name}(${keys.length} keys)`,
+    $keys: keys.length,
+    $preview: preview,
+  };
+}
+
+/**
+ * Snapshot-time value transform: pass small/primitive values through verbatim
+ * (so they stay fully time-travel-restorable), and replace anything over the
+ * configured caps with a compact `$summary` marker. Only the top level of a
+ * cell value is considered — a cell is therefore either fully restorable OR a
+ * single inspect-only marker, never a half-real hybrid.
+ */
+function summarizeForSnapshot(value: unknown, opts: SummarizeOptions): unknown {
+  if (value === null || value === undefined) return value;
+  const t = typeof value;
+  if (t === 'number' || t === 'boolean' || t === 'bigint') return value;
+  if (t === 'string') {
+    const s = value as string;
+    if (s.length > opts.maxValueBytes) {
+      return {
+        [SUMMARY_KEY]: `String(${s.length})`,
+        $len: s.length,
+        $preview: s.slice(0, STRING_PREVIEW_CHARS),
+      };
+    }
+    return value;
+  }
+  if (t === 'function') {
+    return { [SUMMARY_KEY]: inspect(value) };
+  }
+  if (t === 'symbol') {
+    return { [SUMMARY_KEY]: String(value) };
+  }
+  if (Array.isArray(value)) {
+    if (value.length > opts.maxArrayItems || roughSizeOf(value, 0, opts) > opts.maxValueBytes) {
+      return makeArraySummary(value);
+    }
+    return value; // small array — kept real, fully restorable
+  }
+  // Plain object / class instance.
+  if (roughSizeOf(value, 0, opts) > opts.maxValueBytes) {
+    return makeObjectSummary(value as object);
+  }
+  return value;
+}
+
+// --- Cell denylist (Feature A) ---------------------------------------------
+// In the spirit of the extension's `actionsDenylist`: a `cellsDenylist` of path
+// globs/prefixes whose cells are excluded from the snapshot AND from the action
+// timeline entirely (high-frequency / noisy cells like `*.animationFrame`).
+//   * `*` matches any run of characters.
+//   * a pattern also matches any deeper path (`Benchmark#4` denylists every
+//     cell under it, e.g. `Benchmark#4._items`).
+
+function compileGlob(pattern: string): RegExp {
+  let out = '';
+  for (const ch of pattern) {
+    if (ch === '*') out += '.*';
+    else if ('.+?^${}()|[]\\'.includes(ch)) out += '\\' + ch;
+    else out += ch;
+  }
+  return new RegExp(`^(?:${out})(?:\\..*)?$`);
+}
+
+function compileDenylist(patterns?: string[]): RegExp[] {
+  if (!Array.isArray(patterns) || patterns.length === 0) return [];
+  return patterns.map(compileGlob);
+}
+
+function isDenied(path: string): boolean {
+  for (let i = 0; i < _denyGlobs.length; i++) {
+    if (_denyGlobs[i].test(path)) return true;
+  }
+  return false;
+}
+
 /** Where a tree-owned cell lives, for action labelling. */
 interface CellPathInfo {
   className: string;
@@ -229,23 +448,35 @@ interface CellPathInfo {
  * strong `DEBUG_CELLS` set, so torn-down components — gone from `TREE` — are
  * absent by construction. Nothing here is retained past the call.
  */
-function buildSnapshot(): { state: AnyObj; index: Map<Cell, CellPathInfo> } {
+function buildSnapshot(): {
+  state: AnyObj;
+  index: Map<Cell, CellPathInfo>;
+  denied: Set<Cell>;
+} {
   const state: AnyObj = {};
   const index = new Map<Cell, CellPathInfo>();
   const treeOwned = new Set<Cell>();
+  const denied = new Set<Cell>();
   const visited = new Set<number>();
   for (const id of TREE.keys()) {
     if (isRootId(id) && !visited.has(id)) {
       visited.add(id);
       const node = TREE.get(id)!;
-      state[nodeLabel(node, id)] = buildNode(node, id, index, treeOwned, visited);
+      state[nodeLabel(node, id)] = buildNode(
+        node,
+        id,
+        index,
+        treeOwned,
+        denied,
+        visited,
+      );
     }
   }
-  const globals = buildGlobals(treeOwned);
+  const globals = buildGlobals(treeOwned, denied);
   if (globals !== null) {
     state[GLOBALS_KEY] = globals;
   }
-  return { state, index };
+  return { state, index, denied };
 }
 
 function buildNode(
@@ -253,6 +484,7 @@ function buildNode(
   id: number,
   index: Map<Cell, CellPathInfo>,
   treeOwned: Set<Cell>,
+  denied: Set<Cell>,
   visited: Set<number>,
 ): AnyObj {
   const obj: AnyObj = {};
@@ -260,6 +492,7 @@ function buildNode(
   if (cells !== undefined && cells.size > 0) {
     const className = nodeClassName(node);
     const ownerLabel = `${className}#${id}`;
+    const hasDenylist = _denyGlobs.length > 0;
     const own: AnyObj = {};
     let any = false;
     cells.forEach((cell, key) => {
@@ -267,9 +500,19 @@ function buildNode(
         return; // symbol-keyed internals don't round-trip through JSON
       }
       const k = String(key);
-      own[k] = (cell as unknown as CellRecord)._value;
-      index.set(cell as unknown as Cell, { className, ownerLabel, key: k });
-      treeOwned.add(cell as unknown as Cell);
+      const c = cell as unknown as Cell;
+      // Denylisted (noisy/high-frequency) cells are excluded from the snapshot
+      // entirely. Still mark them tree-owned so the `$globals` bucket doesn't
+      // resurface them, and record them in `denied` so the action timeline
+      // drops them too.
+      if (hasDenylist && isDenied(`${ownerLabel}.${k}`)) {
+        treeOwned.add(c);
+        denied.add(c);
+        return;
+      }
+      own[k] = summarizeForSnapshot((cell as unknown as CellRecord)._value, _summarize);
+      index.set(c, { className, ownerLabel, key: k });
+      treeOwned.add(c);
       any = true;
     });
     if (any) {
@@ -287,6 +530,7 @@ function buildNode(
           childId,
           index,
           treeOwned,
+          denied,
           visited,
         );
       }
@@ -305,8 +549,9 @@ function buildNode(
  * (non-component) objects. `DEBUG_CELLS` is the one pre-existing dev-only set
  * that grows over a session; the per-component path above never touches it.
  */
-function buildGlobals(treeOwned: Set<Cell>): AnyObj | null {
+function buildGlobals(treeOwned: Set<Cell>, denied: Set<Cell>): AnyObj | null {
   const out: AnyObj = {};
+  const hasDenylist = _denyGlobs.length > 0;
   let any = false;
   DEBUG_CELLS.forEach((cell) => {
     if (treeOwned.has(cell)) {
@@ -322,7 +567,12 @@ function buildGlobals(treeOwned: Set<Cell>): AnyObj | null {
       // Component-owned but absent from the live TREE => torn down. Exclude.
       return;
     }
-    out[globalKey(cell)] = (cell as unknown as CellRecord)._value;
+    const gk = globalKey(cell);
+    if (hasDenylist && isDenied(gk)) {
+      denied.add(cell);
+      return;
+    }
+    out[gk] = summarizeForSnapshot((cell as unknown as CellRecord)._value, _summarize);
     any = true;
   });
   return any ? out : null;
@@ -359,6 +609,7 @@ export function restoreState(
   if (!state || typeof state !== 'object') {
     return;
   }
+  _restoreTouched.clear();
   isRestoringState = true;
   try {
     for (const key in state) {
@@ -394,9 +645,19 @@ function restoreNode(node: unknown, obj: AnyObj | null | undefined): void {
       const own = obj[key] as AnyObj;
       if (own && typeof own === 'object') {
         for (const ck in own) {
+          const v = own[ck];
+          // A summarized value is NOT the real value — never write the
+          // `{$summary:…}` marker back into a cell (that would corrupt it).
+          // The cell keeps its live runtime value (inspect-only across travel).
+          if (isSummaryMarker(v)) {
+            continue;
+          }
           const cell = byStr.get(ck);
           if (cell !== undefined) {
-            applyCellUpdateSync(cell as Cell<unknown>, own[ck]);
+            if ((cell as unknown as CellRecord)._value !== v) {
+              _restoreTouched.add(node as object);
+            }
+            applyCellUpdateSync(cell as Cell<unknown>, v);
           }
         }
       }
@@ -420,9 +681,13 @@ function restoreGlobals(globals: AnyObj | null | undefined): void {
   const byKey = new Map<string, Cell>();
   DEBUG_CELLS.forEach((cell) => byKey.set(globalKey(cell), cell));
   for (const k in globals) {
+    const v = globals[k];
+    if (isSummaryMarker(v)) {
+      continue; // summarized — not restorable, leave the live value intact
+    }
     const cell = byKey.get(k);
     if (cell !== undefined) {
-      applyCellUpdateSync(cell as Cell<unknown>, globals[k]);
+      applyCellUpdateSync(cell as Cell<unknown>, v);
     }
   }
 }
@@ -561,8 +826,16 @@ function flushDevtoolsSend(): void {
   if (pending.length === 0) {
     return;
   }
-  const { state, index } = buildSnapshot();
-  const entries = pending.map(([cell, from]) =>
+  const { state, index, denied } = buildSnapshot();
+  // Drop denylisted (noisy/high-frequency) cells from the timeline entirely.
+  // If the whole batch was denylisted, emit no action at all (nothing the dev
+  // asked to see changed) — that is the de-noising point of `cellsDenylist`.
+  const visible =
+    denied.size === 0 ? pending : pending.filter(([cell]) => !denied.has(cell));
+  if (visible.length === 0) {
+    return;
+  }
+  const entries = visible.map(([cell, from]) =>
     describeChange(cell, from, index),
   );
   const changes = entries.slice(0, CHANGE_CAP).map((e) => ({
@@ -581,10 +854,382 @@ function flushDevtoolsSend(): void {
   _connection.send(action, state);
 }
 
+// ---------------------------------------------------------------------------
+// Component DOM highlight overlay (Feature B) — browser + dev only
+// ---------------------------------------------------------------------------
+// A single, reused, position-fixed div that flashes over a component's bounds
+// (outline + subtle fill) and auto-removes after ~1s. Used both for the
+// explicit `HIGHLIGHT` dispatch action and for auto-flash-on-change (SET / a
+// time-travel JUMP) so the dev SEES which component changed in the page.
+//
+// HONESTY: the Redux DevTools protocol does NOT notify the page when you click
+// a node in the state-tree inspector, so true "click-in-tree -> highlight" is
+// impossible. We deliver the `HIGHLIGHT` dispatch action plus auto-flash-on-
+// change instead. See docs/redux-devtools.md.
+const OVERLAY_MS = 1000;
+// Above this many distinct components a single change touches, skip the flash
+// entirely (a 1000-row batch should never strobe the screen).
+const MAX_FLASH_COMPONENTS = 8;
+const OVERLAY_ATTR = 'data-gxt-devtools-overlay';
+
+let _overlayEl: HTMLElement | null = null;
+let _overlayTimer: ReturnType<typeof setTimeout> | null = null;
+
+interface Rect {
+  top: number;
+  left: number;
+  right: number;
+  bottom: number;
+}
+
+function mergeRect(a: Rect | null, b: Rect | null): Rect | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return {
+    top: Math.min(a.top, b.top),
+    left: Math.min(a.left, b.left),
+    right: Math.max(a.right, b.right),
+    bottom: Math.max(a.bottom, b.bottom),
+  };
+}
+
+function elementForRect(node: Node): Element | null {
+  if (typeof Element !== 'undefined' && node instanceof Element) {
+    return node;
+  }
+  // Comment / text markers (list & if blocks) — approximate via the parent.
+  return (node as ChildNode).parentElement ?? null;
+}
+
+/** Union bounding rect of a component's rendered DOM (via `getBounds`). Returns
+ * null when nothing is measurable (e.g. happy-dom / detached / 0-size). */
+function componentRect(component: ComponentLike): Rect | null {
+  let rect: Rect | null = null;
+  const nodes = getBounds(component);
+  for (const node of nodes) {
+    const el = elementForRect(node);
+    if (el === null || typeof el.getBoundingClientRect !== 'function') {
+      continue;
+    }
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0 && r.top === 0 && r.left === 0) {
+      continue;
+    }
+    rect = mergeRect(rect, {
+      top: r.top,
+      left: r.left,
+      right: r.right,
+      bottom: r.bottom,
+    });
+  }
+  return rect;
+}
+
+function ensureOverlay(): HTMLElement | null {
+  if (typeof document === 'undefined') {
+    return null;
+  }
+  if (_overlayEl === null) {
+    const el = document.createElement('div');
+    el.setAttribute(OVERLAY_ATTR, '');
+    const s = el.style;
+    s.position = 'fixed';
+    s.zIndex = '2147483647';
+    s.pointerEvents = 'none';
+    s.boxSizing = 'border-box';
+    s.outline = '2px solid #c792ea';
+    s.background = 'rgba(199, 146, 234, 0.15)';
+    s.borderRadius = '2px';
+    s.transition = 'opacity 120ms ease-out';
+    s.opacity = '0';
+    _overlayEl = el;
+  }
+  if (!_overlayEl.isConnected && document.body) {
+    document.body.appendChild(_overlayEl);
+  }
+  return _overlayEl;
+}
+
+function removeOverlay(): void {
+  if (_overlayTimer !== null) {
+    clearTimeout(_overlayTimer);
+    _overlayTimer = null;
+  }
+  if (_overlayEl !== null && _overlayEl.isConnected) {
+    _overlayEl.remove();
+  }
+}
+
+function isOffscreen(rect: Rect): boolean {
+  if (typeof window === 'undefined') return false;
+  return (
+    rect.bottom < 0 ||
+    rect.right < 0 ||
+    rect.top > (window.innerHeight || 0) ||
+    rect.left > (window.innerWidth || 0)
+  );
+}
+
+function scrollComponentIntoView(component: ComponentLike): void {
+  const nodes = getBounds(component);
+  for (const node of nodes) {
+    const el = elementForRect(node);
+    if (el !== null && typeof (el as HTMLElement).scrollIntoView === 'function') {
+      (el as HTMLElement).scrollIntoView({ block: 'center', inline: 'nearest' });
+      return;
+    }
+  }
+}
+
+/** Position + briefly show the (single) overlay over `rect`. A null rect still
+ * runs the show/hide lifecycle (0-size marker) so callers don't have to special
+ * case unmeasurable bounds — nothing visible, but no throw. */
+function flashRect(rect: Rect | null): void {
+  if (!IS_DEV_MODE || typeof document === 'undefined') {
+    return;
+  }
+  const overlay = ensureOverlay();
+  if (overlay === null) {
+    return;
+  }
+  const s = overlay.style;
+  if (rect !== null) {
+    s.top = `${rect.top}px`;
+    s.left = `${rect.left}px`;
+    s.width = `${Math.max(0, rect.right - rect.left)}px`;
+    s.height = `${Math.max(0, rect.bottom - rect.top)}px`;
+  } else {
+    s.top = '0px';
+    s.left = '0px';
+    s.width = '0px';
+    s.height = '0px';
+  }
+  s.opacity = '1';
+  if (_overlayTimer !== null) {
+    clearTimeout(_overlayTimer);
+  }
+  _overlayTimer = setTimeout(removeOverlay, OVERLAY_MS);
+}
+
+/** Flash a single component (used by `HIGHLIGHT`). */
+function flashComponent(component: ComponentLike): void {
+  if (!IS_DEV_MODE || typeof document === 'undefined') {
+    return;
+  }
+  const rect = componentRect(component);
+  if (rect !== null && isOffscreen(rect)) {
+    scrollComponentIntoView(component);
+  }
+  flashRect(rect);
+}
+
+/** Auto-flash the components a change touched. Capped + debounced via the
+ * single overlay/timer: many components -> one union flash; too many -> skip. */
+function flashAffectedComponents(nodes: Set<object>): void {
+  if (!IS_DEV_MODE || typeof document === 'undefined') {
+    return;
+  }
+  if (nodes.size === 0 || nodes.size > MAX_FLASH_COMPONENTS) {
+    return;
+  }
+  let union: Rect | null = null;
+  let scrollTarget: ComponentLike | null = null;
+  nodes.forEach((n) => {
+    const node = n as ComponentLike;
+    const r = componentRect(node);
+    if (r !== null) {
+      union = mergeRect(union, r);
+      if (scrollTarget === null) scrollTarget = node;
+    }
+  });
+  if (union !== null && scrollTarget !== null && isOffscreen(union)) {
+    scrollComponentIntoView(scrollTarget);
+  }
+  flashRect(union);
+}
+
+// ---------------------------------------------------------------------------
+// Dispatcher custom actions (Feature B): SET a cell live, HIGHLIGHT a component
+// ---------------------------------------------------------------------------
+
+/** Parse the `value` field of a SET action: it arrives as a string/JSON from
+ * the dispatcher. JSON.parse it, falling back to the raw string on failure. */
+function parseSetValue(raw: unknown): unknown {
+  if (typeof raw !== 'string') {
+    return raw; // already a structured JSON value
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw; // not JSON — treat the literal string as the value
+  }
+}
+
+/** dev-only, non-swallowing: log to the console AND surface to the monitor. */
+function reportDispatchError(connection: DevToolsConnection, msg: string): void {
+  if (IS_DEV_MODE) {
+    console.warn(`[gxt redux-devtools] ${msg}`);
+  }
+  connection.error(`gxt: ${msg}`);
+}
+
+/** Resolve `Class#id.key` (or a full nested path) to its live cell + owner. */
+function resolveCellByPath(
+  path: string,
+): { cell: Cell; owner: ComponentLike | null } | undefined {
+  const parts = path.split('.');
+  const key = parts.pop();
+  if (key === undefined || key.length === 0) {
+    return undefined;
+  }
+  // Nearest preceding `Class#id` segment is the owner.
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const id = parseNodeId(parts[i]!);
+    if (id === null) continue;
+    const node = TREE.get(id);
+    if (node === undefined) continue;
+    const cells = cellsMap.get(node as object);
+    if (cells === undefined) continue;
+    const cell = stringKeyedCells(cells).get(key);
+    if (cell !== undefined) {
+      return { cell, owner: node };
+    }
+  }
+  // Fall back to a `$globals` key (e.g. `theme#3`).
+  let found: { cell: Cell; owner: ComponentLike | null } | undefined;
+  DEBUG_CELLS.forEach((c) => {
+    if (found === undefined && globalKey(c) === path) {
+      found = { cell: c, owner: null };
+    }
+  });
+  return found;
+}
+
+/** Resolve a path to its component (last `Class#id` segment). */
+function resolveComponentByPath(path: string): ComponentLike | undefined {
+  const parts = path.split('.');
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const id = parseNodeId(parts[i]!);
+    if (id === null) continue;
+    const node = TREE.get(id);
+    if (node !== undefined) {
+      return node;
+    }
+  }
+  return undefined;
+}
+
+/** `{ type: 'SET', path, value }` — write a live cell + re-render, then flash
+ * the owning component. Bad path / type mismatch is surfaced, never swallowed. */
+function handleSetAction(
+  connection: DevToolsConnection,
+  action: DevToolsAction,
+): void {
+  const path = action.path;
+  if (typeof path !== 'string' || path.length === 0) {
+    reportDispatchError(connection, 'SET requires a string "path"');
+    return;
+  }
+  const resolved = resolveCellByPath(path);
+  if (resolved === undefined) {
+    reportDispatchError(connection, `SET: could not resolve cell path "${path}"`);
+    return;
+  }
+  const value = parseSetValue(action.value);
+  const current = (resolved.cell as unknown as CellRecord)._value;
+  if (
+    current !== null &&
+    current !== undefined &&
+    value !== null &&
+    value !== undefined &&
+    typeof current !== typeof value
+  ) {
+    // Surface (don't swallow) an obvious type change; still apply — the dev
+    // explicitly asked to set this value.
+    reportDispatchError(
+      connection,
+      `SET: type mismatch for "${path}" (cell holds ${typeof current}, value is ${typeof value}); applying anyway`,
+    );
+  }
+  // Write under the restoring guard so it can never echo back as a new action
+  // (applyCellUpdateSync already bypasses the notifier; this is belt-and-braces).
+  isRestoringState = true;
+  try {
+    applyCellUpdateSync(resolved.cell as Cell<unknown>, value);
+  } finally {
+    isRestoringState = false;
+  }
+  if (resolved.owner !== null) {
+    flashAffectedComponents(new Set<object>([resolved.owner]));
+  }
+}
+
+/** `{ type: 'HIGHLIGHT', path }` — flash a component's DOM. */
+function handleHighlightAction(
+  connection: DevToolsConnection,
+  action: DevToolsAction,
+): void {
+  const path = action.path;
+  if (typeof path !== 'string' || path.length === 0) {
+    reportDispatchError(connection, 'HIGHLIGHT requires a string "path"');
+    return;
+  }
+  const component = resolveComponentByPath(path);
+  if (component === undefined) {
+    reportDispatchError(
+      connection,
+      `HIGHLIGHT: could not resolve component "${path}"`,
+    );
+    return;
+  }
+  flashComponent(component);
+}
+
+/** Custom action dispatched from the DevTools "Dispatcher" panel. The payload
+ * is the action the dev typed — usually a JSON string. */
+function handleCustomAction(
+  connection: DevToolsConnection,
+  payload: unknown,
+): void {
+  let action: DevToolsAction | undefined;
+  if (payload !== null && typeof payload === 'object') {
+    action = payload as DevToolsAction;
+  } else if (typeof payload === 'string') {
+    try {
+      action = JSON.parse(payload) as DevToolsAction;
+    } catch (e) {
+      if (IS_DEV_MODE) {
+        console.warn('[gxt redux-devtools] failed to parse dispatched action', e);
+      }
+      connection.error('gxt: failed to parse dispatched action');
+      return;
+    }
+  }
+  if (action === undefined || typeof action.type !== 'string') {
+    return;
+  }
+  switch (action.type) {
+    case 'SET':
+      handleSetAction(connection, action);
+      break;
+    case 'HIGHLIGHT':
+      handleHighlightAction(connection, action);
+      break;
+    default:
+      // Unknown custom action — ignore (it isn't ours).
+      break;
+  }
+}
+
 function handleDevToolsMessage(
   connection: DevToolsConnection,
   message: DevToolsMessage,
 ): void {
+  // Custom actions from the Dispatcher panel arrive as `type: 'ACTION'`.
+  if (message.type === 'ACTION') {
+    handleCustomAction(connection, (message as { payload?: unknown }).payload);
+    return;
+  }
   if (message.type !== 'DISPATCH' || !message.payload) {
     return;
   }
@@ -599,12 +1244,16 @@ function handleDevToolsMessage(
       const parsed = parseDevToolsState(connection, message.state);
       if (parsed !== undefined) {
         restoreState(parsed);
+        // Auto-flash the components the jump actually changed (capped/skipped
+        // for huge batches) so the dev sees what moved in the page.
+        flashAffectedComponents(_restoreTouched);
       }
       break;
     }
     case 'RESET':
       // Revert to the state captured when DevTools connected.
       restoreState(_initialSnapshot);
+      flashAffectedComponents(_restoreTouched);
       connection.init(snapshotState());
       break;
     case 'COMMIT':
@@ -675,6 +1324,22 @@ export function enableReduxDevtools(config?: DevToolsConfig): () => void {
     return disableReduxDevtools; // idempotent — already connected
   }
 
+  // Pull gxt-only knobs out of the config so we don't hand them to the
+  // extension's `connect`, and apply them to the snapshot summarizer/denylist.
+  const {
+    maxArrayItems,
+    maxValueBytes,
+    maxValueDepth,
+    cellsDenylist,
+    ...extensionConfig
+  } = config ?? {};
+  _summarize = {
+    maxArrayItems: maxArrayItems ?? DEFAULT_MAX_ARRAY_ITEMS,
+    maxValueBytes: maxValueBytes ?? DEFAULT_MAX_VALUE_BYTES,
+    maxValueDepth: maxValueDepth ?? DEFAULT_MAX_VALUE_DEPTH,
+  };
+  _denyGlobs = compileDenylist(cellsDenylist);
+
   const connection = extension.connect({
     name: 'GXT Reactive State',
     features: {
@@ -691,7 +1356,7 @@ export function enableReduxDevtools(config?: DevToolsConfig): () => void {
     },
     maxAge: 50,
     trace: false,
-    ...config,
+    ...extensionConfig,
   });
 
   _initialSnapshot = snapshotState();
@@ -726,6 +1391,13 @@ export function disableReduxDevtools(): void {
   _connection = null;
   _unsubscribe = null;
   _initialSnapshot = {};
+  // Reset Feature A/B state: summarizer caps, denylist, the reused DOM overlay
+  // (cleaned up here so nothing lingers in the page) and the flash buffer.
+  _summarize = defaultSummarizeOptions();
+  _denyGlobs = [];
+  removeOverlay();
+  _overlayEl = null;
+  _restoreTouched.clear();
 }
 
 // ---------------------------------------------------------------------------

@@ -39,6 +39,23 @@ The `config` argument accepts the standard
 (`name`, `maxAge`, `features`, `serialize`, …). gxt provides sensible defaults
 (`name: 'GXT Reactive State'`, `maxAge: 50`, `jump`/`skip` enabled).
 
+It also accepts a few **gxt-only** knobs (stripped before reaching the
+extension) that control snapshot size:
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| `maxArrayItems` | `50` | Arrays longer than this are replaced in the snapshot with a compact `$summary` marker instead of dumping every element. |
+| `maxValueBytes` | `8192` | Rough byte budget for one cell value. Strings / objects / nested arrays whose estimated size exceeds it are summarized. |
+| `maxValueDepth` | `4` | Nesting depth past which a value is treated as too big. |
+| `cellsDenylist` | `[]` | Path globs/prefixes whose cells are **excluded entirely** from the snapshot *and* the action timeline (high-frequency / noisy cells). |
+
+```ts
+enableReduxDevtools({
+  maxArrayItems: 50,
+  cellsDenylist: ['*.animationFrame', 'Benchmark#*._items'],
+});
+```
+
 ## What state is exposed
 
 The state **mirrors the gxt component tree** — human-readable and diff-friendly,
@@ -120,6 +137,103 @@ Handled monitor messages: `JUMP_TO_STATE`, `JUMP_TO_ACTION`, `ROLLBACK`, `RESET`
 `COMMIT`, `IMPORT_STATE`. `COMMIT` resets the baseline to the current state;
 `RESET` restores the committed (initial) snapshot.
 
+## Big-value summaries (keeping the inspector light)
+
+A large cell value — e.g. a list's `_items: Array(1000)` — would otherwise dump
+every element into the state inspector and produce a huge diff on every change.
+Instead, any value over the configured caps is replaced **in the snapshot only**
+with a compact summary marker:
+
+```jsonc
+// _items: Array(1000)  ->
+{ "$summary": "Array(1000)", "$len": 1000, "$preview": [0, 1, 2, 3, 4] }
+// a big object ->
+{ "$summary": "Foo(120 keys)", "$keys": 120, "$preview": { /* first few */ } }
+// a big string ->
+{ "$summary": "String(40000)", "$len": 40000, "$preview": "first 64 chars…" }
+```
+
+The preview reuses gxt's existing `inspect()` formatter for non-primitive items,
+so it stays small and bounded. Summarization happens **only at snapshot time**
+(when DevTools is connected) — there is zero cost on the `Cell.update` hot path.
+
+**Restore trade-off (important).** A summarized value is *not* the real value, so
+it is **not restorable**. Time-travel (`restoreState`) **skips** any cell whose
+snapshot value is a `$summary` marker — it never writes the marker back into the
+cell, which would corrupt it. The practical effect:
+
+- Cells **under** the caps keep their real value and are **fully time-travel
+  restorable** (including small arrays/objects).
+- A summarized large collection becomes **inspect-only**: you can see its
+  shape/preview on the timeline, but a JUMP leaves its live runtime value
+  untouched (it keeps whatever the app currently holds, never a `{$summary}`
+  object). To make a specific big collection restorable again, raise
+  `maxArrayItems` / `maxValueBytes`, or keep it small.
+
+## Excluding noisy cells (`cellsDenylist`)
+
+In the spirit of the extension's `actionsDenylist`, `cellsDenylist` is a list of
+path globs/prefixes whose cells are excluded from the snapshot **and** the action
+timeline entirely. This is for high-frequency / noisy cells (e.g. an
+`animationFrame` counter that ticks every frame) that would otherwise flood the
+monitor.
+
+- `*` matches any run of characters; a prefix matches any deeper path
+  (`Benchmark#4` denylists every cell under it).
+- A cell's path is `<Class>#<id>.<prop>` (e.g. `Benchmark#7._items`); `$globals`
+  cells match on their `<debugName>#<id>` key.
+- A batch consisting *only* of denylisted cells emits **no** timeline entry at
+  all — that is the de-noising point.
+- Denylisted cells are absent from the snapshot, so (like summaries) they are
+  not restored by time-travel. Remove the pattern to bring a cell back.
+
+## Live edit + DOM highlight (Dispatcher actions)
+
+The DevTools "Dispatcher" panel lets you send custom actions to the page. Two
+are handled:
+
+### `SET` — write a cell live
+
+```jsonc
+{ "type": "SET", "path": "Benchmark#4._selected", "value": "7" }
+```
+
+Resolves `path` against the live component tree the same way time-travel does
+(matching `<Class>#<id>` nodes), then writes the cell via `applyCellUpdateSync`
+under the restore guard — so the app re-renders immediately and the write does
+**not** echo back as a new timeline action. `value` arrives as a string and is
+`JSON.parse`d (falling back to the raw string if it isn't valid JSON). A path
+that doesn't resolve, or an obvious type mismatch, is surfaced via a dev
+`console.warn` **and** the monitor's error channel — never silently swallowed.
+
+### `HIGHLIGHT` — flash a component's DOM
+
+```jsonc
+{ "type": "HIGHLIGHT", "path": "Row#5" }
+```
+
+Resolves the component and draws a temporary overlay (outline + subtle fill,
+`scrollIntoView` if offscreen) over its bounds — `getBounds(component)`, the same
+bridge gxt's Ember-inspector uses — that auto-removes after ~1s. A single overlay
+element is reused and is cleaned up on `disableReduxDevtools()`.
+
+### Auto-flash on change
+
+When a `SET` or a time-travel `JUMP` actually changes one or more components,
+their DOM is briefly flashed with the same overlay so you can SEE what moved in
+the page. It is debounced via the single overlay element and **skipped** when a
+change touches more than a handful of components (so a 1000-row batch never
+strobes the screen). Ordinary app-driven updates are **not** flashed.
+
+> **Honest limitation.** The Redux DevTools protocol does **not** notify the page
+> when you click a node in the state-tree inspector, so true
+> "select-in-tree → highlight" is impossible. gxt delivers the explicit
+> `HIGHLIGHT` dispatch action and auto-flash-on-change instead — there is no
+> click-to-highlight.
+
+All overlay/DOM code is browser- and dev-only (`typeof document !== 'undefined'`
++ `IS_DEV_MODE`) and tree-shakes out of the library build.
+
 ## Design / cost model
 
 - **Hot path.** The only reactive-core touchpoint is a single guarded call in
@@ -186,10 +300,12 @@ const store = supportChromeExtension(createCellState());
   captured for a component that was later destroyed *and whose id was reused by a
   different component* could in principle restore onto the wrong node. Restores
   onto stable (still-alive) components — the common time-travel case — are exact.
-- **List growth = diff noise.** An array-valued cell (e.g. `_items`) is included
-  in full in every snapshot, so growing a 1000-row list shows a large diff. The
-  trade is deliberate: the full value is the most useful thing to inspect and
-  restore.
+- **Big collections are inspect-only.** An array-valued cell over `maxArrayItems`
+  (or any value over `maxValueBytes`) is summarized in the snapshot
+  (`{ $summary: "Array(1000)", … }`) to keep the inspector light. Such a cell is
+  no longer time-travel-restorable (restore skips the marker; the live value is
+  kept intact, never corrupted). Raise the caps to make a specific collection
+  restorable again. Cells under the caps keep their real value and round-trip.
 - **Derived values are omitted.** `MergedCell` / `formula` / `cached` values are
   recomputed from their deps and aren't restorable, so they don't appear in the
   state. Inspect them via the component's data cells instead.

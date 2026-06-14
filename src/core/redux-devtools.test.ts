@@ -438,6 +438,18 @@ describe('Redux DevTools Integration', () => {
       return null;
     }
 
+    /** Live component id for the first node whose class name matches. */
+    function idOf(name: string): number {
+      return [...TREE.keys()].find(
+        (id) => TREE.get(id)?.constructor?.name === name,
+      )!;
+    }
+
+    /** Live component instance for the first node whose class name matches. */
+    function nodeOf(name: string): any {
+      return TREE.get(idOf(name)) as any;
+    }
+
     function Counter() {
       return class Counter extends Component {
         _count = 0;
@@ -702,6 +714,212 @@ describe('Redux DevTools Integration', () => {
       await flushMicrotasks();
       fake.emit({ type: 'DISPATCH', payload: { type: 'RESET' } });
       expect(node._count).toBe(7);
+    });
+
+    // --- Feature A: big-value summaries + cell denylist --------------------
+    devTest('summarizes a big array cell; keeps a small one full + restorable', () => {
+      class List extends Component {
+        _big: number[] = [];
+        _small: number[] = [];
+        constructor(args: any) {
+          super(args);
+          cellFor(this as any, '_big');
+          cellFor(this as any, '_small');
+        }
+        [$template] = template('<u>{{this._big.length}}-{{this._small.length}}</u>');
+      }
+      mount(List);
+      const node = nodeOf('List');
+      node._big = Array.from({ length: 1000 }, (_, i) => i);
+      node._small = [1, 2, 3];
+
+      const state = snapshotState() as any;
+      const list = findNode(state, 'List');
+      // Big array -> compact summary marker (no 1000-element dump).
+      expect(list.$state._big).toEqual({
+        $summary: 'Array(1000)',
+        $len: 1000,
+        $preview: [0, 1, 2, 3, 4],
+      });
+      // The inspector value is genuinely small.
+      expect(JSON.stringify(list.$state._big).length).toBeLessThan(80);
+      // Small array kept in full (and therefore restorable).
+      expect(list.$state._small).toEqual([1, 2, 3]);
+    });
+
+    devTest('restore SKIPS a summarized cell (no corruption); restores small ones', () => {
+      const fake = installFakeExtension();
+      class List extends Component {
+        _big: number[] = [];
+        _small: number[] = [];
+        constructor(args: any) {
+          super(args);
+          cellFor(this as any, '_big');
+          cellFor(this as any, '_small');
+        }
+        [$template] = template('<u>{{this._small.length}}</u>');
+      }
+      mount(List);
+      enableReduxDevtools();
+      const node = nodeOf('List');
+
+      const bigA = Array.from({ length: 1000 }, (_, i) => i);
+      node._big = bigA;
+      node._small = [1, 2, 3];
+
+      // Timeline target: the big cell is a summary marker in this snapshot.
+      const target = JSON.stringify(snapshotState());
+      expect(target).toContain('"$summary":"Array(1000)"');
+
+      // Move on: swap the big array + change the small one.
+      const bigB = Array.from({ length: 1000 }, (_, i) => i + 1);
+      node._big = bigB;
+      node._small = [9];
+
+      // JUMP back to the captured target.
+      fake.emit({
+        type: 'DISPATCH',
+        payload: { type: 'JUMP_TO_STATE' },
+        state: target,
+      });
+
+      // Small (under-cap) cell IS restored.
+      expect(node._small).toEqual([1, 2, 3]);
+      // Big (summarized) cell is UNTOUCHED — it kept its real runtime value and
+      // was never overwritten with the `{$summary}` marker.
+      expect(node._big).toBe(bigB);
+      expect(Array.isArray(node._big)).toBe(true);
+      expect(node._big.length).toBe(1000);
+    });
+
+    devTest('cellsDenylist excludes matching cells from snapshot AND timeline', async () => {
+      const fake = installFakeExtension();
+      class Noisy extends Component {
+        _visible = 1;
+        animationFrame = 0;
+        constructor(args: any) {
+          super(args);
+          cellFor(this as any, '_visible');
+          cellFor(this as any, 'animationFrame');
+        }
+        [$template] = template('<u>{{this._visible}}</u>');
+      }
+      mount(Noisy);
+      enableReduxDevtools({ cellsDenylist: ['*.animationFrame'] });
+      const node = nodeOf('Noisy');
+
+      const state = snapshotState() as any;
+      const n = findNode(state, 'Noisy');
+      expect(n.$state._visible).toBe(1);
+      // Denylisted path is absent from the snapshot entirely.
+      expect('animationFrame' in n.$state).toBe(false);
+
+      // Updating ONLY a denylisted cell produces no timeline entry (de-noised).
+      const sendsBefore = fake.connection.send.mock.calls.length;
+      node.animationFrame = 42;
+      await flushMicrotasks();
+      expect(fake.connection.send.mock.calls.length).toBe(sendsBefore);
+    });
+
+    // --- Feature B: dispatch-to-set + DOM highlight ------------------------
+    devTest('SET dispatch writes a live cell + re-renders, with no echo action', async () => {
+      const fake = installFakeExtension();
+      class App extends Component {
+        _count = 0;
+        constructor(args: any) {
+          super(args);
+          cellFor(this as any, '_count');
+        }
+        [$template] = template('<b class="c">{{this._count}}</b>');
+      }
+      mount(App);
+      enableReduxDevtools();
+      const node = nodeOf('App');
+      const path = `App#${idOf('App')}._count`;
+      const sendsBefore = fake.connection.send.mock.calls.length;
+
+      // `value` arrives as a JSON string from the dispatcher.
+      fake.emit({
+        type: 'ACTION',
+        payload: JSON.stringify({ type: 'SET', path, value: '42' }),
+      });
+
+      expect(node._count).toBe(42);
+      expect(fixture.container.querySelector('.c')!.textContent).toBe('42');
+      // No echo: a SET must not re-dispatch back to the monitor.
+      await flushMicrotasks();
+      expect(fake.connection.send.mock.calls.length).toBe(sendsBefore);
+      expect(isDevToolsRestoring()).toBe(false);
+    });
+
+    devTest('SET with a bad path warns and does not throw', () => {
+      const fake = installFakeExtension();
+      enableReduxDevtools();
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        expect(() => {
+          fake.emit({
+            type: 'ACTION',
+            payload: JSON.stringify({
+              type: 'SET',
+              path: 'Ghost#999._x',
+              value: '1',
+            }),
+          });
+        }).not.toThrow();
+        expect(warn).toHaveBeenCalled();
+        expect(fake.connection.error).toHaveBeenCalled();
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    devTest('HIGHLIGHT creates then removes a DOM overlay; SET auto-flashes', () => {
+      const fake = installFakeExtension();
+      class App extends Component {
+        _count = 0;
+        constructor(args: any) {
+          super(args);
+          cellFor(this as any, '_count');
+        }
+        [$template] = template('<b class="c">{{this._count}}</b>');
+      }
+      mount(App);
+      enableReduxDevtools();
+      const id = idOf('App');
+      const overlay = () =>
+        document.querySelector('[data-gxt-devtools-overlay]');
+
+      expect(overlay()).toBeNull();
+
+      vi.useFakeTimers();
+      try {
+        // HIGHLIGHT -> overlay appears over the component's bounds...
+        fake.emit({
+          type: 'ACTION',
+          payload: JSON.stringify({ type: 'HIGHLIGHT', path: `App#${id}` }),
+        });
+        expect(overlay()).not.toBeNull();
+        // ...and auto-removes after ~1s. (getBounds is empty in happy-dom, so
+        // the overlay is 0-size — the lifecycle still runs without throwing.)
+        vi.advanceTimersByTime(1000);
+        expect(overlay()).toBeNull();
+
+        // A SET auto-flashes the owning component too.
+        fake.emit({
+          type: 'ACTION',
+          payload: JSON.stringify({
+            type: 'SET',
+            path: `App#${id}._count`,
+            value: '5',
+          }),
+        });
+        expect(overlay()).not.toBeNull();
+        vi.advanceTimersByTime(1000);
+        expect(overlay()).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });
