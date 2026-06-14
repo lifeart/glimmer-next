@@ -227,6 +227,12 @@ export class Cell<T extends unknown = unknown> {
     }
     tagsToRevalidate.add(this);
     scheduleRevalidate();
+    // Dev-only Redux DevTools notification — see `setDevtoolsCellNotifier`.
+    // Folds away entirely in lib builds (IS_DEV_MODE === false); a single
+    // predictable null check when DevTools is off in dev.
+    if (IS_DEV_MODE && _devtoolsCellNotifier !== null && changed) {
+      _devtoolsCellNotifier(this as unknown as Cell);
+    }
   }
 }
 
@@ -537,6 +543,34 @@ export function setCellUpdateDeferralHook(
   _cellUpdateDeferralHook = hook;
 }
 
+// Dev-only Redux DevTools cell-change notifier.
+// Null unless `enableReduxDevtools()` (see `@/core/redux-devtools`) has connected
+// to the browser extension. Every `Cell.update()` / `applyDeferredCellUpdate()`
+// that actually changes a value forwards the cell here so the integration can
+// snapshot reactive state for the DevTools timeline (time-travel debugging).
+//
+// The hot-path guard is `IS_DEV_MODE && _devtoolsCellNotifier !== null && changed`:
+//   * lib / production build — `IS_DEV_MODE` is inlined to `false`, so the whole
+//     branch (and every reference that would otherwise pull the redux-devtools
+//     module into the bundle) folds away. Tree-shaking verified.
+//   * dev, DevTools NOT connected — a single, perfectly-predictable null check;
+//     no allocation, no extra work on the tuned update path.
+//   * dev, DevTools connected — forwards the changed cell to the coalescing
+//     sender in the redux-devtools module.
+// The notifier itself is responsible for not re-entering during time-travel
+// restore (the restore path uses `applyCellUpdateSync`, which bypasses this
+// hook entirely, so it never fires in practice — but the module also keeps an
+// `isDevToolsRestoring()` guard as defence in depth).
+export type DevtoolsCellNotifier = (cell: Cell) => void;
+let _devtoolsCellNotifier: DevtoolsCellNotifier | null = null;
+export function setDevtoolsCellNotifier(
+  notifier: DevtoolsCellNotifier | null,
+): void {
+  if (IS_DEV_MODE) {
+    _devtoolsCellNotifier = notifier;
+  }
+}
+
 /**
  * Apply a deferred cell update from the host's drain phase.
  *
@@ -575,6 +609,11 @@ export function applyDeferredCellUpdate(
   }
   tagsToRevalidate.add(cell);
   scheduleRevalidate();
+  // Mirror Cell.update's dev-only DevTools notification for host-deferred
+  // updates (e.g. Ember's runloop drain). Same zero-cost-when-off guard.
+  if (IS_DEV_MODE && _devtoolsCellNotifier !== null && changed) {
+    _devtoolsCellNotifier(cell);
+  }
 }
 
 // Shared error handler for executeTag variants — avoids code duplication
