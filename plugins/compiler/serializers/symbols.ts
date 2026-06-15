@@ -74,6 +74,13 @@ export const SYMBOLS = {
   FN: '$__fn',
   DEBUGGER: '$__debugger',
   LOG: '$__log',
+  // Identity memoization wrapper for (hash)/(array). Emitted around the arg
+  // getter so the produced object/array reference stays stable across reads.
+  CACHED: '$__cached',
+  // Ember-dialect {{#each}} row-item reactive tap. Emitted by the value
+  // serializer for a member read whose head is a block param, gated by
+  // WITH_EMBER_INTEGRATION + IS_GLIMMER_COMPAT_MODE.
+  CELL_FOR: '$__cellFor',
 
   // Unstable child wrapper
   UCW: '$_ucw',

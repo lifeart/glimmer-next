@@ -78,6 +78,41 @@ export interface HostHooks {
    * the `globalThis.$_eval` fallback read.
    */
   dynamicEval?: (value: unknown) => unknown;
+  /**
+   * Observe a freshly-created per-row / per-branch render context so the host
+   * can attach its own pre-destroy work to it via `registerDestructor(ctx, …)`.
+   *
+   * Fired:
+   *   - once per keyed-`{{#each}}` row, immediately after the row's destructor-
+   *     owner ctx is allocated + added to the tree (BEFORE the row body renders);
+   *   - once per `{{#if}}`/`{{#unless}}` `IfCondition`, at construction (the
+   *     branch render scope), BEFORE the first branch renders.
+   *
+   * Because the runtime fires the row ctx's destructors BEFORE the row DOM is
+   * removed (per-row `destroyItem`→`destroyRowCtx`, and the reordered bulk
+   * `fastCleanup`), a destructor the host registers here runs while the row DOM
+   * is still connected — letting the host run teardown/lifecycle hooks at the
+   * Ember-correct moment without re-implementing row ordering. No-op by default
+   * (standalone GXT never registers it, so behavior is unchanged).
+   */
+  onRowContextCreated?: (ctx: object) => void;
+  /**
+   * Notify the host that the runtime pushed `ctx` onto its render-scope
+   * (parent-context) stack — i.e. children rendered until the matching
+   * `onLeaveRenderScope` attach to `ctx` as their tree parent. Fired from every
+   * `setParentContext`/`pushParentContext` push (e.g. `{{#each}}` row render,
+   * `{{#if}}` branch render, the inverse block). Lets an Ember host ride GXT's
+   * scope stack for its own parentView hierarchy instead of re-pushing manually.
+   * No-op by default.
+   */
+  onEnterRenderScope?: (ctx: object) => void;
+  /**
+   * The converse of `onEnterRenderScope`: the runtime popped the top render
+   * scope (`setParentContext(null)`/`popParentContext`). Enter/leave are always
+   * balanced, so the host can mirror the stack with a simple push/pop. No-op by
+   * default.
+   */
+  onLeaveRenderScope?: () => void;
 }
 
 /**

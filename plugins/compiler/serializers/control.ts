@@ -240,7 +240,7 @@ function buildEach(
 
   // Build the callback body with index replacement
   // Pass all param names so they can be tracked as known bindings during serialization
-  const bodyExpr = buildEachBody(ctx, control.children, newCtxName, paramNames, hasStable);
+  const bodyExpr = buildEachBody(ctx, control.children, newCtxName, paramNames, hasStable, isRecycled);
 
   // Static-block fast path (RESEARCH_LIST_TRACKING_OPTIMIZATION.md §2.A1/§4):
   // when the body is a single qualifying inline element, ALSO emit a
@@ -258,9 +258,13 @@ function buildEach(
     // Same scope frame discipline as buildEachBody, so slot-value expressions
     // resolve block params exactly like the normal body emission.
     ctx.scopeTracker.enterScope('control-block');
-    for (const param of paramNames) {
-      ctx.scopeTracker.addBinding(param, { kind: 'block-param', name: param });
-    }
+    paramNames.forEach((param, i) => {
+      ctx.scopeTracker.addBinding(param, {
+        kind: 'block-param',
+        name: param,
+        isEachIndex: i === 1,
+      });
+    });
     let valueExprs = buildStaticBlockValueExprs(ctx, staticBlockParts, newCtxName);
     ctx.scopeTracker.exitScope();
     if (hasIndex) {
@@ -373,7 +377,8 @@ function buildEachBody(
   children: readonly HBSChild[],
   ctxName: string,
   paramNames: string[],
-  hasStable: boolean
+  hasStable: boolean,
+  isRecycled = false
 ): JSExpression {
   const indexParam = paramNames[1] ?? '$index';
   const usesIndex = childrenUseIndex(children, indexParam);
@@ -381,9 +386,19 @@ function buildEachBody(
   // Add block params in a dedicated scope frame so nested each/if blocks with
   // matching block-param names shadow rather than clobber outer bindings.
   ctx.scopeTracker.enterScope('control-block');
-  for (const param of paramNames) {
-    ctx.scopeTracker.addBinding(param, { kind: 'block-param', name: param });
-  }
+  paramNames.forEach((param, i) => {
+    ctx.scopeTracker.addBinding(param, {
+      kind: 'block-param',
+      name: param,
+      // The 2nd each param is the reactive index Cell (read via `.value`),
+      // not a raw value — exclude it from the row-item cell tap.
+      isEachIndex: i === 1,
+      // Recycled rows (key="@recycle") bind to a per-row STATE object whose
+      // props are forwarding accessors over a re-pointable holder; a cellFor
+      // tap would clobber that channel, so recycled params are never tapped.
+      recycledRow: isRecycled,
+    });
+  });
 
   const childCtxName = hasStable ? ctxName : nextCtxName(ctx);
   const childExprs = buildChildrenExprs(ctx, children, childCtxName);
