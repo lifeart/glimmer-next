@@ -966,12 +966,17 @@ export function cached<T>(fn: () => T, debugName?: string): CachedCell<T> {
  *     a consumer formula still depends on the underlying cells and re-runs when
  *     they change — value-correctness is preserved.
  *
- * Unlike `cached()`, a zero-dep capture is treated as STABLE (not stale): the
- * hash/array factories only read their own tracked-cell args, never raw mutable
- * state, so there is nothing to miss. The memo deliberately does NOT subscribe a
- * tag to the dep cells (no `bindAllCellsToTag`) — the consumer's own tracker
- * does the subscribing — which keeps it allocation-light and leak-free (no tag
- * lingers in a destroyed component's cell subscriber sets).
+ * Invalidation is gated on captured gxt-cell revisions AND a global-revision
+ * fallback: a zero-dep capture is NOT treated as stable-forever (that pinned
+ * stale values when the factory read classic/plain-object host props that don't
+ * entangle a gxt Cell). Instead, when the global revision moves the memo
+ * recomputes and a value-equality gate decides whether the served identity
+ * actually changes — identity stays stable while the value is unchanged (no
+ * over-invalidation) and turns over only on a real value change. The memo
+ * deliberately does NOT subscribe a tag to the dep cells (no `bindAllCellsToTag`)
+ * — the consumer's own tracker does the subscribing — which keeps it
+ * allocation-light and leak-free (no tag lingers in a destroyed component's cell
+ * subscriber sets).
  *
  * WHY NOT reuse `createCache`/`getValue` (core/glimmer/caching-primitives.ts)?
  * Empirically they cannot do this job: gxt's `createCache` is a PUSH/opcode-based,
@@ -997,8 +1002,41 @@ export function cachedHelper<T>(factory: () => T): () => T {
   let hasValue = false;
   let lastValue: T;
   let depRevisions: Map<Cell, number> | null = null;
+  // Global-revision fallback. The original memo invalidated ONLY on captured
+  // gxt-`Cell` deltas, treating a zero-dep capture as stable forever. That is
+  // wrong under the Ember integration: `(hash …)` / `(array …)` args frequently
+  // read CLASSIC / plain-object host properties, whose reads do NOT entangle a
+  // gxt Cell (their reactivity flows through the host's coarse re-render), so
+  // `depRevisions` is empty and the first value gets pinned permanently (stale
+  // `(array)`, stale `(hash)` consumers). Tracking the global revision lets us
+  // NOTICE that something moved even with zero captured cells; the value-equality
+  // gate below then decides whether the served IDENTITY actually changes — so an
+  // unrelated bump keeps the SAME reference (no `didUpdateAttrs` over-invalidation,
+  // preserving the #233 identity fix) while a real value change yields a fresh
+  // reference (so `(array)` / `{{#each}}` reconciles).
+  let lastGlobalRevisionAtCompute = -1;
 
-  function recompute(): T {
+  function shallowSame(a: T, b: T): boolean {
+    if (Object.is(a, b)) return true;
+    if (Array.isArray(a) && Array.isArray(b)) {
+      if (a.length !== b.length) return false;
+      for (let i = 0; i < a.length; i++) {
+        if (!Object.is(a[i], b[i])) return false;
+      }
+      return true;
+    }
+    if (a && b && typeof a === 'object' && typeof b === 'object') {
+      const ak = Object.keys(a as object);
+      if (ak.length !== Object.keys(b as object).length) return false;
+      for (const k of ak) {
+        if (!Object.is((a as any)[k], (b as any)[k])) return false;
+      }
+      return true;
+    }
+    return false;
+  }
+
+  function recompute(): void {
     const priorTracker = currentTracker;
     const localTracker: Set<Cell> = new Set();
     setTracker(localTracker);
@@ -1016,22 +1054,40 @@ export function cachedHelper<T>(factory: () => T): () => T {
     const snapshot = new Map<Cell, number>();
     localTracker.forEach((cell) => snapshot.set(cell, cell._revision));
     depRevisions = snapshot;
-    lastValue = value;
+    lastGlobalRevisionAtCompute = _globalRevision;
+    // Identity gate: only swap the served reference when the produced value
+    // actually differs. `(array)` -> fresh ref on a real change so `{{#each}}`
+    // reconciles; `(hash)` live getters compare equal -> stable ref, fresh value
+    // read in place; unrelated bump -> equal -> stable ref (no over-invalidation).
+    if (!hasValue || !shallowSame(value, lastValue)) {
+      lastValue = value;
+    }
     hasValue = true;
-    return value;
   }
 
   function isClean(): boolean {
     if (!hasValue || depRevisions === null) {
       return false;
     }
-    // Zero captured deps => stable for the lifetime of this call site.
-    for (const [cell, revision] of depRevisions) {
-      if (cell._revision !== revision) {
-        return false;
-      }
+    // Nothing in the whole system moved since our last compute.
+    if (_globalRevision === lastGlobalRevisionAtCompute) {
+      return true;
     }
-    return true;
+    // Something moved. If we captured gxt cells, trust their precise revisions
+    // (and suppress re-checks until the next global bump if they held).
+    if (depRevisions.size > 0) {
+      for (const [cell, revision] of depRevisions) {
+        if (cell._revision !== revision) {
+          return false;
+        }
+      }
+      lastGlobalRevisionAtCompute = _globalRevision;
+      return true;
+    }
+    // Zero captured cells + the global revision moved: recompute. The value-eq
+    // gate keeps identity stable when the produced value is unchanged, so this
+    // is a cheap re-evaluation, not identity churn.
+    return false;
   }
 
   return function cachedHelperRead(): T {
@@ -1044,10 +1100,10 @@ export function cachedHelper<T>(factory: () => T): () => T {
     ) {
       depRevisions.forEach((_revision, cell) => currentTracker!.add(cell));
     }
-    if (isClean()) {
-      return lastValue;
+    if (!isClean()) {
+      recompute();
     }
-    return recompute();
+    return lastValue;
   };
 }
 

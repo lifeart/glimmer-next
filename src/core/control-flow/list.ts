@@ -1755,6 +1755,34 @@ export class SyncListComponent<
     this._dupItemsRef = null;
     try {
       const { keyMap, keyForItem } = this;
+      // Stale-key eviction (explicit-key lists only). A row's keyed property can
+      // be mutated through its per-item cell (`$__cellFor`) WITHOUT re-syncing the
+      // list, leaving its keyMap entry under the now-stale key. A later full
+      // replace with a fresh object carrying the ORIGINAL key value would then hit
+      // the keyed reuse branch and serve the stale row (duplicate-key collapse /
+      // re-used-variable bleed). Evict any entry whose bound item's CURRENT key
+      // drifted so the diff below builds a fresh row for the new object. Simple
+      // keys only — nested `a.b` keys can't be re-derived cheaply here and don't
+      // exhibit the bug (their sources aren't `$__cellFor`-tapped block params).
+      if (
+        this.key !== '@identity' &&
+        !this.key.includes('.') &&
+        this.boundItemMap !== null &&
+        this.boundItemMap.size > 0
+      ) {
+        for (const [k, boundItem] of Array.from(this.boundItemMap)) {
+          if (boundItem !== null && typeof boundItem === 'object') {
+            const currentKey = String(
+              (boundItem as Record<string, unknown>)[this.key],
+            );
+            const baseKey = String(k).replace(/:\d+$/, '');
+            if (currentKey !== baseKey) {
+              const staleRow = keyMap.get(k);
+              if (staleRow !== undefined) this.destroyItem(staleRow, k);
+            }
+          }
+        }
+      }
 
       if (items.length > 0 && this.inverseContent !== null) {
         this.destroyInverseSync();
