@@ -2741,10 +2741,28 @@ describe('Hash helper advanced', () => {
     expect(result.code).toContain('multiply');
   });
 
-  test('nested hash helpers wrap all levels', () => {
+  test('nested hash helpers wrap all levels (Ember dialect memoizes nested hash)', () => {
+    // The $__cached identity memo is gated to the Ember dialect
+    // (WITH_EMBER_INTEGRATION), so opt the raw `compile()` into it here.
+    const result = compile('{{log (hash outer=(hash inner=1))}}', {
+      flags: { IS_GLIMMER_COMPAT_MODE: true, WITH_EMBER_INTEGRATION: true },
+    });
+    expect(result.code).toContain(SYMBOLS.HASH);
+    // Both outer and inner should be lazily wrapped in getters. A nested
+    // (hash)/(array) prop is additionally memoized through $__cached so reading
+    // `outerHash.outer` yields an identity-stable reference (classic
+    // compute-ref contract); plain literal props stay as bare getters.
+    expect(result.code).toContain('outer: $__cached(() =>');
+    expect(result.code).toContain('inner: () =>');
+  });
+
+  test('nested hash helpers are NOT memoized without WITH_EMBER_INTEGRATION (byte-identical compat)', () => {
+    // Default `compile()` is non-Ember glimmer-compat (WITH_EMBER_INTEGRATION
+    // off). The $__cached identity memo must NOT fire — gxt-standalone and
+    // plain glimmer-compat output stay byte-identical (bare `() =>` getters).
     const result = compile('{{log (hash outer=(hash inner=1))}}');
     expect(result.code).toContain(SYMBOLS.HASH);
-    // Both outer and inner should have getters
+    expect(result.code).not.toContain('$__cached');
     expect(result.code).toContain('outer: () =>');
     expect(result.code).toContain('inner: () =>');
   });

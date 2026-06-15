@@ -142,6 +142,19 @@ export interface BindingInfo {
   readonly name: string;
   readonly originalName?: string;  // For renamed bindings
   readonly sourceRange?: SourceRange;
+  /**
+   * True for the `{{#each}}` index block param (the 2nd param). Unlike the
+   * item param (a raw value), the index is a reactive Cell read via `.value`,
+   * so the Ember-dialect row-item cell tap must NOT `cellFor`-tap it.
+   */
+  readonly isEachIndex?: boolean;
+  /**
+   * True for block params of a recycled `{{#each ... key="@recycle"}}`. Those
+   * params bind to a per-row STATE object whose props are forwarding accessors
+   * over a re-pointable holder; a `cellFor` tap would clobber that reference-
+   * swap channel, so recycled-row params are excluded from the row-item tap.
+   */
+  readonly recycledRow?: boolean;
 }
 
 // ============================================================================

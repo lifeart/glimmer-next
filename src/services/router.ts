@@ -11,6 +11,27 @@ const Router = hasDefault
   ? (tinyRouter as Record<string, any>)[defaultKey].Router
   : tinyRouter.Router;
 
+/**
+ * Preload a stylesheet via `<link rel="preload">` — a browser-only progressive
+ * enhancement. Guard on RUNTIME DOM availability (`typeof document`), not the
+ * build-time `import.meta.env.SSR` flag: the flag is only set in vite's SSR
+ * build, so `!import.meta.env.SSR` was `true` (→ ran `document.createElement`)
+ * in EVERY other non-browser context — plain Node, a worker, a non-vite SSR
+ * host, a test without a DOM — throwing `ReferenceError: document is not
+ * defined`. A capability check is correct everywhere: it runs exactly when a
+ * document exists and is a safe no-op otherwise. (Fixes #141.)
+ */
+export function preloadCss(href: string): void {
+  if (typeof document === 'undefined') {
+    return;
+  }
+  const link = document.createElement('link');
+  link.rel = 'preload';
+  link.href = href;
+  link.as = 'style';
+  document.head.appendChild(link);
+}
+
 class GlimmerRouter extends Router {
   // @ts-expect-error
   @tracked stack;
@@ -37,14 +58,7 @@ export function createRouter() {
   }) as RouterType;
 
   router.addResolver('isPolarisReady', async () => {
-    // preload css   <link rel="preload" href="style.css" as="style" />
-    if (!import.meta.env.SSR) {
-      const link = document.createElement('link');
-      link.rel = 'preload';
-      link.href = '/is-polaris-ready.css';
-      link.as = 'style';
-      document.head.appendChild(link);
-    }
+    preloadCss('/is-polaris-ready.css');
     const { IsPolarisReady } = await import(
       // @ts-ignore import
       '@/components/pages/IsPolarisReady.gts'
@@ -55,15 +69,7 @@ export function createRouter() {
   });
 
   router.addResolver('todomvc', async () => {
-    // preload css   <link rel="preload" href="style.css" as="style" />
-    console.log('todomvc');
-    if (!import.meta.env.SSR) {
-      const link = document.createElement('link');
-      link.rel = 'preload';
-      link.href = '/todomvc.css';
-      link.as = 'style';
-      document.head.appendChild(link);
-    }
+    preloadCss('/todomvc.css');
     const { ToDoMVC } = await import(
       // @ts-ignore import
       '@/components/pages/ToDoMVC.gts'

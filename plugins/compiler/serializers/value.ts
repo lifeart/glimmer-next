@@ -48,6 +48,51 @@ export function serializeValue(
 }
 
 /**
+ * `(hash)` / `(array)` are the keyword helpers whose produced object/array
+ * identity must be memoized. Classic Glimmer returns a stable compute-ref for
+ * them; GXT otherwise rebuilds a fresh identity on every read of the arg getter,
+ * which makes reference-comparing consumers (Ember child components, modifiers)
+ * over-invalidate. See `cachedHelper` in src/core/reactive.ts.
+ */
+function isMemoizableIdentityHelper(
+  ctx: CompilerContext,
+  value: SerializedValue
+): boolean {
+  if (value.kind !== 'helper') return false;
+  if (value.name !== 'hash' && value.name !== 'array') return false;
+  // Respect a local binding that shadows the built-in (e.g. block param `hash`).
+  return !ctx.scopeTracker.hasBinding(value.name);
+}
+
+/**
+ * Wrap an already-built value expression in an arg getter, memoizing the
+ * identity when the value is a `(hash)` / `(array)` helper so the produced
+ * reference stays stable across reads. `$__cached` returns a getter, so the
+ * `() => value` calling convention is preserved either way.
+ *
+ * Gated to the Ember dialect (IS_GLIMMER_COMPAT_MODE + WITH_EMBER_INTEGRATION):
+ * the identity-stability contract matters for reference-comparing Ember
+ * consumers (child components, modifiers). gxt-standalone AND non-Ember
+ * glimmer-compat compilation stay byte-identical (plain `() => value` getter,
+ * no `$__cached`).
+ */
+function buildMaybeMemoizedGetter(
+  ctx: CompilerContext,
+  value: SerializedValue,
+  builtVal: JSExpression,
+  sourceRange?: SourceRange
+): JSExpression {
+  if (
+    ctx.flags.IS_GLIMMER_COMPAT_MODE &&
+    ctx.flags.WITH_EMBER_INTEGRATION &&
+    isMemoizableIdentityHelper(ctx, value)
+  ) {
+    return B.call(SYMBOLS.CACHED, [B.getter(builtVal, sourceRange)], sourceRange);
+  }
+  return B.getter(builtVal, sourceRange);
+}
+
+/**
  * Build a JSExpression from a SerializedValue.
  * This is the core transformation that converts the intermediate representation
  * to a CodeBuilder AST node for code generation.
@@ -92,7 +137,18 @@ export function buildValue(
       // Wrap the inner value in an arrow function: () => innerValue
       // Use buildValueNoGetter to avoid double-wrapping: getter(path) should
       // produce () => this.x, NOT () => () => this.x
-      return B.getter(buildValueNoGetter(ctx, value.value, ctxName), value.sourceRange);
+      //
+      // For (hash)/(array) the wrap goes through $__cached so the produced
+      // object/array reference is identity-stable across reads/re-renders (the
+      // arg-access layer re-invokes this getter on every read; a bare arrow
+      // would rebuild a fresh identity each time and over-invalidate
+      // reference-comparing consumers).
+      return buildMaybeMemoizedGetter(
+        ctx,
+        value.value,
+        buildValueNoGetter(ctx, value.value, ctxName),
+        value.sourceRange
+      );
 
     case 'concat':
       // Build [part1, part2, ...].join('') with source mapping for paths.
@@ -192,6 +248,29 @@ export function buildPathExpression(
     return buildLiteral(staticLiteral, value.sourceRange);
   }
 
+  // Ember-dialect {{#each}} row-item reactive tap.
+  //
+  // A member read whose head is a block param — `{{item.text}}` inside
+  // `{{#each items as |item|}}` — is rewritten to a host cell tap
+  // `$__cellFor(item, "text")` so the read stays reactive on item-property
+  // mutation WITHOUT wrapping every row item in a runtime tracking Proxy
+  // (the ember-side `wrapEachItemForTracking`). Deep paths tap each segment:
+  // `{{item.v.x}}` → `$__cellFor($__cellFor(item, "v"), "x")`.
+  //
+  // Gated to the Ember dialect (WITH_EMBER_INTEGRATION + IS_GLIMMER_COMPAT_MODE)
+  // so gxt-standalone compilation is byte-identical. Same wrap-in-getter
+  // discipline as the surrounding path emission.
+  if (
+    ctx.flags.IS_GLIMMER_COMPAT_MODE &&
+    ctx.flags.WITH_EMBER_INTEGRATION &&
+    !value.isArg
+  ) {
+    const tap = buildBlockParamCellTap(ctx, value);
+    if (tap) {
+      return wrapInGetter ? B.reactiveGetter(tap, value.sourceRange) : tap;
+    }
+  }
+
   let pathExpr = buildPathBase(ctx, value);
 
   if (
@@ -285,6 +364,84 @@ function buildPathBase(
       : B.member(expr, name, undefined, range);
   }
 
+  return expr;
+}
+
+/**
+ * Decompose a path into ordered segments (head + members), preferring the
+ * lowered `parts` (which carry sourcemap ranges) and falling back to splitting
+ * the dotted expression. Returns null for shapes the row-item tap must not
+ * touch (bracket / numeric-index / optional-chaining access).
+ */
+function getPathSegments(
+  value: PathValue
+): Array<{ name: string; range?: SourceRange }> | null {
+  // Prefer the lowered `parts`: they carry clean per-segment names (the head
+  // expression string may have `?.` baked in by toOptionalChaining for deep
+  // paths) plus sourcemap ranges. Non-identifier segments (numeric/bracket
+  // index) are rejected by the caller's per-segment identifier check.
+  if (value.parts && value.parts.length > 0) {
+    return value.parts.map((p) => ({ name: p.name, range: p.range }));
+  }
+  // Fallback: split the dotted expression. Bail on bracket / optional-chaining
+  // shapes the row-item tap must not touch.
+  if (value.expression.includes('[') || value.expression.includes('?')) {
+    return null;
+  }
+  const tokens = value.expression.split('.');
+  if (tokens.length === 0) return null;
+  return tokens.map((name) => ({ name }));
+}
+
+/**
+ * Ember-dialect row-item cell tap.
+ *
+ * For a member read whose head is a block param (e.g. the `{{#each as |item|}}`
+ * row item, or a component-yielded value `<Comp as |row|>`), emit a nested
+ * `$__cellFor(...)` chain that taps each reactive segment through the host
+ * cell. Returns null (caller falls back to the plain read) when the path is not
+ * a tappable shape:
+ *   - head is not a block param (this.*, @args, components, helpers, let-bindings),
+ *   - head is the {{#each}} index param (a reactive Cell, read via `.value`),
+ *   - the path is a bare block param with no member (`{{item}}`),
+ *   - any member segment is not a simple identifier (numeric/bracket index,
+ *     optional chaining) — gxt's tracked-array machinery owns index reactivity.
+ */
+function buildBlockParamCellTap(
+  ctx: CompilerContext,
+  value: PathValue
+): JSExpression | null {
+  const segs = getPathSegments(value);
+  if (!segs || segs.length < 2) return null; // need head + >=1 member
+
+  const head = segs[0].name;
+  const binding = ctx.scopeTracker.resolve(head);
+  if (!binding || binding.kind !== 'block-param') return null;
+  // The {{#each}} index is a reactive Cell (read via `.value`), not a raw
+  // value — never cellFor-tap it.
+  if (binding.isEachIndex) return null;
+  // Recycled rows bind to a per-row state object with forwarding accessors;
+  // a cellFor tap would clobber that reference-swap channel.
+  if (binding.recycledRow) return null;
+
+  // Only simple identifier member segments are tapped; anything else (numeric
+  // index, bracket access) bails the whole path to the plain read.
+  for (let i = 1; i < segs.length; i++) {
+    if (!/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(segs[i].name)) return null;
+  }
+
+  // $__cellFor($__cellFor(item, "v"), "x")
+  let expr: JSExpression = B.runtimeRef(
+    head,
+    segs[0].range ?? value.rootRange ?? value.sourceRange
+  );
+  for (let i = 1; i < segs.length; i++) {
+    expr = B.call(
+      SYMBOLS.CELL_FOR,
+      [expr, B.string(segs[i].name, segs[i].range)],
+      value.sourceRange
+    );
+  }
   return expr;
 }
 
@@ -763,8 +920,10 @@ function buildBuiltInHelper(
       if (builtVal.type === 'reactiveGetter') {
         builtVal = builtVal.expression;
       }
-      // Use B.getter() to preserve AST structure for sourcemaps
-      hashProps.push(B.prop(key, B.getter(builtVal, val.sourceRange), false, val.sourceRange));
+      // Use B.getter() to preserve AST structure for sourcemaps. A nested
+      // (hash)/(array) prop is memoized through $__cached so reading
+      // `outerHash.nested` returns an identity-stable reference too.
+      hashProps.push(B.prop(key, buildMaybeMemoizedGetter(ctx, val, builtVal, val.sourceRange), false, val.sourceRange));
     }
     return B.call(helperId, [B.object(hashProps)], sourceRange);
   }

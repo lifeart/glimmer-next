@@ -10,6 +10,7 @@ import {
   type ComponentLike,
 } from './types';
 import { TREE } from './tree';
+import { HOST_HOOKS } from './host-hooks';
 
 // `parentContextStack.length - 1` IS the active index — keeping a parallel
 // `parentContextIndex` doubled the bookkeeping (every push/pop incremented or
@@ -34,6 +35,9 @@ if (IS_DEV_MODE) {
  */
 export const pushParentContext = (value: ComponentLike): void => {
   parentContextStack.push(value[COMPONENT_ID_PROPERTY]!);
+  // Host render-scope mirror: every push of the scope stack is the host's cue
+  // to push its parentView. No-op when no host registered the hook.
+  if (HOST_HOOKS.onEnterRenderScope) HOST_HOOKS.onEnterRenderScope(value);
 };
 
 /**
@@ -41,6 +45,7 @@ export const pushParentContext = (value: ComponentLike): void => {
  */
 export const popParentContext = (): void => {
   parentContextStack.pop();
+  if (HOST_HOOKS.onLeaveRenderScope) HOST_HOOKS.onLeaveRenderScope();
 };
 
 /**
@@ -49,8 +54,10 @@ export const popParentContext = (): void => {
 export const setParentContext = (value: ComponentLike | null): void => {
   if (value === null) {
     parentContextStack.pop();
+    if (HOST_HOOKS.onLeaveRenderScope) HOST_HOOKS.onLeaveRenderScope();
   } else {
     parentContextStack.push(value[COMPONENT_ID_PROPERTY]!);
+    if (HOST_HOOKS.onEnterRenderScope) HOST_HOOKS.onEnterRenderScope(value);
   }
 };
 
