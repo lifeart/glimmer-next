@@ -198,6 +198,9 @@ export function compile(
       bindings: ctx.scopeTracker.getAllBindingNames(),
       sourceMap,
       usedRecycle: ctx.usedRecycle,
+      usedArgsAlias: ctx.usedArgsAlias,
+      usedSlots: ctx.usedSlots,
+      usedFw: ctx.usedFw,
     };
   } catch (error: unknown) {
     const parseError = error as ParseError;
@@ -331,6 +334,9 @@ export function compile(
       warnings: ctx.warnings,
       bindings: ctx.scopeTracker.getAllBindingNames(),
       usedRecycle: ctx.usedRecycle,
+      usedArgsAlias: ctx.usedArgsAlias,
+      usedSlots: ctx.usedSlots,
+      usedFw: ctx.usedFw,
     };
   }
 }

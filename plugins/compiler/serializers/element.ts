@@ -254,6 +254,9 @@ function buildTagProps(
 
   const elements = [props, attrs, evts];
   if (hasSplatAttrs) {
+    // Splat attributes emit a free `$fw` reference (forwarded props tuple) →
+    // the `const $fw = $_GET_FW(...)` preamble local is required.
+    ctx.usedFw = true;
     elements.push(B.id('$fw'));
   }
 
@@ -288,6 +291,9 @@ function buildComponentProps(
 
   if (hasSplatAttrs) {
     // Merge with forwarded attributes: [[...$fw[0], ...props], [...$fw[1], ...attrs], [...$fw[2], ...evts]]
+    // Emits free `$fw` references → the `const $fw = $_GET_FW(...)` preamble
+    // local is required.
+    ctx.usedFw = true;
     const elements = [
       B.array([
         B.spread(B.computedMember(B.id(SYMBOLS.LOCAL_FW), B.num(0))),
@@ -515,6 +521,9 @@ function buildModifierExpr(
   // Resolve modifier name (handle @arg references)
   let modName = mod.name;
   if (modName.startsWith('@')) {
+    // @-arg modifier reference resolves through $a (dot or bracket) → the
+    // `const $a = this[$args]` preamble local is required.
+    ctx.usedArgsAlias = true;
     const argName = modName.slice(1);
     const needsBracket = !/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(argName);
     modName = needsBracket
@@ -759,6 +768,9 @@ function buildComponentCall(
     // `this.foo.Bar` already emit valid JS and are left untouched.
     let dynamicTag = tag;
     if (dynamicTag.startsWith('@')) {
+      // Arg-headed dynamic tag resolves through $a (dot or bracket) → the
+      // `const $a = this[$args]` preamble local is required.
+      ctx.usedArgsAlias = true;
       const dotIndex = dynamicTag.indexOf('.');
       const head = dotIndex === -1 ? dynamicTag.slice(1) : dynamicTag.slice(1, dotIndex);
       const rest = dotIndex === -1 ? '' : dynamicTag.slice(dotIndex);

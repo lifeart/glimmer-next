@@ -436,6 +436,17 @@ export interface CompileResult {
    * emitted.
    */
   readonly usedRecycle: boolean;
+  /**
+   * Ground-truth preamble flags (see CompilerContext): `true` when the
+   * compiled output actually references the corresponding wrapper-injected
+   * local. Consumers (the runtime compiler in plugins/runtime-compiler.ts
+   * and the module assembler in plugins/test.ts) inject the preamble local
+   * iff its flag is set — `$a = this[$args]`, `$slots = $_GET_SLOTS(...)`,
+   * `$fw = $_GET_FW(...)` — instead of substring-scanning the emitted code.
+   */
+  readonly usedArgsAlias: boolean;
+  readonly usedSlots: boolean;
+  readonly usedFw: boolean;
 }
 
 /**
