@@ -314,45 +314,28 @@ export function compileTemplate(
 
     // Create function that returns the compiled template array
     // We wrap it in a function that has access to both GXT symbols and scope values.
-    // Mirror the locals the .gts compile path injects (plugins/test.ts:347–352)
-    // so compiled output that references `$slots` (e.g. (has-block) which
-    // emits `$_hasBlock.bind(this, $slots)`) or `$fw` works the same way
-    // when compiled at runtime.
+    // Mirror the locals the .gts compile path injects (plugins/test.ts)
+    // so compiled output that references `$a` (an @-arg read), `$slots`
+    // (e.g. {{yield}} or (has-block), which emit `$_hasBlock.bind(this, $slots)`)
+    // or `$fw` (splat attributes) works the same way when compiled at runtime.
     //
-    // Detect a true reference, not any substring. A bare `code.includes('$slots')`
-    // false-positives on text content like `<p>$slots is just a string</p>` and
-    // injects a `const $slots = …` shadow that clobbers a same-named binding from
-    // the user's `scope`. Likewise `code.includes('$fw')` matches user text such
-    // as `"price $fwd: 12"` because `$fw` is a prefix of `$fwd`.
-    //
-    // The compiler only emits these names as free identifiers in a small set of
-    // codegen shapes (see plugins/compiler/serializers/value.ts:791 and
-    // serializers/element.ts:257 / control.ts:105):
-    //
-    //   - `$slots` always appears at the tail of a call argument list:
-    //       `$_hasBlock.bind(this, $slots)`         -> `, $slots)`
-    //       `$_slot('name', paramsFn, $slots, ctx)` -> `, $slots,`
-    //   - `$fw` appears either in element-tuple position (after `props, attrs,
-    //     evts, $fw`) or as a splat:
-    //       `[props, attrs, evts, $fw]`             -> `, $fw]`
-    //       `[..., $fw, ...]`                       -> `, $fw,`
-    //       `[...$fw[0], ...props]`                 -> `...$fw[`
-    //
-    // Each of these compound substrings starts with a JS punctuator (`, ` or
-    // `...`) so it cannot collide with an identifier-continuation false-positive
-    // like `$fwd`. They can still appear inside string literals if a user
-    // happens to write that exact punctuation in template text, but the bug
-    // surface drops from "any text containing `$fw`" to "any text containing
-    // the exact codegen-shape substring", which is an enormous narrowing for
-    // the cases users actually hit (component-name-shaped variables, prefix
-    // collisions, etc.).
-    const needsArgsAlias = result.code.includes('$a.');
-    const needsSlots =
-      result.code.includes(', $slots,') || result.code.includes(', $slots)');
-    const needsFw =
-      result.code.includes(', $fw,') ||
-      result.code.includes(', $fw]') ||
-      result.code.includes('...$fw[');
+    // Drive the injection from the compiler's GROUND TRUTH instead of scanning
+    // the emitted string. The serializers set CompileResult.usedArgsAlias /
+    // usedSlots / usedFw at the exact site that emits each free reference
+    // (plugins/compiler/serializers/*, visitors/utils.ts). This is correct by
+    // construction:
+    //   - no false NEGATIVE — the old `code.includes('$a.')` missed the bracket
+    //     form `$a["foo-bar"]` (emitted for hyphenated arg names), leaving `$a`
+    //     undeclared → a ReferenceError at render. The flag fires for bracket
+    //     access too.
+    //   - no false POSITIVE — template TEXT like `<p>$slots is a string</p>` or
+    //     a `$fwd` prefix collision no longer trips injection, because nothing
+    //     was emitted.
+    // The wrapper body is generated fresh here, so there is no pre-existing
+    // declaration to dedup against (unlike the module-assembler import case).
+    const needsArgsAlias = result.usedArgsAlias;
+    const needsSlots = result.usedSlots;
+    const needsFw = result.usedFw;
     const fnBody = `
       "use strict";
       return function() {
