@@ -96,10 +96,14 @@ export function buildControl(
  * Generates: $_slot("slotName", () => [params], $slots, ctx)
  */
 function buildYield(
-  _ctx: CompilerContext,
+  ctx: CompilerContext,
   control: HBSControlExpression,
   ctxName: string
 ): JSExpression {
+  // {{yield}} compiles to `$_slot(name, paramsGetter, $slots, ctx)` (below),
+  // which references the free `$slots` local → the
+  // `const $slots = $_GET_SLOTS(...)` preamble local is required.
+  ctx.usedSlots = true;
   const slotName = control.key || 'default';
 
   // Build the params getter: () => [param1, param2, ...]

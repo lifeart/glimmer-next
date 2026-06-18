@@ -71,6 +71,17 @@ interface ProcessedTemplate {
   originalLoc?: ResolvedHBS['loc'];
   /** Template flags */
   flags: ResolvedHBS['flags'];
+  /**
+   * Ground-truth preamble flags from the compiler (CompileResult). Each marks
+   * that the compiled body actually references the corresponding wrapper local,
+   * so the assembler declares `const $a = this[$args]` / `$slots` / `$fw` iff
+   * set — replacing the old `code.includes('$fw')` / `includes('$slots')` /
+   * `/\$a[\.\[]/` substring scans (false-positive on template text; the bare
+   * `$fw`/`$slots` scans matched a `$fwd` prefix collision and stray text).
+   */
+  usedArgsAlias: boolean;
+  usedSlots: boolean;
+  usedFw: boolean;
 }
 
 /**
@@ -333,6 +344,9 @@ function processTransformedFiles(
       originalSource: content.template,
       originalLoc: content.loc,
       flags: templateFlags,
+      usedArgsAlias: result.usedArgsAlias,
+      usedSlots: result.usedSlots,
+      usedFw: result.usedFw,
     });
   });
 
@@ -343,9 +357,15 @@ function processTransformedFiles(
 
     let result = '';
     const finContext = template.flags.hasThisAccess ? 'this' : 'this';
-    const hasFw = template.code.includes('$fw');
-    const hasSlots = template.code.includes('$slots');
-    const hasArgs = /\$a[\.\[]/.test(template.code);
+    // Ground truth from the compiler (see ProcessedTemplate): inject each
+    // preamble local iff the compiled body actually emitted a free reference to
+    // it. Replaces the old substring scans — `code.includes('$fw')` matched a
+    // `$fwd` prefix in template text, and the args regex `/\$a[\.\[]/`, while it
+    // happened to catch bracket access here, is now sourced from the same
+    // emission truth as the runtime compiler so both paths can never diverge.
+    const hasFw = template.usedFw;
+    const hasSlots = template.usedSlots;
+    const hasArgs = template.usedArgsAlias;
     const slotsResolution = `const $slots = ${SYMBOLS.$_GET_SLOTS}(this, arguments);`;
     const maybeFw = hasFw ? `const $fw = ${SYMBOLS.$_GET_FW}(this, arguments);` : '';
     const maybeSlots = hasSlots ? slotsResolution : '';

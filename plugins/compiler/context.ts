@@ -226,6 +226,28 @@ export interface CompilerContext {
   unboundCounter: number;
 
   /**
+   * Ground-truth preamble flags. Each is set to `true` by the exact
+   * serializer site that emits a *free* reference to the corresponding
+   * compiled-output local (the names the runtime wrapper conditionally
+   * declares in the function preamble). Surfaced on CompileResult so the
+   * module assembler (plugins/test.ts) and the runtime compiler
+   * (plugins/runtime-compiler.ts) inject the matching preamble local ONLY
+   * when the compiler actually referenced it — replacing the old
+   * substring scans (`code.includes('$a.')` etc.) that false-NEGATIVED on
+   * bracket access (`$a["foo-bar"]`) and false-POSITIVED on template text.
+   *
+   * Scope note: the `(element "tag")` helper wrapper builds its OWN nested
+   * function with its own `const $fw`/`const $slots` preamble, so its
+   * `$fw`/`$slots` references are bound locally and do NOT set these flags.
+   */
+  /** `$a` (alias for `this[$args]`) — set when an @-arg read is emitted. */
+  usedArgsAlias: boolean;
+  /** `$slots` — set by {{yield}} ($_slot) and (has-block)/(has-block-params). */
+  usedSlots: boolean;
+  /** `$fw` — set when splat-attributes emit the forwarded `$fw` tuple/spread. */
+  usedFw: boolean;
+
+  /**
    * Transient flag: true while visiting an attribute/named-arg value
    * (e.g. `@content={{foo}}`). Used to suppress the fine-grained 0-arg
    * helper getter-wrap in arg position, where the bare `$_maybeHelper`
@@ -307,6 +329,9 @@ export function createContext(
     letBlockCounter: 0,
     logSiteCounter: 0,
     unboundCounter: 0,
+    usedArgsAlias: false,
+    usedSlots: false,
+    usedFw: false,
     inAttributeValue: false,
     seenNodes: new Set(),
     formatter,

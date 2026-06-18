@@ -361,6 +361,12 @@ export function toOptionalChaining(str: string): string {
 export function resolvePath(ctx: CompilerContext, pathStr: string): string {
   // Handle @args - uses $a.argName format (alias for this[$args])
   if (pathStr.startsWith('@')) {
+    // Ground-truth signal for the preamble injector: this read resolves
+    // through the args alias ($a / $a["..."]), so the `const $a = this[$args]`
+    // local must be declared. Recorded at the branch level so it fires for the
+    // bracket form (`$a["aria-label"]`) too — the case the old
+    // `code.includes('$a.')` substring scan missed (a runtime ReferenceError).
+    ctx.usedArgsAlias = true;
     const argPath = pathStr.slice(1); // e.g., "aria-label" or "foo.bar.baz"
     const segments = argPath.split('.');
     const firstSegment = segments[0];
@@ -627,6 +633,12 @@ function serializeHelperCall(value: SerializedValue & { kind: 'helper' }, ctx?: 
   // boolean wherever it appears (mustache, block, inline {{if}}, attribute).
   // See plugins/compiler/serializers/value.ts for the full rationale.
   if (symbolName === SYMBOLS.HAS_BLOCK || symbolName === SYMBOLS.HAS_BLOCK_PARAMS) {
+    // Emits a free `$slots` reference (`.bind(this, $slots)`) → the
+    // `const $slots = $_GET_SLOTS(...)` preamble local is required. ctx is
+    // optional on this string-serializer entry point; when present it is the
+    // ground truth that drives preamble injection. (The JSExpression mirror in
+    // serializers/value.ts always has ctx.)
+    if (ctx) ctx.usedSlots = true;
     return `${symbolName}.bind(this, $slots)(${args.join(', ')})`;
   }
 
