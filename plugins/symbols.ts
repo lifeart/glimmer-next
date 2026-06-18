@@ -34,6 +34,14 @@ export const SYMBOLS = {
   $_maybeModifier: '$_maybeModifier',
   $_inElement: '$_inElement',
   $_ucw: '$_ucw',
+  // Node-thunk marker: the compiler wraps DOM-producing component children in
+  // `$_nt(() => …)` so hosts detect them via the runtime `isNodeThunk`
+  // predicate instead of `.toString()` source-sniffing. MUST be listed here
+  // (the AOT auto-import registry, `Object.values(SYMBOLS)`) — not only in
+  // serializers/symbols.ts — or AOT-compiled modules reference an unimported
+  // `$_nt` (ReferenceError at render). Resolved from @lifeart/gxt via
+  // src/core/index.ts → `export * from '@/core/dom'`.
+  NODE_THUNK: '$_nt',
   $_blk: '$_blk',
   $__if: '$__if',
   $__eq: '$__eq',
