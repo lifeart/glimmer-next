@@ -1,7 +1,6 @@
 import type Babel from '@babel/core';
 import {
   MAIN_IMPORT,
-  RECYCLE_IMPORT,
   RECYCLE_SYMBOLS,
   SYMBOLS,
 } from './symbols';
@@ -75,50 +74,6 @@ type TemplateTransformContext = {
 
 const TRACKED_IMPORT_SOURCES = new Set([MAIN_IMPORT, '@glimmer/tracking']);
 const REACTIVE_FACTORY_IMPORT_SOURCES = new Set([MAIN_IMPORT]);
-
-// Sentinel each-key that opts a block into row recycling (mirrors RECYCLE_KEY
-// in src/core/control-flow/list-recycle.ts and the local copy in
-// plugins/compiler/serializers/control.ts). Used only to decide whether to
-// auto-import the recycle entry points from '@lifeart/gxt/recycle'.
-const RECYCLE_KEY_RE = /key\s*=\s*["']@recycle["']/;
-
-/**
- * True when ANY inline template in this module uses `key="@recycle"`. Scans the
- * raw text of every template/string literal in the module — the template body
- * reaches this babel pass as a literal regardless of authoring form: an `hbs`
- * tagged template (`hbs\`...\``), a content-tag-lowered call
- * (`template(\`...\`, …)` — a `TemplateLiteral` argument), or a plain
- * `template('...')` (a `StringLiteral` argument). Runs at Program-enter, before
- * the child visitors rewrite those nodes, so all three forms are intact.
- *
- * Cheap and conservative: a false positive only adds an import that the bundler
- * tree-shakes away (the unused recycle specifiers never appear in output), while
- * a false negative would leave a recycled template's entry points unresolved —
- * so the scan errs toward matching.
- */
-function programUsesRecycle(
-  programPath: Babel.NodePath<Babel.types.Program>,
-): boolean {
-  let found = false;
-  programPath.traverse({
-    TemplateLiteral(p: Babel.NodePath<Babel.types.TemplateLiteral>) {
-      for (const quasi of p.node.quasis) {
-        if (RECYCLE_KEY_RE.test(quasi.value.raw)) {
-          found = true;
-          p.stop();
-          return;
-        }
-      }
-    },
-    StringLiteral(p: Babel.NodePath<Babel.types.StringLiteral>) {
-      if (RECYCLE_KEY_RE.test(p.node.value)) {
-        found = true;
-        p.stop();
-      }
-    },
-  });
-  return found;
-}
 
 function createImportHintState(): ImportHintState {
   // Keep these defaults to preserve existing behavior even when imports are omitted.
@@ -1146,14 +1101,17 @@ export function processTemplate(
             }
           }
           // The opt-in row-recycling entry points ($_eachRecycled /
-          // $_eachSyncRecycled) no longer live in the main `@lifeart/gxt`
+          // $_eachSyncRecycled) do NOT live in the main `@lifeart/gxt`
           // barrel — they moved to the tree-shakable `@lifeart/gxt/recycle`
-          // entry. Auto-import them from there, and ONLY when this module
-          // actually compiles a `key="@recycle"` block, so apps that never
-          // recycle never pull list-recycle.ts in. Everything else still comes
-          // from the main barrel as before.
+          // entry. Keep them OUT of the barrel auto-import here (the
+          // `recycleSymbolSet` filter below). Their import is injected
+          // post-compile by the module assembler (plugins/test.ts), driven by
+          // the compiler's ground-truth `CompileResult.usedRecycle` flag —
+          // emitted only when a `key="@recycle"` block actually compiles to a
+          // recycled entry point — so apps that never recycle never pull
+          // list-recycle.ts in, and a stray `@recycle` string can no longer
+          // trigger a spurious import.
           const recycleSymbolSet = new Set<string>(RECYCLE_SYMBOLS);
-          const usesRecycle = programUsesRecycle(path);
 
           const PUBLIC_API = Object.values(SYMBOLS);
           const IMPORTS = PUBLIC_API
@@ -1166,21 +1124,6 @@ export function processTemplate(
             path.node.body.unshift(
               t.importDeclaration(IMPORTS, t.stringLiteral(MAIN_IMPORT)),
             );
-          }
-          if (usesRecycle) {
-            const RECYCLE_IMPORTS = RECYCLE_SYMBOLS
-              .filter((name) => !existingImports.has(name))
-              .map((name) =>
-                t.importSpecifier(t.identifier(name), t.identifier(name)),
-              );
-            if (RECYCLE_IMPORTS.length > 0) {
-              path.node.body.unshift(
-                t.importDeclaration(
-                  RECYCLE_IMPORTS,
-                  t.stringLiteral(RECYCLE_IMPORT),
-                ),
-              );
-            }
           }
         },
         ReturnStatement: {
