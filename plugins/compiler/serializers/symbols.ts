@@ -15,6 +15,13 @@ export const SYMBOLS = {
   TAG: '$_tag',
   FINALIZE_COMPONENT: '$_fin',
   EMPTY_DOM_PROPS: '$_edp',
+  // Node-thunk marker. Wraps a component-child DOM producer (`$_tag`/`$_c`/
+  // `$_dc`/`$_each`…) lazy thunk in compat mode so hosts can detect it via the
+  // runtime `isNodeThunk` predicate instead of `.toString()` source-sniffing
+  // (which false-negatives under minification). Identity at runtime — sets a
+  // marker property and returns the thunk. NOT a pure function (side effect:
+  // marking), so it is deliberately absent from PURE_FUNCTIONS below.
+  NODE_THUNK: '$_nt',
 
   // Control flow
   IF: '$_if',

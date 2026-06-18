@@ -442,6 +442,46 @@ describe('Compiler Flags', () => {
     // Note: Non-compat mode would have different behavior
   });
 
+  describe('node-thunk marker ($_nt)', () => {
+    const compat = { flags: { IS_GLIMMER_COMPAT_MODE: true } };
+
+    test('marks a component-child DOM thunk ($_tag) with $_nt', () => {
+      const r = compile('<Parent><Child /></Parent>', compat);
+      // The lazy child producer is wrapped + marked, not a bare arrow.
+      expect(r.code).toContain('$_nt(() => $_tag(\'Child\'');
+    });
+
+    test('marks a dynamic-component child ($_dc) but not its inner ref getter', () => {
+      const r = compile('<Parent><this.Foo /></Parent>', compat);
+      expect(r.code).toContain('$_nt(() => $_dc(');
+      // The component-reference getter inside $_dc must stay an UNMARKED arrow.
+      expect(r.code).toContain('$_dc(() => this.Foo');
+    });
+
+    test('marks an each-block child producer ($_each)', () => {
+      const r = compile(
+        '<Parent>{{#each this.items as |i|}}<Child @x={{i}} />{{/each}}</Parent>',
+        compat
+      );
+      expect(r.code).toContain('$_nt(() => $_each(');
+    });
+
+    test('does NOT mark a plain reactive text getter', () => {
+      const r = compile('<Parent>{{this.title}}</Parent>', compat);
+      expect(r.code).not.toContain('$_nt(');
+      expect(r.code).toContain('() => this.title');
+    });
+
+    test('marks only the node thunk in a mixed children list', () => {
+      const r = compile('<Parent>hi {{this.title}} <Child /></Parent>', compat);
+      // exactly one $_nt wrap (the <Child/> producer)
+      expect(r.code.match(/\$_nt\(/g)?.length).toBe(1);
+      expect(r.code).toContain('$_nt(() => $_tag(\'Child\'');
+      // the text getter is left bare
+      expect(r.code).toContain('() => this.title');
+    });
+  });
+
   test('preserves compile-time flags as bare identifiers for Vite define replacement', () => {
     // This test verifies that compile-time flags like IS_GLIMMER_COMPAT_MODE
     // are NOT prefixed with "this." when used in templates.

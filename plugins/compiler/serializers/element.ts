@@ -807,9 +807,14 @@ function maybeWrapComponentChildren(childExprs: JSExpression[]): JSExpression[] 
   if (!childExprs.some(expr => exprContainsComponentCall(expr))) return childExprs;
   return childExprs.map(expr => {
     if (exprContainsComponentCall(expr)) {
-      // Don't double-wrap if already an arrow function
-      if (expr.type === 'arrow') return expr;
-      return B.getter(expr, expr.sourceRange);
+      // This child is a DOM producer ($_tag/$_c/$_dc/$_each…). Wrap it in a
+      // lazy thunk and MARK it with $_nt so hosts can identify it via the
+      // runtime `isNodeThunk` predicate instead of `.toString()` source-
+      // sniffing (which false-negatives under minification — the $_* imports
+      // are renamed to short locals). Don't double-wrap an already-arrow
+      // child; mark it in place.
+      const thunk = expr.type === 'arrow' ? expr : B.getter(expr, expr.sourceRange);
+      return B.call(B.id(SYMBOLS.NODE_THUNK), [thunk], expr.sourceRange);
     }
     return expr;
   });
