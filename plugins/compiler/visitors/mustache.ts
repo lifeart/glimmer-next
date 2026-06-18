@@ -82,6 +82,45 @@ export function visitMustache(
     }
   }
 
+  // In compat mode, transform mustache-form (mut this.prop) / (mut @arg) to pass
+  // the property path as a second string argument so the mut helper can build a
+  // proper setter — the exact mirror of the SubExpression handler in
+  // visitors/index.ts. The common two-way-binding form is in argument position
+  // (`@value={{mut this.a.b}}`), which parses as a MustacheStatement and so is
+  // handled here, NOT by the SubExpression visitor. Without this branch the
+  // mustache form emitted only `[getter]` (no path), forcing the Ember bridge to
+  // recover the write-path by stringifying the getter at runtime — fragile for
+  // nested/guarded getter shapes. The path is taken verbatim from the AST
+  // (getPathExpressionString = full dotted path), so it is correct by
+  // construction regardless of the compiled getter's shape.
+  if (ctx.flags.IS_GLIMMER_COMPAT_MODE && pathName === 'mut' && node.params.length === 1) {
+    const firstParam = node.params[0];
+    if (firstParam && firstParam.type === 'PathExpression') {
+      const paramPath = getPathExpressionString(firstParam);
+      if (paramPath.startsWith('this.') || paramPath.startsWith('@')) {
+        const paramResult = getVisit(ctx)(ctx, firstParam, false);
+        const firstArg =
+          paramResult && isSerializedValue(paramResult) ? paramResult : literal(null);
+        const mutPositional: SerializedValue[] = [firstArg, literal(paramPath)];
+        const mutNamed = new Map<string, SerializedValue>();
+        for (const pair of node.hash.pairs) {
+          const value = getVisit(ctx)(ctx, pair.value, false);
+          if (value !== null && isSerializedValue(value)) {
+            mutNamed.set(pair.key, value);
+          } else if (typeof value === 'string') {
+            mutNamed.set(pair.key, literal(value));
+          }
+        }
+        const pathRange = getNodeRange(node.path);
+        const mutResult = helper('mut', mutPositional, mutNamed, range, pathRange);
+        if (wrap) {
+          return getter(mutResult, range);
+        }
+        return mutResult;
+      }
+    }
+  }
+
   // In compat mode, transform bare {{this}} to {{this.__gxtSelfString__}}
   // Ember's {{this}} calls toString() on the component instance.
   if (ctx.flags.IS_GLIMMER_COMPAT_MODE && node.path.type === 'PathExpression') {

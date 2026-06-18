@@ -4590,6 +4590,59 @@ describe('Compat mode AST transforms', () => {
       expect(result.code).not.toContain('"this.foo"');
     });
 
+    // The mustache form `@arg={{mut this.x}}` is the common two-way-binding
+    // shape; it parses as a MustacheStatement (not a SubExpression), so it must
+    // get the same compile-time write-path arg the subexpression form gets —
+    // otherwise the Ember bridge has to recover it by stringifying the getter at
+    // runtime (fragile for nested/guarded getter shapes).
+    test('mustache {{mut this.foo}} adds path string as second arg', () => {
+      const result = compile('<Btn @v={{mut this.foo}} />', {
+        flags: compatFlags,
+        bindings: new Set(['Btn']),
+      });
+      expect(result.code).toContain('"this.foo"');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('mustache {{mut this.a.b}} emits the FULL dotted path (not just the head)', () => {
+      const result = compile('<Btn @v={{mut this.a.b}} />', {
+        flags: compatFlags,
+        bindings: new Set(['Btn']),
+      });
+      expect(result.code).toContain('"this.a.b"');
+      expect(result.errors).toHaveLength(0);
+    });
+
+    test('mustache {{mut @bar}} / {{mut @bar.baz}} add the @-path string', () => {
+      const bare = compile('<Btn @v={{mut @bar}} />', {
+        flags: compatFlags,
+        bindings: new Set(['Btn']),
+      });
+      expect(bare.code).toContain('"@bar"');
+      const nested = compile('<Btn @v={{mut @bar.baz}} />', {
+        flags: compatFlags,
+        bindings: new Set(['Btn']),
+      });
+      expect(nested.code).toContain('"@bar.baz"');
+    });
+
+    test('mustache {{mut this.foo}} does NOT add path string in non-compat mode', () => {
+      const result = compile('<Btn @v={{mut this.foo}} />', {
+        flags: defaultFlags,
+        bindings: new Set(['Btn']),
+      });
+      expect(result.code).not.toContain('"this.foo"');
+    });
+
+    test('mustache {{mut (get obj key)}} still lowers to __mutGet (not the path branch)', () => {
+      const result = compile('<Btn @v={{mut (get this.obj this.key)}} />', {
+        flags: compatFlags,
+        bindings: new Set(['Btn']),
+      });
+      expect(result.code).toContain('__mutGet');
+      expect(result.code).not.toContain('"this.obj"');
+    });
+
     test('(has-block) compiles to $_hasBlock.bind(this, $slots) in compat mode', () => {
       const result = compile('{{#if (has-block)}}has block{{/if}}', { flags: compatFlags });
       expect(result.code).toContain('$_hasBlock.bind(this, $slots)');
