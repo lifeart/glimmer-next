@@ -65,3 +65,16 @@ export const EVENT_TYPE = {
 };
 
 export const MAIN_IMPORT = '@lifeart/gxt';
+
+// Dedicated entry for the opt-in row-recycling runtime (key="@recycle"). The
+// recycle symbols live here instead of the main barrel so list-recycle.ts
+// tree-shakes out of apps that never use the sentinel key. AOT output imports
+// the recycle symbols from this entry, and only when a template uses them.
+export const RECYCLE_IMPORT = '@lifeart/gxt/recycle';
+
+// The compiler-emitted recycle entry points. Auto-imported from RECYCLE_IMPORT
+// (not MAIN_IMPORT) and gated on actual key="@recycle" usage in the module.
+export const RECYCLE_SYMBOLS: readonly string[] = [
+  SYMBOLS.EACH_RECYCLED,
+  SYMBOLS.EACH_SYNC_RECYCLED,
+];

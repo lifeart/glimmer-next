@@ -193,6 +193,10 @@ export default defineConfig(({ mode }) => ({
             ),
             path.join(currentPath, "src", "tests", "utils.ts"),
             path.join(currentPath, "src", "core", "suspense.ts"),
+            // Opt-in row recycling (key="@recycle"). Dedicated entry so
+            // list-recycle.ts tree-shakes out of the `.` barrel / runtime
+            // compiler chunk.
+            path.join(currentPath, "src", "core", "recycle.ts"),
           ],
           name: "gxt",
           formats: ["es"],
@@ -281,6 +285,15 @@ export default defineConfig(({ mode }) => ({
         "src",
         "tests",
         "utils.ts",
+      ),
+      // Must precede the "@lifeart/gxt" catch-all so the recycle subpath
+      // resolves to its dedicated entry (AOT output auto-imports recycle
+      // symbols from here when a template uses key="@recycle").
+      "@lifeart/gxt/recycle": path.join(
+        currentPath,
+        "src",
+        "core",
+        "recycle.ts",
       ),
       "@lifeart/gxt": path.join(currentPath, "src", "core", "index.ts"),
     },
