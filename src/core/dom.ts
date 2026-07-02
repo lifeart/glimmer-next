@@ -934,11 +934,13 @@ export function $_inElement(
   const api = initDOM(ctx);
   return component(
     function UnstableChildWrapper(this: Component<any>) {
-      $_GET_ARGS(this, arguments);
       // See $BLOCK_WRAPPER_SYMBOL doc — native wrapper; don't let consumers
-      // re-stamp our COMPONENT_ID with their root id.
+      // re-stamp our COMPONENT_ID with their root id. Set BEFORE `$_GET_ARGS`
+      // so its `onComponentContextCreated` host-hook fire excludes this wrapper
+      // (block wrappers are not user components).
       // @ts-expect-error symbol index
       this[$BLOCK_WRAPPER_SYMBOL] = true;
+      $_GET_ARGS(this, arguments);
       if (IS_DEV_MODE) {
         // @ts-expect-error construct signature
         this.debugName = `InElement-${unstableWrapperId++}`;
@@ -990,13 +992,15 @@ export function $_ucw(
 ): ComponentReturnType {
   return component(
     function UnstableChildWrapper(this: Component<any>) {
-      $_GET_ARGS(this, arguments);
       // Tag this as a native block wrapper so consumers don't re-stamp our
       // COMPONENT_ID with their root id (see $BLOCK_WRAPPER_SYMBOL doc). Set
-      // BEFORE the body (`roots(this)`) runs, since the body may invoke a
-      // consumer tag-render path that reads this flag off `this` (ctx).
+      // BEFORE `$_GET_ARGS` — its `onComponentContextCreated` host-hook fire
+      // must exclude this wrapper (not a user component) — and BEFORE the body
+      // (`roots(this)`) runs, since the body may invoke a consumer tag-render
+      // path that reads this flag off `this` (ctx).
       // @ts-expect-error symbol index
       this[$BLOCK_WRAPPER_SYMBOL] = true;
+      $_GET_ARGS(this, arguments);
       if (IS_DEV_MODE) {
         // @ts-expect-error construct signature
         this.debugName = `UnstableChildWrapper-${unstableWrapperId++}`;
@@ -1769,6 +1773,23 @@ export function $_GET_ARGS(ctx: Component<any>, args: IArguments) {
   // @ts-expect-error - dynamic property
   if (!ctx[ADDED_TO_TREE_FLAG]) {
     addToTree(getParentContext()!, ctx);
+  }
+  // Announce the freshly-created COMPONENT render context to the host (the
+  // component twin of list.ts' per-row `onRowContextCreated`). `$_GET_ARGS` is
+  // the seam every compiled component template — class-based AND template-only —
+  // runs first, so firing here is once-per-component and BEFORE the component's
+  // subtree renders (a parent fires before the children it is about to render).
+  // Internal block wrappers ($_ucw/$_inElement) also reach `$_GET_ARGS`; they
+  // set `$BLOCK_WRAPPER_SYMBOL` on `this` BEFORE calling us, so the `&&`
+  // short-circuit excludes them (each-rows / if-branches never call `$_GET_ARGS`
+  // at all — they carry the `onRowContextCreated` seam instead). Zero-cost when
+  // unregistered: a single branch-predictable hook-presence read, no allocation.
+  if (
+    HOST_HOOKS.onComponentContextCreated !== undefined &&
+    // @ts-expect-error symbol index
+    ctx[$BLOCK_WRAPPER_SYMBOL] !== true
+  ) {
+    HOST_HOOKS.onComponentContextCreated(ctx as unknown as object);
   }
 }
 
