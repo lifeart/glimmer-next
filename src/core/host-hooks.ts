@@ -97,6 +97,40 @@ export interface HostHooks {
    */
   onRowContextCreated?: (ctx: object) => void;
   /**
+   * The COMPONENT twin of `onRowContextCreated`: observe a freshly-created
+   * COMPONENT render context so the host can attach its own pre-detach work to
+   * it via `registerDestructor(ctx, …)`. This lets an Ember host retire its own
+   * component-liveness re-derivation (pool scan + live-instance set + reattach
+   * machinery) and instead register one pre-detach destructor per component,
+   * exactly as the per-row `onRowContextCreated` delegation already works.
+   *
+   * Fired once per component instance render — class-based AND template-only —
+   * from `$_GET_ARGS` (the seam every compiled component template runs first),
+   * AFTER the ctx is allocated (`COMPONENT_ID`, `[$args]`, empty
+   * `RENDERED_NODES`) and added to the render tree, but BEFORE the component's
+   * own subtree renders. `ctx` is the value `registerDestructor(ctx, …)` /
+   * `addToTree(…, ctx)` accept.
+   *
+   * Ordering: a parent component's hook fires BEFORE any of its child
+   * components' hooks (the parent's `$_GET_ARGS` runs before it renders the
+   * children that call `$_c`). It does NOT fire for:
+   *   - each-`{{#each}}` rows or `{{#if}}`/`{{#unless}}` branches — those have
+   *     the dedicated `onRowContextCreated` seam and never call `$_GET_ARGS`;
+   *   - internal block wrappers (`$_ucw`/`$_inElement`, marked with the
+   *     `gxt-block-wrapper` symbol) — they call `$_GET_ARGS` but are excluded.
+   *
+   * Destructors the host registers here fire synchronously during teardown
+   * (`runDestructorsSync` runs a node's destructors BEFORE removing that node's
+   * DOM), so a component that is itself the destroy root (single-component
+   * teardown, `{{#if}}` collapse, per-row removal) runs its destructor while its
+   * element is still connected. In a whole-subtree cascade (route transition)
+   * teardown is deterministic parent-before-child; a descendant's own DOM has
+   * already been detached with its ancestor by the time its destructor fires.
+   * No-op by default (standalone GXT never registers it, so behavior is
+   * unchanged and the create hot path stays a single hook-presence branch).
+   */
+  onComponentContextCreated?: (ctx: object) => void;
+  /**
    * Notify the host that the runtime pushed `ctx` onto its render-scope
    * (parent-context) stack — i.e. children rendered until the matching
    * `onLeaveRenderScope` attach to `ctx` as their tree parent. Fired from every
