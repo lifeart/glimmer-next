@@ -1817,6 +1817,10 @@ export function $_args(
       Object.defineProperty(args, $PROPS_SYMBOL, {
         value: props ?? {},
         enumerable: false,
+        // Redefinable so `$_dc` can thread forwarded splat attributes into a
+        // dynamic component's props tuple (see mergeForwardedProps).
+        configurable: true,
+        writable: true,
       });
       return new Proxy(args, ArgProxyHandler);
     }
@@ -1824,6 +1828,10 @@ export function $_args(
     Object.defineProperty(args, $PROPS_SYMBOL, {
       value: props ?? {},
       enumerable: false,
+      // Redefinable so `$_dc` can thread forwarded splat attributes into a
+      // dynamic component's props tuple (see mergeForwardedProps).
+      configurable: true,
+      writable: true,
     });
     Object.defineProperty(args, $SLOTS_SYMBOL, {
       value: slots ?? {},
@@ -1837,11 +1845,47 @@ export const $_if = ifCond;
 export const $_slot = slot;
 export const $_c = component;
 
+// Merge forwarded attributes (`fw`, the enclosing component's `...attributes`)
+// into a dynamic component's own props tuple so the *resolved* component sees
+// them the same way a statically-invoked component does. The forwarded parts
+// come first (matching the static path's `[...$fw[0], ...ownProps]` ordering).
+// The `fw` value parts may be reactive functions; they are copied by reference
+// so reactivity is preserved. `args[$PROPS_SYMBOL]` is defined `configurable`
+// by `$_args`, so redefining it here works across the dev object / prod proxy /
+// non-compat plain-object shapes.
+function mergeForwardedProps(
+  args: Record<string, unknown>,
+  fw: FwType,
+): void {
+  const own = (args as Record<symbol, unknown>)[$PROPS_SYMBOL] as
+    | FwType
+    | undefined;
+  const merged: FwType = [
+    [...(fw[0] || []), ...((own && own[0]) || [])],
+    [...(fw[1] || []), ...((own && own[1]) || [])],
+    [...(fw[2] || []), ...((own && own[2]) || [])],
+  ];
+  Object.defineProperty(args, $PROPS_SYMBOL, {
+    value: merged,
+    enumerable: false,
+    configurable: true,
+    writable: true,
+  });
+}
+
 export function $_dc(
   comp: () => ComponentReturnType | Component,
   args: Record<string, unknown>,
   ctx: Component<any>,
+  // Optional forwarded-props tuple emitted by the compiler when the dynamic
+  // component sits in splat context (`<this.X ...attributes />`). Threaded into
+  // the resolved component (and re-applied across swaps, since `args` is reused
+  // by the swap branch below). 3-arg call sites are unchanged.
+  fw?: FwType,
 ) {
+  if (fw != null && args !== null && typeof args === 'object') {
+    mergeForwardedProps(args, fw);
+  }
   const api = initDOM(ctx);
   const _cmp = formula(comp, 'dynamic-component');
   let result: ComponentReturnType | null = null;

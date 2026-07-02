@@ -182,6 +182,17 @@ export function buildComponent(
   // Check for splat attributes
   const hasSplatAttrs = node.attributes.some(([name]) => name === '...attributes');
 
+  // A dynamic component (dotted-path tag → `$_dc`) in splat context carries
+  // `$fw` as a dedicated 4th `$_dc` argument (see buildComponentCall) rather
+  // than baking it into the args-props tuple. This mirrors how the static
+  // element path ($_tag) passes `$fw` as a separate tuple slot, and lets the
+  // runtime thread the forwarded attributes into the *resolved* component (and
+  // re-thread them across a component swap). Static component invocations
+  // ($_c) keep the in-args merge. The tag test mirrors buildComponentCall's
+  // own `$_dc` routing rule (`typeof tag === 'string' && tag.includes('.')`).
+  const isDynamicComponent = typeof node.tag === 'string' && node.tag.includes('.');
+  const dynamicSplat = isDynamicComponent && hasSplatAttrs;
+
   // Separate @ args from regular attributes
   const attributes = node.attributes.filter(([name]) => name !== '...attributes');
   const args = attributes.filter(([name]) => name.startsWith('@'));
@@ -195,8 +206,9 @@ export function buildComponent(
   );
   const properties = [...node.properties, ...classProps];
 
-  // Build DOM props for forwarding
-  const propsExpr = buildComponentProps(ctx, properties, attrs, node.events, hasSplatAttrs, ctxName);
+  // Build DOM props for forwarding. Suppress the in-args `$fw` merge for a
+  // dynamic splat component — it is forwarded via the 4th `$_dc` argument.
+  const propsExpr = buildComponentProps(ctx, properties, attrs, node.events, hasSplatAttrs && !dynamicSplat, ctxName);
 
   // Check if props are empty (no properties, no attrs, no events, no splat)
   const isEmpty = properties.length === 0 && attrs.length === 0 && node.events.length === 0 && !hasSplatAttrs;
@@ -207,13 +219,13 @@ export function buildComponent(
   if (node.selfClosing) {
     // Self-closing component - empty slots object
     const argsCall = buildComponentArgsExpr(ctx, args, B.emptyObject(), finalPropsExpr, ctxName);
-    return buildComponentCall(ctx, node.tag, argsCall, ctxName, useFormatted, node.sourceRange, node.tagRange);
+    return buildComponentCall(ctx, node.tag, argsCall, ctxName, useFormatted, node.sourceRange, node.tagRange, dynamicSplat);
   }
 
   // Component with children/slots
   const slotsExpr = buildSlots(ctx, node);
   const argsCall = buildComponentArgsExpr(ctx, args, slotsExpr, finalPropsExpr, ctxName);
-  return buildComponentCall(ctx, node.tag, argsCall, ctxName, useFormatted, node.sourceRange, node.tagRange);
+  return buildComponentCall(ctx, node.tag, argsCall, ctxName, useFormatted, node.sourceRange, node.tagRange, dynamicSplat);
 }
 
 /**
@@ -744,7 +756,11 @@ function buildComponentCall(
   ctxName: string,
   formatted?: boolean,
   sourceRange?: import('../types').SourceRange,
-  tagRange?: import('../types').SourceRange
+  tagRange?: import('../types').SourceRange,
+  // When true (dynamic component in splat context), emit the forwarded-props
+  // tuple `$fw` as a dedicated 4th `$_dc` argument so the runtime can thread
+  // the parent's `...attributes` into the resolved component.
+  emitForwardedProps = false
 ): JSExpression {
   // Handle RuntimeTag (namespace providers, dynamic components)
   if (isRuntimeTag(tag)) {
@@ -782,7 +798,15 @@ function buildComponentCall(
     }
     const tagRef = B.runtimeRef(dynamicTag, tagRange);
     const tagGetter = B.reactiveGetter(tagRef, tagRange);
-    return B.call(SYMBOLS.DYNAMIC_COMPONENT, [tagGetter, argsExpr, B.id(ctxName)], sourceRange, formatted, 'ElementNode');
+    const dcArgs: JSExpression[] = [tagGetter, argsExpr, B.id(ctxName)];
+    if (emitForwardedProps) {
+      // Splat context: forward `$fw` (the enclosing component's received
+      // attributes) as the 4th `$_dc` argument. Emitting a free `$fw`
+      // reference requires the `const $fw = $_GET_FW(...)` preamble local.
+      ctx.usedFw = true;
+      dcArgs.push(B.id(SYMBOLS.LOCAL_FW));
+    }
+    return B.call(SYMBOLS.DYNAMIC_COMPONENT, dcArgs, sourceRange, formatted, 'ElementNode');
   }
 
   // In Glimmer compat mode, emit component tags as string literals instead of
