@@ -1,32 +1,34 @@
 /**
- * Regression coverage for the `$slots` / `$fw` reference detection in
- * plugins/runtime-compiler.ts (compileTemplate).
+ * Regression coverage for the `$a` / `$slots` / `$fw` preamble-local detection
+ * in plugins/runtime-compiler.ts (compileTemplate).
  *
  * The runtime wrapper auto-injects local bindings:
  *
+ *   const $a     = this[$args];
  *   const $slots = $_GET_SLOTS(this, arguments);
  *   const $fw    = $_GET_FW(this, arguments);
  *
  * only when the compiled template body actually references those names.
- * A previous implementation used a bare `result.code.includes('$slots')`
- * / `includes('$fw')` substring match, which false-positives whenever the
- * user's template *content* (a JSON-stringified string literal in the
- * compiled JS) happens to contain those characters — most notably when:
  *
- *   1. A user binds a scope key called `$slots`/`$fw` and references it
- *      in the template; the auto-injected `const $slots = …` shadows the
- *      scope value passed to `new Function(...scopeNames)`.
- *   2. Template text contains an identifier prefix collision such as
- *      `"$fwd"` (see the comment in plugins/runtime-compiler.ts), where
- *      the substring `$fw` matches inside the JSON-encoded literal.
+ * This is now driven by the compiler's GROUND TRUTH: the serializers set
+ * `CompileResult.usedArgsAlias` / `usedSlots` / `usedFw` at the exact site that
+ * emits each free reference, and the runtime wrapper injects the matching local
+ * iff its flag is set. It REPLACES the old substring scans, which had two
+ * failure modes:
  *
- * The guard now keys off codegen-shape compound substrings (`, $slots,`,
- * `, $slots)`, `, $fw,`, `, $fw]`, `...$fw[`) which never appear from a
- * bare identifier-prefix collision in user text. The tests below
- * inspect the source of the returned template function — produced by
- * `new Function(...)` inside compileTemplate — to confirm no shadow
- * declaration is emitted for templates whose only `$slots`/`$fw`
- * occurrences live inside string literals.
+ *   - false POSITIVE — `code.includes('$slots')` / `includes('$fw')` matched
+ *     the user's template *text* (a `$slots`/`$fw` literal, or a `$fwd` prefix
+ *     collision), injecting a `const $slots = …` that shadowed a same-named
+ *     `scope` value. (A compound-substring narrowing fixed most of this; the
+ *     ground-truth flag removes the failure mode entirely.)
+ *   - false NEGATIVE (the dangerous one) — `code.includes('$a.')` MISSED the
+ *     bracket form `$a["foo-bar"]` that the compiler emits for hyphenated arg
+ *     names, leaving `$a` undeclared → a ReferenceError at render. The
+ *     args-alias block below pins the fix.
+ *
+ * The tests inspect the source of the returned template function — produced by
+ * `new Function(...)` inside compileTemplate — to confirm the preamble local is
+ * (or is not) declared.
  */
 
 import { describe, test, expect } from 'vitest';
@@ -91,5 +93,73 @@ describe('runtime-compiler $slots/$fw shadow-injection guard', () => {
     expect(result.code).toContain(', $fw]');
     const fnSrc = result.templateFn.toString();
     expect(fnSrc).toMatch(/const\s+\$fw\s*=/);
+  });
+});
+
+describe('runtime-compiler $a (args-alias) ground-truth injection', () => {
+  // The OLD detector was `result.code.includes('$a.')`. The compiler emits a
+  // hyphenated @-arg as BRACKET access (`$a["foo-bar"]`), which contains no
+  // `$a.` — so the old scan returned false, `const $a` was NOT injected, and
+  // the template threw `ReferenceError: $a is not defined` at render. These
+  // pin the ground-truth fix: any emission of `$a` declares the local.
+
+  test('hyphenated @arg mustache emits $a["..."] and DOES inject const $a (was a ReferenceError)', () => {
+    const result = compileTemplate('{{@foo-bar}}');
+
+    expect(result.errors).toHaveLength(0);
+    // bracket access is emitted...
+    expect(result.code).toContain('$a["foo-bar"]');
+    // ...and crucially NOT the dotted form the old scan keyed off
+    expect(result.code).not.toContain('$a.');
+    // the preamble local is declared (old `includes('$a.')` would have missed it)
+    const fnSrc = result.templateFn.toString();
+    expect(fnSrc).toMatch(/const\s+\$a\s*=\s*this\[/);
+  });
+
+  test('hyphenated @arg attribute value injects const $a', () => {
+    const result = compileTemplate('<div aria-label={{@aria-label}}></div>');
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.code).toContain('$a["aria-label"]');
+    expect(result.code).not.toContain('$a.');
+    const fnSrc = result.templateFn.toString();
+    expect(fnSrc).toMatch(/const\s+\$a\s*=\s*this\[/);
+  });
+
+  test('hyphenated @arg modifier reference injects const $a', () => {
+    const result = compileTemplate('<div {{@my-modifier}}></div>');
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.code).toContain('$a["my-modifier"]');
+    const fnSrc = result.templateFn.toString();
+    expect(fnSrc).toMatch(/const\s+\$a\s*=\s*this\[/);
+  });
+
+  test('hyphenated @arg helper reference injects const $a', () => {
+    const result = compileTemplate('{{(@my-helper 1)}}');
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.code).toContain('$a["my-helper"]');
+    const fnSrc = result.templateFn.toString();
+    expect(fnSrc).toMatch(/const\s+\$a\s*=\s*this\[/);
+  });
+
+  test('dotted @arg still injects const $a (the case the old scan DID catch)', () => {
+    const result = compileTemplate('{{@name}}');
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.code).toContain('$a.name');
+    const fnSrc = result.templateFn.toString();
+    expect(fnSrc).toMatch(/const\s+\$a\s*=\s*this\[/);
+  });
+
+  test('a template with no @arg access injects NO preamble locals', () => {
+    const result = compileTemplate('<p>plain text {{this.value}}</p>');
+
+    expect(result.errors).toHaveLength(0);
+    const fnSrc = result.templateFn.toString();
+    expect(fnSrc).not.toMatch(/const\s+\$a\s*=/);
+    expect(fnSrc).not.toMatch(/const\s+\$slots\s*=/);
+    expect(fnSrc).not.toMatch(/const\s+\$fw\s*=/);
   });
 });

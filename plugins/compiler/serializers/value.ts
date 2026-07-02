@@ -293,7 +293,7 @@ export function buildPathExpression(
 }
 
 function buildPathBase(
-  _ctx: CompilerContext,
+  ctx: CompilerContext,
   value: PathValue
 ): JSExpression {
   const resolved = toSafeJSPath(value.expression);
@@ -333,6 +333,11 @@ function buildPathBase(
   let mappingStartIndex: number;
 
   if (value.isArg) {
+    // Ground-truth signal for the preamble injector: an @-arg read is emitted
+    // as `$a` + member(s) (dot OR bracket), so the `const $a = this[$args]`
+    // local is required. The bracket form (`$a["foo-bar"]`, built below) is the
+    // case the old `code.includes('$a.')` scan false-negatived.
+    ctx.usedArgsAlias = true;
     expr = B.runtimeRef(SYMBOLS.ARGS_ALIAS, rootRange ?? value.sourceRange);
     startIndex = 0;
     optionalStartIndex = 1;
@@ -518,6 +523,9 @@ function buildHelper(
   // e.g., (@myHelper arg) -> $a.myHelper(arg)
   let resolvedName = name;
   if (name.startsWith('@')) {
+    // @-arg used as a helper reference resolves through $a (dot or bracket),
+    // so the `const $a = this[$args]` preamble local is required.
+    ctx.usedArgsAlias = true;
     const argName = name.slice(1);
     // Use bracket notation for names with special characters (like hyphens)
     const needsBracket = !/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(argName);
@@ -965,6 +973,9 @@ function buildBuiltInHelper(
   // pure key lookup against that snapshot — there is no reactivity to
   // preserve via lazy invocation.
   if (symbol === SYMBOLS.HAS_BLOCK || symbol === SYMBOLS.HAS_BLOCK_PARAMS) {
+    // Emits a free `$slots` reference (`.bind(ctx, $slots)`) → the
+    // `const $slots = $_GET_SLOTS(...)` preamble local is required.
+    ctx.usedSlots = true;
     const bindTarget = typeof helperId === 'string' ? B.id(helperId) : helperId;
     const bindCall = B.methodCall(bindTarget, 'bind', [B.id(ctxName), B.id('$slots')], sourceRange);
     return B.call(bindCall, args, sourceRange);
