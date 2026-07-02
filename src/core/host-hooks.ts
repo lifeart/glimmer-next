@@ -57,6 +57,13 @@ export interface HostHooks {
    * HOTTEST host seam — see the `hostNormalizeAttrValue` hot-path cache below.
    * Replaces the Ember bridge's ~445-line `$_tag` attr-fixup wrapper + its
    * global `Element.prototype.setAttribute` monkey-patch.
+   *
+   * COMPILE-FLAG GATED: the dom.ts consult sites read the hook as
+   * `WITH_EMBER_INTEGRATION ? hostNormalizeAttrValue : null`, so ONLY
+   * host-integration builds carry the seam (and the removeAttribute sentinel
+   * branch); standalone builds fold the entire consult away at the consumer's
+   * define step — zero branches, zero bytes. Registering the hook in a
+   * standalone (flag-off) build is a no-op by design.
    */
   normalizeAttrValue?: (
     name: string,

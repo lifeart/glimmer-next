@@ -1,10 +1,28 @@
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { Window } from 'happy-dom';
 import { HTMLBrowserDOMApi } from './dom-api';
-import { SVGBrowserDOMApi } from './svg-api';
 import { $attr, $prop } from './dom';
 import { cell, flushCellOpcodes, setIsRendering } from './reactive';
-import { registerHostHooks, HOST_HOOKS } from './host-hooks';
+import { registerHostHooks, HOST_HOOKS, hostNormalizeAttrValue } from './host-hooks';
+
+/**
+ * normalizeAttrValue host hook — standalone-build coverage.
+ *
+ * The dom.ts consult sites are gated on the WITH_EMBER_INTEGRATION compile
+ * flag (`const hook = WITH_EMBER_INTEGRATION ? hostNormalizeAttrValue : null`):
+ * only host-integration builds carry the seam and the removeAttribute
+ * sentinel branch; standalone builds fold the whole consult away at the
+ * consumer's define step. Vitest runs with the standalone flags
+ * (WITH_EMBER_INTEGRATION = false), so — exactly like the $_MANAGERS suite
+ * (managers.test.ts) — these tests cover:
+ *   (a) the standalone write path is byte-identical (doubles as the DCE pin:
+ *       a REGISTERED hook is still never consulted under standalone flags);
+ *   (b) the registry wiring (registerHostHooks ↔ the hot-path cache binding).
+ * The flag-ON behavior (consult contract, remove sentinel, renormalize on
+ * reactive re-apply, SVG routing, isProp side) is exercised end-to-end by the
+ * Ember integration suite — the only consumer that compiles with
+ * WITH_EMBER_INTEGRATION = true.
+ */
 
 // Clear the merged slot table AND re-sync the hot-path cache
 // (`hostNormalizeAttrValue`) back to null. registerHostHooks({}) refreshes the
@@ -27,7 +45,7 @@ function drain(c: unknown) {
   }
 }
 
-describe('normalizeAttrValue host hook', () => {
+describe('normalizeAttrValue host hook (standalone flags)', () => {
   let window: Window;
   let document: Document;
   let api: HTMLBrowserDOMApi;
@@ -43,7 +61,7 @@ describe('normalizeAttrValue host hook', () => {
     window.close();
   });
 
-  describe('(a) unregistered: byte-identical behavior', () => {
+  describe('(a) standalone write path is byte-identical', () => {
     test('static attr write is unchanged', () => {
       const div = api.element('div') as HTMLElement;
       $attr(api, div, 'title', 'hello', []);
@@ -77,152 +95,50 @@ describe('normalizeAttrValue host hook', () => {
     });
   });
 
-  describe('(b) registered hook sees (name, value, element) — static AND reactive', () => {
-    test('static attr passes (name, value, element, isProp=false)', () => {
-      const calls: Array<[string, unknown, Element, boolean]> = [];
-      registerHostHooks({
-        normalizeAttrValue(name, value, element, isProp) {
-          calls.push([name, value, element, isProp]);
-          return value;
-        },
-      });
-      const div = api.element('div') as HTMLElement;
-      $attr(api, div, 'title', 'X', []);
-      expect(calls).toEqual([['title', 'X', div, false]]);
-      expect(div.getAttribute('title')).toBe('X');
-    });
-
-    test('reactive attr renormalizes on EVERY update', () => {
-      const calls: Array<[string, unknown]> = [];
+  describe('(b) WITH_EMBER_INTEGRATION gate pin: standalone builds never consult the hook', () => {
+    test('a REGISTERED hook is not called by $attr/$prop and cannot remove attributes', () => {
+      const calls: unknown[] = [];
       registerHostHooks({
         normalizeAttrValue(name, value) {
           calls.push([name, value]);
-          // uppercase so we prove the returned value is what gets written
-          return typeof value === 'string' ? value.toUpperCase() : value;
+          // would be the remove sentinel / a rewrite if it were consulted
+          return undefined;
         },
       });
-      const c = cell('r1');
+
       const div = api.element('div') as HTMLElement;
-      $attr(api, div, 'data-y', c, []);
-      // initial reactive apply
-      expect(calls[calls.length - 1]).toEqual(['data-y', 'r1']);
-      expect(div.getAttribute('data-y')).toBe('R1');
-      // update -> hook must be consulted again with the new value
+      // static attr: written verbatim, NOT removed (the sentinel would remove)
+      $attr(api, div, 'title', 'kept', []);
+      expect(div.getAttribute('title')).toBe('kept');
+
+      // reactive attr: initial + update both bypass the hook
+      const c = cell('r1');
+      $attr(api, div, 'data-x', c, []);
+      expect(div.getAttribute('data-x')).toBe('r1');
       c.update('r2');
       drain(c);
-      expect(calls[calls.length - 1]).toEqual(['data-y', 'r2']);
-      expect(div.getAttribute('data-y')).toBe('R2');
-    });
-  });
+      expect(div.getAttribute('data-x')).toBe('r2');
 
-  describe('(c) remove sentinel (undefined) removes the attribute', () => {
-    test('static: sentinel removes a pre-existing attribute', () => {
-      registerHostHooks({
-        // ember boolean-attr semantics: false / undefined => remove
-        normalizeAttrValue(_name, value) {
-          return value === false || value === undefined ? undefined : value;
-        },
-      });
-      const div = api.element('div') as HTMLElement;
-      div.setAttribute('disabled', ''); // pre-existing
-      $attr(api, div, 'disabled', false as unknown, []);
-      expect(div.hasAttribute('disabled')).toBe(false);
-    });
-
-    test('reactive: transition to sentinel removes, back to value re-adds', () => {
-      registerHostHooks({
-        normalizeAttrValue(_name, value) {
-          return value === false ? undefined : value;
-        },
-      });
-      const c = cell<unknown>('yes');
-      const div = api.element('div') as HTMLElement;
-      $attr(api, div, 'data-flag', c, []);
-      expect(div.getAttribute('data-flag')).toBe('yes');
-      // false -> remove sentinel
-      c.update(false);
-      drain(c);
-      expect(div.hasAttribute('data-flag')).toBe(false);
-      // back to a real value -> re-added
-      c.update('again');
-      drain(c);
-      expect(div.getAttribute('data-flag')).toBe('again');
-    });
-  });
-
-  describe('(d) applies in SVG / namespace providers', () => {
-    let svgApi: SVGBrowserDOMApi;
-    beforeEach(() => {
-      svgApi = new SVGBrowserDOMApi(document);
-    });
-
-    test('hook is consulted and the returned value is written via the SVG api', () => {
-      const seen: Array<[string, Element]> = [];
-      registerHostHooks({
-        normalizeAttrValue(name, value, element) {
-          seen.push([name, element]);
-          return value === 'BAD' ? 'good' : value;
-        },
-      });
-      const rect = svgApi.element('rect');
-      $attr(svgApi, rect as unknown as HTMLElement, 'width', 'BAD', []);
-      expect(rect.getAttribute('width')).toBe('good');
-      expect(seen[0][0]).toBe('width');
-      expect(seen[0][1]).toBe(rect);
-    });
-
-    test('namespaced (xlink:href) attr still routes through the SVG api after normalize', () => {
-      registerHostHooks({
-        normalizeAttrValue(_name, value) {
-          return value; // pass-through, but proves the seam runs pre-write
-        },
-      });
-      const use = svgApi.element('use');
-      $attr(svgApi, use as unknown as HTMLElement, 'xlink:href', '#icon', []);
-      expect(
-        use.getAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href') ||
-          use.getAttributeNS('http://www.w3.org/1999/xlink', 'href') ||
-          use.getAttribute('xlink:href'),
-      ).toBe('#icon');
-    });
-  });
-
-  describe('(e) prop-side coverage (isProp=true, SafeString-style coercion)', () => {
-    test('static prop: hook receives isProp=true and its return value is assigned', () => {
-      const calls: Array<[string, unknown, boolean]> = [];
-      registerHostHooks({
-        normalizeAttrValue(name, value, _element, isProp) {
-          calls.push([name, value, isProp]);
-          // SafeString -> string coercion (the main prop-side ember fixup)
-          if (isProp && value && typeof value === 'object' && 'toString' in value) {
-            return String(value);
-          }
-          return value;
-        },
-      });
+      // prop side too
       const input = api.element('input') as HTMLInputElement;
-      const safe = { toString: () => 'SAFE' };
-      $prop(api, input, 'value', safe as unknown, []);
-      expect(input.value).toBe('SAFE');
-      expect(calls).toEqual([['value', safe, true]]);
-    });
+      $prop(api, input, 'value', 'direct', []);
+      expect(input.value).toBe('direct');
 
-    test('reactive prop: renormalizes on update with isProp=true', () => {
-      const flags: boolean[] = [];
-      registerHostHooks({
-        normalizeAttrValue(_name, value, _element, isProp) {
-          flags.push(isProp);
-          return typeof value === 'string' ? value.toUpperCase() : value;
-        },
-      });
-      const c = cell('p1');
-      const input = api.element('input') as HTMLInputElement;
-      $prop(api, input, 'title', c, []);
-      expect(input.title).toBe('P1');
-      c.update('p2');
-      drain(c);
-      expect(input.title).toBe('P2');
-      expect(flags.every((f) => f === true)).toBe(true);
+      expect(calls).toEqual([]);
+    });
+  });
+
+  describe('(c) registry wiring (flag-independent)', () => {
+    test('registerHostHooks sets the hot-path cache binding; reset clears it', () => {
+      expect(hostNormalizeAttrValue).toBe(null);
+      const fn = (_n: string, v: unknown) => v;
+      registerHostHooks({ normalizeAttrValue: fn });
+      expect(hostNormalizeAttrValue).toBe(fn);
+      // merge-per-key: registering an unrelated hook keeps ours
+      registerHostHooks({});
+      expect(hostNormalizeAttrValue).toBe(fn);
+      resetHooks();
+      expect(hostNormalizeAttrValue).toBe(null);
     });
   });
 });

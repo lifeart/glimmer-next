@@ -332,7 +332,10 @@ export function $prop(
         // `hook === null` => `normalized === resolvedValue` (byte-identical).
         // Props apply the returned value as-is (no remove sentinel); hosts
         // mainly need SafeString→string here. Renormalizes on every update.
-        const hook = hostNormalizeAttrValue;
+        // Compile-flag gated: only host-integration builds
+        // (WITH_EMBER_INTEGRATION) carry the seam — standalone builds fold the
+        // whole consult away (hook = null → dead branch, DCE'd).
+        const hook = WITH_EMBER_INTEGRATION ? hostNormalizeAttrValue : null;
         const normalized =
           hook === null ? resolvedValue : hook(key, resolvedValue, element as Element, true);
         const val = normalized === null ? '' : normalized;
@@ -364,7 +367,8 @@ export function $prop(
       return;
     }
     // Host normalize seam, prop side — see the reactive branch above.
-    const hook = hostNormalizeAttrValue;
+    // Compile-flag gated (WITH_EMBER_INTEGRATION): standalone builds DCE this.
+    const hook = WITH_EMBER_INTEGRATION ? hostNormalizeAttrValue : null;
     const normalized =
       hook === null ? result : hook(key, result, element as Element, true);
     api.prop(element, key, normalized);
@@ -458,7 +462,10 @@ export function $attr(
         // Host attr-normalization seam (see HostHooks.normalizeAttrValue).
         // Unregistered => `hook === null` => byte-identical original write.
         // Renormalizes on EVERY reactive re-apply, not just initial render.
-        const hook = hostNormalizeAttrValue;
+        // Compile-flag gated: only host-integration builds
+        // (WITH_EMBER_INTEGRATION) carry the seam + the removeAttribute
+        // sentinel branch — standalone builds fold both away entirely.
+        const hook = WITH_EMBER_INTEGRATION ? hostNormalizeAttrValue : null;
         if (hook === null) {
           // @ts-expect-error type casting
           api.attr(element, key, resolvedValue);
@@ -475,7 +482,8 @@ export function $attr(
     );
   } else {
     // Host attr-normalization seam — see the reactive branch above.
-    const hook = hostNormalizeAttrValue;
+    // Compile-flag gated (WITH_EMBER_INTEGRATION): standalone builds DCE this.
+    const hook = WITH_EMBER_INTEGRATION ? hostNormalizeAttrValue : null;
     if (hook === null) {
       // @ts-expect-error type casting
       api.attr(element, key, result);
