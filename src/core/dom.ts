@@ -83,6 +83,7 @@ import {
 } from './tracking';
 import {
   HOST_HOOKS,
+  hostNormalizeAttrValue,
   isHostFunctionalHelper,
   markHostFunctionalHelper,
 } from '@/core/host-hooks';
@@ -327,7 +328,14 @@ export function $prop(
     let prevPropValue: any = undefined;
     destructors.push(
       opcodeFor(result as AnyCell, (resolvedValue) => {
-        const val = resolvedValue === null ? '' : resolvedValue;
+        // Host normalize seam, prop side (isProp=true). Unregistered =>
+        // `hook === null` => `normalized === resolvedValue` (byte-identical).
+        // Props apply the returned value as-is (no remove sentinel); hosts
+        // mainly need SafeString→string here. Renormalizes on every update.
+        const hook = hostNormalizeAttrValue;
+        const normalized =
+          hook === null ? resolvedValue : hook(key, resolvedValue, element as Element, true);
+        const val = normalized === null ? '' : normalized;
         if (val === prevPropValue) {
           return;
         }
@@ -355,7 +363,11 @@ export function $prop(
     if (isRehydrationScheduled()) {
       return;
     }
-    api.prop(element, key, result);
+    // Host normalize seam, prop side — see the reactive branch above.
+    const hook = hostNormalizeAttrValue;
+    const normalized =
+      hook === null ? result : hook(key, result, element as Element, true);
+    api.prop(element, key, normalized);
   }
 }
 
@@ -443,13 +455,39 @@ export function $attr(
   if (isReactive) {
     destructors.push(
       opcodeFor(result as AnyCell, (resolvedValue) => {
-        // @ts-expect-error type casting
-        api.attr(element, key, resolvedValue);
+        // Host attr-normalization seam (see HostHooks.normalizeAttrValue).
+        // Unregistered => `hook === null` => byte-identical original write.
+        // Renormalizes on EVERY reactive re-apply, not just initial render.
+        const hook = hostNormalizeAttrValue;
+        if (hook === null) {
+          // @ts-expect-error type casting
+          api.attr(element, key, resolvedValue);
+          return;
+        }
+        const normalized = hook(key, resolvedValue, element, false);
+        if (normalized === undefined) {
+          element.removeAttribute(key);
+        } else {
+          // @ts-expect-error type casting
+          api.attr(element, key, normalized);
+        }
       }),
     );
   } else {
-    // @ts-expect-error type casting
-    api.attr(element, key, result);
+    // Host attr-normalization seam — see the reactive branch above.
+    const hook = hostNormalizeAttrValue;
+    if (hook === null) {
+      // @ts-expect-error type casting
+      api.attr(element, key, result);
+    } else {
+      const normalized = hook(key, result, element, false);
+      if (normalized === undefined) {
+        element.removeAttribute(key);
+      } else {
+        // @ts-expect-error type casting
+        api.attr(element, key, normalized);
+      }
+    }
   }
 }
 
