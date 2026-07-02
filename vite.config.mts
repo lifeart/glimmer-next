@@ -5,16 +5,82 @@ import { compiler } from "./plugins/compiler.ts";
 // import circleDependency from "vite-plugin-circular-dependency";
 import dts from "vite-plugin-dts";
 import babel from "vite-plugin-babel";
+import type * as Babel from "@babel/core";
 import { stripGXTDebug } from "./plugins/babel.ts";
 
-// Minimal babel plugin: remove only `console.log/warn/error/info(...)`
-// expression statements from the PUBLISHED lib dist. This is the safe subset
-// of stripGXTDebug — it does NOT touch cell/formula/Cell/MergedCell/debugName
-// signatures (those param-popping transforms break the lib runtime).
-function stripConsoleOnly() {
+// ---------------------------------------------------------------------------
+// stripDebugSafe — the ARITY-SAFE subset of `stripGXTDebug`, applied to the
+// PUBLISHED lib dist in production.
+//
+// WHY a subset (the arity-breakage history): the full `stripGXTDebug`
+// (plugins/babel.ts) removes the same debug info, but several of its visitors
+// change function/constructor ARITY — they POP a parameter or argument:
+//   - FunctionDeclaration: pops the trailing param of `cell` / `formula`
+//   - ClassMethod (constructor): pops the trailing `debugName` param
+//   - AssignmentPattern: removes a `debugName` default param node
+//   - NewExpression / CallExpression: POP the trailing debug-name argument
+// Applying those to the LIBRARY build breaks the runtime — the GXT-on-Ember
+// benchmark vehicle boots to an empty table. (The app build tolerates it via a
+// different compile/minify pipeline.) So the lib build historically shipped
+// only `stripConsoleOnly`, leaving the debug strings + the `/tests.html`
+// `location` read in the published dist.
+//
+// This plugin keeps EVERYTHING stripGXTDebug removes that is NON-arity-changing
+// and, for the debug-name arguments, REPLACES the trailing arg with `void 0`
+// INSTEAD OF popping it. Replacing keeps the call/`new` arity byte-identical
+// (the callee still receives N arguments; the Nth is just `undefined`, which is
+// exactly what these debug-only params already default to and are only read
+// under `IS_DEV_MODE`), so the runtime is behaviour-identical aside from the
+// dropped debug string. That removes the string literals/templates from the
+// bundle without the arity breakage.
+//
+// Visitors KEPT here:
+//   - ExpressionStatement: remove `console.*(...)`           (no arity change)
+//   - BinaryExpression: `... === '/tests.html'` -> `false`   (replaceWith; also
+//       kills the top-level `location` read in shared.ts that crashed bare
+//       `import { cell }` in Node/SSR — ReferenceError: location is not defined)
+//   - CallExpression: `cell|formula|resolveRenderable(x, dbg)` (2 args) and
+//       `addToTree(a, b, dbg)` (3 args) -> trailing arg replaced with `void 0`
+//   - NewExpression: `new Cell|MergedCell|LazyCell(x, dbg)` (2 args) ->
+//       trailing arg replaced with `void 0`
+// Visitors DELIBERATELY EXCLUDED (they change arity == the known breakage):
+//   - FunctionDeclaration (param pop on cell/formula)
+//   - ClassMethod (constructor debugName param pop)
+//   - AssignmentPattern (debugName default-param removal)
+//   - the arg-POP behaviour of NewExpression/CallExpression
+// `_debugName` ClassProperty removal is also omitted: the field is declared as
+// `_debugName?: string | undefined;` with no initializer, so @babel/preset-
+// typescript already emits no runtime code for it — removing it is a no-op, and
+// `this._debugName = ...` assignments live inside `if (IS_DEV_MODE)` (folded to
+// `false` in the lib build) so they drop anyway.
+// ---------------------------------------------------------------------------
+function stripDebugSafe({ types: t }: { types: typeof Babel.types }) {
+  // `undefined` literal used to replace debug-name args without changing arity.
+  const voidExpr = () => t.unaryExpression("void", t.numericLiteral(0));
+  // A debug-name argument is only worth replacing if it carries an INLINE string
+  // PAYLOAD — a `'...'` literal, a `` `...` `` template, or an `IS_DEV_MODE ? ...`
+  // ternary. When the arg is a bare identifier (e.g. `new Cell(value, debugName)`
+  // forwarding `cell`'s own param) or already `undefined`/`void 0`, it holds no
+  // inline string, so replacing it with `void 0` removes nothing and only ADDS
+  // bytes (`void 0` vs a 1-char mangled identifier). Such forwarded params
+  // already resolve to `void 0` at their stripped call sites, so leaving them is
+  // byte-smaller while staying behaviour- and arity-identical. We therefore only
+  // rewrite payload-bearing args.
+  const carriesDebugString = (node: any): boolean => {
+    if (!node) return false;
+    if (node.type === "Identifier") return false; // a reference, no inline string
+    if (node.type === "UnaryExpression" && node.operator === "void") return false;
+    return true; // string / template literal, ternary, member expr, etc.
+  };
+  // Replace `args[i]` with `void 0` iff it carries a debug string. Never pops —
+  // arity is preserved (the call still receives the same number of arguments).
+  const stripArg = (args: any[], i: number) => {
+    if (carriesDebugString(args[i])) args[i] = voidExpr();
+  };
   return {
-    name: "gxt-strip-console-only",
+    name: "gxt-strip-debug-safe",
     visitor: {
+      // Remove `console.log/warn/error/info(...)` expression statements.
       ExpressionStatement(path: any) {
         const expr = path.node.expression;
         if (
@@ -24,6 +90,43 @@ function stripConsoleOnly() {
           expr.callee.object.name === "console"
         ) {
           path.remove();
+        }
+      },
+      // `location.pathname === '/tests.html'` -> `false`. This is a test-only
+      // (in-browser QUnit harness) check; folding it to `false` removes the
+      // top-level `location` read that crashed `import` in Node/SSR. A plain
+      // replaceWith — no arity change.
+      BinaryExpression(path: any) {
+        if (t.isLiteral(path.node.right) && path.node.right.value === "/tests.html") {
+          path.replaceWith(t.booleanLiteral(false));
+        }
+      },
+      // Replace (NOT pop) the trailing debug-name argument with `void 0`.
+      CallExpression(path: any) {
+        const callee = path.node.callee;
+        if (!callee || callee.type !== "Identifier") return;
+        const name = callee.name;
+        const args = path.node.arguments;
+        if (name === "addToTree" && args.length === 3) {
+          stripArg(args, 2);
+        } else if (
+          (name === "cell" || name === "formula" || name === "resolveRenderable") &&
+          args.length === 2
+        ) {
+          stripArg(args, 1);
+        }
+      },
+      // Replace (NOT pop) the trailing debug-name argument with `void 0`.
+      NewExpression(path: any) {
+        const callee = path.node.callee;
+        if (!callee || callee.type !== "Identifier") return;
+        if (
+          (callee.name === "Cell" ||
+            callee.name === "MergedCell" ||
+            callee.name === "LazyCell") &&
+          path.node.arguments.length === 2
+        ) {
+          stripArg(path.node.arguments, 1);
         }
       },
     },
@@ -77,21 +180,18 @@ export default defineConfig(({ mode }) => ({
                 },
               ],
             ],
-            // Strip debug info from the PUBLISHED lib dist in production.
-            // NB: we deliberately do NOT reuse the full `stripGXTDebug` here.
-            // Its param-popping visitors (FunctionDeclaration on cell/formula,
-            // NewExpression on Cell/MergedCell, AssignmentPattern/ClassMethod
-            // on debugName) BREAK the lib runtime — the GXT-on-Ember benchmark
-            // vehicle boots to an empty table when the lib is built with the
-            // full transform. (The non-lib app build tolerates it because of a
-            // different compile/minify pipeline.) The high-value, safe part of
-            // the hygiene fix is dropping console.*; we apply ONLY that here via
-            // a minimal local visitor, leaving cell/formula/Cell signatures
-            // untouched so the runtime is byte-behaviour-identical aside from
-            // the removed console calls.
+            // Strip debug info from the PUBLISHED lib dist in production via
+            // `stripDebugSafe` (defined above). We deliberately do NOT reuse the
+            // full `stripGXTDebug`: its param/arg-POPPING visitors change ARITY
+            // and BREAK the lib runtime (GXT-on-Ember boots to an empty table).
+            // `stripDebugSafe` keeps every non-arity-changing transform and, for
+            // the debug-name args, REPLACES the trailing arg with `void 0`
+            // instead of popping it — same arity, no string. This also folds the
+            // `=== '/tests.html'` test-check to `false`, removing the top-level
+            // `location` read that crashed bare `import { cell }` in Node/SSR.
             plugins:
               mode === "production"
-                ? [stripConsoleOnly]
+                ? [stripDebugSafe]
                 : [],
           },
         })
