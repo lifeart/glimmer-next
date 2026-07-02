@@ -162,4 +162,21 @@ describe('runtime-compiler $a (args-alias) ground-truth injection', () => {
     expect(fnSrc).not.toMatch(/const\s+\$slots\s*=/);
     expect(fnSrc).not.toMatch(/const\s+\$fw\s*=/);
   });
+
+  test('compileTemplate surfaces the emission flags for host assemblers', () => {
+    // Hosts that re-assemble `result.code` into their own wrapper (e.g. the
+    // Ember bridge) need the ground-truth flags on the RETURN value — they
+    // cannot reach the inner CompileResult. Bracket-access template: the flag
+    // must be true exactly where an `includes('$a.')` scan of the code says false.
+    const bracket = compileTemplate('<div aria-label={{@aria-label}}></div>');
+    expect(bracket.errors).toHaveLength(0);
+    expect(bracket.usedArgsAlias).toBe(true);
+    expect(bracket.code.includes('$a.')).toBe(false); // the scan false-negative
+
+    const plain = compileTemplate('<p>{{this.value}}</p>');
+    expect(plain.usedArgsAlias).toBe(false);
+    expect(plain.usedSlots).toBe(false);
+    expect(plain.usedFw).toBe(false);
+    expect(typeof plain.usedRecycle).toBe('boolean');
+  });
 });
