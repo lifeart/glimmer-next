@@ -241,6 +241,17 @@ export interface RuntimeCompileResult {
   errors: CompileResult['errors'];
   /** Any compilation warnings */
   warnings: CompileResult['warnings'];
+  /**
+   * Ground-truth emission flags, passed through from CompileResult so hosts
+   * that re-assemble `code` into their own wrapper (e.g. the Ember bridge)
+   * can drive their preamble/import injection off the compiler's emission
+   * instead of scanning the generated string (which false-negatives on the
+   * bracket access form `$a["foo-bar"]`).
+   */
+  usedArgsAlias: CompileResult['usedArgsAlias'];
+  usedSlots: CompileResult['usedSlots'];
+  usedFw: CompileResult['usedFw'];
+  usedRecycle: CompileResult['usedRecycle'];
 }
 
 /**
@@ -290,6 +301,10 @@ export function compileTemplate(
       code: result.code,
       errors: result.errors,
       warnings: result.warnings,
+      usedArgsAlias: result.usedArgsAlias,
+      usedSlots: result.usedSlots,
+      usedFw: result.usedFw,
+      usedRecycle: result.usedRecycle,
     };
   }
 
@@ -362,6 +377,10 @@ export function compileTemplate(
         code: 'RUNTIME_EVAL_ERROR',
       } as any],
       warnings: result.warnings,
+      usedArgsAlias: result.usedArgsAlias,
+      usedSlots: result.usedSlots,
+      usedFw: result.usedFw,
+      usedRecycle: result.usedRecycle,
     };
   }
 
@@ -370,6 +389,10 @@ export function compileTemplate(
     code: result.code,
     errors: result.errors,
     warnings: result.warnings,
+    usedArgsAlias: result.usedArgsAlias,
+    usedSlots: result.usedSlots,
+    usedFw: result.usedFw,
+    usedRecycle: result.usedRecycle,
   };
 }
 
