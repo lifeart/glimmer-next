@@ -24,6 +24,54 @@ export interface HostHooks {
    */
   toBool?: (value: unknown) => boolean;
   /**
+   * Coerce a template-driven attribute / property value at the single point
+   * where EVERY such write flows through — the `$attr` / `$prop` effect in
+   * `dom.ts`, for BOTH the initial (static) write AND every reactive
+   * (cell-driven) re-apply, across HTML/SVG/MathML namespaces.
+   *
+   * Lets a host (e.g. the Ember dual-backend) implement attribute semantics
+   * GXT core does not model:
+   *   - SafeString values (`{ toHTML() } / { toString() }`) → their string;
+   *   - Symbol / null-prototype / arbitrary object coercion;
+   *   - boolean attributes: `disabled={{false}}` must REMOVE the attribute
+   *     (return the remove sentinel), not write the string `"false"`;
+   *   - `undefined` → remove the attribute;
+   *   - URL sanitization (`href` / `src` / …).
+   *
+   * The host owns any table it needs (e.g. the HTML boolean-attribute set) —
+   * GXT core stays table-free and just hands the host the ability to return
+   * the remove sentinel.
+   *
+   * @param name    attribute / property name being written.
+   * @param value   the resolved value (already de-celled) about to be applied.
+   * @param element the target element — namespace-correct (HTML/SVG/MathML).
+   * @param isProp  `true` for a PROPERTY write (`$prop`: `style`, `className`,
+   *                form-control `value`/`checked`, …), `false` for an
+   *                ATTRIBUTE write (`$attr`). Hosts typically only need
+   *                SafeString→string on the prop side.
+   * @returns the value to apply. On the ATTR side, returning the remove
+   *   sentinel `undefined` REMOVES the attribute instead of writing it; any
+   *   other value (including `null` / `''`) is written via the namespace api.
+   *   On the PROP side the returned value is assigned as-is (no remove).
+   *
+   * HOTTEST host seam — see the `hostNormalizeAttrValue` hot-path cache below.
+   * Replaces the Ember bridge's ~445-line `$_tag` attr-fixup wrapper + its
+   * global `Element.prototype.setAttribute` monkey-patch.
+   *
+   * COMPILE-FLAG GATED: the dom.ts consult sites read the hook as
+   * `WITH_EMBER_INTEGRATION ? hostNormalizeAttrValue : null`, so ONLY
+   * host-integration builds carry the seam (and the removeAttribute sentinel
+   * branch); standalone builds fold the entire consult away at the consumer's
+   * define step — zero branches, zero bytes. Registering the hook in a
+   * standalone (flag-off) build is a no-op by design.
+   */
+  normalizeAttrValue?: (
+    name: string,
+    value: unknown,
+    element: Element,
+    isProp: boolean,
+  ) => unknown;
+  /**
    * When installed, the runtime delegates revalidation scheduling to the
    * host, which becomes responsible for calling `syncDom()` at the right
    * time; the built-in async scheduler is bypassed. Replaces
@@ -157,6 +205,24 @@ export interface HostHooks {
 export const HOST_HOOKS: HostHooks = {};
 
 /**
+ * Hot-path cache for {@link HostHooks.normalizeAttrValue}.
+ *
+ * Attribute / property application is the HOTTEST path in GXT — it runs
+ * per-attribute, per-element, on every static write AND every reactive
+ * re-apply (krausest-sensitive). So the read at the call site must NOT be an
+ * object-property lookup on `HOST_HOOKS`: it is this module-local slot, `null`
+ * unless a host registered the hook. Standalone GXT therefore pays exactly one
+ * predictable `hook === null` branch per write — no allocation, no call — and
+ * falls straight through to the original `api.attr` / `api.prop` write. A
+ * registered host pays one branch + one hook call. `registerHostHooks` keeps
+ * this in lock-step with `HOST_HOOKS.normalizeAttrValue` (see below), so tests
+ * that clear `HOST_HOOKS` and re-`registerHostHooks({})` reset it to `null`.
+ */
+export let hostNormalizeAttrValue: NonNullable<
+  HostHooks['normalizeAttrValue']
+> | null = null;
+
+/**
  * Merge the given hooks into the active slot table. Later registrations
  * override earlier ones per-key; passing `undefined` for a key is ignored
  * (use an explicit no-op function to disable a default the host set
@@ -169,6 +235,10 @@ export function registerHostHooks(hooks: HostHooks): void {
       (HOST_HOOKS as Record<string, unknown>)[key] = value;
     }
   }
+  // Refresh the hot-path attr/prop-normalize cache from the (merged) table.
+  // Reads `HOST_HOOKS.normalizeAttrValue` so a later `registerHostHooks({})`
+  // after tests clear the table resets the cache back to `null`.
+  hostNormalizeAttrValue = HOST_HOOKS.normalizeAttrValue ?? null;
   // Cross-instance host-presence sentinel. HOST_HOOKS is module-local, so a
   // consumer bundled into a different entry chunk (e.g. the list frame-mode
   // gate) sees its OWN empty copy. This single globalThis flag — set true the
