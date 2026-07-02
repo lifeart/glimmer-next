@@ -1,5 +1,9 @@
 import type Babel from '@babel/core';
-import { MAIN_IMPORT, SYMBOLS } from './symbols';
+import {
+  MAIN_IMPORT,
+  RECYCLE_SYMBOLS,
+  SYMBOLS,
+} from './symbols';
 import type { PropertyTypeHint, TypeHints } from './compiler/types';
 
 export type ResolvedHBS = {
@@ -1096,8 +1100,22 @@ export function processTemplate(
               }
             }
           }
+          // The opt-in row-recycling entry points ($_eachRecycled /
+          // $_eachSyncRecycled) do NOT live in the main `@lifeart/gxt`
+          // barrel — they moved to the tree-shakable `@lifeart/gxt/recycle`
+          // entry. Keep them OUT of the barrel auto-import here (the
+          // `recycleSymbolSet` filter below). Their import is injected
+          // post-compile by the module assembler (plugins/test.ts), driven by
+          // the compiler's ground-truth `CompileResult.usedRecycle` flag —
+          // emitted only when a `key="@recycle"` block actually compiles to a
+          // recycled entry point — so apps that never recycle never pull
+          // list-recycle.ts in, and a stray `@recycle` string can no longer
+          // trigger a spurious import.
+          const recycleSymbolSet = new Set<string>(RECYCLE_SYMBOLS);
+
           const PUBLIC_API = Object.values(SYMBOLS);
           const IMPORTS = PUBLIC_API
+            .filter((name) => !recycleSymbolSet.has(name))
             .filter((name) => !existingImports.has(name))
             .map((name) => {
               return t.importSpecifier(t.identifier(name), t.identifier(name));

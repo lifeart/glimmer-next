@@ -428,6 +428,14 @@ export interface CompileResult {
   readonly bindings: ReadonlySet<string>;
   /** V3 sourcemap (only present if sourcemap option is enabled) */
   readonly sourceMap?: SourceMapV3;
+  /**
+   * Ground truth: `true` when this template emitted a recycled entry point
+   * ($_eachRecycled / $_eachSyncRecycled) for a `key="@recycle"` block. The
+   * module assembler (plugins/test.ts) uses this to auto-import the recycle
+   * entry points from '@lifeart/gxt/recycle' only when they are actually
+   * emitted.
+   */
+  readonly usedRecycle: boolean;
 }
 
 /**

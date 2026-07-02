@@ -220,6 +220,14 @@ function buildEach(
   // entry points accept the same positional args (the key slot is ignored —
   // recycled rows are positional).
   const isRecycled = eachKey === RECYCLE_KEY;
+  if (isRecycled) {
+    // Ground-truth signal for the import injector (plugins/test.ts): this
+    // module emits a recycled entry point, so it must import them from
+    // '@lifeart/gxt/recycle'. Recorded here — at the single site that
+    // actually decides $_eachRecycled / $_eachSyncRecycled emission — so the
+    // import can never drift from the emitted code.
+    ctx.usedRecycle = true;
+  }
   const fnName = isRecycled
     ? control.isSync
       ? SYMBOLS.EACH_SYNC_RECYCLED

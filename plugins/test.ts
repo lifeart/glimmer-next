@@ -12,8 +12,38 @@ import { processTemplate, type ResolvedHBS } from './babel';
 import { compile, formatErrorForDisplay, generateSourceMap, type MappingTreeNode, type SourceMapV3 } from './compiler/index';
 import { resolveTemplateTypeHintsWithChecker, mergeTypeHints } from './type-checker-hints';
 
-import { SYMBOLS } from './symbols';
+import { SYMBOLS, RECYCLE_IMPORT, RECYCLE_SYMBOLS } from './symbols';
 import { defaultFlags, type Flags } from './flags';
+
+// The opt-in row-recycling entry points ($_eachRecycled / $_eachSyncRecycled)
+// live in the tree-shakable '@lifeart/gxt/recycle' entry, NOT the main barrel.
+// This is the exact import the assembler prepends when the compiler reports it
+// emitted a recycled entry point (CompileResult.usedRecycle). Built from
+// RECYCLE_SYMBOLS so it can never drift from what the compiler emits.
+const RECYCLE_IMPORT_STATEMENT = `import { ${RECYCLE_SYMBOLS.join(', ')} } from '${RECYCLE_IMPORT}';`;
+
+// Match an actual `... from '@lifeart/gxt/recycle'` import clause — NOT a bare
+// occurrence of the string. A substring check would let a literal
+// '@lifeart/gxt/recycle' elsewhere (a string/comment) suppress a needed
+// injection (a false NEGATIVE → unresolved $_eachRecycled at runtime, the
+// dangerous direction). Built from RECYCLE_IMPORT so it can't drift.
+const RECYCLE_IMPORT_FROM_RE = new RegExp(
+  `from\\s*['"]${RECYCLE_IMPORT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"]`,
+);
+
+/**
+ * Prepend the recycle entry-point import to an assembled module, but only when
+ * the compiler actually emitted a recycled entry point AND the module does not
+ * already import from '@lifeart/gxt/recycle' (so a manual import is never
+ * duplicated). Prepending here — before placeholder substitution and source-map
+ * generation in `processTransformedFiles` — keeps the generated offsets and the
+ * template source map internally consistent.
+ */
+function withRecycleImport(moduleCode: string, usedRecycle: boolean): string {
+  if (!usedRecycle) return moduleCode;
+  if (RECYCLE_IMPORT_FROM_RE.test(moduleCode)) return moduleCode;
+  return `${RECYCLE_IMPORT_STATEMENT}\n${moduleCode}`;
+}
 
 function buildLineOffsets(source: string): number[] {
   const offsets = [0];
@@ -71,6 +101,12 @@ interface ProcessedTemplate {
   originalLoc?: ResolvedHBS['loc'];
   /** Template flags */
   flags: ResolvedHBS['flags'];
+  /**
+   * Ground truth from the compiler: this template emitted a recycled entry
+   * point ($_eachRecycled / $_eachSyncRecycled) for a `key="@recycle"` block.
+   * Drives the post-compile `@lifeart/gxt/recycle` import injection.
+   */
+  usedRecycle: boolean;
 }
 
 /**
@@ -333,6 +369,7 @@ function processTransformedFiles(
       originalSource: content.template,
       originalLoc: content.loc,
       flags: templateFlags,
+      usedRecycle: result.usedRecycle,
     });
   });
 
@@ -384,8 +421,15 @@ function processTransformedFiles(
     programResults.push(result);
   });
 
+  // Auto-import the recycle entry points from '@lifeart/gxt/recycle' when ANY
+  // compiled template in this module actually emitted one (ground truth from
+  // the compiler — CompileResult.usedRecycle — not a source-string heuristic).
+  // Done before placeholder substitution / source-map generation below so the
+  // prepended line is reflected consistently in the generated offsets.
+  const anyRecycle = processedTemplates.some((template) => template.usedRecycle);
+
   // Build final code by replacing $placeholder markers
-  let src = txt ?? '';
+  let src = withRecycleImport(txt ?? '', anyRecycle);
   const templateInsertPositions: { start: number; end: number; templateIndex: number }[] = [];
 
   programResults.forEach((result, index) => {

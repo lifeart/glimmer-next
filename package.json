@@ -86,6 +86,10 @@
     "./suspense": {
       "import": "./dist/gxt.suspense.es.js",
       "types": "./dist/suspense.d.ts"
+    },
+    "./recycle": {
+      "import": "./dist/gxt.recycle.es.js",
+      "types": "./dist/recycle.d.ts"
     }
   },
   "devDependencies": {

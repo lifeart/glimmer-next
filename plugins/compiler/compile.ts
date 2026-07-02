@@ -197,6 +197,7 @@ export function compile(
       warnings: ctx.warnings,
       bindings: ctx.scopeTracker.getAllBindingNames(),
       sourceMap,
+      usedRecycle: ctx.usedRecycle,
     };
   } catch (error: unknown) {
     const parseError = error as ParseError;
@@ -329,6 +330,7 @@ export function compile(
       errors: ctx.errors,
       warnings: ctx.warnings,
       bindings: ctx.scopeTracker.getAllBindingNames(),
+      usedRecycle: ctx.usedRecycle,
     };
   }
 }

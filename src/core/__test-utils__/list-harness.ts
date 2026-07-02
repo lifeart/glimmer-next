@@ -18,6 +18,11 @@ import {
   setupGlobalScope,
   GXT_RUNTIME_SYMBOLS,
 } from '../../../plugins/runtime-compiler';
+// The recycle entry points ($_eachRecycled / $_eachSyncRecycled) are no longer
+// part of the runtime compiler's default global symbol set — they live in the
+// tree-shakable '@lifeart/gxt/recycle' entry. The recycling harness/tests
+// (key="@recycle") opt them onto globalThis via registerRecycleRuntime().
+import { registerRecycleRuntime } from '../recycle';
 import type { DOMFixture } from './index';
 
 export interface HarnessItem {
@@ -109,6 +114,9 @@ export function setupRuntimeTemplateGlobals(): void {
   Object.entries(GXT_RUNTIME_SYMBOLS).forEach(([name, value]) => {
     g[name] = value;
   });
+  // key="@recycle" rows resolve $_eachRecycled / $_eachSyncRecycled from
+  // globalThis at render time; install them from the dedicated recycle entry.
+  registerRecycleRuntime();
 }
 
 /**

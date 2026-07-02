@@ -85,13 +85,12 @@ import {
 // Import reactive primitives for Ember integration
 import { cellFor, formula, cell, tagsToRevalidate, cellsMap } from '../src/core/reactive';
 
-// Opt-in row recycling entry points (key="@recycle"). Live in a dedicated
-// module so they stay tree-shakable for compiled-ahead apps; the runtime
-// compiler must still expose them for runtime-compiled templates.
-import {
-  $_eachRecycled,
-  $_eachSyncRecycled,
-} from '../src/core/control-flow/list-recycle';
+// Opt-in row recycling entry points (key="@recycle") are intentionally NOT
+// imported here so list-recycle.ts stays tree-shaken out of the runtime-
+// compiler chunk. They live in the dedicated `@lifeart/gxt/recycle` entry;
+// runtime-compiled apps that use key="@recycle" call `registerRecycleRuntime()`
+// (from '@lifeart/gxt/recycle') to install $_eachRecycled / $_eachSyncRecycled
+// on globalThis the same way setupGlobalScope() installs GXT_RUNTIME_SYMBOLS.
 import { effect } from '../src/core/vm';
 import { syncDom } from '../src/core/runtime';
 import { ensureReactiveCollectionsPatched } from '../src/core/reactive-collections';
@@ -121,8 +120,6 @@ export const GXT_RUNTIME_SYMBOLS = {
   $_if,
   $_each,
   $_eachSync,
-  $_eachRecycled,
-  $_eachSyncRecycled,
   $_slot,
   $_edp,
   $_args,

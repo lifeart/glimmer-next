@@ -226,6 +226,17 @@ export interface CompilerContext {
   unboundCounter: number;
 
   /**
+   * Ground-truth flag: set to `true` by the {{#each}} serializer
+   * (serializers/control.ts `buildEach`) the moment it emits a recycled
+   * entry point ($_eachRecycled / $_eachSyncRecycled) for a
+   * `key="@recycle"` block. Surfaced on CompileResult so the module
+   * assembler (plugins/test.ts) auto-imports the recycle entry points from
+   * '@lifeart/gxt/recycle' ONLY when the compiler actually emitted them —
+   * replacing the old source-string regex heuristic in babel.ts.
+   */
+  usedRecycle: boolean;
+
+  /**
    * Transient flag: true while visiting an attribute/named-arg value
    * (e.g. `@content={{foo}}`). Used to suppress the fine-grained 0-arg
    * helper getter-wrap in arg position, where the bare `$_maybeHelper`
@@ -307,6 +318,7 @@ export function createContext(
     letBlockCounter: 0,
     logSiteCounter: 0,
     unboundCounter: 0,
+    usedRecycle: false,
     inAttributeValue: false,
     seenNodes: new Set(),
     formatter,
