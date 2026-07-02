@@ -1041,6 +1041,47 @@ export function $_ucw(
   ) as ComponentReturnType;
 }
 
+// ---------------------------------------------------------------------------
+// Node-thunk marker
+//
+// In Glimmer-compat mode the compiler wraps DOM-producing children of a
+// component in a lazy thunk — `() => $_tag(...)`, `() => $_c(...)`,
+// `() => $_dc(...)`, `() => $_each(...)` — so they sit alongside plain
+// reactive-text getters (`() => this.title`) in the same children array.
+// A host (e.g. the Ember integration) that walks such an array must decide,
+// for every function it finds, whether to INVOKE it (DOM producer) or wrap it
+// in a reactive effect (text getter). Historically that decision was made by
+// `fn.toString()` source-sniffing for `$_tag(`/`$_c(`/`$_dc(`/`$_eachSync(`,
+// which FALSE-NEGATIVES under production minification because the `$_*`
+// imports are renamed to short locals (`a(`, `c(`, …) and the substrings no
+// longer appear — a real DOM thunk gets `String()`-ed into the document
+// (`[object DocumentFragment]` / lost DOM).
+//
+// `$_nt` lets the compiler mark the thunk it KNOWS is a node producer, so the
+// host reads a stable, minification-proof flag (`isNodeThunk`) instead of the
+// source text. The marker is a plain string-keyed property: terser is
+// configured with `mangle.properties:false`, so the key survives minification
+// verbatim, and the `$_`-prefixed name will not collide with host data.
+const NODE_THUNK_FLAG = '$_isNode';
+
+/**
+ * Mark `fn` as a node-producing thunk and return it (identity).
+ * Emitted by the compiler around component-child DOM producers in compat mode.
+ */
+export function $_nt<T extends Function>(fn: T): T {
+  (fn as any)[NODE_THUNK_FLAG] = true;
+  return fn;
+}
+
+/**
+ * True when `fn` is a thunk the compiler marked as DOM-producing (via `$_nt`).
+ * Hosts call this instead of `.toString()` source-sniffing — it is
+ * minification-proof.
+ */
+export function isNodeThunk(fn: unknown): boolean {
+  return typeof fn === 'function' && (fn as any)[NODE_THUNK_FLAG] === true;
+}
+
 if (IS_DEV_MODE) {
   function buildGraph(
     obj: Record<string, unknown>,
