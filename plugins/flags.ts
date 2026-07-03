@@ -21,6 +21,12 @@ export type Flags = {
    * regex. Default: false (async iteration remains the correct general default).
    */
   FORCE_SYNC_LIST: boolean;
+  // Ember-dialect quoted-attribute concat. When true, interpolated quoted
+  // attribute values (`class="a {{b}} c"`) emit `$_qStr([...])` — a runtime
+  // helper implementing Ember/Glimmer string-coercion semantics (Symbol via
+  // String(), object-without-toString → '', all-nullish → null so the attr
+  // writer drops the attribute) — instead of the plain `[...].join("")`.
+  EMBER_ATTR_CONCAT: boolean;
 };
 
 export function defaultFlags() {
@@ -38,5 +44,6 @@ export function defaultFlags() {
     WITH_DYNAMIC_EVAL: false,
     WITH_TYPE_CHECKER_HINTS: false,
     FORCE_SYNC_LIST: false,
+    EMBER_ATTR_CONCAT: false,
   } as Flags;
 }

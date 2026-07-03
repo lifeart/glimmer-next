@@ -60,6 +60,13 @@ export const SYMBOLS = {
   // for the runtime per-row tracking Proxy). Only emitted under
   // WITH_EMBER_INTEGRATION; auto-imported here so AOT output resolves it.
   $__cellFor: '$__cellFor',
+  // Ember-dialect quoted-attribute concat. Only emitted under the
+  // EMBER_ATTR_CONCAT flag (interpolated quoted attrs). MUST be listed here (the
+  // AOT auto-import registry, `Object.values(SYMBOLS)`) — not only in
+  // serializers/symbols.ts — or a flag-on AOT module references an unimported
+  // `$_qStr` (ReferenceError at render). Resolved from @lifeart/gxt via
+  // src/core/index.ts → `export * from '@/core/helpers/index'`.
+  $_qStr: '$_qStr',
 };
 
 export const CONSTANTS = {

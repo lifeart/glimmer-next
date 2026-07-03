@@ -89,6 +89,12 @@ export interface CompilerFlags {
    * See the matching flag in plugins/flags.ts. Default: false.
    */
   readonly FORCE_SYNC_LIST?: boolean;
+  /**
+   * Ember-dialect quoted-attribute concat. When true, interpolated quoted
+   * attribute values emit `$_qStr([...])` (Ember string-coercion semantics)
+   * instead of `[...].join("")`. Default: false.
+   */
+  readonly EMBER_ATTR_CONCAT?: boolean;
 }
 
 /**
@@ -113,6 +119,7 @@ export const DEFAULT_FLAGS: CompilerFlags = Object.freeze({
   WITH_EVAL_SUPPORT: false, // Enable only when template uses eval option (reduces bundle size)
   WITH_TYPE_OPTIMIZATION: false,
   FORCE_SYNC_LIST: false, // Emit sync list primitives for every {{#each}} (host opt-in)
+  EMBER_ATTR_CONCAT: false, // $_qStr ember-dialect quoted-attr concat (host opt-in)
 });
 
 /**
