@@ -158,6 +158,54 @@ export function referenceRootName(name: string): string {
 }
 
 /**
+ * Ambient host globals that are smuggled into emitted code only as the *object*
+ * of a member access — never as a caller-provided binding or a name a host must
+ * supply. The `{{unbound}}` compat island `globalThis.__gxtUnboundEval(...)` and
+ * the `{{#if this.x}}` compat island `globalThis.__gxtGetCellOrFormula?.(...)`
+ * are the current producers. Reducing such a reference to its bare root
+ * (`globalThis`) swallows the one meaningful, routing-relevant token — the
+ * MEMBER (`__gxtUnboundEval`, `__gxtGetCellOrFormula`). See Task A / #250 report.
+ */
+const AMBIENT_GLOBAL_ROOTS: ReadonlySet<string> = new Set<string>([
+  'globalThis',
+  'window',
+]);
+
+/** Matches `globalThis.<member>` / `window.<member>` and captures `<member>`. */
+const AMBIENT_GLOBAL_MEMBER_RE =
+  /(?:globalThis|window)\.([A-Za-z_$][A-Za-z0-9_$]*)/g;
+
+/**
+ * Record the meaningful *member* head(s) of every ambient-global access found in
+ * a chunk of emitted code (`globalThis.X` / `window.X` → `X`). Threaded from two
+ * kinds of emission that bypass the per-identifier choke point:
+ *   - a whole `globalThis.__gxtUnboundEval(...)` island wrapped as a single
+ *     `B.id` (yielded `{{unbound}}` sub-expression — reaches `recordEmittedName`
+ *     with the ENTIRE island as `name`), and
+ *   - a `B.raw` island (mustache/attr `{{unbound}}`, `{{#if this.x}}` compat
+ *     wrapper — never reaches `recordEmittedName` at all).
+ * A cheap `indexOf` guard skips the regex for the overwhelming majority of code
+ * that contains no ambient global. Only members that are plain identifier heads
+ * are recorded (`isEmittedFreeIdentifierHead`), so the field never leaks a
+ * `$`-name or keyword.
+ */
+export function recordAmbientGlobalMembers(
+  report: EmissionReport | undefined,
+  code: string
+): void {
+  if (!report) return;
+  if (code.indexOf('globalThis.') === -1 && code.indexOf('window.') === -1) {
+    return;
+  }
+  for (const m of code.matchAll(AMBIENT_GLOBAL_MEMBER_RE)) {
+    const member = m[1];
+    if (isEmittedFreeIdentifierHead(member)) {
+      report.emittedIdentifiers.add(member);
+    }
+  }
+}
+
+/**
  * Record an emitted identifier / runtime-ref name into the report. Called from
  * the serializer's single emission choke point (builder/serialize.ts) for every
  * identifier and runtime-ref that becomes text, so:
@@ -184,6 +232,17 @@ export function recordEmittedName(
   const root = referenceRootName(name);
   if (report.callerBindings.size > 0 && report.callerBindings.has(root)) {
     report.referencedBindings.add(root);
+  }
+  // Ambient-global member smuggle (Task A): when the head reduces to an ambient
+  // host global (`globalThis`/`window`) the reference is really a member access
+  // whose OBJECT is that global — e.g. the whole `globalThis.__gxtUnboundEval(…)`
+  // island wrapped as one `B.id` (yielded `{{unbound}}`). The bare root is
+  // meaningless for routing, so record the meaningful member(s) INSTEAD of the
+  // root. (`recordAmbientGlobalMembers` scans the full `name`, catching every
+  // member in a multi-access island.)
+  if (AMBIENT_GLOBAL_ROOTS.has(root)) {
+    recordAmbientGlobalMembers(report, name);
+    return;
   }
   if (isEmittedFreeIdentifierHead(root)) {
     report.emittedIdentifiers.add(root);

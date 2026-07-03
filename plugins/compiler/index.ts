@@ -103,6 +103,7 @@ export type { EmissionReport } from './emission-report';
 export {
   createEmissionReport,
   recordEmittedName,
+  recordAmbientGlobalMembers,
   referenceRootName,
   isEmittedFreeIdentifierHead,
 } from './emission-report';
