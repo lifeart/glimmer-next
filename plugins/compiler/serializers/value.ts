@@ -473,8 +473,20 @@ function buildSpread(
 }
 
 /**
- * Build a concat expression: [part1, part2, ...].join('')
- * Parts use direct references (no reactive getter) since the outer getter handles reactivity.
+ * Build a concat expression.
+ *
+ * Default emission: `[part1, part2, ...].join('')` — plain string coercion.
+ * Parts use direct references (no reactive getter) since the outer getter
+ * handles reactivity; the parts are read (and their reactive deps tracked)
+ * while the array literal is built, exactly as `.join('')` consumed them.
+ *
+ * Under the `EMBER_ATTR_CONCAT` flag: `$_qStr([part1, part2, ...])` — a runtime
+ * helper that applies Ember/Glimmer string-coercion semantics per part
+ * (null/undefined → '', Symbol via String(), object-without-toString → '') and
+ * returns `null` when every dynamic part is nullish so the attribute writer
+ * drops the attribute instead of writing `"undefined"` or an empty string.
+ * The parts array is identical either way, so the only difference is the
+ * consuming call.
  */
 function buildConcat(
   ctx: CompilerContext,
@@ -489,6 +501,9 @@ function buildConcat(
     }
     return buildValue(ctx, p, ctxName);
   });
+  if (ctx.flags.EMBER_ATTR_CONCAT) {
+    return B.call(SYMBOLS.QUOTED_STR, [B.array(exprs)], sourceRange);
+  }
   return B.methodCall(B.array(exprs), 'join', [B.string('')], sourceRange);
 }
 
