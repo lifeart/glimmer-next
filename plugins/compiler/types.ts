@@ -82,6 +82,13 @@ export interface CompilerFlags {
   readonly WITH_TYPE_OPTIMIZATION: boolean;
   /** Ember integration mode — bare names compile to this.name instead of $_maybeHelper. Default: false */
   readonly WITH_EMBER_INTEGRATION?: boolean;
+  /**
+   * Force the SYNC list primitives for every `{{#each}}`: the control-flow
+   * serializer emits `$_eachSync`/`$_eachSyncRecycled` in place of
+   * `$_each`/`$_eachRecycled`, exactly as if every block carried `sync=true`.
+   * See the matching flag in plugins/flags.ts. Default: false.
+   */
+  readonly FORCE_SYNC_LIST?: boolean;
 }
 
 /**
@@ -105,6 +112,7 @@ export const DEFAULT_FLAGS: CompilerFlags = Object.freeze({
   WITH_MODIFIER_MANAGER: false, // Must match runtime default (plugins/flags.ts)
   WITH_EVAL_SUPPORT: false, // Enable only when template uses eval option (reduces bundle size)
   WITH_TYPE_OPTIMIZATION: false,
+  FORCE_SYNC_LIST: false, // Emit sync list primitives for every {{#each}} (host opt-in)
 });
 
 /**

@@ -72,6 +72,23 @@ describe('Runtime Compiler', () => {
       expect(result.errors).toHaveLength(0);
       expect(result.code).toContain('$_maybeModifier');
     });
+
+    test('threads FORCE_SYNC_LIST through options.flags → emits $_eachSync', () => {
+      const asyncResult = compileTemplate(
+        '{{#each this.items as |item|}}<div>{{item}}</div>{{/each}}'
+      );
+      // Default runtime path (WITH_EMBER_INTEGRATION defaults true) is async.
+      expect(asyncResult.code).toContain('$_each(');
+      expect(asyncResult.code).not.toContain('$_eachSync(');
+
+      const syncResult = compileTemplate(
+        '{{#each this.items as |item|}}<div>{{item}}</div>{{/each}}',
+        { flags: { FORCE_SYNC_LIST: true } }
+      );
+      expect(syncResult.errors).toHaveLength(0);
+      expect(syncResult.code).toContain('$_eachSync(');
+      expect(syncResult.code).not.toContain('$_each(');
+    });
   });
 
   describe('compile', () => {
