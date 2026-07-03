@@ -104,6 +104,7 @@ export {
   createEmissionReport,
   recordEmittedName,
   recordAmbientGlobalMembers,
+  recordEmittedCode,
   referenceRootName,
   isEmittedFreeIdentifierHead,
 } from './emission-report';
