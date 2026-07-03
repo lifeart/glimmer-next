@@ -22,6 +22,13 @@ export const SYMBOLS = {
   // marker property and returns the thunk. NOT a pure function (side effect:
   // marking), so it is deliberately absent from PURE_FUNCTIONS below.
   NODE_THUNK: '$_nt',
+  // Named-block thunk marker. A specialisation of NODE_THUNK for the compat
+  // named-block factory child (`() => $_tag(':name', …)`). `$_nbt(fn, 'name')`
+  // records the slot name on `fn` so hosts read `getNamedBlockName(fn)` instead
+  // of source-sniffing `$_tag(':` (minification-fragile). Superset of `$_nt`
+  // (also sets the node-thunk flag). Side-effecting → absent from
+  // PURE_FUNCTIONS below.
+  NAMED_BLOCK_THUNK: '$_nbt',
 
   // Control flow
   IF: '$_if',
