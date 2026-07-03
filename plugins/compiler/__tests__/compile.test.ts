@@ -482,6 +482,47 @@ describe('Compiler Flags', () => {
     });
   });
 
+  describe('named-block thunk marker ($_nbt)', () => {
+    const compat = { flags: { IS_GLIMMER_COMPAT_MODE: true } };
+
+    test('marks a named-block factory ($_tag(\':name\')) with $_nbt(fn, name)', () => {
+      const r = compile('<Foo><:header>hi</:header></Foo>', compat);
+      // The `<:header>` producer is wrapped + marked with its slot name, so a
+      // host reads getNamedBlockName(fn) instead of source-sniffing `$_tag(':`.
+      expect(r.code).toContain('$_nbt(() => $_tag(\':header\'');
+      expect(r.code).toContain('\'header\')');
+      // $_nbt supersedes $_nt for named-block children: no bare $_nt wrap here.
+      expect(r.code.match(/\$_nt\(/g)).toBe(null);
+    });
+
+    test('carries the slot name for EACH named block', () => {
+      const r = compile('<Foo><:header>h</:header><:body>b</:body></Foo>', compat);
+      expect(r.code).toContain('$_nbt(() => $_tag(\':header\', $_edp, this, ["h"]), \'header\')');
+      expect(r.code).toContain('$_nbt(() => $_tag(\':body\', $_edp, this, ["b"]), \'body\')');
+      // one $_nbt per named block
+      expect(r.code.match(/\$_nbt\(/g)?.length).toBe(2);
+    });
+
+    test('marks a named block that itself declares block params', () => {
+      const r = compile('<Foo><:header as |x|>{{x}}</:header></Foo>', compat);
+      // The marker records the slot name regardless of the block's own params.
+      expect(r.code).toContain('$_nbt(() => $_tag(\':header\'');
+      expect(r.code).toContain('\'header\')');
+    });
+
+    test('$_nbt lands in the emission report (emittedSymbols)', () => {
+      const r = compile('<Foo><:header>hi</:header></Foo>', compat);
+      expect(r.emittedSymbols).toContain('$_nbt');
+    });
+
+    test('a plain (unnamed) component child stays a $_nt node thunk, not $_nbt', () => {
+      const r = compile('<Parent><Child /></Parent>', compat);
+      expect(r.code).toContain('$_nt(() => $_tag(\'Child\'');
+      expect(r.code.match(/\$_nbt\(/g)).toBe(null);
+      expect(r.emittedSymbols).not.toContain('$_nbt');
+    });
+  });
+
   test('preserves compile-time flags as bare identifiers for Vite define replacement', () => {
     // This test verifies that compile-time flags like IS_GLIMMER_COMPAT_MODE
     // are NOT prefixed with "this." when used in templates.

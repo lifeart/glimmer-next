@@ -462,6 +462,18 @@ export interface CompileResult {
   readonly usedArgsAlias: boolean;
   readonly usedSlots: boolean;
   readonly usedFw: boolean;
+  /**
+   * Ground-truth "the template declares block params" flag. `true` when the
+   * compile registered any `as |…|` block param — a component/element block, a
+   * `<:name … as |x|>` named block, or `{{#each … as |x|}}`. TEMPLATE-LEVEL
+   * (one boolean for the whole compile, like `usedSlots`/`usedFw`), not
+   * per-component. `{{#let … as |y|}}` local aliases are a distinct binding
+   * kind and are NOT counted. Hosts (the Ember bridge) read this instead of
+   * source-sniffing the compiled fn for `$_bp<n>` references (`hasBlockParamRef`
+   * / `detectBlockParams`), which the ember dialect's block-params transform
+   * emits as `this.$_bp0`-style member reads.
+   */
+  readonly usedBlockParams: boolean;
 
   // ==========================================================================
   // Ground-truth emission report (see plugins/compiler/emission-report.ts)

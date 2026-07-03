@@ -74,6 +74,7 @@ import {
   $_inElement,
   $_ucw,
   $_nt,
+  $_nbt,
   $_blk,
   $_fin,
   $_HTMLProvider,
@@ -142,6 +143,7 @@ export const GXT_RUNTIME_SYMBOLS = {
   $_inElement,
   $_ucw,
   $_nt,
+  $_nbt,
   $_blk,
   $_fin,
   $__if,
@@ -255,6 +257,12 @@ export interface RuntimeCompileResult {
   usedArgsAlias: CompileResult['usedArgsAlias'];
   usedSlots: CompileResult['usedSlots'];
   usedFw: CompileResult['usedFw'];
+  /**
+   * Ground-truth "the template declares block params" flag (see CompileResult).
+   * Passed through so a host that re-assembles `code` (the Ember bridge) reads
+   * it instead of source-sniffing the compiled fn for `$_bp<n>` references.
+   */
+  usedBlockParams: CompileResult['usedBlockParams'];
   usedRecycle: CompileResult['usedRecycle'];
   /**
    * Ground-truth emission report, passed through from CompileResult so hosts
@@ -318,6 +326,7 @@ export function compileTemplate(
       usedArgsAlias: result.usedArgsAlias,
       usedSlots: result.usedSlots,
       usedFw: result.usedFw,
+      usedBlockParams: result.usedBlockParams,
       usedRecycle: result.usedRecycle,
       emittedSymbols: result.emittedSymbols,
       maybeHelperNames: result.maybeHelperNames,
@@ -399,6 +408,7 @@ export function compileTemplate(
       usedArgsAlias: result.usedArgsAlias,
       usedSlots: result.usedSlots,
       usedFw: result.usedFw,
+      usedBlockParams: result.usedBlockParams,
       usedRecycle: result.usedRecycle,
       emittedSymbols: result.emittedSymbols,
       maybeHelperNames: result.maybeHelperNames,
@@ -416,6 +426,7 @@ export function compileTemplate(
     usedArgsAlias: result.usedArgsAlias,
     usedSlots: result.usedSlots,
     usedFw: result.usedFw,
+    usedBlockParams: result.usedBlockParams,
     usedRecycle: result.usedRecycle,
     emittedSymbols: result.emittedSymbols,
     maybeHelperNames: result.maybeHelperNames,

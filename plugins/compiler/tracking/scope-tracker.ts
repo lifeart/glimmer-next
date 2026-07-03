@@ -42,6 +42,27 @@ export class ScopeTracker {
   private readonly scopes: Scope[] = [];
   private readonly lexicalScope?: (variable: string) => boolean;
 
+  /**
+   * Ground-truth "the template declares block params" flag. Set STICKY to true
+   * the first time a `block-param`-kind binding is registered (via addBinding),
+   * which is the single choke point every `as |…|` form flows through —
+   * component/element blocks (visitors/element.ts), named blocks
+   * (serializers/element.ts buildSlots), and `{{#each … as |x|}}`
+   * (visitors/block.ts). Surfaced on CompileResult as `usedBlockParams` so hosts
+   * (the Ember bridge) read this instead of source-sniffing the compiled fn for
+   * `$_bp<n>` references (`hasBlockParamRef`), which the ember dialect's
+   * block-params transform emits as `this.$_bp0`-style member reads.
+   *
+   * Granularity: TEMPLATE-LEVEL (a single boolean for the whole compile, like
+   * `usedSlots`/`usedFw`), not per-component/per-slot. It stays true once any
+   * block param is seen and is never reset (block params leave scope on
+   * `exitScope`, but the fact that the template USED them does not). NOTE:
+   * `{{#let … as |y|}}` registers a distinct `let-binding` kind and is
+   * deliberately NOT counted — those are local aliases, not yielded block
+   * params, and do not produce `$_bp<n>` on the ember side.
+   */
+  usedBlockParams = false;
+
   constructor(initialBindings?: ReadonlySet<string>, lexicalScope?: (variable: string) => boolean) {
     this.lexicalScope = lexicalScope;
     // Always start with a root scope
@@ -86,6 +107,11 @@ export class ScopeTracker {
    * Add a binding to the current scope.
    */
   addBinding(name: string, info: BindingInfo): void {
+    // Ground-truth block-param signal (see `usedBlockParams` above). This is
+    // the single site every `as |…|` binding flows through.
+    if (info.kind === 'block-param') {
+      this.usedBlockParams = true;
+    }
     this.currentScope.bindings.set(name, info);
   }
 

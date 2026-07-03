@@ -1132,6 +1132,57 @@ export function isNodeThunk(fn: unknown): boolean {
   return typeof fn === 'function' && (fn as any)[NODE_THUNK_FLAG] === true;
 }
 
+// ---------------------------------------------------------------------------
+// Named-block thunk marker
+//
+// A specialisation of the node-thunk marker for the compat-mode NAMED-BLOCK
+// factory child. In Glimmer-compat mode a `<:header …>…</:header>` slot inside
+// a component compiles to a lazy thunk producing `$_tag(':header', …)` — the
+// `:`-prefixed tag the runtime turns into a `__isNamedBlock` marker object. A
+// host (the Ember bridge) that walks a component's children must, for every
+// such thunk, (a) recognise it is a named-block factory and (b) learn the slot
+// NAME so it can route the block to the right slot. Historically that was done
+// by `fn.toString().includes("$_tag(':")` + evaluating the result — the SAME
+// minification-fragile source-sniff the plain node-thunk marker retired (the
+// `$_*` imports rename to short locals, so `$_tag(':` no longer appears).
+//
+// `$_nbt(fn, name)` marks the thunk with the slot name in a plain string-keyed
+// property (`$_namedBlock`), which — like `$_isNode` — survives terser
+// (`mangle.properties:false`). It is a SUPERSET of `$_nt`: it also sets the
+// node-thunk flag, because a named-block factory must still be INVOKED (not
+// treated as a reactive text getter) to yield its marker object, so
+// `isNodeThunk` stays true for it. Hosts read `getNamedBlockName(fn)` for both
+// the "is a named block?" decision and the name — one minification-proof
+// signal, no source text.
+const NAMED_BLOCK_FLAG = '$_namedBlock';
+
+/**
+ * Mark `fn` as a named-block factory thunk carrying slot `name`, and return it
+ * (identity). Emitted by the compiler around a compat-mode `<:name>` block's
+ * `$_tag(':name', …)` producer. Also sets the node-thunk flag ($_nt superset)
+ * so `isNodeThunk(fn)` stays true (the factory must be invoked to yield its
+ * `__isNamedBlock` marker).
+ */
+export function $_nbt<T extends Function>(fn: T, name: string): T {
+  (fn as any)[NODE_THUNK_FLAG] = true;
+  (fn as any)[NAMED_BLOCK_FLAG] = name;
+  return fn;
+}
+
+/**
+ * The slot name of a thunk the compiler marked as a named-block factory (via
+ * `$_nbt`), or `null` when `fn` is not a named-block factory. Hosts call this
+ * instead of `.toString()` source-sniffing `$_tag(':` — it is
+ * minification-proof, and returns the slot name directly.
+ */
+export function getNamedBlockName(fn: unknown): string | null {
+  if (typeof fn === 'function') {
+    const name = (fn as any)[NAMED_BLOCK_FLAG];
+    if (typeof name === 'string') return name;
+  }
+  return null;
+}
+
 if (IS_DEV_MODE) {
   function buildGraph(
     obj: Record<string, unknown>,

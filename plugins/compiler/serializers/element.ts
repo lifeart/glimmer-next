@@ -875,16 +875,64 @@ function maybeWrapComponentChildren(childExprs: JSExpression[]): JSExpression[] 
   return childExprs.map(expr => {
     if (exprContainsComponentCall(expr)) {
       // This child is a DOM producer ($_tag/$_c/$_dc/$_each…). Wrap it in a
-      // lazy thunk and MARK it with $_nt so hosts can identify it via the
-      // runtime `isNodeThunk` predicate instead of `.toString()` source-
-      // sniffing (which false-negatives under minification — the $_* imports
-      // are renamed to short locals). Don't double-wrap an already-arrow
-      // child; mark it in place.
+      // lazy thunk and MARK it so hosts can identify it via a runtime predicate
+      // instead of `.toString()` source-sniffing (which false-negatives under
+      // minification — the $_* imports are renamed to short locals). Don't
+      // double-wrap an already-arrow child; mark it in place.
       const thunk = expr.type === 'arrow' ? expr : B.getter(expr, expr.sourceRange);
+      // A `<:name>` named-block child produces `$_tag(':name', …)`. Mark it
+      // with $_nbt(thunk, 'name') — a superset of $_nt that also records the
+      // slot name — so the host reads `getNamedBlockName(fn)` for BOTH the
+      // "is a named block?" test and the name, instead of source-sniffing
+      // `$_tag(':`. (`isNodeThunk` stays true: $_nbt sets the node-thunk flag
+      // too, since the factory must still be invoked to yield its marker.)
+      const namedBlockName = namedBlockNameFromExpr(expr);
+      if (namedBlockName !== null) {
+        return B.call(
+          B.id(SYMBOLS.NAMED_BLOCK_THUNK),
+          [thunk, B.stringSingle(namedBlockName)],
+          expr.sourceRange,
+        );
+      }
       return B.call(B.id(SYMBOLS.NODE_THUNK), [thunk], expr.sourceRange);
     }
     return expr;
   });
+}
+
+/**
+ * If `expr` is (or wraps) a `$_tag(':name', …)` producer — the shape a compat
+ * `<:name>` named block compiles to — return the slot name (without the leading
+ * `:`); otherwise null. Unwraps an arrow/getter thunk to reach the producing
+ * call so it works whether or not the child has already been wrapped.
+ */
+function namedBlockNameFromExpr(expr: JSExpression): string | null {
+  let target: JSExpression = expr;
+  if (target.type === 'arrow' && target.expression) {
+    target = target.body as JSExpression;
+  }
+  if (target.type === 'reactiveGetter') {
+    target = target.expression;
+  }
+  if (target.type !== 'call') return null;
+  const callee = target.callee;
+  const calleeName =
+    callee.type === 'identifier'
+      ? callee.name
+      : callee.type === 'runtimeRef'
+        ? callee.symbol
+        : null;
+  if (calleeName !== SYMBOLS.TAG) return null;
+  const first = target.arguments[0];
+  if (
+    first &&
+    first.type === 'literal' &&
+    typeof first.value === 'string' &&
+    first.value.startsWith(':')
+  ) {
+    return first.value.slice(1);
+  }
+  return null;
 }
 
 /**

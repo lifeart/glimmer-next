@@ -42,6 +42,13 @@ export const SYMBOLS = {
   // `$_nt` (ReferenceError at render). Resolved from @lifeart/gxt via
   // src/core/index.ts → `export * from '@/core/dom'`.
   NODE_THUNK: '$_nt',
+  // Named-block thunk marker ($_nbt) — same AOT auto-import requirement as
+  // $_nt: the compiler emits `$_nbt(() => $_tag(':name', …), 'name')` around
+  // compat named-block children, so it MUST be in this registry
+  // (`Object.values(SYMBOLS)`) too or AOT modules throw `$_nbt is not defined`.
+  // Resolved from @lifeart/gxt via src/core/index.ts → `export * from
+  // '@/core/dom'`.
+  NAMED_BLOCK_THUNK: '$_nbt',
   $_blk: '$_blk',
   $__if: '$__if',
   $__eq: '$__eq',
