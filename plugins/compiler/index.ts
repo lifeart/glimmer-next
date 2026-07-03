@@ -104,6 +104,7 @@ export {
   createEmissionReport,
   recordEmittedName,
   referenceRootName,
+  isEmittedFreeIdentifierHead,
 } from './emission-report';
 
 // Re-export visitors

@@ -261,13 +261,14 @@ export interface CompilerContext {
 
   /**
    * Ground-truth emission report (see emission-report.ts). The serializer
-   * populates it as it emits: `emittedSymbols` + `referencedBindings` at the
-   * identifier/runtime-ref emission choke point (builder/serialize.ts),
-   * `maybeHelperNames` at the `$_maybeHelper` string-form build sites
-   * (serializers/value.ts), and `maybeHelperInNamedArgPosition` at the
-   * named-arg tuple build site (serializers/element.ts). Surfaced readonly on
-   * CompileResult so hosts (the Ember bridge) route templates off structured
-   * data instead of regex-scanning `code`.
+   * populates it as it emits: `emittedSymbols` + `referencedBindings` +
+   * `emittedIdentifiers` at the identifier/runtime-ref emission choke point
+   * (builder/serialize.ts), `maybeHelperNames` at the `$_maybeHelper`
+   * string-form build sites (serializers/value.ts), and
+   * `maybeHelperInNamedArgPosition` at the named-arg tuple build site
+   * (serializers/element.ts). Surfaced readonly on CompileResult so hosts (the
+   * Ember bridge) route templates off structured data instead of regex-scanning
+   * `code`.
    */
   readonly emissionReport: EmissionReport;
 
