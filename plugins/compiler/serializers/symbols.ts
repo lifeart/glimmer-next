@@ -93,6 +93,13 @@ export const SYMBOLS = {
   // `[...].join('')`, gated by the EMBER_ATTR_CONCAT flag. Applies Ember string
   // coercion and returns null for all-nullish (attribute-removal contract).
   QUOTED_STR: '$_qStr',
+  // Compat-mode `{{unique-id}}` — stable per-(render-context, call-site) id.
+  // Emitted by the value serializer for `unique-id` under IS_GLIMMER_COMPAT_MODE
+  // as `$_uid(this, SITE_INDEX)`, where SITE_INDEX is a per-template call-site
+  // index. The runtime helper (WeakMap<ctx, string[]>) keeps the id stable
+  // across re-renders of an instance and distinct across instances/sites —
+  // replacing the Ember bridge's positional `_uid[N]` rewrite + uidOuterScope.
+  UNIQUE_ID: '$_uid',
 
   // Unstable child wrapper
   UCW: '$_ucw',

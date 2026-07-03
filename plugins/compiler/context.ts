@@ -220,11 +220,17 @@ export interface CompilerContext {
   /** Counter for generating unique let block variable names */
   letBlockCounter: number;
 
-  /** Counter for $__log site IDs (IS_GLIMMER_COMPAT_MODE) */
-  logSiteCounter: number;
-
   /** Counter for unbound helper cache IDs (IS_GLIMMER_COMPAT_MODE) */
   unboundCounter: number;
+
+  /**
+   * Per-template call-site index for `{{unique-id}}` / `(unique-id)`
+   * (IS_GLIMMER_COMPAT_MODE). Each source call-site is emitted as
+   * `$_uid(this, N)`; the runtime keys ids on (ctx, N), so a per-compilation
+   * index (reset to 0 each template) is sufficient — the WeakMap ctx key keeps
+   * distinct templates/instances from colliding even at the same index.
+   */
+  uniqueIdCounter: number;
 
   /**
    * Ground-truth flag: set to `true` by the {{#each}} serializer
@@ -352,8 +358,8 @@ export function createContext(
     },
     contextCounter: 0,
     letBlockCounter: 0,
-    logSiteCounter: 0,
     unboundCounter: 0,
+    uniqueIdCounter: 0,
     usedRecycle: false,
     usedArgsAlias: false,
     usedSlots: false,
