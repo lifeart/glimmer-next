@@ -155,19 +155,53 @@ function buildInElement(
     childArrayExpr
   );
 
-  // $_inElement(target, callback, ctx)
+  // $_inElement(target, callback, ctx[, mode])
+  //
+  // The optional 4th `mode` argument carries the Ember-dialect `insertBefore=`
+  // semantics (EMBER_IN_ELEMENT flag) — `IN_ELEMENT_CLEAR` (1) / `IN_ELEMENT_APPEND`
+  // (0) in the runtime, or the offending literal string for an unsupported
+  // non-null value. When no mode was derived (flag off), emit the historic
+  // 3-arg call so native output stays byte-identical.
+  const args: JSExpression[] = [targetExpr, childrenCallback, B.id(ctxName)];
+  const modeArg = buildInElementModeArg(control.inElementMode);
+  if (modeArg !== null) {
+    args.push(modeArg);
+  }
+
   // Note: Using runtimeRef instead of $: prefix for cleaner code
   return B.call(
     B.runtimeRef(SYMBOLS.IN_ELEMENT),
-    [
-      targetExpr,
-      childrenCallback,
-      B.id(ctxName),
-    ],
+    args,
     control.sourceRange,
     false,
     'BlockStatement'
   );
+}
+
+// Runtime `$_inElement` mode codes — MUST match IN_ELEMENT_APPEND /
+// IN_ELEMENT_CLEAR in src/core/dom.ts.
+const IN_ELEMENT_APPEND_CODE = 0;
+const IN_ELEMENT_CLEAR_CODE = 1;
+
+/**
+ * Translate the parsed in-element mode into the 4th `$_inElement` argument, or
+ * `null` when no argument should be emitted (flag off / no mode derived).
+ */
+function buildInElementModeArg(
+  mode: HBSControlExpression['inElementMode']
+): JSExpression | null {
+  if (!mode) {
+    return null;
+  }
+  switch (mode.kind) {
+    case 'clear':
+      return B.num(IN_ELEMENT_CLEAR_CODE);
+    case 'append':
+      return B.num(IN_ELEMENT_APPEND_CODE);
+    case 'unsupported':
+      // A string mode → the runtime dev-asserts (Ember allows only `null`).
+      return B.string(mode.received);
+  }
 }
 
 // ============================================================================

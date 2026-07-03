@@ -972,11 +972,45 @@ function _DOM(
   return element;
 }
 
+// `{{#in-element}}` render modes — the optional 4th argument to `$_inElement`.
+//
+// Backwards compatible: a 3-arg call (`mode === undefined`) keeps the historic
+// glimmer-next behaviour — APPEND the block body into the target without
+// clearing it (`innerHTML=''` on teardown). The mode argument makes the
+// Ember/Glimmer `insertBefore=` contract first-class so a host no longer needs
+// an out-of-band signalling channel:
+//
+//   IN_ELEMENT_APPEND (0) — append into the target, DON'T clear it. Ember's
+//     `insertBefore=null`. Only the nodes this block rendered are removed on
+//     teardown; any pre-existing content of the target is left intact.
+//   IN_ELEMENT_CLEAR  (1) — clear the target's existing children, THEN render.
+//     Glimmer/Ember default (`{{#in-element dest}}` with no `insertBefore`, or
+//     the explicit `insertBefore=undefined`).
+//
+// A STRING mode carries an unsupported `insertBefore=<non-null>` literal (Ember
+// only permits `null`): the runtime throws the Ember-parity assertion in dev
+// and falls back to clear/replace in production.
+export const IN_ELEMENT_APPEND = 0;
+export const IN_ELEMENT_CLEAR = 1;
+
 export function $_inElement(
   elementRef: HTMLElement | Cell<HTMLElement> | InElementFnArg,
   roots: (context: Component<any>) => (Node | ComponentReturnType)[],
   ctx: any,
+  mode?: number | string,
 ) {
+  // Unsupported `insertBefore=<non-null>` — the compiler passes the received
+  // literal as a string mode. Ember only allows `null`: fail fast BEFORE any
+  // rendering (mirrors the classic Glimmer build-time assert). Dev throws the
+  // parity message; production degrades to the default clear/replace.
+  if (typeof mode === 'string') {
+    if (IS_DEV_MODE) {
+      throw new Error(
+        `Can only pass null to insertBefore in in-element, received: ${mode}`,
+      );
+    }
+    mode = IN_ELEMENT_CLEAR;
+  }
   const api = initDOM(ctx);
   return component(
     function UnstableChildWrapper(this: Component<any>) {
@@ -1019,11 +1053,34 @@ export function $_inElement(
         }
         return $_fin([], this);
       }
+      // Clear/replace mode (Glimmer/Ember default): remove the target's
+      // existing children before rendering our block body.
+      if (mode === IN_ELEMENT_CLEAR) {
+        appendRef.innerHTML = '';
+      }
+      // Precise teardown for explicit modes: snapshot the children present just
+      // before we render so teardown removes ONLY the nodes we add — leaving
+      // any pre-existing content intact (append mode) / the target empty (clear
+      // mode). A 3-arg (legacy) call keeps the historic `innerHTML=''` wipe.
+      const explicit = mode !== undefined;
+      const preExisting: Set<ChildNode> | null = explicit
+        ? new Set(Array.from(appendRef.childNodes))
+        : null;
       const nodes = roots(ctx);
       renderElement(api, ctx, appendRef, nodes);
       registerDestructor(ctx, () => {
         unregisterFromParent(nodes as ComponentLike[]);
-        appendRef.innerHTML = '';
+        if (preExisting !== null) {
+          const current = Array.from(appendRef.childNodes);
+          for (let i = 0; i < current.length; i++) {
+            const child = current[i];
+            if (!preExisting.has(child) && child.parentNode === appendRef) {
+              appendRef.removeChild(child);
+            }
+          }
+        } else {
+          appendRef.innerHTML = '';
+        }
       });
       return $_fin([], this);
     } as unknown as Component<any>,

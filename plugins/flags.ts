@@ -27,6 +27,15 @@ export type Flags = {
   // String(), object-without-toString → '', all-nullish → null so the attr
   // writer drops the attribute) — instead of the plain `[...].join("")`.
   EMBER_ATTR_CONCAT: boolean;
+  // Ember-dialect `{{#in-element}}` insertBefore semantics. When true the
+  // control-flow serializer reads the `insertBefore=` hash and emits the render
+  // mode as a 4th `$_inElement(target, roots, ctx, MODE)` argument:
+  //   no insertBefore / `insertBefore=undefined` → CLEAR (Glimmer/Ember default)
+  //   `insertBefore=null`                        → APPEND
+  //   `insertBefore=<non-null>`                  → dev assert (Ember allows null only)
+  // Off (default): emits the historic 3-arg call (append-into-target). This
+  // retires the host-side out-of-band insertBefore signalling channel.
+  EMBER_IN_ELEMENT: boolean;
 };
 
 export function defaultFlags() {
@@ -45,5 +54,6 @@ export function defaultFlags() {
     WITH_TYPE_CHECKER_HINTS: false,
     FORCE_SYNC_LIST: false,
     EMBER_ATTR_CONCAT: false,
+    EMBER_IN_ELEMENT: false,
   } as Flags;
 }
