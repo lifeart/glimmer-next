@@ -263,6 +263,7 @@ export interface RuntimeCompileResult {
   maybeHelperNames: CompileResult['maybeHelperNames'];
   maybeHelperInNamedArgPosition: CompileResult['maybeHelperInNamedArgPosition'];
   referencedBindings: CompileResult['referencedBindings'];
+  emittedIdentifiers: CompileResult['emittedIdentifiers'];
 }
 
 /**
@@ -320,6 +321,7 @@ export function compileTemplate(
       maybeHelperNames: result.maybeHelperNames,
       maybeHelperInNamedArgPosition: result.maybeHelperInNamedArgPosition,
       referencedBindings: result.referencedBindings,
+      emittedIdentifiers: result.emittedIdentifiers,
     };
   }
 
@@ -400,6 +402,7 @@ export function compileTemplate(
       maybeHelperNames: result.maybeHelperNames,
       maybeHelperInNamedArgPosition: result.maybeHelperInNamedArgPosition,
       referencedBindings: result.referencedBindings,
+      emittedIdentifiers: result.emittedIdentifiers,
     };
   }
 
@@ -416,6 +419,7 @@ export function compileTemplate(
     maybeHelperNames: result.maybeHelperNames,
     maybeHelperInNamedArgPosition: result.maybeHelperInNamedArgPosition,
     referencedBindings: result.referencedBindings,
+    emittedIdentifiers: result.emittedIdentifiers,
   };
 }
 

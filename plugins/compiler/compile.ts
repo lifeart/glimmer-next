@@ -205,6 +205,7 @@ export function compile(
       maybeHelperNames: Array.from(ctx.emissionReport.maybeHelperNames),
       maybeHelperInNamedArgPosition: ctx.emissionReport.maybeHelperInNamedArgPosition,
       referencedBindings: Array.from(ctx.emissionReport.referencedBindings),
+      emittedIdentifiers: Array.from(ctx.emissionReport.emittedIdentifiers),
     };
   } catch (error: unknown) {
     const parseError = error as ParseError;
@@ -345,6 +346,7 @@ export function compile(
       maybeHelperNames: Array.from(ctx.emissionReport.maybeHelperNames),
       maybeHelperInNamedArgPosition: ctx.emissionReport.maybeHelperInNamedArgPosition,
       referencedBindings: Array.from(ctx.emissionReport.referencedBindings),
+      emittedIdentifiers: Array.from(ctx.emissionReport.emittedIdentifiers),
     };
   }
 }

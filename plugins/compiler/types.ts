@@ -504,6 +504,26 @@ export interface CompileResult {
    * over-report, which routes hosts to their safe legacy path.
    */
   readonly referencedBindings: readonly string[];
+  /**
+   * Every FREE identifier head the serializer emitted as a reference/call that
+   * is NOT a `$`-namespace name (runtime symbols `$_*`/`$__*` AND compiler
+   * locals `$a`/`$fw`/`$slots`/`$v`/`$n`/…), NOT a `ctx<N>` block-context
+   * local, and NOT `this`/a JS keyword/literal. This catches names that were
+   * never in `bindings` — the case `referencedBindings` cannot see. Example:
+   * `{{yield (get this.x 'k')}}` emits a bare `get(...)` call (an unknown helper
+   * lowered to a scope-variable reference), so `emittedIdentifiers` contains
+   * `get` even though it is not a caller-provided binding. It lets a host
+   * replace the last keyword-call regex over `code` with a set intersection:
+   * `emittedIdentifiers ∩ {get, unbound, array, hash, concat, fn, mut, readonly,
+   * helper, modifier}`.
+   *
+   * Deliberately a conservative SUPERSET: a referenced caller binding appears
+   * in BOTH `referencedBindings` and here, and template block params
+   * (`{{#each … as |item|}}` → `item`) appear here too — the choke point is a
+   * string-level fact with no scope context, and over-reporting only routes a
+   * host to its safe legacy path.
+   */
+  readonly emittedIdentifiers: readonly string[];
 }
 
 /**
