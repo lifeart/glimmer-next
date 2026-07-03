@@ -1,11 +1,13 @@
 /**
  * Ground-truth emission report coverage (plugins/compiler/emission-report.ts).
  *
- * Pins the four CompileResult fields — `emittedSymbols`, `maybeHelperNames`,
- * `maybeHelperInNamedArgPosition`, `referencedBindings` — with positive and
- * negative cases, through BOTH `compile()` and `compileTemplate()`, plus a
- * parity sweep proving the report reproduces the exact regex verdicts the
- * Ember bridge uses today (so it is a faithful drop-in replacement).
+ * Pins the five CompileResult fields — `emittedSymbols`, `maybeHelperNames`,
+ * `maybeHelperInNamedArgPosition`, `referencedBindings`, `emittedIdentifiers` —
+ * with positive and negative cases, through BOTH `compile()` and
+ * `compileTemplate()`, plus a parity sweep proving the report reproduces the
+ * exact regex verdicts the Ember bridge uses today (so it is a faithful
+ * drop-in replacement — including the keyword-call regex `emittedIdentifiers`
+ * replaces).
  */
 
 import { describe, test, expect } from 'vitest';
@@ -36,16 +38,19 @@ function compileEmber(
 
 describe('emission report', () => {
   describe('shape / defaults', () => {
-    test('all four fields present and empty for a trivial template', () => {
+    test('all five fields present and empty for a trivial template', () => {
       const r = compileEmber('<div>{{this.x}}</div>');
       expect(Array.isArray(r.emittedSymbols)).toBe(true);
       expect(Array.isArray(r.maybeHelperNames)).toBe(true);
       expect(Array.isArray(r.referencedBindings)).toBe(true);
+      expect(Array.isArray(r.emittedIdentifiers)).toBe(true);
       expect(typeof r.maybeHelperInNamedArgPosition).toBe('boolean');
       // A plain element still emits $_tag.
       expect(r.emittedSymbols).toContain('$_tag');
       expect(r.maybeHelperNames).toEqual([]);
       expect(r.referencedBindings).toEqual([]);
+      // `this.x` → `this` head is excluded; no free identifier emitted.
+      expect(r.emittedIdentifiers).toEqual([]);
       expect(r.maybeHelperInNamedArgPosition).toBe(false);
     });
 
@@ -214,13 +219,82 @@ describe('emission report', () => {
   });
 
   // --------------------------------------------------------------------------
+  describe('emittedIdentifiers', () => {
+    test('THE GAP: {{yield (get …)}} emits a bare `get(` — captured even though `get` is NOT a caller binding', () => {
+      // Unknown helper in subexpression position lowers to a scope-variable
+      // reference: () => [get(this.x, "k")]. `referencedBindings` can't see it
+      // (never in `bindings`); `emittedIdentifiers` MUST.
+      const r = compileEmber("{{yield (get this.x 'k')}}");
+      expect(r.code).toContain('get(this.x, "k")');
+      expect(r.emittedIdentifiers).toContain('get');
+      expect(r.referencedBindings).not.toContain('get'); // not a caller binding
+    });
+
+    test('documented choice: a referenced caller binding appears in BOTH lists', () => {
+      const r = compileEmber('<button {{on "click" (fn this.act 1)}}>x</button>', {}, ['fn', 'on']);
+      expect(r.emittedIdentifiers).toEqual(expect.arrayContaining(['fn', 'on']));
+      expect(r.referencedBindings).toEqual(expect.arrayContaining(['fn', 'on']));
+    });
+
+    test('NEGATIVE: runtime symbols ($_tag/$_slot/…) are NOT free identifiers', () => {
+      const r = compileEmber('<div>{{yield}}</div>');
+      expect(r.emittedSymbols).toContain('$_tag');
+      expect(r.emittedIdentifiers).not.toContain('$_tag');
+      expect(r.emittedIdentifiers).not.toContain('$_slot');
+    });
+
+    test('NEGATIVE: compiler `$`-locals ($fw/$slots/$a) and `this` are excluded', () => {
+      // Splat + yield + @-arg emit $fw / $slots / $a; the ctxName `this` is
+      // emitted as a bare id too. None are free identifiers.
+      const r = compileEmber('<div ...attributes>{{yield}}{{@name}}</div>');
+      expect(r.code).toContain('$fw'); // proof the locals ARE in the code
+      expect(r.emittedIdentifiers).not.toContain('$fw');
+      expect(r.emittedIdentifiers).not.toContain('$slots');
+      expect(r.emittedIdentifiers).not.toContain('$a');
+      expect(r.emittedIdentifiers).not.toContain('this');
+      expect(r.emittedIdentifiers).toEqual([]);
+    });
+
+    test('NEGATIVE: compiler block-context locals (ctx0/$index/$n) are excluded', () => {
+      const r = compileEmber('{{#in-element this.dest}}<div>x</div>{{/in-element}}');
+      expect(r.code).toContain('ctx0 =>'); // ctx0 IS emitted as a param + ref
+      expect(r.emittedIdentifiers).not.toContain('ctx0');
+      expect(r.emittedIdentifiers).toEqual([]);
+
+      // $index (synthetic each index param, present when unnamed) starts with
+      // `$` → excluded. Single block param leaves the index synthetic.
+      const each = compileEmber('{{#each this.items as |it|}}<li>{{it.name}}</li>{{/each}}');
+      expect(each.code).toContain('$index');
+      expect(each.emittedIdentifiers).not.toContain('$index');
+      expect(each.emittedIdentifiers).not.toContain('ctx0');
+    });
+
+    test('block params are included (conservative superset, no scope at the choke point)', () => {
+      const r = compileEmber('{{#each this.items as |item idx|}}<li>{{item.name}} {{idx}}</li>{{/each}}');
+      expect(r.emittedIdentifiers).toEqual(expect.arrayContaining(['item', 'idx']));
+    });
+
+    test('deduped (a name emitted many times is listed once)', () => {
+      const r = compileEmber('<div>{{get this.a}}{{get this.b}}{{get this.c}}</div>', {}, ['get']);
+      expect(r.emittedIdentifiers.filter((n) => n === 'get')).toHaveLength(1);
+    });
+  });
+
+  // --------------------------------------------------------------------------
   describe('through compileTemplate()', () => {
-    test('all four fields are threaded through the success path', () => {
+    test('all five fields are threaded through the success path', () => {
       const r = compileTemplate('{{#in-element this.dest}}<div>x</div>{{/in-element}}');
       expect(r.emittedSymbols).toContain('$_inElement');
       expect(r.maybeHelperNames).toEqual([]);
       expect(r.maybeHelperInNamedArgPosition).toBe(false);
       expect(r.referencedBindings).toEqual([]);
+      expect(r.emittedIdentifiers).toEqual([]); // ctx0 excluded
+    });
+
+    test('emittedIdentifiers threaded: yielded bare `get(` survives compileTemplate', () => {
+      const r = compileTemplate("{{yield (get this.x 'k')}}");
+      expect(r.emittedIdentifiers).toContain('get');
+      expect(r.referencedBindings).not.toContain('get');
     });
 
     test('named-arg maybeHelper flag survives compileTemplate', () => {
@@ -242,6 +316,7 @@ describe('emission report', () => {
       expect(Array.isArray(r.emittedSymbols)).toBe(true);
       expect(Array.isArray(r.maybeHelperNames)).toBe(true);
       expect(Array.isArray(r.referencedBindings)).toBe(true);
+      expect(Array.isArray(r.emittedIdentifiers)).toBe(true);
       expect(typeof r.maybeHelperInNamedArgPosition).toBe('boolean');
     });
   });
@@ -267,12 +342,17 @@ describe('emission report', () => {
     ];
 
     // Reconstruct the SAME routing verdict purely from the report.
+    //
+    // The keyword-call alternative `(?:^|[^.\w$])(?:get|hash|fn|…)\(` is now
+    // reproduced by `emittedIdentifiers ∩ KEYWORD_LOCALS` — this catches the
+    // yielded bare `get(` case (get emitted as a scope var, NOT a caller
+    // binding) that `referencedBindings` structurally cannot see.
     function reportBlocked(r: CompileResult): boolean {
       if (r.emittedSymbols.includes('$__log')) return true; // __logSite
       if (r.emittedSymbols.includes('$_inElement')) return true;
       if (r.maybeHelperNames.includes('unbound')) return true; // __ubCache/__gxtUnboundEval
       if (HOST_WORD_BINDINGS.some((w) => r.referencedBindings.includes(w))) return true;
-      if (KEYWORD_LOCALS.some((k) => r.referencedBindings.includes(k))) return true;
+      if (KEYWORD_LOCALS.some((k) => r.emittedIdentifiers.includes(k))) return true;
       if (r.maybeHelperInNamedArgPosition) return true; // named-arg guard
       return false;
     }
@@ -300,6 +380,7 @@ describe('emission report', () => {
       ['<button {{on "click" (fn this.act 1)}}>x</button>', ['fn', 'on'], {}],
       ['{{#each (gxtEntriesOf this.o) as |e|}}{{e.k}}{{/each}}', ['gxtEntriesOf'], {}],
       ['<div>{{get this.o "k"}}</div>', ['get'], {}],
+      ["{{yield (get this.x 'k')}}", [], {}],           // bare `get(` — NOT a binding
       ['<div>{{concat this.a this.b}}</div>', ['concat'], {}],
       ['<div>{{array this.a this.b}}</div>', ['array'], {}],
       ['<div class="a {{this.b}} c"></div>', [], { EMBER_ATTR_CONCAT: true }],
@@ -326,6 +407,17 @@ describe('emission report', () => {
         expect(r.emittedSymbols.includes('$_qStr')).toBe(/\$_qStr\(/.test(r.code));
         // named-arg guard
         expect(r.maybeHelperInNamedArgPosition).toBe(NAMED_ARG_GUARD_TRIGGER.test(r.code));
+      }
+    });
+
+    test('emittedIdentifiers ∩ KEYWORD_LOCALS reproduces the keyword-call regex', () => {
+      // The exact keyword-call alternative from the Ember NATIVE_BLOCKERS regex.
+      const KEYWORD_CALL_RE =
+        /(?:^|[^.\w$])(?:get|unbound|array|hash|concat|fn|mut|readonly|helper|modifier)\(/;
+      for (const [tpl, bindings, flags] of CASES) {
+        const r = compileEmber(tpl, flags, bindings);
+        const reportHit = KEYWORD_LOCALS.some((k) => r.emittedIdentifiers.includes(k));
+        expect(reportHit).toBe(KEYWORD_CALL_RE.test(r.code));
       }
     });
   });
