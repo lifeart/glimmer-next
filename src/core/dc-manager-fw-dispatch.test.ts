@@ -294,4 +294,85 @@ describe('$_dc manager fw derivation', () => {
       expect(div.textContent).toBe('inner');
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // (e) Yielded-contextual "splattributes" MERGE contract.
+  //
+  // This pins the DOM-level behavior the ember bridge's manager path relies on
+  // when it forwards the derived split `fw` to a resolved (tagless) component's
+  // `...attributes` — the `<x.foo class="…" title="…" />` yielded-contextual
+  // case (ember `AngleBracket Invocation` "…in yielded contextual component"
+  // tests). The split MUST keep `class` under the empty-string className-modifier
+  // key so it MERGES with the child element's own default class (rather than
+  // overwriting it), and non-`@` attrs must trump the child's defaults.
+  //
+  // We drive the split exactly as $_dc's WITH_EMBER_INTEGRATION branch does
+  // (applyDynamicManagerFwSplit over the invocation's own props tuple), then
+  // render a child whose template carries a default class + `...attributes`, via
+  // the base $_dc path (WITH_EMBER_INTEGRATION is off in vitest, so the base path
+  // applies args[$PROPS_SYMBOL] — the split fw — as the child's splat, which is
+  // structurally identical to what the ember manager threads to the child).
+  // ---------------------------------------------------------------------------
+  describe('(e) yielded-contextual splattributes MERGE contract', () => {
+    let fixture: DOMFixture;
+    beforeEach(() => {
+      fixture = createDOMFixture();
+      setupGlobalScope();
+      const g = globalThis as any;
+      Object.entries(GXT_RUNTIME_SYMBOLS).forEach(([name, value]) => {
+        g[name] = value;
+      });
+    });
+    afterEach(() => fixture.cleanup());
+
+    function renderThroughSplit(childTpl: string, ownTuple: any) {
+      class Inner extends Component {
+        [$template] = template(childTpl);
+      }
+      const parent = new Component({});
+      parent[RENDERED_NODES_PROPERTY] = [];
+      addToTree(fixture.root, parent);
+      const args = $_args({}, {} as any, ownTuple as any);
+      // The split $_dc runs the first time it resolves to a manager-claimed value.
+      applyDynamicManagerFwSplit(args, (args as any)[$PROPS_SYMBOL]);
+      const instance = $_dc((() => Inner) as any, args, parent);
+      renderElement(fixture.api, parent, fixture.container, instance as any);
+      return fixture.container.querySelector('div')!;
+    }
+
+    // Note: gxt compiles a component-tag `class="…"` into the props tuple under
+    // the empty-string className-modifier key `['', value]` (see
+    // serializers/element.ts), NOT the literal `'class'` key — that is what lets
+    // it MERGE on the child's `...attributes` rather than overwrite.
+    const CLASS: any = [[['', 'custom-class']], [['title', 'foo']], []];
+
+    test('leading default class: `<div class="default" ...attributes>` merges custom + default', () => {
+      const div = renderThroughSplit(
+        '<div class="default-class" ...attributes>hello</div>',
+        CLASS,
+      );
+      const cls = (div.getAttribute('class') || '').split(/\s+/).filter(Boolean).sort();
+      expect(cls).toEqual(['custom-class', 'default-class']);
+      expect(div.getAttribute('title')).toBe('foo');
+      expect(div.textContent).toBe('hello');
+    });
+
+    test('trailing default class: `<div ...attributes class="default">` merges custom + default', () => {
+      const div = renderThroughSplit(
+        '<div ...attributes class="default-class">hello</div>',
+        CLASS,
+      );
+      const cls = (div.getAttribute('class') || '').split(/\s+/).filter(Boolean).sort();
+      expect(cls).toEqual(['custom-class', 'default-class']);
+    });
+
+    test('invocation attribute trumps the element default (`title`)', () => {
+      const div = renderThroughSplit('<div title="bar" ...attributes>hello</div>', [
+        [],
+        [['title', 'foo']],
+        [],
+      ]);
+      expect(div.getAttribute('title')).toBe('foo');
+    });
+  });
 });
