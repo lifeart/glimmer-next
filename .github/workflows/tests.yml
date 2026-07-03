@@ -20,6 +20,11 @@ jobs:
       - uses: wyvox/action-setup-pnpm@v3
         with:
           node-version: "20.1.0"
+          # Pin pnpm to the lockfile's major (lockfileVersion 9.0): the action's
+          # default pnpm cannot read it, silently IGNORES the lockfile and
+          # resolves fresh latest deps (observed: vite 7.x instead of the pinned
+          # 5.4.21, breaking the lib build's dts step).
+          pnpm-version: 10
 
       - name: Install Glint env deps
         run: cd glint-environment-gxt && pnpm install && cd ..
@@ -48,5 +53,10 @@ jobs:
       - uses: wyvox/action-setup-pnpm@v3
         with:
           node-version: "20.1.0"
+          # Pin pnpm to the lockfile's major (lockfileVersion 9.0): the action's
+          # default pnpm cannot read it, silently IGNORES the lockfile and
+          # resolves fresh latest deps (observed: vite 7.x instead of the pinned
+          # 5.4.21, breaking the lib build's dts step).
+          pnpm-version: 10
       - name: Build prod lib + verify shipped semantics
         run: pnpm run test:dist-semantics
