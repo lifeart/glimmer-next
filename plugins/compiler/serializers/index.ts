@@ -333,6 +333,8 @@ export {
   BUILT_IN_HELPER_NAMES,
   isBuiltInHelper,
   getBuiltInHelperSymbol,
+  REPORTABLE_RUNTIME_SYMBOLS,
+  isReportableRuntimeSymbol,
 } from './symbols';
 
 // Re-export individual serializers (string-based)

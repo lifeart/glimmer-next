@@ -98,6 +98,14 @@ export {
 export { ScopeTracker, createScopeTracker } from './tracking/scope-tracker';
 export { CodeEmitter, createCodeEmitter } from './tracking/code-emitter';
 
+// Re-export the ground-truth emission report (surfaced on CompileResult).
+export type { EmissionReport } from './emission-report';
+export {
+  createEmissionReport,
+  recordEmittedName,
+  referenceRootName,
+} from './emission-report';
+
 // Re-export visitors
 export {
   visit,

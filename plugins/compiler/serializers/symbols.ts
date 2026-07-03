@@ -111,6 +111,49 @@ export type SymbolName = keyof typeof SYMBOLS;
 export type SymbolValue = (typeof SYMBOLS)[SymbolName];
 
 /**
+ * Symbol *values* that are compiler-generated LOCALS or property keys rather
+ * than runtime imports/functions. These are deliberately excluded from
+ * `emittedSymbols` (the ground-truth report) because they are not "a runtime
+ * symbol was emitted" facts:
+ *   - `$fw` / `$slots` / `$v` / `$n` — function-preamble / handler locals
+ *     (their emission is already surfaced via `usedFw` / `usedSlots`),
+ *   - `$a` / `$args` — the args-alias local (surfaced via `usedArgsAlias`),
+ *   - `$_scope` / `$_eval` — dynamic-scope property keys,
+ *   - `$template` — the template symbol.
+ */
+const NON_REPORTED_SYMBOL_VALUES: ReadonlySet<string> = new Set<string>([
+  SYMBOLS.LOCAL_FW,
+  SYMBOLS.LOCAL_SLOTS,
+  SYMBOLS.LOCAL_VALUE,
+  SYMBOLS.LOCAL_NODE,
+  SYMBOLS.ARGS_PROPERTY,
+  SYMBOLS.ARGS_ALIAS,
+  SYMBOLS.SCOPE_KEY,
+  SYMBOLS.EVAL_KEY,
+  SYMBOLS.TEMPLATE,
+]);
+
+/**
+ * The set of runtime symbol *values* that count as "emitted" for the
+ * ground-truth `emittedSymbols` report. Computed from `SYMBOLS` minus the
+ * non-reported locals/keys above, so any newly-added runtime symbol is
+ * automatically reportable (the whole point of the report is that hosts never
+ * have to enumerate/regex these by hand).
+ */
+export const REPORTABLE_RUNTIME_SYMBOLS: ReadonlySet<string> = new Set<string>(
+  Object.values(SYMBOLS).filter((v) => !NON_REPORTED_SYMBOL_VALUES.has(v))
+);
+
+/**
+ * True when an emitted identifier/runtime-ref name is a reportable runtime
+ * symbol (a `$_*` / `$__*` runtime function or reference we want in the
+ * `emittedSymbols` ground-truth set).
+ */
+export function isReportableRuntimeSymbol(name: string): boolean {
+  return REPORTABLE_RUNTIME_SYMBOLS.has(name);
+}
+
+/**
  * Built-in helper name to runtime symbol mapping.
  * This is the single source of truth for built-in helper resolution.
  */
