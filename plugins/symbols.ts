@@ -67,6 +67,13 @@ export const SYMBOLS = {
   // `$_qStr` (ReferenceError at render). Resolved from @lifeart/gxt via
   // src/core/index.ts → `export * from '@/core/helpers/index'`.
   $_qStr: '$_qStr',
+  // Compat-mode `{{unique-id}}` stable-id helper. Emitted as `$_uid(this, N)`
+  // under IS_GLIMMER_COMPAT_MODE. MUST be listed here (the AOT auto-import
+  // registry, `Object.values(SYMBOLS)`) — not only in serializers/symbols.ts —
+  // or an AOT-compiled module references an unimported `$_uid` (ReferenceError
+  // at render). Resolved from @lifeart/gxt via src/core/index.ts →
+  // `export * from '@/core/helpers/index'`.
+  $_uid: '$_uid',
 };
 
 export const CONSTANTS = {

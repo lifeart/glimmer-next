@@ -598,6 +598,26 @@ function buildHelper(
     name.startsWith('$_') ||
     ctx.scopeTracker.hasBinding(rootName);
 
+  // Compat-mode `{{unique-id}}` / `(unique-id)`: emit a stable per-(context,
+  // call-site) id via the $_uid runtime helper instead of routing through
+  // $_maybeHelper. Each source call-site gets a per-template site index
+  // (ctx.uniqueIdCounter); the runtime keeps a WeakMap<ctx, string[]> so the id
+  // is STABLE across re-renders of the same instance and DISTINCT across
+  // instances and sibling sites. Both the mustache form (wrapped in a plain
+  // getter by the caller) and the sub-expression form (e.g.
+  // `{{#let (unique-id) as |id|}}`) reach here, so this single site replaces
+  // the Ember bridge's `$_maybeHelper("unique-id",…)` → `unique_id()` → `_uid[N]`
+  // positional rewrite AND its `uidOuterScope` pre-computed-array injection.
+  // Skipped when a scope binding shadows `unique-id` (isKnown).
+  if (name === 'unique-id' && !isKnown && ctx.flags.IS_GLIMMER_COMPAT_MODE) {
+    const siteIndex = ctx.uniqueIdCounter++;
+    return B.call(
+      SYMBOLS.UNIQUE_ID,
+      [B.id(ctxName), B.num(siteIndex)],
+      sourceRange
+    );
+  }
+
   // Handle unless -> if transformation (swap args)
   // Only when not shadowed by a local binding
   // unless(cond, a, b) -> if(cond, b, a)
