@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import { templateToTypescript } from '../adapter';
+import { compile } from '../compile';
 import type { Flags } from '../../flags';
 
 describe('Adapter Layer', () => {
@@ -126,6 +127,104 @@ describe('Adapter Layer', () => {
       );
 
       expect(result.code).toContain('$_each');
+    });
+  });
+
+  // Regression: the adapter used to forward ONLY IS_GLIMMER_COMPAT_MODE into
+  // compile(), silently dropping every other host opt-in. The most visible
+  // casualty was FORCE_SYNC_LIST — a `templateToTypescript(tpl, { FORCE_SYNC_LIST:
+  // true })` call still emitted async `$_each(` / `$_eachRecycled(`, so hosts
+  // (the Ember bridge) had to keep a `$_each(` -> `$_eachSync(` regex over the
+  // emitted JS. See adapter.ts.
+  describe('templateToTypescript() flag forwarding', () => {
+    const syncFlags: Flags = {
+      IS_GLIMMER_COMPAT_MODE: true,
+      FORCE_SYNC_LIST: true,
+    } as Flags;
+
+    test('FORCE_SYNC_LIST reaches buildEach: plain each emits $_eachSync, never async $_each(', () => {
+      const result = templateToTypescript(
+        '{{#each this.items as |item|}}<div>{{item}}</div>{{/each}}',
+        syncFlags
+      );
+      expect(result.code).toContain('$_eachSync(');
+      // `$_each(` is not a substring of `$_eachSync(` — the async entry point
+      // must not appear anywhere.
+      expect(result.code).not.toContain('$_each(');
+    });
+
+    test('FORCE_SYNC_LIST reaches buildEach: key="@recycle" emits $_eachSyncRecycled, never async $_eachRecycled(', () => {
+      const result = templateToTypescript(
+        '{{#each this.items key="@recycle" as |item|}}<div>{{item.label}}</div>{{/each}}',
+        syncFlags
+      );
+      expect(result.code).toContain('$_eachSyncRecycled(');
+      expect(result.code).not.toContain('$_eachRecycled(');
+    });
+
+    test('flag OFF (default): plain each still emits async $_each — unchanged behaviour', () => {
+      const result = templateToTypescript(
+        '{{#each this.items as |item|}}<div>{{item}}</div>{{/each}}',
+        defaultFlags
+      );
+      expect(result.code).toContain('$_each(');
+      expect(result.code).not.toContain('$_eachSync(');
+    });
+
+    test('adapter output is byte-identical to compile() for the same flags (seam parity)', () => {
+      const tpl = '{{#each this.items as |item|}}<div>{{item}}</div>{{/each}}';
+      const adapterCode = templateToTypescript(tpl, syncFlags).code;
+      const compileCode = compile(tpl, {
+        flags: { IS_GLIMMER_COMPAT_MODE: true, FORCE_SYNC_LIST: true },
+      }).code;
+      expect(adapterCode).toBe(compileCode);
+    });
+
+    // FORCE_SYNC_LIST-on sweep across a battery of each-shapes. Flag-on output
+    // must NEVER contain the async entry points, no matter where the each sits.
+    describe('FORCE_SYNC_LIST sweep — no async $_each in any shape', () => {
+      const SHAPES: Record<string, string> = {
+        plain: '{{#each this.items as |i|}}<span>{{i}}</span>{{/each}}',
+        noParams: '{{#each this.items}}x{{/each}}',
+        withIndex: '{{#each this.items as |i idx|}}<span>{{idx}}{{i}}</span>{{/each}}',
+        keyed: '{{#each this.items key="id" as |i|}}<b>{{i}}</b>{{/each}}',
+        identity: '{{#each this.items key="@identity" as |i|}}{{i}}{{/each}}',
+        recycle: '{{#each this.items key="@recycle" as |i|}}<b>{{i}}</b>{{/each}}',
+        recycleIndex: '{{#each this.items key="@recycle" as |i idx|}}<b>{{idx}}{{i}}</b>{{/each}}',
+        recycleElse: '{{#each this.items key="@recycle" as |i|}}<b>{{i}}</b>{{else}}none{{/each}}',
+        withElse: '{{#each this.items as |i|}}<b>{{i}}</b>{{else}}none{{/each}}',
+        elseWithEach: '{{#each this.a as |i|}}{{i}}{{else}}{{#each this.b as |j|}}{{j}}{{/each}}{{/each}}',
+        nested: '{{#each this.rows as |r|}}{{#each r.cols as |c|}}{{c}}{{/each}}{{/each}}',
+        nested3: '{{#each this.a as |r|}}{{#each r.b as |c|}}{{#each c.d as |y|}}{{y}}{{/each}}{{/each}}{{/each}}',
+        inIf: '{{#if this.x}}{{#each this.items as |i|}}{{i}}{{/each}}{{/if}}',
+        inIfElse: '{{#if this.x}}a{{else}}{{#each this.items as |i|}}{{i}}{{/each}}{{/if}}',
+        inUnless: '{{#unless this.x}}{{#each this.items as |i|}}{{i}}{{/each}}{{/unless}}',
+        inLet: '{{#let this.items as |xs|}}{{#each xs as |i|}}{{i}}{{/each}}{{/let}}',
+        inComponent: '<Foo>{{#each this.items as |i|}}<b>{{i}}</b>{{/each}}</Foo>',
+        inNamedBlock: '<Foo><:body>{{#each this.items as |i|}}<b>{{i}}</b>{{/each}}</:body></Foo>',
+        inNamedBlockElse: '<Foo><:body>{{#each this.a as |i|}}{{i}}{{/each}}</:body><:else>{{#each this.b as |j|}}{{j}}{{/each}}</:else></Foo>',
+        unstableChild: '{{#each this.items as |i|}}{{#if i.on}}<b>{{i}}</b>{{else}}<i>{{i}}</i>{{/if}}{{/each}}',
+        staticBlock: '{{#each this.items as |i|}}<div class="row">{{i}}</div>{{/each}}',
+        inInElement: '{{#in-element this.t}}{{#each this.items as |i|}}{{i}}{{/each}}{{/in-element}}',
+        eachInElement: '{{#each this.items as |i|}}{{#in-element i.t}}{{i}}{{/in-element}}{{/each}}',
+        eachInWithEach: '{{#each-in this.obj as |k v|}}{{#each v as |i|}}{{i}}{{/each}}{{/each-in}}',
+        twoSiblings: '{{#each this.a as |i|}}{{i}}{{/each}}{{#each this.b as |j|}}{{j}}{{/each}}',
+      };
+
+      for (const [name, tpl] of Object.entries(SHAPES)) {
+        test(name, () => {
+          const result = templateToTypescript(tpl, syncFlags);
+          expect(result.errors, `${name} compiled with errors`).toHaveLength(0);
+          expect(
+            result.code.includes('$_each('),
+            `${name} leaks async $_each(`
+          ).toBe(false);
+          expect(
+            result.code.includes('$_eachRecycled('),
+            `${name} leaks async $_eachRecycled(`
+          ).toBe(false);
+        });
+      }
     });
   });
 
