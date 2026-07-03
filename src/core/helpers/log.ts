@@ -3,9 +3,11 @@ import { unwrap } from './-private';
 // Track previously-logged site signatures so re-renders of the same
 // `{{log ...}}` site with identical (unwrapped) values don't spam the
 // console. The compile-time transform prepends a stable `__logSite:N`
-// id as the first arg in IS_GLIMMER_COMPAT_MODE — see
-// plugins/compiler/serializers/value.ts (~line 80). The id is consumed
-// here and MUST NOT leak through to `console.log`.
+// id as the first arg in IS_GLIMMER_COMPAT_MODE — see `nextLogSiteId` in
+// plugins/compiler/serializers/value.ts. That counter is PROCESS-GLOBAL and
+// monotonic across compilations, so the ids keying this single global Map
+// never collide between distinct templates (a per-compilation counter did).
+// The id is consumed here and MUST NOT leak through to `console.log`.
 const __logSiteSignatures = new Map<string, string>();
 
 export function $__log(...args: unknown[]) {

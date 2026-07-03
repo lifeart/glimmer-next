@@ -220,9 +220,6 @@ export interface CompilerContext {
   /** Counter for generating unique let block variable names */
   letBlockCounter: number;
 
-  /** Counter for $__log site IDs (IS_GLIMMER_COMPAT_MODE) */
-  logSiteCounter: number;
-
   /** Counter for unbound helper cache IDs (IS_GLIMMER_COMPAT_MODE) */
   unboundCounter: number;
 
@@ -352,7 +349,6 @@ export function createContext(
     },
     contextCounter: 0,
     letBlockCounter: 0,
-    logSiteCounter: 0,
     unboundCounter: 0,
     usedRecycle: false,
     usedArgsAlias: false,

@@ -24,6 +24,36 @@ export interface BuildPathExpressionOptions {
 }
 
 /**
+ * Process-monotonic `{{log}}` site-id counter.
+ *
+ * The compat-mode `{{log}}` transform prepends a `__logSite:N` id as the first
+ * argument so re-evaluations of the same site can be de-duped at runtime
+ * (src/core/helpers/log.ts keys `$__logSiteSignatures` on this string). That
+ * de-dup Map is a SINGLE process-global structure, so a per-compilation counter
+ * (reset to 0 for every template) makes distinct templates collide on
+ * `__logSite:0`, `__logSite:1`, … and cross-contaminate each other's dedup
+ * state. Making the counter module-global (monotonic across every compilation
+ * in the process) guarantees every emitted site id is unique — no host-side
+ * renumber pass is needed (the Ember bridge previously re-numbered these).
+ *
+ * Determinism: exact-code snapshot tests must not pin a specific `__logSite:N`
+ * (they don't today — they assert `toContain('__logSite')` / `/__logSite/`).
+ * `resetLogSiteCounter()` is exported for any test that wants a stable starting
+ * point, mirroring the `resetNodeCounter` / `resetContextCounter` idioms.
+ */
+let _logSiteCounter = 0;
+
+/** Allocate the next process-unique `{{log}}` site id. */
+function nextLogSiteId(): string {
+  return `__logSite:${_logSiteCounter++}`;
+}
+
+/** Reset the process-global `{{log}}` site-id counter (test hook). */
+export function resetLogSiteCounter(): void {
+  _logSiteCounter = 0;
+}
+
+/**
  * Serialize a SerializedValue to JavaScript code.
  *
  * @param ctx - The compiler context
@@ -124,7 +154,7 @@ export function buildValue(
       // Transform: () => $__log(args) → ($__log("__logSite:N", args), "")
       if (ctx.flags.IS_GLIMMER_COMPAT_MODE &&
           value.value.kind === 'helper' && value.value.name === 'log') {
-        const siteId = `__logSite:${ctx.logSiteCounter++}`;
+        const siteId = nextLogSiteId();
         const innerHelper = value.value;
         const siteIdExpr = B.string(siteId);
         const originalArgs = innerHelper.positional.map(arg => buildValue(ctx, arg, ctxName));
