@@ -131,8 +131,13 @@ export function buildValue(
         const logSymbol = getBuiltInHelperSymbol('log')!;
         const logCallWithId = B.call(logSymbol, [siteIdExpr, ...originalArgs], innerHelper.sourceRange);
         // Comma expression: ($__log("siteId", args), "") — evaluates log, returns empty string
-        // Must be "" not undefined, because GXT renders undefined as text node
-        return B.raw(`(${serializeJS(logCallWithId)}, "")`, value.sourceRange);
+        // Must be "" not undefined, because GXT renders undefined as text node.
+        // Pass the emission report so the raw-embedded $__log (and any nested
+        // symbols in its args) land in emittedSymbols.
+        return B.raw(
+          `(${serializeJS(logCallWithId, { report: ctx.emissionReport })}, "")`,
+          value.sourceRange
+        );
       }
       // Wrap the inner value in an arrow function: () => innerValue
       // Use buildValueNoGetter to avoid double-wrapping: getter(path) should
@@ -229,7 +234,9 @@ export function buildPathExpression(
       }
       return B.id(thisPath);
     }
-    // Non-Ember compat or eval mode: use $_maybeHelper for dynamic resolution
+    // Non-Ember compat or eval mode: use $_maybeHelper for dynamic resolution.
+    // Ground-truth: the first arg is the string-form lookup name.
+    ctx.emissionReport.maybeHelperNames.add(expression);
     const maybeHelperArgs: JSExpression[] = [
       B.string(expression, value.sourceRange),
       B.array([]),
@@ -620,7 +627,9 @@ function buildHelper(
   // Wrap: $_maybeHelper("unbound", ...) → globalThis.__gxtUnboundEval(__ubCache, "id", () => (call))
   if (ctx.flags.IS_GLIMMER_COMPAT_MODE && name === 'unbound') {
     const ubId = `__ub${ctx.unboundCounter++}`;
-    const serialized = serializeJS(maybeHelperExpr);
+    // Pass the emission report so the raw-embedded $_maybeHelper lands in
+    // emittedSymbols (buildMaybeHelper already recorded the lookup name).
+    const serialized = serializeJS(maybeHelperExpr, { report: ctx.emissionReport });
     return B.raw(
       `globalThis.__gxtUnboundEval(__ubCache,"${ubId}",()=>(${serialized}))`,
       sourceRange
@@ -688,10 +697,15 @@ function buildMaybeHelper(
   // $_maybeHelper accesses ctx.$_eval and ctx[$args].$_scope directly
   // This avoids creating closure functions on every reactive update
 
-  // For known bindings, pass the function reference; for unknown, pass string name
+  // For known bindings, pass the function reference; for unknown, pass string name.
+  // Ground-truth: only the string-form (unresolved) lookup contributes its name
+  // to maybeHelperNames — a resolved reference passes a function, not a string.
   const helperRef = resolvedRef
     ? B.id(resolvedRef, nameRange, 'PathExpression', name)
     : B.string(name, nameRange);
+  if (!resolvedRef) {
+    ctx.emissionReport.maybeHelperNames.add(name);
+  }
 
   if (resolvedRef) {
     // Known binding - pass hash with named args

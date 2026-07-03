@@ -25,6 +25,7 @@ import { ScopeTracker, createScopeTracker } from './tracking/scope-tracker';
 import { CodeEmitter, createCodeEmitter } from './tracking/code-emitter';
 import { enrichError, enrichWarning } from './errors';
 import { PURE_FUNCTIONS } from './serializers/symbols';
+import { createEmissionReport, type EmissionReport } from './emission-report';
 
 // ============================================================================
 // Visitor Registry Types
@@ -259,6 +260,18 @@ export interface CompilerContext {
   usedFw: boolean;
 
   /**
+   * Ground-truth emission report (see emission-report.ts). The serializer
+   * populates it as it emits: `emittedSymbols` + `referencedBindings` at the
+   * identifier/runtime-ref emission choke point (builder/serialize.ts),
+   * `maybeHelperNames` at the `$_maybeHelper` string-form build sites
+   * (serializers/value.ts), and `maybeHelperInNamedArgPosition` at the
+   * named-arg tuple build site (serializers/element.ts). Surfaced readonly on
+   * CompileResult so hosts (the Ember bridge) route templates off structured
+   * data instead of regex-scanning `code`.
+   */
+  readonly emissionReport: EmissionReport;
+
+  /**
    * Transient flag: true while visiting an attribute/named-arg value
    * (e.g. `@content={{foo}}`). Used to suppress the fine-grained 0-arg
    * helper getter-wrap in arg position, where the bare `$_maybeHelper`
@@ -344,6 +357,7 @@ export function createContext(
     usedArgsAlias: false,
     usedSlots: false,
     usedFw: false,
+    emissionReport: createEmissionReport(new Set(options.bindings ?? [])),
     inAttributeValue: false,
     seenNodes: new Set(),
     formatter,

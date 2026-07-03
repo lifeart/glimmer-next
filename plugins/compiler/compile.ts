@@ -201,6 +201,10 @@ export function compile(
       usedArgsAlias: ctx.usedArgsAlias,
       usedSlots: ctx.usedSlots,
       usedFw: ctx.usedFw,
+      emittedSymbols: Array.from(ctx.emissionReport.emittedSymbols),
+      maybeHelperNames: Array.from(ctx.emissionReport.maybeHelperNames),
+      maybeHelperInNamedArgPosition: ctx.emissionReport.maybeHelperInNamedArgPosition,
+      referencedBindings: Array.from(ctx.emissionReport.referencedBindings),
     };
   } catch (error: unknown) {
     const parseError = error as ParseError;
@@ -337,6 +341,10 @@ export function compile(
       usedArgsAlias: ctx.usedArgsAlias,
       usedSlots: ctx.usedSlots,
       usedFw: ctx.usedFw,
+      emittedSymbols: Array.from(ctx.emissionReport.emittedSymbols),
+      maybeHelperNames: Array.from(ctx.emissionReport.maybeHelperNames),
+      maybeHelperInNamedArgPosition: ctx.emissionReport.maybeHelperInNamedArgPosition,
+      referencedBindings: Array.from(ctx.emissionReport.referencedBindings),
     };
   }
 }
@@ -442,6 +450,11 @@ function serializeTemplate(
     indent: fmt.options.indent,
     baseIndent: fmt.options.baseIndent,
     emitPure: fmt.options.emitPure,
+    // Ground-truth: collect emittedSymbols + referencedBindings as this single
+    // streaming pass writes the whole structural tree. Raw-embedded islands
+    // (log/unbound/modifier-hash) are collected at their own nested serializeJS
+    // sites, which pass the same ctx.emissionReport.
+    report: ctx.emissionReport,
   });
 
   ctx.emitter.popScope();

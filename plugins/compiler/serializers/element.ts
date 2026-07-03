@@ -332,6 +332,26 @@ function buildComponentProps(
  * Uses buildValue directly to preserve AST structure.
  * Uses formattedArray when formatting is enabled and there are multiple items.
  */
+/**
+ * True when `expr` is a bare, string-form `$_maybeHelper("name", …)` call — the
+ * shape the Ember named-arg resolved-helper DEBUG guard keys off when it lands
+ * in a `["@name", …]` tuple. Matches only the STRING first-arg form (an
+ * unresolved lookup); a resolved reference passes an identifier, not a string.
+ */
+function isStringFormMaybeHelperCall(expr: JSExpression): boolean {
+  if (expr.type !== 'call') return false;
+  const callee = expr.callee;
+  const calleeName =
+    callee.type === 'identifier'
+      ? callee.name
+      : callee.type === 'runtimeRef'
+        ? callee.symbol
+        : null;
+  if (calleeName !== SYMBOLS.MAYBE_HELPER) return false;
+  const first = expr.arguments[0];
+  return !!first && first.type === 'literal' && typeof first.value === 'string';
+}
+
 function buildTupleArray(
   ctx: CompilerContext,
   tuples: readonly (AttributeTuple | PropertyTuple)[],
@@ -345,6 +365,12 @@ function buildTupleArray(
     const [name, value, range, nameRange] = tuple;
     // Use buildValue directly to preserve AST structure for better code generation
     const valueExpr = buildValue(ctx, value, ctxName);
+    // Ground-truth: a string-form $_maybeHelper landing in a `["@name", …]`
+    // tuple is the named-arg resolved-helper shape the Ember DEBUG guard
+    // rewrites. The position is known here (the tuple is built with the key).
+    if (name.startsWith('@') && isStringFormMaybeHelperCall(valueExpr)) {
+      ctx.emissionReport.maybeHelperInNamedArgPosition = true;
+    }
     // Use nameRange for attribute names when available (AttributeTuple has 4 elements)
     const nameExpr = nameRange ? B.string(name, nameRange) : B.string(name);
     return B.array([nameExpr, valueExpr], range, 'AttrNode');
@@ -461,7 +487,12 @@ export function buildEventHandlerExpr(
       // (`() => {}` returns `undefined`, which downstream `Object.keys(...)`
       // would explode on).
       const hashBody = namedProps.length > 0 ? B.object(namedProps) : B.emptyObject();
-      const hashExpr = B.raw(`() => (${serializeJS(hashBody)})`, hv.sourceRange);
+      // Pass the emission report so any symbols inside the raw-embedded hash
+      // body (e.g. an unknown-helper value → $_maybeHelper) reach emittedSymbols.
+      const hashExpr = B.raw(
+        `() => (${serializeJS(hashBody, { report: ctx.emissionReport })})`,
+        hv.sourceRange
+      );
       const callExpr = B.call(
         SYMBOLS.MAYBE_MODIFIER,
         [modExpr, B.id('$n'), B.array(extraExprs), hashExpr],

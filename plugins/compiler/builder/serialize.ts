@@ -7,7 +7,8 @@
 
 import type { CodeEmitter } from '../tracking/code-emitter';
 import type { SourceRange, MappingSource } from '../types';
-import { PURE_FUNCTIONS } from '../serializers/symbols';
+import { PURE_FUNCTIONS, isReportableRuntimeSymbol } from '../serializers/symbols';
+import { recordEmittedName, type EmissionReport } from '../emission-report';
 import { isSafeKey } from '../utils/js-utils';
 import type {
   JSExpression,
@@ -67,6 +68,15 @@ export interface SerializeOptions {
    * Default: '' (no base indentation)
    */
   baseIndent?: string;
+  /**
+   * Ground-truth emission report collector. When provided, every emitted
+   * identifier / runtime-ref is recorded into it (emittedSymbols +
+   * referencedBindings) at the leaf choke point. Threaded from compile.ts's
+   * outer streaming pass and from the few nested serializeJS sites whose
+   * output is embedded verbatim (via `B.raw`) into the final code, so no
+   * emitted symbol is missed regardless of streaming vs. raw-embedded form.
+   */
+  report?: EmissionReport;
 }
 
 /**
@@ -89,6 +99,7 @@ export function serializeJS(
     // In formatted/dev mode, skip PURE annotations by default
     emitPure: options.emitPure ?? !format,
     baseIndent: options.baseIndent ?? '',
+    report: options.report,
   };
 
   if (streaming && ctx.emitter) {
@@ -121,6 +132,8 @@ interface SerializeContext {
   streaming: boolean;
   emitPure: boolean;
   baseIndent: string;
+  /** Ground-truth emission collector (see SerializeOptions.report). */
+  report?: EmissionReport;
 }
 
 /**
@@ -292,6 +305,7 @@ function serializeLiteralStreaming(node: JSLiteral, ctx: SerializeContext): void
 
 function serializeIdentifierStreaming(node: JSIdentifier, ctx: SerializeContext): void {
   const emitter = ctx.emitter!;
+  recordEmittedName(ctx.report, node.name, isReportableRuntimeSymbol);
   if (node.sourceRange) {
     const mappingName = node.mappingName ?? node.name;
     emitter.emitMapped(node.name, node.sourceRange, node.sourceNode || 'PathExpression', mappingName);
@@ -676,6 +690,7 @@ function serializeRawStreaming(node: JSRaw, ctx: SerializeContext): void {
 
 function serializeRuntimeRefStreaming(node: JSRuntimeRef, ctx: SerializeContext): void {
   const emitter = ctx.emitter!;
+  recordEmittedName(ctx.report, node.symbol, isReportableRuntimeSymbol);
   if (node.sourceRange) {
     emitter.emitMapped(node.symbol, node.sourceRange, 'PathExpression', node.symbol);
   } else {
@@ -882,6 +897,7 @@ function serializeLiteral(node: JSLiteral, ctx: SerializeContext): string {
 }
 
 function serializeIdentifier(node: JSIdentifier, ctx: SerializeContext): string {
+  recordEmittedName(ctx.report, node.name, isReportableRuntimeSymbol);
   return emit(node.name, ctx, node.sourceRange);
 }
 
@@ -1093,6 +1109,7 @@ function serializeRaw(node: JSRaw, ctx: SerializeContext): string {
 }
 
 function serializeRuntimeRef(node: JSRuntimeRef, ctx: SerializeContext): string {
+  recordEmittedName(ctx.report, node.symbol, isReportableRuntimeSymbol);
   return emit(node.symbol, ctx, node.sourceRange, 'PathExpression', false);
 }
 

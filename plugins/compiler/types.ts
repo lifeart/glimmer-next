@@ -462,6 +462,48 @@ export interface CompileResult {
   readonly usedArgsAlias: boolean;
   readonly usedSlots: boolean;
   readonly usedFw: boolean;
+
+  // ==========================================================================
+  // Ground-truth emission report (see plugins/compiler/emission-report.ts)
+  //
+  // Structured facts about what the compiler actually emitted, so hosts (the
+  // Ember bridge in particular) route templates off data instead of regexing
+  // `code`. All four are collected by the serializer at emission/resolution
+  // time and are order-insensitive (arrays are deduped; treat as sets).
+  // ==========================================================================
+
+  /**
+   * Unique runtime symbol names actually EMITTED as calls/references
+   * (`$_tag`, `$_c`, `$_dc`, `$_eachSync`, `$_slot`, `$_inElement`, `$__log`,
+   * `$_qStr`, …). Collected at the single identifier/runtime-ref emission
+   * choke point in builder/serialize.ts (raw-embedded islands — {{log}},
+   * {{unbound}}, dynamic-modifier hash — thread the same collector), so every
+   * symbol in `code` is present. Excludes compiler-generated locals/keys
+   * (`$fw`/`$slots`/`$a`/… — those are surfaced via usedFw/usedSlots/
+   * usedArgsAlias).
+   */
+  readonly emittedSymbols: readonly string[];
+  /**
+   * The string literals passed as the first argument of emitted
+   * `$_maybeHelper("name", …)` calls — the unresolved-name lookups. (Known
+   * bindings pass a function reference, not a string, and are NOT listed here.)
+   */
+  readonly maybeHelperNames: readonly string[];
+  /**
+   * `true` when a string-form `$_maybeHelper(…)` emission lands as a NAMED-ARG
+   * value — the `["@name", $_maybeHelper("n", [], this)]` tuple shape. The
+   * serializer knows the position at build time (it constructs the tuple).
+   */
+  readonly maybeHelperInNamedArgPosition: boolean;
+  /**
+   * Which of the caller-provided `CompileOptions.bindings` the template
+   * actually referenced (emitted as identifiers) — e.g. keyword-helper locals
+   * `hash`/`fn`/`gxtEntriesOf` referenced as `hash(`/`fn(`/`gxtEntriesOf(`.
+   * A member/bracket access to a binding (`foo.bar`) is attributed to its root
+   * (`foo`). Conservative: shadowing a binding name with a block param can
+   * over-report, which routes hosts to their safe legacy path.
+   */
+  readonly referencedBindings: readonly string[];
 }
 
 /**

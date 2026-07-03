@@ -254,6 +254,15 @@ export interface RuntimeCompileResult {
   usedSlots: CompileResult['usedSlots'];
   usedFw: CompileResult['usedFw'];
   usedRecycle: CompileResult['usedRecycle'];
+  /**
+   * Ground-truth emission report, passed through from CompileResult so hosts
+   * route templates off structured data instead of regex-scanning `code`.
+   * See plugins/compiler/emission-report.ts and CompileResult.
+   */
+  emittedSymbols: CompileResult['emittedSymbols'];
+  maybeHelperNames: CompileResult['maybeHelperNames'];
+  maybeHelperInNamedArgPosition: CompileResult['maybeHelperInNamedArgPosition'];
+  referencedBindings: CompileResult['referencedBindings'];
 }
 
 /**
@@ -307,6 +316,10 @@ export function compileTemplate(
       usedSlots: result.usedSlots,
       usedFw: result.usedFw,
       usedRecycle: result.usedRecycle,
+      emittedSymbols: result.emittedSymbols,
+      maybeHelperNames: result.maybeHelperNames,
+      maybeHelperInNamedArgPosition: result.maybeHelperInNamedArgPosition,
+      referencedBindings: result.referencedBindings,
     };
   }
 
@@ -383,6 +396,10 @@ export function compileTemplate(
       usedSlots: result.usedSlots,
       usedFw: result.usedFw,
       usedRecycle: result.usedRecycle,
+      emittedSymbols: result.emittedSymbols,
+      maybeHelperNames: result.maybeHelperNames,
+      maybeHelperInNamedArgPosition: result.maybeHelperInNamedArgPosition,
+      referencedBindings: result.referencedBindings,
     };
   }
 
@@ -395,6 +412,10 @@ export function compileTemplate(
     usedSlots: result.usedSlots,
     usedFw: result.usedFw,
     usedRecycle: result.usedRecycle,
+    emittedSymbols: result.emittedSymbols,
+    maybeHelperNames: result.maybeHelperNames,
+    maybeHelperInNamedArgPosition: result.maybeHelperInNamedArgPosition,
+    referencedBindings: result.referencedBindings,
   };
 }
 
