@@ -47,10 +47,29 @@ export function templateToTypescript(
     ? (format ? { enabled: true } : undefined)
     : (format.enabled ? format : undefined);
 
-  // Convert flags to new compiler options
+  // Convert flags to new compiler options.
+  //
+  // Forward the FULL host flag set, not just IS_GLIMMER_COMPAT_MODE. Previously
+  // only IS_GLIMMER_COMPAT_MODE leaked through here, so every other host opt-in
+  // — FORCE_SYNC_LIST, EMBER_ATTR_CONCAT, WITH_HELPER_MANAGER,
+  // WITH_MODIFIER_MANAGER, WITH_EMBER_INTEGRATION — was silently dropped on the
+  // way into compile(). The visible symptom was that a
+  // `templateToTypescript(tpl, { FORCE_SYNC_LIST: true })` call (the
+  // converter-v2-compatible bridge API) STILL emitted async `$_each(` /
+  // `$_eachRecycled(`, because the flag never reached buildEach's `useSync`
+  // decision — the async residual the Ember bridge's `$_each(` -> `$_eachSync(`
+  // regex had to keep catching. This mirrors the identical flag-surfacing fix
+  // already applied to the live transform in plugins/test.ts; keeping the two
+  // paths in lock-step means the adapter can never re-diverge from compile().
+  //
+  // `flags` is the host-facing `Flags`; the compiler-only keys (WITH_EVAL_SUPPORT,
+  // WITH_TYPE_OPTIMIZATION) are absent from it and correctly fall back to their
+  // DEFAULT_FLAGS values. The extra host-only keys (WITH_CONTEXT_API, …) are
+  // ignored by the compiler.
   const options: CompileOptions = {
     bindings,
     flags: {
+      ...flags,
       IS_GLIMMER_COMPAT_MODE: flags.IS_GLIMMER_COMPAT_MODE ?? true,
     },
     // Enable formatting for dev mode - this happens during serialization
