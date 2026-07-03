@@ -2073,6 +2073,73 @@ describe('Each block advanced', () => {
   });
 });
 
+describe('FORCE_SYNC_LIST flag', () => {
+  const PLAIN = '{{#each this.items as |item|}}<div>{{item}}</div>{{/each}}';
+  const RECYCLED = '{{#each this.items key="@recycle" as |item|}}<div>{{item.label}}</div>{{/each}}';
+
+  test('flag OFF (default): plain each emits async $_each, unchanged', () => {
+    const result = compile(PLAIN);
+    expect(result.code).toContain(`${SYMBOLS.EACH}(`);
+    expect(result.code).not.toContain(`${SYMBOLS.EACH_SYNC}(`);
+  });
+
+  test('flag OFF (default): key="@recycle" emits async $_eachRecycled, unchanged', () => {
+    const result = compile(RECYCLED);
+    expect(result.code).toContain(`${SYMBOLS.EACH_RECYCLED}(`);
+    expect(result.code).not.toContain(`${SYMBOLS.EACH_SYNC_RECYCLED}(`);
+  });
+
+  test('flag ON: plain keyed each emits $_eachSync (not $_each)', () => {
+    const result = compile(PLAIN, { flags: { FORCE_SYNC_LIST: true } });
+    expect(result.code).toContain(`${SYMBOLS.EACH_SYNC}(`);
+    // The async entry point must not appear (`$_each(` is not a substring of `$_eachSync(`).
+    expect(result.code).not.toContain(`${SYMBOLS.EACH}(`);
+  });
+
+  test('flag ON: key="@recycle" emits $_eachSyncRecycled (not $_eachRecycled)', () => {
+    const result = compile(RECYCLED, { flags: { FORCE_SYNC_LIST: true } });
+    expect(result.code).toContain(`${SYMBOLS.EACH_SYNC_RECYCLED}(`);
+    expect(result.code).not.toContain(`${SYMBOLS.EACH_RECYCLED}(`);
+  });
+
+  test('flag ON only flips the entry point — all other args are unchanged', () => {
+    // Byte-identical emission apart from the `$_each` -> `$_eachSync` symbol:
+    // rewriting the async output at the symbol boundary must reproduce the
+    // sync output exactly (this is what the ember regex used to do).
+    const asyncCode = compile(PLAIN).code;
+    const syncCode = compile(PLAIN, { flags: { FORCE_SYNC_LIST: true } }).code;
+    expect(asyncCode.split(`${SYMBOLS.EACH}(`).join(`${SYMBOLS.EACH_SYNC}(`)).toBe(syncCode);
+  });
+
+  test('flag ON + compat mode: still emits $_eachSync', () => {
+    const result = compile(PLAIN, {
+      flags: { FORCE_SYNC_LIST: true, IS_GLIMMER_COMPAT_MODE: true },
+    });
+    expect(result.code).toContain(`${SYMBOLS.EACH_SYNC}(`);
+    expect(result.code).not.toContain(`${SYMBOLS.EACH}(`);
+  });
+
+  test('flag ON + ember integration: still emits $_eachSync', () => {
+    const result = compile(PLAIN, {
+      flags: {
+        FORCE_SYNC_LIST: true,
+        IS_GLIMMER_COMPAT_MODE: true,
+        WITH_EMBER_INTEGRATION: true,
+      },
+    });
+    expect(result.code).toContain(`${SYMBOLS.EACH_SYNC}(`);
+    expect(result.code).not.toContain(`${SYMBOLS.EACH}(`);
+  });
+
+  test('flag ON: explicit sync=true block is unaffected (already sync)', () => {
+    const result = compile('{{#each this.items sync=true as |item|}}<div>{{item}}</div>{{/each}}', {
+      flags: { FORCE_SYNC_LIST: true },
+    });
+    expect(result.code).toContain(`${SYMBOLS.EACH_SYNC}(`);
+    expect(result.code).not.toContain(`${SYMBOLS.EACH}(`);
+  });
+});
+
 describe('Namespace handling', () => {
   test('SVG wrapped in namespace provider', () => {
     const result = compile('<svg><rect /></svg>');

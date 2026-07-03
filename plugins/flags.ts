@@ -11,6 +11,16 @@ export type Flags = {
   ASYNC_COMPILE_TRANSFORMS: boolean;
   WITH_DYNAMIC_EVAL: boolean;
   WITH_TYPE_CHECKER_HINTS: boolean;
+  /**
+   * Force the SYNC list primitives for every `{{#each}}`: the serializer emits
+   * `$_eachSync` in place of `$_each` (and `$_eachSyncRecycled` in place of
+   * `$_eachRecycled` for `key="@recycle"`), exactly as if every block carried
+   * `sync=true`. Hosts whose flush pipeline requires the row DOM to be mutated
+   * synchronously (e.g. the Ember bridge's `__gxtSyncDomNow`/morph flush) set
+   * this instead of post-processing the emitted JS with a `$_each(` → `$_eachSync(`
+   * regex. Default: false (async iteration remains the correct general default).
+   */
+  FORCE_SYNC_LIST: boolean;
 };
 
 export function defaultFlags() {
@@ -27,5 +37,6 @@ export function defaultFlags() {
     ASYNC_COMPILE_TRANSFORMS: true,
     WITH_DYNAMIC_EVAL: false,
     WITH_TYPE_CHECKER_HINTS: false,
+    FORCE_SYNC_LIST: false,
   } as Flags;
 }

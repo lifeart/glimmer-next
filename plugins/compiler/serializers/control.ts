@@ -232,11 +232,19 @@ function buildEach(
     // import can never drift from the emitted code.
     ctx.usedRecycle = true;
   }
+  // `FORCE_SYNC_LIST` (host opt-in, plugins/flags.ts) routes EVERY {{#each}}
+  // through the SYNC entry point of its pair — identical to per-block
+  // `sync=true` but applied globally. Hosts whose flush pipeline requires the
+  // row DOM to be mutated synchronously (e.g. the Ember bridge's morph flush)
+  // set this instead of regex-rewriting `$_each(` → `$_eachSync(` on the
+  // emitted JS. Only the sync/async choice changes; every other arg is
+  // untouched.
+  const useSync = control.isSync || ctx.flags.FORCE_SYNC_LIST === true;
   const fnName = isRecycled
-    ? control.isSync
+    ? useSync
       ? SYMBOLS.EACH_SYNC_RECYCLED
       : SYMBOLS.EACH_RECYCLED
-    : control.isSync
+    : useSync
       ? SYMBOLS.EACH_SYNC
       : SYMBOLS.EACH;
 
