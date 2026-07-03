@@ -6,7 +6,7 @@
 
 import type { ASTv1 } from '@glimmer/syntax';
 import type { CompilerContext, VisitFn } from '../context';
-import type { SerializedValue, HBSControlExpression, HBSChild, HBSNode, AttributeTuple, SourceRange, LetBinding } from '../types';
+import type { SerializedValue, HBSControlExpression, HBSChild, HBSNode, AttributeTuple, SourceRange, LetBinding, InElementMode } from '../types';
 import { literal, getter, isSerializedValue, isHBSNode } from '../types';
 import { getNodeRange, serializeValueToString, getBlockParamRanges, getPathExpressionString } from './utils';
 import { addWarning } from '../context';
@@ -508,6 +508,11 @@ function createInElementBlock(
   // Use wrap=true for conditions to enable reactivity
   const condition = getVisit(ctx)(ctx, node.params[0], true);
 
+  // Ember-dialect insertBefore semantics (opt-in). Off → historic 3-arg call.
+  const inElementMode = ctx.flags.EMBER_IN_ELEMENT
+    ? parseInElementMode(node)
+    : undefined;
+
   return {
     _nodeType: 'control',
     type: 'in-element',
@@ -520,7 +525,51 @@ function createInElementBlock(
     key: null,
     isSync: true,
     sourceRange: range,
+    ...(inElementMode ? { inElementMode } : {}),
   };
+}
+
+/**
+ * Map the `{{#in-element dest insertBefore=…}}` hash to a render mode
+ * (EMBER_IN_ELEMENT). Mirrors Glimmer/Ember: no `insertBefore` (or the explicit
+ * `undefined`) clears the target; `null` appends; any other value is
+ * unsupported and carries its source text for a runtime dev-assertion.
+ */
+function parseInElementMode(node: ASTv1.BlockStatement): InElementMode {
+  const pair = node.hash.pairs.find((p) => p.key === 'insertBefore');
+  if (!pair) {
+    return { kind: 'clear' };
+  }
+  const value = pair.value;
+  if (value.type === 'NullLiteral') {
+    return { kind: 'append' };
+  }
+  if (value.type === 'UndefinedLiteral') {
+    return { kind: 'clear' };
+  }
+  // Some Handlebars parses surface a bare `undefined` as a local path head.
+  if (value.type === 'PathExpression' && getPathExpressionString(value) === 'undefined') {
+    return { kind: 'clear' };
+  }
+  return { kind: 'unsupported', received: describeInsertBeforeValue(value) };
+}
+
+/**
+ * A readable rendering of an unsupported `insertBefore=` value for the runtime
+ * assertion message (`Can only pass null to insertBefore …, received: <x>`).
+ */
+function describeInsertBeforeValue(value: ASTv1.Expression): string {
+  switch (value.type) {
+    case 'StringLiteral':
+      return value.value;
+    case 'NumberLiteral':
+    case 'BooleanLiteral':
+      return String(value.value);
+    case 'PathExpression':
+      return getPathExpressionString(value);
+    default:
+      return value.type;
+  }
 }
 
 /**

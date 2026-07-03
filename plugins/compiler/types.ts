@@ -95,6 +95,14 @@ export interface CompilerFlags {
    * instead of `[...].join("")`. Default: false.
    */
   readonly EMBER_ATTR_CONCAT?: boolean;
+  /**
+   * Ember-dialect `{{#in-element}}` insertBefore semantics. When true the
+   * control-flow serializer reads the `insertBefore=` hash and emits the render
+   * mode as a 4th `$_inElement(target, roots, ctx, MODE)` argument (CLEAR by
+   * default, APPEND for `insertBefore=null`, dev-assert for a non-null literal).
+   * Off (default) emits the historic 3-arg call. See plugins/flags.ts.
+   */
+  readonly EMBER_IN_ELEMENT?: boolean;
 }
 
 /**
@@ -120,6 +128,7 @@ export const DEFAULT_FLAGS: CompilerFlags = Object.freeze({
   WITH_TYPE_OPTIMIZATION: false,
   FORCE_SYNC_LIST: false, // Emit sync list primitives for every {{#each}} (host opt-in)
   EMBER_ATTR_CONCAT: false, // $_qStr ember-dialect quoted-attr concat (host opt-in)
+  EMBER_IN_ELEMENT: false, // $_inElement insertBefore mode arg (host opt-in)
 });
 
 /**
@@ -347,6 +356,19 @@ export interface LetBinding {
 }
 
 /**
+ * Ember-dialect `{{#in-element}}` render mode, derived from the `insertBefore=`
+ * hash under the EMBER_IN_ELEMENT flag. Drives the 4th `$_inElement` argument:
+ *   - `clear`  → replace the target's content (default / `insertBefore=undefined`)
+ *   - `append` → append into the target (`insertBefore=null`)
+ *   - `unsupported` → Ember allows only `null`; `received` carries the offending
+ *      literal for the runtime dev-assertion message.
+ */
+export type InElementMode =
+  | { readonly kind: 'clear' }
+  | { readonly kind: 'append' }
+  | { readonly kind: 'unsupported'; readonly received: string };
+
+/**
  * Represents a control flow expression (if, each, yield, etc.).
  */
 export interface HBSControlExpression {
@@ -364,6 +386,11 @@ export interface HBSControlExpression {
   readonly sourceRange?: SourceRange;
   /** Let block bindings (only present when type === 'let') */
   readonly letBindings?: readonly LetBinding[];
+  /**
+   * In-element render mode (only present when type === 'in-element' and the
+   * EMBER_IN_ELEMENT flag is on). Absent → emit the historic 3-arg call.
+   */
+  readonly inElementMode?: InElementMode;
 }
 
 /**
