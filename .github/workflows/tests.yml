@@ -33,3 +33,20 @@ jobs:
           name: vitest-coverage
           path: ./coverage/vitest/coverage-final.json
           retention-days: 1
+
+  dist-semantics:
+    # Dist-behavior guard: builds the PRODUCTION lib and asserts shipped-function
+    # semantics ($_qStr String() coercion: valueOf/Symbol/all-nullish contract)
+    # plus a static `+""}catch` fingerprint scan. Catches build-transform
+    # corruption (e.g. terser `compress.unsafe` rewriting String(v) -> v+"",
+    # fixed in #247) that vitest-against-source is structurally blind to.
+    name: Dist semantics guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: wyvox/action-setup-pnpm@v3
+        with:
+          node-version: "20.1.0"
+      - name: Build prod lib + verify shipped semantics
+        run: pnpm run test:dist-semantics
