@@ -348,8 +348,25 @@ export default defineConfig(({ mode }) => ({
               hoist_funs: true,
               inline: 1,
               passes: 3,
-              unsafe: true,
-              unsafe_symbols: true,
+              // NOTE: terser's `unsafe` is intentionally OFF.
+              //
+              // `unsafe` rewrites `String(v)` → `v + ""` (terser
+              // lib/compress/index.js, the `case "String"` under the single
+              // `compressor.option("unsafe")` gate — there is NO granular
+              // sub-option to keep just this rewrite off). That rewrite is a
+              // SEMANTICS change, not a size win: `v + ""` uses ToPrimitive
+              // with the DEFAULT hint (valueOf preferred over toString) and
+              // THROWS on Symbols, whereas `String(v)` uses the string hint
+              // (toString) and stringifies Symbols. The shipped runtime relies
+              // on `String()` semantics in load-bearing coercion sites
+              // (quoted-attr concat `$_qStr`, text-node normalization, list
+              // key derivation, …), so the rewrite corrupts rendering of
+              // valueOf-bearing objects and Symbol values.
+              //
+              // `unsafe_symbols` (strip `Symbol("x")` description) is a no-op
+              // without `unsafe` (it lives inside the same `unsafe` gate), so
+              // it is dropped too. See scripts/verify-dist-string-semantics.mjs
+              // for the regression guard.
               computed_props: true,
             },
             mangle: {
