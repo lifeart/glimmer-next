@@ -281,6 +281,60 @@ describe('emission report', () => {
   });
 
   // --------------------------------------------------------------------------
+  // Task A: ambient-global member surfacing. A `globalThis.X` / `window.X`
+  // reference (the `{{unbound}}` / `{{#if this.x}}` compat islands) previously
+  // root-reduced to the meaningless bare `globalThis`. The DOCUMENTED CHOICE is
+  // to record the meaningful MEMBER (`X`) INSTEAD of the bare root: the ambient
+  // global is never a caller binding nor a name a host provides, while the member
+  // (`__gxtUnboundEval`, `__gxtGetCellOrFormula`) is the routing signal. This
+  // covers BOTH producing paths — the whole island wrapped as a single `B.id`
+  // (yielded sub-expression, reaches `recordEmittedName`) and the `B.raw` island
+  // (mustache/attr/if, scanned at the raw serializer).
+  describe('emittedIdentifiers: ambient-global member (Task A)', () => {
+    test('THE PIN: {{yield (unbound this.x)}} → __gxtUnboundEval, NOT globalThis', () => {
+      const r = compileEmber('{{yield (unbound this.x)}}');
+      expect(r.code).toContain('globalThis.__gxtUnboundEval');
+      expect(r.emittedIdentifiers).toContain('__gxtUnboundEval');
+      // Documented "instead of" choice: the bare ambient root is not reported.
+      expect(r.emittedIdentifiers).not.toContain('globalThis');
+    });
+
+    test('B.raw island: mustache {{unbound}} surfaces the member', () => {
+      const r = compileEmber('<div>{{unbound this.x}}</div>');
+      expect(r.code).toContain('globalThis.__gxtUnboundEval');
+      expect(r.emittedIdentifiers).toContain('__gxtUnboundEval');
+      expect(r.emittedIdentifiers).not.toContain('globalThis');
+    });
+
+    test('B.raw island: quoted-attr concat {{unbound}} surfaces the member', () => {
+      const r = compileEmber('<div class="a{{unbound this.x}}b"></div>');
+      expect(r.emittedIdentifiers).toContain('__gxtUnboundEval');
+      expect(r.emittedIdentifiers).not.toContain('globalThis');
+    });
+
+    test('B.raw island: {{#if this.x}} surfaces __gxtGetCellOrFormula', () => {
+      const r = compileEmber('{{#if this.x}}<b>a</b>{{/if}}');
+      expect(r.code).toContain('globalThis.__gxtGetCellOrFormula');
+      expect(r.emittedIdentifiers).toContain('__gxtGetCellOrFormula');
+      expect(r.emittedIdentifiers).not.toContain('globalThis');
+    });
+
+    test('named-arg {{unbound}} surfaces the member alongside the component binding', () => {
+      const r = compileEmber('<Foo @a={{unbound this.x}} />', {}, ['Foo']);
+      expect(r.emittedIdentifiers).toEqual(
+        expect.arrayContaining(['Foo', '__gxtUnboundEval'])
+      );
+      expect(r.emittedIdentifiers).not.toContain('globalThis');
+    });
+
+    test('survives compileTemplate()', () => {
+      const r = compileTemplate('{{yield (unbound this.x)}}');
+      expect(r.emittedIdentifiers).toContain('__gxtUnboundEval');
+      expect(r.emittedIdentifiers).not.toContain('globalThis');
+    });
+  });
+
+  // --------------------------------------------------------------------------
   describe('through compileTemplate()', () => {
     test('all five fields are threaded through the success path', () => {
       const r = compileTemplate('{{#in-element this.dest}}<div>x</div>{{/in-element}}');

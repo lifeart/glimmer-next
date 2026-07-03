@@ -8,7 +8,11 @@
 import type { CodeEmitter } from '../tracking/code-emitter';
 import type { SourceRange, MappingSource } from '../types';
 import { PURE_FUNCTIONS, isReportableRuntimeSymbol } from '../serializers/symbols';
-import { recordEmittedName, type EmissionReport } from '../emission-report';
+import {
+  recordEmittedName,
+  recordAmbientGlobalMembers,
+  type EmissionReport,
+} from '../emission-report';
 import { isSafeKey } from '../utils/js-utils';
 import type {
   JSExpression,
@@ -681,6 +685,10 @@ function serializeConditionalStreaming(node: JSConditionalExpression, ctx: Seria
 
 function serializeRawStreaming(node: JSRaw, ctx: SerializeContext): void {
   const emitter = ctx.emitter!;
+  // Raw islands are opaque code strings that bypass the per-identifier choke
+  // point; surface any ambient-global member they smuggle (`globalThis.X`)
+  // into `emittedIdentifiers` so the report stays a faithful superset. (Task A.)
+  recordAmbientGlobalMembers(ctx.report, node.code);
   if (node.sourceRange) {
     emitter.emitMapped(node.code, node.sourceRange, 'Synthetic');
   } else {
@@ -1105,6 +1113,8 @@ function serializeConditional(
 }
 
 function serializeRaw(node: JSRaw, ctx: SerializeContext): string {
+  // See serializeRawStreaming — same ambient-global member surfacing. (Task A.)
+  recordAmbientGlobalMembers(ctx.report, node.code);
   return emit(node.code, ctx, node.sourceRange);
 }
 
