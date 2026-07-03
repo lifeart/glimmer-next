@@ -1940,6 +1940,141 @@ function mergeForwardedProps(
   });
 }
 
+// --- Dynamic-component manager fw derivation (WITH_EMBER_INTEGRATION) --------
+//
+// When a dynamic tag written with DIRECT attributes — `<param.prop class="x"
+// @arg={{y}} {{on "click" z}} />` — resolves (via `$_dc`) to a HOST-MANAGER-
+// claimed component, the attributes the compiler put on the tag land in the
+// invocation's OWN props tuple `args[$PROPS_SYMBOL]`: the compiler treats the
+// dynamic tag as an element, so everything — including `@arg` — is emitted into
+// that `[props, attrs, events]` tuple rather than the args hash. A statically-
+// invoked component would instead receive `@arg` as a real ARGUMENT and
+// class/attrs as forwarded splat (`$fw`). The helpers below re-derive that
+// split so the resolved component manager sees the invocation the way a static
+// one would. Semantics mirror ember.js' `$_dc_splatfix` compile.ts wrapper
+// EXACTLY (so that wrapper can be retired): pure + structural, NO `.toString()`
+// source sniffing. Gated at the single `$_dc` call site under
+// `WITH_EMBER_INTEGRATION` (standalone builds fold it away); exported for direct
+// unit testing since vitest runs with the flag OFF (call site DCE'd there).
+
+/**
+ * Predicate replicating ember's `hasSplatProps`: a dynamic-tag props tuple is
+ * worth re-deriving only when it carries actual splat props (tuple[0] non-empty)
+ * or a NON-`@` forwarded attribute (tuple[1]). A tuple whose only tuple[1]
+ * entries are `@`-args — or one carrying only events — is left to the base path
+ * (matching the ember wrapper, which does not intervene in those cases).
+ */
+export function hasDynamicSplatProps(tuple: unknown): boolean {
+  return (
+    Array.isArray(tuple) &&
+    ((Array.isArray(tuple[0]) && tuple[0].length > 0) ||
+      (Array.isArray(tuple[1]) &&
+        tuple[1].some(
+          (e: unknown) =>
+            Array.isArray(e) &&
+            typeof e[0] === 'string' &&
+            !(e[0] as string).startsWith('@'),
+        )))
+  );
+}
+
+/**
+ * Split a dynamic-tag props tuple into the manager `fw` tuple + the `@`-prefixed
+ * argument entries that must be re-homed onto the component's args. Pure; value
+ * functions are copied by reference so reactivity is preserved. Mirrors the
+ * split loops in ember.js' `$_dc_splatfix`:
+ *   • tuple[0] props  → fw props (''/`class` values nullish-guarded so a
+ *                       null/false value renders as '' instead of stringifying)
+ *   • tuple[1] attrs  → `@`-prefixed keys become arg getters (value unwrapped if
+ *                       a function); the rest stay as fw attrs
+ *   • tuple[2] events → fw events (unchanged)
+ */
+export function deriveManagerFwFromPropsTuple(
+  tuple: FwType | undefined | null,
+): { fw: FwType; argEntries: Array<[string, () => unknown]> } {
+  const fwProps: TagProp[] = [];
+  const fwAttrs: TagAttr[] = [];
+  const events: TagEvent[] = [];
+  const argEntries: Array<[string, () => unknown]> = [];
+  if (Array.isArray(tuple)) {
+    if (Array.isArray(tuple[0])) {
+      for (const entry of tuple[0]) {
+        if (!Array.isArray(entry)) continue;
+        const key = entry[0];
+        if (key === '' || key === 'class') {
+          const val: unknown = entry[1];
+          const wrapped =
+            typeof val === 'function'
+              ? () => {
+                  const v = (val as () => unknown)();
+                  return v == null || v === false ? '' : v;
+                }
+              : val == null || val === false
+                ? ''
+                : val;
+          fwProps.push([key, wrapped as Attr]);
+        } else {
+          fwProps.push(entry);
+        }
+      }
+    }
+    if (Array.isArray(tuple[1])) {
+      for (const entry of tuple[1]) {
+        if (!Array.isArray(entry)) continue;
+        const key = entry[0];
+        if (typeof key === 'string' && key.startsWith('@')) {
+          const argName = key.slice(1);
+          const val = entry[1];
+          argEntries.push([
+            argName,
+            () => (typeof val === 'function' ? (val as () => unknown)() : val),
+          ]);
+          continue;
+        }
+        fwAttrs.push(entry);
+      }
+    }
+    if (Array.isArray(tuple[2])) {
+      for (const entry of tuple[2]) {
+        if (Array.isArray(entry)) events.push(entry);
+      }
+    }
+  }
+  return { fw: [fwProps, fwAttrs, events], argEntries };
+}
+
+/**
+ * Apply a derived manager fw split to the live `args` object: expose each
+ * `@`-arg as an enumerable getter and REPLACE `args[$PROPS_SYMBOL]` with the
+ * split fw tuple. The component manager reads `args[$PROPS_SYMBOL]` as its fw
+ * fallback and copies `Object.keys(args)` into the render context, so after
+ * this the manager sees the args a static invocation would. `$_args` marks
+ * `$PROPS_SYMBOL` configurable/writable for exactly this rethread;
+ * `defineProperty` forwards through the (trap-less) prod-compat args Proxy to
+ * the underlying target, so this is correct for the dev-object / prod-proxy /
+ * non-compat plain-object shapes alike. Returns the split fw.
+ */
+export function applyDynamicManagerFwSplit(
+  args: Record<string, unknown>,
+  tuple: FwType | undefined | null,
+): FwType {
+  const { fw, argEntries } = deriveManagerFwFromPropsTuple(tuple);
+  for (let i = 0; i < argEntries.length; i++) {
+    Object.defineProperty(args, argEntries[i][0], {
+      get: argEntries[i][1],
+      enumerable: true,
+      configurable: true,
+    });
+  }
+  Object.defineProperty(args, $PROPS_SYMBOL, {
+    value: fw,
+    enumerable: false,
+    configurable: true,
+    writable: true,
+  });
+  return fw;
+}
+
 export function $_dc(
   comp: () => ComponentReturnType | Component,
   args: Record<string, unknown>,
@@ -1957,6 +2092,13 @@ export function $_dc(
   const _cmp = formula(comp, 'dynamic-component');
   let result: ComponentReturnType | null = null;
   let ref: unknown = null;
+  // WITH_EMBER_INTEGRATION: split the direct-attr props tuple into args + fw the
+  // first time this dynamic component resolves to a manager-claimed value (see
+  // the derivation helpers above). Guarded so it runs at most ONCE — `args` and
+  // its props tuple are reused across component swaps, and the tuple is fixed
+  // per invocation, so a single split is correct. Standalone builds fold the
+  // whole branch away.
+  let splatSplitDone = false;
   const destructor = opcodeFor(_cmp, (value: any) => {
     if (typeof value !== 'function') {
       result = value;
@@ -1968,6 +2110,19 @@ export function $_dc(
       ref = value;
     } else {
       return;
+    }
+    if (
+      WITH_EMBER_INTEGRATION &&
+      !splatSplitDone &&
+      $_MANAGERS.component.canHandle(value)
+    ) {
+      splatSplitDone = true;
+      const ownTuple = (args as Record<symbol, unknown>)[$PROPS_SYMBOL] as
+        | FwType
+        | undefined;
+      if (hasDynamicSplatProps(ownTuple)) {
+        applyDynamicManagerFwSplit(args, ownTuple);
+      }
     }
     if (result) {
       const target = result[RENDERED_NODES_PROPERTY].pop();
