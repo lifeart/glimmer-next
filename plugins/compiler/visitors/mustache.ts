@@ -36,9 +36,25 @@ export function visitMustache(
 ): SerializedValue | HBSControlExpression | HBSNode | null {
   const range = getNodeRange(node);
 
+  // Trusting mustache (`{{{expr}}}`, `node.escaped === false`) in CONTENT
+  // position, under the EMBER_TRUSTED_HTML flag: the value serializer must route
+  // it through `$_html(() => expr, this)` (raw, reactive innerHTML) instead of
+  // an escaped text interpolation. We compute the normal (getter-wrapped) inner
+  // value below and wrap it in the internal `$__html` marker at the value-return
+  // sites; `buildHelper` lowers the marker to the `$_html` call. Attribute
+  // position (`<div style={{{x}}}>`) has no trusted-attribute channel, so it is
+  // left to the historic escaped path (gxt has no XSS-warning to preserve).
+  const isTrustedHtml =
+    node.escaped === false && !!ctx.flags.EMBER_TRUSTED_HTML && !ctx.inAttributeValue;
+  const wrapTrustedHtml = (value: SerializedValue): SerializedValue =>
+    isTrustedHtml ? helper(INTERNAL_HELPERS.TRUSTED_HTML, [value], new Map(), range) : value;
+
   // Handle non-path mustache (literal values, sub-expressions)
   if (node.path.type !== 'PathExpression') {
-    return visitMustacheLiteral(ctx, node, wrap, range);
+    const litResult = visitMustacheLiteral(ctx, node, wrap, range);
+    return isTrustedHtml && litResult !== null && isSerializedValue(litResult)
+      ? wrapTrustedHtml(litResult)
+      : litResult;
   }
 
   const pathName = getPathExpressionString(node.path);
@@ -198,11 +214,11 @@ export function visitMustache(
 
   // No params - simple path or helper with only named args
   if (node.params.length === 0) {
-    return visitSimpleMustache(ctx, node, hashArgs, wrap, range);
+    return wrapTrustedHtml(visitSimpleMustache(ctx, node, hashArgs, wrap, range));
   }
 
   // Helper call with positional params
-  return visitHelperMustache(ctx, node, hashArgs, wrap, range);
+  return wrapTrustedHtml(visitHelperMustache(ctx, node, hashArgs, wrap, range));
 }
 
 /**

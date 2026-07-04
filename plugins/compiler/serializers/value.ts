@@ -556,6 +556,18 @@ function buildHelper(
   sourceRange?: SourceRange,
   pathRange?: SourceRange
 ): JSExpression {
+  // Trusting mustache marker (`{{{expr}}}` under EMBER_TRUSTED_HTML): the
+  // mustache visitor wrapped the normal (already getter-wrapped) inner value in
+  // `helper(TRUSTED_HTML, [inner])`. Lower it to `$_html(() => inner, ctx)` —
+  // the runtime raw-HTML node helper. `inner` is a getter SerializedValue, so
+  // `buildValue` yields the `() => inner` thunk `$_html` expects; the second arg
+  // is the render context (`ctxName`). SYMBOLS.HTML ($_html) lands in
+  // emittedSymbols automatically at the serialize choke point.
+  if (name === INTERNAL_HELPERS.TRUSTED_HTML) {
+    const inner = positional[0];
+    const innerExpr = inner ? buildValue(ctx, inner, ctxName) : B.string('', sourceRange);
+    return B.call(SYMBOLS.HTML, [innerExpr, B.id(ctxName)], sourceRange);
+  }
   if (name === INTERNAL_HELPERS.ELEMENT_HELPER) {
     const tagValue = positional[0] ?? { kind: 'literal', value: 'div' };
     const tagExpr = buildValue(ctx, tagValue, ctxName);

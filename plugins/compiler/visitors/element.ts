@@ -873,6 +873,18 @@ function optimizeTextChild(
   const child = children[0];
   if (typeof child !== 'string' && !isSerializedValue(child)) return noChange;
 
+  // A trusting mustache (`{{{expr}}}` → `helper(TRUSTED_HTML, …)`, lowered to
+  // `$_html(…)`) is a NODE-producing helper — it returns a live DOM range, not a
+  // string — so it must stay a child in the children array. Folding it into a
+  // `@textContent` binding would stringify the carrier (`[object Object]`).
+  if (
+    isSerializedValue(child) &&
+    child.kind === 'helper' &&
+    child.name === INTERNAL_HELPERS.TRUSTED_HTML
+  ) {
+    return noChange;
+  }
+
   // Don't optimize for special tags or slots
   if (tag.startsWith(':') || tag.toLowerCase() !== tag) return noChange;
 
