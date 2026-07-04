@@ -14,6 +14,7 @@ import {
   componentToRenderTree,
   type CapturedRenderNode,
 } from './capture-render-tree';
+import { IfCondition } from '../control-flow/if';
 
 /**
  * These tests pin the Ember `captureRenderTree` node shape produced from GXT's
@@ -170,5 +171,152 @@ describe('captureRenderTree — Ember-shaped render tree from GXT TREE', () => {
 
   test('captureRenderTree() returns [] when the tree is empty', () => {
     expect(captureRenderTree()).toEqual([]);
+  });
+
+  /**
+   * Cycle / back-edge guard.
+   *
+   * The bridged (Ember dual-backend) component graph is NOT a strict tree: it
+   * can contain back-edges — e.g. a keyed subtree whose CHILD set points back
+   * at an ancestor, or an `{{#if}}` whose `prevComponent` leaf-fallback points
+   * at a sibling/ancestor already on the walk stack. Without a visited guard
+   * `componentToRenderTree` follows that back-edge and recurses until the
+   * JS stack overflows (`RangeError: Maximum call stack size exceeded`).
+   *
+   * These tests pin that the walk now TERMINATES and returns a finite tree,
+   * while the acyclic tests above pin that legitimate parent→child structure
+   * (shape + child counts) is unchanged.
+   */
+  describe('cycle / back-edge guard', () => {
+    test('CHILD back-edge to an ancestor terminates (no stack overflow)', () => {
+      // 1 → 2 → 1 → 2 → …  (CHILD(2) points back at its ancestor 1)
+      const root = makeComponent(1, { debugName: 'Root' });
+      const child = makeComponent(2, { debugName: 'Child' });
+
+      TREE.set(1, root);
+      TREE.set(2, child);
+      CHILD.set(1, new Set([2]));
+      CHILD.set(2, new Set([1])); // back-edge → cycle
+      PARENT.set(1, null as unknown as number);
+      PARENT.set(2, 1);
+
+      const tree = captureRenderTree();
+
+      // Root is walked once; its child (2) is walked once; the back-edge from
+      // 2 → 1 is skipped because 1 is already on the walk path.
+      expect(tree.length).toBe(1);
+      const rootNode = tree[0]!;
+      expect(rootNode.id).toBe('1');
+      expect(rootNode.children.length).toBe(1);
+      const childNode = rootNode.children[0]!;
+      expect(childNode.id).toBe('2');
+      // The back-edge from child → root is NOT re-descended.
+      expect(childNode.children).toEqual([]);
+    });
+
+    test('self-referential CHILD set terminates', () => {
+      // 1 → 1 (a node listed as its own child).
+      const root = makeComponent(1, { debugName: 'SelfRef' });
+      TREE.set(1, root);
+      CHILD.set(1, new Set([1])); // self-loop
+      PARENT.set(1, null as unknown as number);
+
+      const [node] = captureRenderTree();
+      expect(node!.id).toBe('1');
+      expect(node!.children).toEqual([]);
+    });
+
+    test('{{#if}} prevComponent leaf-fallback pointing at an ancestor terminates', () => {
+      // Root → IfCondition(3); the if has no tree children, so the walker
+      // consults `prevComponent` — which here points BACK at the root (an
+      // ancestor already on the walk). Without the guard this recurses:
+      //   root → if → prevComponent(root) → if → prevComponent(root) → …
+      const root = makeComponent(1, {
+        debugName: 'Root',
+        renderedNodes: [],
+      });
+
+      // A minimal real IfCondition instance (so `instanceof IfCondition`
+      // triggers the prevComponent leaf-fallback) without invoking the heavy
+      // constructor.
+      const ifComp = Object.create(IfCondition.prototype) as Record<
+        string | symbol,
+        unknown
+      >;
+      ifComp[COMPONENT_ID_PROPERTY] = 3;
+      ifComp[RENDERED_NODES_PROPERTY] = [];
+      ifComp.debugName = 'IfCondition-backedge';
+      ifComp.prevComponent = root; // sibling/ancestor back-edge
+
+      TREE.set(1, root);
+      TREE.set(3, ifComp as unknown as ComponentLike);
+      CHILD.set(1, new Set([3]));
+      CHILD.set(3, new Set()); // empty → prevComponent fallback engages
+      PARENT.set(1, null as unknown as number);
+      PARENT.set(3, 1);
+
+      const tree = captureRenderTree();
+
+      expect(tree.length).toBe(1);
+      const rootNode = tree[0]!;
+      expect(rootNode.id).toBe('1');
+      expect(rootNode.children.length).toBe(1);
+      const ifNode = rootNode.children[0]!;
+      expect(ifNode.id).toBe('3');
+      expect(ifNode.name).toBe('if');
+      // The prevComponent back-edge to the ancestor is NOT re-descended.
+      expect(ifNode.children).toEqual([]);
+    });
+
+    test('legitimate deep nested tree still captures fully (child counts unchanged)', () => {
+      // 1 → 2 → 3 → 4 (a genuine chain — the guard must NOT prune it).
+      const a = makeComponent(1, { debugName: 'A' });
+      const b = makeComponent(2, { debugName: 'B' });
+      const c = makeComponent(3, { debugName: 'C' });
+      const d = makeComponent(4, { debugName: 'D' });
+
+      TREE.set(1, a);
+      TREE.set(2, b);
+      TREE.set(3, c);
+      TREE.set(4, d);
+      CHILD.set(1, new Set([2]));
+      CHILD.set(2, new Set([3]));
+      CHILD.set(3, new Set([4]));
+      CHILD.set(4, new Set());
+      PARENT.set(1, null as unknown as number);
+      PARENT.set(2, 1);
+      PARENT.set(3, 2);
+      PARENT.set(4, 3);
+
+      const [node] = captureRenderTree();
+      expect(node!.id).toBe('1');
+      expect(node!.children.length).toBe(1);
+      expect(node!.children[0]!.id).toBe('2');
+      expect(node!.children[0]!.children.length).toBe(1);
+      expect(node!.children[0]!.children[0]!.id).toBe('3');
+      expect(node!.children[0]!.children[0]!.children.length).toBe(1);
+      expect(node!.children[0]!.children[0]!.children[0]!.id).toBe('4');
+      expect(node!.children[0]!.children[0]!.children[0]!.children).toEqual([]);
+    });
+
+    test('a node with two distinct real children keeps both (no over-pruning)', () => {
+      // 1 → {2, 3}: sibling subtrees must both survive the visited guard.
+      const root = makeComponent(1, { debugName: 'Root' });
+      const left = makeComponent(2, { debugName: 'Left' });
+      const right = makeComponent(3, { debugName: 'Right' });
+
+      TREE.set(1, root);
+      TREE.set(2, left);
+      TREE.set(3, right);
+      CHILD.set(1, new Set([2, 3]));
+      CHILD.set(2, new Set());
+      CHILD.set(3, new Set());
+      PARENT.set(1, null as unknown as number);
+      PARENT.set(2, 1);
+      PARENT.set(3, 1);
+
+      const [node] = captureRenderTree();
+      expect(node!.children.map((c) => c.id).sort()).toEqual(['2', '3']);
+    });
   });
 });
