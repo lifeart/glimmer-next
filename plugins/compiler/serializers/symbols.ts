@@ -107,6 +107,15 @@ export const SYMBOLS = {
   // across re-renders of an instance and distinct across instances/sites —
   // replacing the Ember bridge's positional `_uid[N]` rewrite + uidOuterScope.
   UNIQUE_ID: '$_uid',
+  // Trusted-HTML node helper. A compat-mode trusting mustache (`{{{expr}}}`) in
+  // CONTENT position emits `$_html(() => expr, this)` under the EMBER_TRUSTED_HTML
+  // flag (via the internal `$__html` marker below + buildHelper). The runtime
+  // helper returns a live comment-anchored DOM range whose content is
+  // innerHTML-parsed from the value (SafeString-aware, reactive, contextual
+  // reparse for table/select parents) — replacing the Ember bridge's
+  // `<EmberHtmlRaw @value={{expr}} />` transform + `$_tag`-wrapper special-case +
+  // out-of-band reparse pass. Auto-reportable (in emittedSymbols) via SYMBOLS.
+  HTML: '$_html',
 
   // Unstable child wrapper
   UCW: '$_ucw',
@@ -260,6 +269,12 @@ export const INTERNAL_HELPERS = {
   // element serializer detects this name and emits a $_maybeModifier wrap
   // with the SubExpression as the modifier reference.
   DYNAMIC_MODIFIER: '$__dynamic_modifier',
+  // Marker for a compat-mode trusting mustache (`{{{expr}}}`) in content
+  // position (EMBER_TRUSTED_HTML flag). The mustache visitor wraps the normal
+  // (getter-wrapped) inner value in `helper(TRUSTED_HTML, [inner])`; buildHelper
+  // intercepts this name and emits `$_html(() => inner, ctx)` (SYMBOLS.HTML).
+  // Never a real runtime import — purely a compile-time routing sentinel.
+  TRUSTED_HTML: '$__html',
 } as const;
 
 /**

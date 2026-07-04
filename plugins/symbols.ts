@@ -81,6 +81,13 @@ export const SYMBOLS = {
   // at render). Resolved from @lifeart/gxt via src/core/index.ts →
   // `export * from '@/core/helpers/index'`.
   $_uid: '$_uid',
+  // Trusted-HTML node helper. A compat-mode trusting mustache (`{{{expr}}}`)
+  // emits `$_html(() => expr, this)` under the EMBER_TRUSTED_HTML flag. MUST be
+  // listed here (the AOT auto-import registry, `Object.values(SYMBOLS)`) — not
+  // only in serializers/symbols.ts — or a flag-on AOT module references an
+  // unimported `$_html` (ReferenceError at render). Resolved from @lifeart/gxt
+  // via src/core/index.ts → `export * from '@/core/dom'`.
+  $_html: '$_html',
 };
 
 export const CONSTANTS = {

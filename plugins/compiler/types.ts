@@ -103,6 +103,14 @@ export interface CompilerFlags {
    * Off (default) emits the historic 3-arg call. See plugins/flags.ts.
    */
   readonly EMBER_IN_ELEMENT?: boolean;
+  /**
+   * Trusted-HTML (triple-mustache) support. When true, a CONTENT-position
+   * trusting mustache (`{{{expr}}}`) emits `$_html(() => expr, this)` (the
+   * runtime raw-HTML node helper). Off (default) keeps gxt's historic behaviour
+   * (a trusting mustache is treated like an escaped `{{expr}}`). Host opt-in
+   * (the Ember bridge). See plugins/flags.ts.
+   */
+  readonly EMBER_TRUSTED_HTML?: boolean;
 }
 
 /**
@@ -129,6 +137,7 @@ export const DEFAULT_FLAGS: CompilerFlags = Object.freeze({
   FORCE_SYNC_LIST: false, // Emit sync list primitives for every {{#each}} (host opt-in)
   EMBER_ATTR_CONCAT: false, // $_qStr ember-dialect quoted-attr concat (host opt-in)
   EMBER_IN_ELEMENT: false, // $_inElement insertBefore mode arg (host opt-in)
+  EMBER_TRUSTED_HTML: false, // $_html trusted-HTML node helper for {{{...}}} (host opt-in)
 });
 
 /**

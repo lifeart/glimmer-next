@@ -36,6 +36,16 @@ export type Flags = {
   // Off (default): emits the historic 3-arg call (append-into-target). This
   // retires the host-side out-of-band insertBefore signalling channel.
   EMBER_IN_ELEMENT: boolean;
+  // Trusted-HTML (triple-mustache) support. When true, a CONTENT-position
+  // trusting mustache (`{{{expr}}}`) emits `$_html(() => expr, this)` — the
+  // runtime node helper that renders the value as raw, reactive innerHTML with
+  // a contextual reparse for table-/select-family parents. Off (default): a
+  // trusting mustache keeps gxt's historic behaviour (treated like an escaped
+  // `{{expr}}` text interpolation), so standalone gxt output is byte-identical.
+  // Hosts wanting Ember `{{{...}}}` semantics (the Ember bridge) opt in. This
+  // retires the bridge's `<EmberHtmlRaw>` transform + `$_tag`-wrapper
+  // special-case + out-of-band contextual-reparse pass.
+  EMBER_TRUSTED_HTML: boolean;
 };
 
 export function defaultFlags() {
@@ -55,5 +65,6 @@ export function defaultFlags() {
     FORCE_SYNC_LIST: false,
     EMBER_ATTR_CONCAT: false,
     EMBER_IN_ELEMENT: false,
+    EMBER_TRUSTED_HTML: false,
   } as Flags;
 }

@@ -2367,6 +2367,178 @@ export const $_helper = (helper: any) => {
 };
 
 export const $_tag = _DOM;
+
+// Parent tags whose HTML PARSE context decides which child elements survive.
+// Mirrors the Ember bridge's `needsHtmlRawReparse` set: a raw `<tr>` parsed in
+// a `<div>` context is dropped by the browser tokenizer, but parsed against a
+// `<table>` (or `<template>`) it is preserved. When a `{{{expr}}}` sits directly
+// inside one of these, `$_html` parses the raw HTML using a scratch element of
+// the SAME tag so `<tr>`/`<td>`/`<option>` etc. survive.
+const HTML_REPARSE_CONTEXT_TAGS = new Set<string>([
+  'table',
+  'thead',
+  'tbody',
+  'tfoot',
+  'tr',
+  'colgroup',
+  'select',
+  'optgroup',
+]);
+
+// Resolve the trusted-HTML value to a string. Unwraps nested getter thunks and
+// cell-like wrappers, honours a SafeString `.toHTML()`, and normalizes
+// null/undefined (and un-stringable objects) to `''`. Mirrors the Ember
+// bridge's `getHtml` contract.
+function resolveTrustedHtml(getter: unknown): string {
+  let raw: unknown = getter;
+  while (isFn(raw)) {
+    raw = (raw as () => unknown)();
+  }
+  if (
+    raw !== null &&
+    typeof raw === 'object' &&
+    (raw as { __isCell?: unknown }).__isCell &&
+    typeof (raw as { value?: unknown }).value !== 'undefined'
+  ) {
+    raw = (raw as { value: unknown }).value;
+  }
+  if (raw === null || raw === undefined) return '';
+  const toHTML = (raw as { toHTML?: unknown })?.toHTML;
+  if (isFn(toHTML)) {
+    return String((toHTML as () => unknown).call(raw));
+  }
+  // Objects with no `toString` (e.g. `Object.create(null)`) would throw
+  // "Cannot convert object to primitive value" — normalize to ''.
+  if (typeof raw === 'object' && !isFn((raw as { toString?: unknown }).toString)) {
+    return '';
+  }
+  try {
+    return String(raw);
+  } catch {
+    return '';
+  }
+}
+
+// Parse `html` into a detached list of DOM nodes using the correct contextual
+// parent so table-/select-family descendants survive. When `parent` is a
+// reparse-context tag we parse against a scratch of that same tag (the browser
+// applies its contextual parser rules — e.g. injecting `<tbody>`). Otherwise we
+// parse against a `<template>` element, whose "template contents" parsing keeps
+// `<tr>`/`<td>`/`<option>` alive even without a table ancestor (a plain `<div>`
+// scratch would strip them). The returned nodes are detached and ready to be
+// moved into the live parent.
+function parseTrustedHtml(api: DOMApi, html: string, parent: Element | null): Node[] {
+  if (!html) return [];
+  const contextTag =
+    parent && (parent as Element).tagName ? (parent as Element).tagName.toLowerCase() : '';
+  const useContext = contextTag !== '' && HTML_REPARSE_CONTEXT_TAGS.has(contextTag);
+  const scratch = api.element(useContext ? contextTag : 'template') as unknown as HTMLElement;
+  try {
+    scratch.innerHTML = html;
+  } catch {
+    return [];
+  }
+  // `<template>` places its parsed children on `.content` (a DocumentFragment);
+  // a contextual scratch (e.g. `<table>`) holds them as direct children.
+  const source: ParentNode =
+    ((scratch as unknown as HTMLTemplateElement).content as ParentNode | undefined) ?? scratch;
+  const nodes: Node[] = [];
+  let child = source.firstChild;
+  while (child) {
+    const next = child.nextSibling;
+    source.removeChild(child);
+    nodes.push(child);
+    child = next;
+  }
+  return nodes;
+}
+
+/**
+ * Trusted-HTML node helper — the first-class runtime behind a compat-mode
+ * trusting mustache (`{{{expr}}}`), emitted as `$_html(() => expr, this)`.
+ *
+ * Returns a live DOM range (a start/end comment-anchor pair carrying its
+ * reactive content between them, wrapped in a `RENDERED_NODES_PROPERTY` carrier)
+ * whose content is `innerHTML`-parsed from `String(getterValue)`:
+ *   - a SafeString value contributes its `.toHTML()`; `null`/`undefined`/an
+ *     un-stringable object contribute `''` (empty range),
+ *   - the range updates reactively whenever the getter's tracked cells change
+ *     (a `formula` + `opcodeFor`, mirroring gxt's reactive text binding),
+ *   - CONTEXTUAL PARSE: unlike Ember's out-of-band `RENDERING_CONTEXT` probe,
+ *     gxt reads the REAL parent straight off `endAnchor.parentNode` once the
+ *     range is mounted, so a reactive reparse targets the true `<table>`/
+ *     `<select>` context. The initial mount (parent not yet known, the range is
+ *     staged into the carrier's `RENDERED_NODES` for `renderElement` to insert)
+ *     parses against a `<template>`, which already preserves table-/select-
+ *     family descendants — so `<tr>`/`<td>`/`<option>` survive with no probe.
+ *
+ * The carrier is a first-class destroyable unit: `destroyElementSync` reclaims
+ * the anchors + the current content (so a keyed each-row that yields `{{{v}}}`
+ * tears down cleanly, GH#16314), and the opcode is registered as its destructor.
+ */
+export function $_html(getter: unknown, ctx: any): any {
+  const api = initDOM(ctx);
+  const startAnchor = api.comment('');
+  const endAnchor = api.comment('');
+  let contentNodes: Node[] = [];
+  let lastHtml = '';
+  let lastParent: Element | null = null;
+
+  const carrier: any = {
+    [$args]: {},
+    [COMPONENT_ID_PROPERTY]: cId(),
+    [RENDERED_NODES_PROPERTY]: [startAnchor, endAnchor] as Node[],
+    [RENDERING_CONTEXT_PROPERTY]: null,
+  };
+  addToTree(ctx, carrier);
+
+  // Replace the current content between the anchors with a fresh contextual
+  // parse of `html` against `parent` (the live parent, known post-mount).
+  const renderInto = (html: string, parent: Element | null) => {
+    for (const node of contentNodes) {
+      if (api.parent(node)) {
+        api.destroy(node);
+      }
+    }
+    contentNodes = parseTrustedHtml(api, html, parent);
+    if (parent) {
+      for (const node of contentNodes) {
+        api.insert(parent, node, endAnchor);
+      }
+    }
+    carrier[RENDERED_NODES_PROPERTY] = [startAnchor, ...contentNodes, endAnchor];
+    lastHtml = html;
+    lastParent = parent;
+  };
+
+  const htmlFormula = formula(() => resolveTrustedHtml(getter), 'trusted-html');
+  let firstRun = true;
+  const opDestructor = opcodeFor(htmlFormula, (value: unknown) => {
+    const html = value as string;
+    const parent = api.parent(endAnchor) as Element | null;
+    if (firstRun) {
+      // Initial mount: the carrier is not inserted yet, so the real parent is
+      // unknown. Parse context-neutrally (a `<template>` preserves table/select
+      // descendants) and STAGE the nodes in RENDERED_NODES so `renderElement`
+      // inserts them into the true parent. `lastParent` stays null so the first
+      // post-mount value change reparses against the now-known real parent.
+      firstRun = false;
+      contentNodes = parseTrustedHtml(api, html, parent);
+      carrier[RENDERED_NODES_PROPERTY] = [startAnchor, ...contentNodes, endAnchor];
+      lastHtml = html;
+      lastParent = parent;
+      return;
+    }
+    if (html === lastHtml && parent === lastParent) {
+      return;
+    }
+    renderInto(html, parent);
+  });
+  registerDestructor(carrier, opDestructor);
+
+  return carrier;
+}
+
 export const $_api = (ctx: any) => initDOM(ctx);
 
 export function $_fin(
