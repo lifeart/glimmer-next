@@ -68,6 +68,12 @@ export { $template, $args, $fwProp } from '@/core/shared';
 export { syncDom, takeRenderingControl } from '@/core/runtime';
 export { registerHostHooks, type HostHooks } from '@/core/host-hooks';
 export {
+  captureRenderTree,
+  componentToRenderTree,
+  type CapturedRenderNode,
+  type CapturedRenderNodeBounds,
+} from '@/core/inspector/capture-render-tree';
+export {
   registerHostManagers,
   type HostManagers,
 } from '@/core/manager-integration';
