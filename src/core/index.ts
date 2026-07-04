@@ -67,6 +67,15 @@ export * from '@/core/helpers/index';
 export { $template, $args, $fwProp } from '@/core/shared';
 export { syncDom, takeRenderingControl } from '@/core/runtime';
 export { registerHostHooks, type HostHooks } from '@/core/host-hooks';
+// Native `{{#each-in}}` key-SET reactivity primitive. A host that rewrites
+// `{{#each-in obj}}` to iterate an object's keys entangles its per-object
+// key-set revision via `entangleObjectKeys` and forwards its write add-signal
+// via `notifyObjectKeyAdded` (GXT cannot observe plain-object key addition
+// itself). No-op / zero-alloc for standalone GXT that never calls them.
+export {
+  entangleObjectKeys,
+  notifyObjectKeyAdded,
+} from '@/core/each-in-keyset';
 export {
   registerHostManagers,
   type HostManagers,
