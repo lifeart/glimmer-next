@@ -77,6 +77,12 @@ export {
   notifyObjectKeyAdded,
 } from '@/core/each-in-keyset';
 export {
+  captureRenderTree,
+  componentToRenderTree,
+  type CapturedRenderNode,
+  type CapturedRenderNodeBounds,
+} from '@/core/inspector/capture-render-tree';
+export {
   registerHostManagers,
   type HostManagers,
 } from '@/core/manager-integration';
