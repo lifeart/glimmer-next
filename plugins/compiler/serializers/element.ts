@@ -20,6 +20,7 @@ import { isSerializedValue, isRuntimeTag } from '../types';
 import { SYMBOLS, EVENT_TYPE, INTERNAL_HELPERS } from './symbols';
 import { buildValue, buildPathExpression } from './value';
 import { B, serializeJS, type JSExpression, type JSProperty } from '../builder';
+import { escapeReservedBindingName } from '../utils/js-utils';
 
 // Forward declarations - set from index.ts to avoid circular dependency
 let buildChildrenExprs: (ctx: CompilerContext, children: readonly HBSChild[], ctxName: string) => JSExpression[];
@@ -773,11 +774,15 @@ function buildSlots(
     const hasBlockParams = blockParams.length > 0;
 
     // Build the slot function: (ctx, ...blockParams) => [children]
+    // Reserved-word block params (`<Comp as |if|>`) are escaped to a safe
+    // identifier at the declaration site; references emit the same escaped
+    // name (serializers/value.ts emitBindingRootName).
     const params = [
       sContext,
       ...blockParams.map((name, index) => {
+        const emitName = escapeReservedBindingName(name);
         const range = blockParamRanges[index];
-        return range ? B.id(name, range) : name;
+        return range ? B.id(emitName, range) : emitName;
       }),
     ];
     const slotFunction = B.arrow(params, slotArrayExpr);

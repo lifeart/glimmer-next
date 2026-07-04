@@ -17,6 +17,7 @@ import {
   buildStaticBlockValueExprs,
 } from './static-block';
 import { B, serializeJS, type JSExpression, type JSStatement } from '../builder';
+import { escapeReservedBindingName } from '../utils/js-utils';
 
 // Sentinel each-key that opts a block into row recycling. Mirrors RECYCLE_KEY
 // in src/core/control-flow/list-recycle.ts (no cross-boundary import: plugins
@@ -322,22 +323,29 @@ function buildEach(
     let valueExprs = buildStaticBlockValueExprs(ctx, staticBlockParts, newCtxName);
     ctx.scopeTracker.exitScope();
     if (hasIndex) {
+      // References to a reserved-word index param are emitted escaped, so the
+      // index→`.value` rewrite must target the escaped name.
       valueExprs = valueExprs.map((expr) =>
-        replaceIndexRefsInExpr(expr, indexParamName)
+        replaceIndexRefsInExpr(expr, escapeReservedBindingName(indexParamName))
       );
     }
     blockDefExpr = buildStaticBlockDefExpr(staticBlockParts);
     blockValuesExpr = B.arrow(
-      [...paramNames, newCtxName],
+      [...paramNames.map(escapeReservedBindingName), newCtxName],
       B.array(valueExprs)
     );
   }
 
   // Build the full callback: (item, index, ctx) => body
+  // Reserved-word block params (e.g. `as |if|`) are escaped to a safe
+  // identifier (`__bp_if`) at the declaration site; references emit the same
+  // escaped name (serializers/value.ts emitBindingRootName), keeping the
+  // rename transparent. Non-reserved names pass through unchanged.
   const callbackParams = [
     ...paramNames.map((name, index) => {
+      const emitName = escapeReservedBindingName(name);
       const range = paramRanges[index];
-      return range ? B.id(name, range) : name;
+      return range ? B.id(emitName, range) : emitName;
     }),
     newCtxName,
   ];
@@ -461,7 +469,7 @@ function buildEachBody(
   ctx.scopeTracker.exitScope();
 
   const rewrittenExprs = usesIndex
-    ? childExprs.map((expr) => replaceIndexRefsInExpr(expr, indexParam))
+    ? childExprs.map((expr) => replaceIndexRefsInExpr(expr, escapeReservedBindingName(indexParam)))
     : childExprs;
 
   const childArrayExpr = ctx.formatter.options.enabled && rewrittenExprs.length > 0
@@ -831,25 +839,32 @@ function buildLet(
 ): JSExpression {
   const bindings = control.letBindings ?? [];
 
-  // Collect non-primitive binding names (these are getters that need calling)
+  // Collect non-primitive binding names (these are getters that need calling).
+  // Uses the ESCAPED emit name: reserved-word `{{#let … as |class|}}` bindings
+  // emit `let __bp_class = …` and references emit `__bp_class`, so the
+  // getter-ref → call rewrite (replaceLetGetterRefsInExpr) must match the
+  // escaped identifier. Non-reserved names are unchanged.
   const getterNames = new Set<string>();
   for (const binding of bindings) {
     if (!binding.isPrimitive) {
-      getterNames.add(binding.name);
+      getterNames.add(escapeReservedBindingName(binding.name));
     }
   }
 
-  // Build variable declarations
+  // Build variable declarations. Reserved-word binding names (`if`, `class`, …)
+  // are escaped to a safe identifier at the declaration site; references emit
+  // the same escaped name (serializers/value.ts emitBindingRootName).
   const varDecls: JSStatement[] = bindings.map((binding) => {
+    const emitName = escapeReservedBindingName(binding.name);
     const valueExpr = buildValue(ctx, binding.value, ctxName);
     if (binding.isPrimitive) {
-      return B.varDecl('let', binding.name, valueExpr);
+      return B.varDecl('let', emitName, valueExpr);
     } else {
       // If buildValue already produced a reactive getter (arrow function),
       // use it directly — don't double-wrap with another arrow.
       const isAlreadyGetter = valueExpr.type === 'reactiveGetter' || valueExpr.type === 'arrow';
       const getterExpr = isAlreadyGetter ? valueExpr : B.arrow([], valueExpr);
-      return B.varDecl('let', binding.name, getterExpr);
+      return B.varDecl('let', emitName, getterExpr);
     }
   });
 

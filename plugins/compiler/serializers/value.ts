@@ -18,6 +18,28 @@ import {
   shouldAccessCellValue,
   shouldSkipGetterWrapper,
 } from '../type-hints';
+import { escapeReservedBindingName } from '../utils/js-utils';
+
+/**
+ * When `rootName` refers to a block-param / let-binding whose name is a JS
+ * reserved word (e.g. `{{#each x as |if|}}` → the `if` row item), return the
+ * safe emitted identifier (`__bp_if`) that the declaration site also emits.
+ * Any other name — including reserved words that are NOT local bindings — is
+ * returned unchanged, so output stays byte-identical.
+ */
+function emitBindingRootName(
+  ctx: CompilerContext,
+  rootName: string
+): string {
+  const binding = ctx.scopeTracker.resolve(rootName);
+  if (
+    binding &&
+    (binding.kind === 'block-param' || binding.kind === 'let-binding')
+  ) {
+    return escapeReservedBindingName(rootName);
+  }
+  return rootName;
+}
 
 export interface BuildPathExpressionOptions {
   preferCellValue?: boolean;
@@ -361,6 +383,14 @@ function buildPathBase(
   }
 
   if (!parts || parts.length === 0) {
+    // Rename the root segment when it is a reserved-word block/let param, so a
+    // bare `{{if}}` reference emits `__bp_if` (matching the declaration site)
+    // instead of the SyntaxError `if`. The rest of the path is preserved.
+    const rootSeg = resolved.split(/[?.[]/)[0];
+    const emittedRoot = emitBindingRootName(ctx, rootSeg);
+    if (emittedRoot !== rootSeg) {
+      return B.runtimeRef(emittedRoot + resolved.slice(rootSeg.length), value.sourceRange);
+    }
     return B.runtimeRef(resolved, value.sourceRange);
   }
 
@@ -382,7 +412,7 @@ function buildPathBase(
     mappingStartIndex = 0;
   } else {
     const rootName = parts[0] ?? resolved.split('.')[0] ?? resolved;
-    expr = B.runtimeRef(rootName, rootRange ?? value.sourceRange);
+    expr = B.runtimeRef(emitBindingRootName(ctx, rootName), rootRange ?? value.sourceRange);
     startIndex = 1;
     optionalStartIndex = 2;
     mappingStartIndex = 1;
@@ -474,7 +504,7 @@ function buildBlockParamCellTap(
 
   // $__cellFor($__cellFor(item, "v"), "x")
   let expr: JSExpression = B.runtimeRef(
-    head,
+    escapeReservedBindingName(head),
     segs[0].range ?? value.rootRange ?? value.sourceRange
   );
   for (let i = 1; i < segs.length; i++) {
