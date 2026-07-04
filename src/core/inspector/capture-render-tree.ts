@@ -98,17 +98,18 @@ function boundsFor(component: ComponentLike): CapturedRenderNodeBounds | null {
 function pushListRows(
   keyMap: Map<string, any>,
   children: CapturedRenderNode[],
+  visited: Set<ComponentLike>,
 ): void {
   for (const el of keyMap.values()) {
     if (Array.isArray(el)) {
       el.forEach((e) => {
         if (e && !('nodeType' in (e as object))) {
-          const node = componentToRenderTree(e as ComponentLike);
+          const node = componentToRenderTree(e as ComponentLike, visited);
           if (node) children.push(node);
         }
       });
     } else if (el && !('nodeType' in (el as object))) {
-      const node = componentToRenderTree(el as ComponentLike);
+      const node = componentToRenderTree(el as ComponentLike, visited);
       if (node) children.push(node);
     }
   }
@@ -117,13 +118,34 @@ function pushListRows(
 /**
  * Serialize a single GXT component (and its subtree) into a
  * {@link CapturedRenderNode}. Returns `null` for a nullish input.
+ *
+ * @param visited the set of components currently on the walk path — used to
+ *   break cycles / back-edges (see the guard below). Callers normally omit
+ *   this; {@link captureRenderTree} threads a shared set across roots.
  */
 export function componentToRenderTree(
   component: ComponentLike,
+  visited: Set<ComponentLike> = new Set(),
 ): CapturedRenderNode | null {
   if (!component) {
     return null;
   }
+  // Cycle / back-edge guard.
+  //
+  // The bridged (Ember dual-backend) component graph is NOT a strict tree: a
+  // CHILD set can point back at an ancestor, and an `{{#if}}`'s `prevComponent`
+  // leaf-fallback (below) can follow a sibling/ancestor back-edge. A render-tree
+  // walk must visit each node at most once on any given path; without this
+  // guard the walk follows the back-edge and recurses until the JS stack
+  // overflows (`RangeError: Maximum call stack size exceeded`). We add the node
+  // to the path on entry and remove it before every return so that legitimate
+  // sibling subtrees (a node reachable via two non-ancestor paths) are still
+  // captured — only true cycles are pruned.
+  if (visited.has(component)) {
+    return null;
+  }
+  visited.add(component);
+
   const anyComponent = component as unknown as Record<string | symbol, any>;
 
   const childs = Array.from(
@@ -132,17 +154,24 @@ export function componentToRenderTree(
   );
 
   // `{{#if}}` with no tree children may still hold a rendered branch on
-  // `prevComponent` (single component or array) — surface it as a child.
+  // `prevComponent` (single component or array) — surface it as a child. Skip
+  // any `prevComponent` that is already on the walk path: that back-edge is the
+  // stack-overflow trigger described above.
   if (childs.length === 0 && component instanceof IfCondition) {
     if (isArray(component.prevComponent)) {
       component.prevComponent.forEach((c) => {
-        if (c && RENDERED_NODES_PROPERTY in (c as object)) {
+        if (
+          c &&
+          RENDERED_NODES_PROPERTY in (c as object) &&
+          !visited.has(c as unknown as ComponentLike)
+        ) {
           childs.push(c as ComponentLike);
         }
       });
     } else if (
       component.prevComponent &&
-      RENDERED_NODES_PROPERTY in (component.prevComponent as object)
+      RENDERED_NODES_PROPERTY in (component.prevComponent as object) &&
+      !visited.has(component.prevComponent as unknown as ComponentLike)
     ) {
       childs.push(component.prevComponent as unknown as ComponentLike);
     }
@@ -162,7 +191,7 @@ export function componentToRenderTree(
   const bounds = boundsFor(component);
 
   const children: CapturedRenderNode[] = childs
-    .map((child) => (child ? componentToRenderTree(child) : null))
+    .map((child) => (child ? componentToRenderTree(child, visited) : null))
     .filter((el): el is CapturedRenderNode => el !== null);
 
   // GXT's internal `UnstableChildWrapper` is a transparent single-child block
@@ -171,6 +200,7 @@ export function componentToRenderTree(
     componentName.startsWith('UnstableChildWrapper') &&
     children.length === 1
   ) {
+    visited.delete(component);
     return children[0]!;
   }
 
@@ -191,14 +221,14 @@ export function componentToRenderTree(
     argsToHide.push('list');
     positional.push(allArgs()['list']?.value);
     if (component instanceof AsyncListComponent) {
-      pushListRows(component.keyMap, children);
+      pushListRows(component.keyMap, children, visited);
     }
   } else if (componentName.startsWith('ListComponent')) {
     componentName = 'each';
     argsToHide.push('list');
     positional.push(allArgs()['list']?.value);
     if (component instanceof SyncListComponent) {
-      pushListRows(component.keyMap, children);
+      pushListRows(component.keyMap, children, visited);
     }
   }
 
@@ -231,6 +261,10 @@ export function componentToRenderTree(
       named[key] = value;
     }
   }
+
+  // Done with this node — pop it off the walk path so genuine sibling
+  // subtrees that reach a shared node via a non-ancestor path are not pruned.
+  visited.delete(component);
 
   return {
     id: String(component[COMPONENT_ID_PROPERTY]),
@@ -270,7 +304,11 @@ export function captureRenderTree(
   roots?: ComponentLike[],
 ): CapturedRenderNode[] {
   const rootComponents = roots ?? findRoots();
+  // Share one path-set across the roots. Roots are disjoint (each has a `null`
+  // parent) and the set is emptied by backtracking between roots, so this only
+  // serves to break cycles within any single root's subtree.
+  const visited = new Set<ComponentLike>();
   return rootComponents
-    .map((root) => componentToRenderTree(root))
+    .map((root) => componentToRenderTree(root, visited))
     .filter((el): el is CapturedRenderNode => el !== null);
 }
