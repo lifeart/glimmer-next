@@ -35,7 +35,7 @@ import {
   materializeAbsentPathCell,
   registerLeafOwnersForFormula,
 } from '@/core/reactive';
-import { opcodeFor } from '@/core/vm';
+import { opcodeFor, checkOpcode } from '@/core/vm';
 import {
   SyncListComponent,
   AsyncListComponent,
@@ -2511,11 +2511,52 @@ export function $_html(getter: unknown, ctx: any): any {
     lastParent = parent;
   };
 
-  const htmlFormula = formula(() => resolveTrustedHtml(getter), 'trusted-html');
+  // Reactive setup mirrors gxt's normal reactive text / renderable binding
+  // (`resolveRenderable` / `resolveBindingValue` / `$ev` TEXT_CONTENT) so a
+  // trusting mustache participates in the SAME host-bridge reactivity contract
+  // the rest of gxt's bindings do:
+  //   - a `{{{this.absent}}}` whose getter reads NO cell (undefined at first
+  //     eval) yields a `isConst` + empty formula that would set once and never
+  //     update. Materialize the leaf cell on the host template `this` (via the
+  //     `getCurrentTemplateThis` host hook) and re-wrap, so the re-evaluated
+  //     formula tracks a real cell that a later `set(this,'absent',…)` dirties
+  //     (Ember content-test "undefined dynamic paths");
+  //   - register every leaf OBJECT a tracked cell holds as a value-owner so a
+  //     nested `set(leafObj,'k',…)` — e.g. `{{{this.nullObject.message}}}` —
+  //     reaches the cell through the host reverse lookup, re-registered per tick
+  //     to pick up a parent ref-swap of the held object.
+  // Standalone gxt: both host hooks are absent, so this is a pure no-op and the
+  // behavior is identical to a plain `formula(() => resolveTrustedHtml(getter))`.
+  let htmlFormula = formula(() => resolveTrustedHtml(getter), 'trusted-html');
+  // Force the `isConst` + `relatedCells` computation in an isolated null-tracker
+  // frame via `checkOpcode` (exactly like `resolveRenderable`). A bare `.value`
+  // read is unreliable here: `$_html` can run inside a parent tracking frame, and
+  // `MergedCell.value` short-circuits (returns `fn()` WITHOUT computing isConst)
+  // whenever `currentTracker !== null` — which would leave `isConst` falsely
+  // `false` and skip the absent-path materialization below.
+  let initialHtml = '';
+  checkOpcode(htmlFormula, (value) => {
+    initialHtml = value as string;
+  });
+  if (
+    htmlFormula.isConst &&
+    initialHtml === '' &&
+    isFn(getter) &&
+    materializeAbsentPathCell(getter as Function)
+  ) {
+    htmlFormula.destroy();
+    htmlFormula = formula(() => resolveTrustedHtml(getter), 'trusted-html');
+    checkOpcode(htmlFormula, () => void 0); // recompute deps vs the new leaf cell
+  }
+  registerLeafOwnersForFormula(htmlFormula);
+
   let firstRun = true;
   const opDestructor = opcodeFor(htmlFormula, (value: unknown) => {
     const html = value as string;
     const parent = api.parent(endAnchor) as Element | null;
+    // Re-register leaf-object owners each tick so a parent ref-swap of the held
+    // object is picked up by a subsequent nested `set` (mirrors $ev TEXT_CONTENT).
+    registerLeafOwnersForFormula(htmlFormula);
     if (firstRun) {
       // Initial mount: the carrier is not inserted yet, so the real parent is
       // unknown. Parse context-neutrally (a `<template>` preserves table/select
