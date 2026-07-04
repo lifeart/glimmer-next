@@ -12,7 +12,7 @@ import type { ComponentLike, DOMApi, GenericReturnType } from '@/core/types';
 import { renderElement } from '@/core/render-core';
 import { destroyElement, destroyElementSync, unregisterFromParent } from '@/core/destroy';
 
-import { Destructors, registerDestructor, destroy, markAsDestroyed } from '@/core/glimmer/destroyable';
+import { Destructors, registerDestructor, destroy, destroySync, markAsDestroyed } from '@/core/glimmer/destroyable';
 import { formula, type Cell, type MergedCell } from '@/core/reactive';
 import {
   $_debug_args,
@@ -70,6 +70,13 @@ export class IfCondition {
   // inserts nodes directly into the parent without threading them back into
   // the IfCondition's component tree).
   branchDomNodes: Array<Node> = [];
+  // Per-branch destructor-owner ctx for the CURRENTLY-rendered branch, created
+  // in `renderState` ONLY when a host installed `HOST_HOOKS.onConditionBranchSwap`
+  // (otherwise stays `null` for the instance's whole life — zero allocation).
+  // Its destructors are fired (via `destroySync`) at the START of the outgoing
+  // branch's teardown (`destroyBranchSync`/`destroyBranch`), before that branch's
+  // DOM is removed. See `teardownBranchCtx`.
+  currentBranchCtx: object | null = null;
   trueBranch: (ifContext: IfCondition) => GenericReturnType;
   falseBranch: (ifContext: IfCondition) => GenericReturnType;
   // Tree parent captured at construction (see the re-parent logic in the
@@ -381,7 +388,28 @@ export class IfCondition {
     this.branchDomNodes = [];
   }
 
+  /**
+   * Fire the OUTGOING branch's per-branch ctx destructors (those the host
+   * registered from the `onConditionBranchSwap` hook) and clear the slot. Called
+   * at the START of `destroyBranchSync`/`destroyBranch`, i.e. BEFORE the outgoing
+   * branch's DOM is removed, so a host destructor runs while the element is
+   * still connected — mirroring `list.ts`'s `destroyRowCtx` ordering.
+   *
+   * Zero-cost when no host hook is installed: `currentBranchCtx` is only ever
+   * assigned in `renderState` under the `onConditionBranchSwap` presence gate, so
+   * it stays `null` and this is a single null-check. Idempotent (nulls the slot;
+   * `destroySync` itself guards against double-destroy).
+   */
+  teardownBranchCtx() {
+    const branchCtx = this.currentBranchCtx;
+    if (branchCtx !== null) {
+      this.currentBranchCtx = null;
+      destroySync(branchCtx);
+    }
+  }
+
   destroyBranchSync() {
+    this.teardownBranchCtx();
     const branch = this.prevComponent;
     this.prevComponent = null;
     if (branch !== null) {
@@ -391,6 +419,7 @@ export class IfCondition {
   }
 
   async destroyBranch() {
+    this.teardownBranchCtx();
     const branch = this.prevComponent;
     this.prevComponent = null;
     if (branch !== null) {
@@ -402,6 +431,22 @@ export class IfCondition {
   renderState(nextBranch: (ifContext: IfCondition) => GenericReturnType) {
     if (IS_DEV_MODE) {
       $DEBUG_REACTIVE_CONTEXTS.push(`if:${String(this.lastValue)}`);
+    }
+    // Create + announce a fresh per-branch render ctx so a host can attach this
+    // branch's pre-swap teardown via `registerDestructor(branchCtx, …)`. Fired
+    // BEFORE the branch body renders (mirroring `onRowContextCreated`). Gated on
+    // hook presence — standalone GXT allocates nothing here. The defensive
+    // `teardownBranchCtx()` handles the `renderBranch` empty-branch fast path,
+    // which swaps WITHOUT routing through `destroyBranch` (no-op after a normal
+    // swap, where `destroyBranch(Sync)` already nulled the slot).
+    if (HOST_HOOKS.onConditionBranchSwap) {
+      this.teardownBranchCtx();
+      const branchCtx = { [COMPONENT_ID_PROPERTY]: cId() };
+      this.currentBranchCtx = branchCtx;
+      HOST_HOOKS.onConditionBranchSwap(branchCtx, {
+        if: this,
+        value: this.lastValue,
+      });
     }
     // Capture the sibling immediately before the placeholder so that, after
     // the branch renders, we can identify which DOM nodes are "owned" by

@@ -16,6 +16,27 @@
  * registerHostHooks({ toBool: emberToBool, scheduleRevalidate: syncNow });
  * ```
  */
+
+/**
+ * Metadata passed to {@link HostHooks.onConditionBranchSwap} alongside the
+ * freshly-created per-branch render ctx.
+ */
+export interface ConditionBranchMeta {
+  /**
+   * The owning `IfCondition` — the SAME object `onRowContextCreated` fires once
+   * for at if-construction (the whole-`{{#if}}` render scope). Lets the host
+   * correlate a branch ctx back to its conditional.
+   */
+  if: object;
+  /**
+   * Which branch this ctx belongs to: `true` = the truthy (then) branch,
+   * `false` = the falsy (else / `{{#unless}}`) branch. Lets the host select the
+   * matching per-branch teardown bucket (e.g. `trueBranchHelpers` vs
+   * `falseBranchHelpers`).
+   */
+  value: boolean;
+}
+
 export interface HostHooks {
   /**
    * Truthiness override for `{{#if}}`-style conditionals (e.g. Ember's
@@ -144,6 +165,47 @@ export interface HostHooks {
    * (standalone GXT never registers it, so behavior is unchanged).
    */
   onRowContextCreated?: (ctx: object) => void;
+  /**
+   * The per-BRANCH twin of `onRowContextCreated`. Observe a freshly-created
+   * per-branch render ctx — a distinct lightweight object created ONCE for
+   * every `{{#if}}`/`{{#unless}}` branch RENDER (initial render AND every
+   * true↔false swap) — so the host can attach that branch's pre-swap teardown
+   * via `registerDestructor(branchCtx, …)`.
+   *
+   * Fired from `IfCondition.renderState`, right after the branch ctx is
+   * allocated and BEFORE the branch body renders (mirroring how
+   * `onRowContextCreated` fires before a row body renders). `branchCtx` is the
+   * value `registerDestructor(branchCtx, …)` accepts.
+   *
+   * The runtime runs that ctx's destructors (via `destroySync`) at the START of
+   * the OUTGOING branch's teardown — inside `destroyBranchSync` /
+   * `destroyBranch`, BEFORE `destroyElementSync`/`destroyElement` removes the
+   * branch DOM — so a destructor the host registers here fires while the
+   * outgoing branch's element is still connected. It fires:
+   *   - on a true↔false SWAP: the outgoing branch's ctx destructors run, then a
+   *     FRESH branch ctx is created for the incoming branch (the hook fires
+   *     again);
+   *   - on whole-`{{#if}}` DESTROY: the currently-rendered branch's ctx
+   *     destructors run (the async `destroy`→`destroyBranch` path and the
+   *     sync-cascade self destructor both route through the same teardown).
+   *
+   * Interplay with `onRowContextCreated`: these are DISTINCT ctxs and never
+   * double-fire. `onRowContextCreated` fires ONCE per `IfCondition` (at
+   * construction — the whole-if scope; a destructor registered there runs on
+   * whole-if destroy). `onConditionBranchSwap` fires once per BRANCH render on a
+   * separate `branchCtx`; a destructor registered there runs at the NEXT swap
+   * (or whole-if destroy) — the per-branch granularity the whole-if seam cannot
+   * express. A host can use either or both. No-op by default (standalone GXT
+   * never registers it, so the branch-render path stays a single hook-presence
+   * branch and no branch ctx is allocated).
+   *
+   * @param branchCtx a fresh per-branch destructor-owner object.
+   * @param meta      which branch (`value`) + the owning `IfCondition` (`if`).
+   */
+  onConditionBranchSwap?: (
+    branchCtx: object,
+    meta: ConditionBranchMeta,
+  ) => void;
   /**
    * The COMPONENT twin of `onRowContextCreated`: observe a freshly-created
    * COMPONENT render context so the host can attach its own pre-detach work to

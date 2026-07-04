@@ -66,7 +66,11 @@ export {
 export * from '@/core/helpers/index';
 export { $template, $args, $fwProp } from '@/core/shared';
 export { syncDom, takeRenderingControl } from '@/core/runtime';
-export { registerHostHooks, type HostHooks } from '@/core/host-hooks';
+export {
+  registerHostHooks,
+  type HostHooks,
+  type ConditionBranchMeta,
+} from '@/core/host-hooks';
 // Native `{{#each-in}}` key-SET reactivity primitive. A host that rewrites
 // `{{#each-in obj}}` to iterate an object's keys entangles its per-object
 // key-set revision via `entangleObjectKeys` and forwards its write add-signal

@@ -27,6 +27,7 @@ import {
 } from '../__test-utils__/list-harness';
 import { registerHostHooks, HOST_HOOKS } from '../host-hooks';
 import { registerDestructor } from '../glimmer/destroyable';
+import { destroyElementSync } from '../destroy';
 import { setParentContext, pushParentContext, popParentContext } from '../tracking';
 import { IfCondition } from './if';
 import { cell } from '../reactive';
@@ -231,5 +232,233 @@ describe('TREE-entry fix — live IfCondition keeps its TREE entry', () => {
     // the new id would never reach the original registration.
     expect(plain[COMPONENT_ID_PROPERTY]).toBe(fakeRootId);
     expect(TREE.get(fakeRootId as number)).toBeUndefined();
+  });
+});
+
+describe('onConditionBranchSwap — per-branch destructors fire before branch DOM removal', () => {
+  let fixture: DOMFixture;
+
+  beforeEach(() => {
+    fixture = createDOMFixture();
+  });
+
+  afterEach(() => {
+    fixture.cleanup();
+    resetHooks();
+  });
+
+  // Flush the async `destroyBranch()` promise chain that a standalone-build swap
+  // uses (the WITH_EMBER_INTEGRATION sync path folds off in the test build). The
+  // per-branch destructor itself fires SYNCHRONOUSLY at the top of destroyBranch
+  // (before the first await), so pre-removal assertions do NOT need this — only
+  // the post-swap DOM assertions do.
+  async function flush(): Promise<void> {
+    for (let i = 0; i < 6; i++) await Promise.resolve();
+  }
+
+  // Build an IfCondition whose placeholder lives in the LIVE container (so branch
+  // DOM is actually connected to the document), not in a detached fragment.
+  function makeLiveIf(
+    condition: ReturnType<typeof cell<boolean>>,
+    trueBranch: (ctx: IfCondition) => unknown,
+    falseBranch: (ctx: IfCondition) => unknown,
+    parent?: object,
+  ): IfCondition {
+    const baseParent = parent ?? new Component({});
+    (baseParent as Record<symbol, unknown>)[RENDERED_NODES_PROPERTY] = [];
+    if (parent === undefined) addToTree(fixture.root as never, baseParent as never);
+    const placeholder = fixture.api.comment('branch-swap');
+    fixture.api.insert(fixture.container as never, placeholder);
+    return new IfCondition(
+      baseParent as never,
+      condition as never,
+      fixture.container as never,
+      placeholder,
+      trueBranch as never,
+      falseBranch as never,
+    );
+  }
+
+  test('branch swap true→false fires the outgoing branch destructor while its element is still connected', async () => {
+    const swaps: boolean[] = [];
+    const connectedAtDestroy: boolean[] = [];
+    let trueEl: HTMLElement | null = null;
+
+    registerHostHooks({
+      onConditionBranchSwap: (branchCtx, meta) => {
+        swaps.push(meta.value);
+        if (meta.value === true) {
+          registerDestructor(branchCtx, () => {
+            // The <span.true-branch> must still be in the live DOM at the moment
+            // its destructor fires (pre-removal ordering).
+            connectedAtDestroy.push(!!trueEl && fixture.container.contains(trueEl));
+          });
+        }
+      },
+    });
+
+    const condition = cell(true);
+    const ifCond = makeLiveIf(
+      condition,
+      () => {
+        trueEl = fixture.document.createElement('span');
+        trueEl.className = 'true-branch';
+        return [trueEl];
+      },
+      () => {
+        const f = fixture.document.createElement('span');
+        f.className = 'false-branch';
+        return [f];
+      },
+    );
+
+    // Initial render: true branch rendered + connected; hook fired once (true).
+    expect(fixture.container.querySelector('.true-branch')).not.toBeNull();
+    expect(swaps).toEqual([true]);
+    expect(connectedAtDestroy).toEqual([]);
+
+    // Swap true→false. teardownBranchCtx runs synchronously at the top of
+    // destroyBranch, so the destructor has already fired by the time syncState
+    // returns — and it observed the true-branch element STILL CONNECTED.
+    ifCond.syncState(false);
+    expect(connectedAtDestroy).toEqual([true]);
+
+    await flush();
+
+    // After the swap: true branch gone, false branch present, and a fresh branch
+    // ctx was announced for the incoming false branch.
+    expect(fixture.container.querySelector('.true-branch')).toBeNull();
+    expect(fixture.container.querySelector('.false-branch')).not.toBeNull();
+    expect(swaps).toEqual([true, false]);
+  });
+
+  test('whole-{{#if}} destroy fires the current branch destructor exactly once (no double-fire)', async () => {
+    const fired: boolean[] = [];
+    registerHostHooks({
+      onConditionBranchSwap: (branchCtx) => {
+        registerDestructor(branchCtx, () => {
+          fired.push(true);
+        });
+      },
+    });
+
+    const condition = cell(true);
+    const ifCond = makeLiveIf(
+      condition,
+      () => [fixture.document.createElement('i')],
+      () => null,
+    );
+    expect(fired).toEqual([]);
+
+    // Whole-if async destroy runs destroyBranch (firing the current branch ctx),
+    // then the IfCondition's own destructors (incl. the self destroyBranchSync,
+    // which no-ops because teardownBranchCtx already nulled the slot).
+    await ifCond.destroy();
+    expect(fired).toEqual([true]);
+  });
+
+  test('whole-{{#if}} sync-cascade destroy fires the current branch destructor', () => {
+    const fired: boolean[] = [];
+    registerHostHooks({
+      onConditionBranchSwap: (branchCtx) => {
+        registerDestructor(branchCtx, () => {
+          fired.push(true);
+        });
+      },
+    });
+
+    const condition = cell(true);
+    const ifCond = makeLiveIf(
+      condition,
+      () => [fixture.document.createElement('i')],
+      () => null,
+    );
+
+    // A parent cascade tears the IfCondition down via destroyElementSync →
+    // destroySync(ifCond) → its self `destroyBranchSync` destructor →
+    // teardownBranchCtx → the branch ctx destructor.
+    destroyElementSync(ifCond as never, false, fixture.api);
+    expect(fired).toEqual([true]);
+  });
+
+  test('nested {{#if}}: an inner branch swap fires the inner branch destructor pre-removal; whole-outer destroy fires the outer branch destructor', async () => {
+    const events: string[] = [];
+    let innerIf: IfCondition | null = null;
+    let outerIf: IfCondition | null = null;
+
+    registerHostHooks({
+      onConditionBranchSwap: (branchCtx, meta) => {
+        registerDestructor(branchCtx, () => {
+          const who =
+            meta.if === innerIf ? 'inner' : meta.if === outerIf ? 'outer' : 'other';
+          // Record which branch tore down + how many <b> are still connected.
+          events.push(`${who}:${meta.value}:b=${fixture.container.querySelectorAll('b').length}`);
+        });
+      },
+    });
+
+    const outerCond = cell(true);
+    const innerCond = cell(true);
+
+    outerIf = makeLiveIf(
+      outerCond,
+      (ctx) => {
+        // Build a nested {{#if}} inside the outer's true branch. The inner if
+        // renders a <b> into the SAME live container (before the outer marker).
+        const innerPh = fixture.api.comment('inner');
+        fixture.api.insert(
+          fixture.container as never,
+          innerPh,
+          (ctx as unknown as IfCondition).placeholder as never,
+        );
+        innerIf = new IfCondition(
+          ctx as never,
+          innerCond as never,
+          fixture.container as never,
+          innerPh,
+          () => [fixture.document.createElement('b')],
+          () => null,
+        );
+        return [];
+      },
+      () => null,
+    );
+
+    // Both nested branches rendered; the inner <b> is connected.
+    expect(fixture.container.querySelectorAll('b').length).toBe(1);
+    expect(innerIf).not.toBeNull();
+
+    // Toggle the INNER condition true→false. The inner branch destructor fires
+    // pre-removal, observing its <b> still connected (b=1).
+    innerIf!.syncState(false);
+    expect(events).toContain('inner:true:b=1');
+    await flush();
+    expect(fixture.container.querySelectorAll('b').length).toBe(0);
+
+    // Whole-outer destroy cascades: outer branch ctx destructor fires, and the
+    // registered inner.destroy runs the inner's current (false) branch ctx too.
+    await outerIf.destroy();
+    expect(events.some((e) => e.startsWith('outer:true'))).toBe(true);
+  });
+
+  test('unregistered: no branch ctx is allocated and swaps behave identically', async () => {
+    // No onConditionBranchSwap registered — the branch-render path must allocate
+    // nothing and behave exactly as before.
+    const condition = cell(true);
+    const ifCond = makeLiveIf(
+      condition,
+      () => [fixture.document.createElement('u')],
+      () => null,
+    );
+
+    expect(ifCond.currentBranchCtx).toBeNull();
+    expect(fixture.container.querySelector('u')).not.toBeNull();
+
+    ifCond.syncState(false);
+    await flush();
+
+    // Swap still happened; still zero branch ctx allocated.
+    expect(ifCond.currentBranchCtx).toBeNull();
+    expect(fixture.container.querySelector('u')).toBeNull();
   });
 });
