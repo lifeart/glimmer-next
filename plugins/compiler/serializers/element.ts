@@ -20,6 +20,7 @@ import { isSerializedValue, isRuntimeTag } from '../types';
 import { SYMBOLS, EVENT_TYPE, INTERNAL_HELPERS } from './symbols';
 import { buildValue, buildPathExpression } from './value';
 import { B, serializeJS, type JSExpression, type JSProperty } from '../builder';
+import { escapeReservedBindingName } from '../utils/js-utils';
 
 // Forward declarations - set from index.ts to avoid circular dependency
 let buildChildrenExprs: (ctx: CompilerContext, children: readonly HBSChild[], ctxName: string) => JSExpression[];
@@ -603,7 +604,20 @@ function buildModifierExpr(
     ? B.id(modName, mod.pathRange, 'PathExpression', mod.name)
     : modName;
 
-  if (ctx.flags.WITH_MODIFIER_MANAGER) {
+  // A kebab-cased (or otherwise non-identifier) UNKNOWN modifier name must not
+  // be emitted as a bare callee: `($n) => my-mod($n, …)` is parsed by JS as
+  // `($n) => (my - mod($n, …))` (subtraction), silently breaking the modifier.
+  // Force the `$_maybeModifier("my-mod", …)` string-resolution form (which the
+  // WITH_MODIFIER_MANAGER path already uses for unknown modifiers) so the name
+  // is resolved at runtime instead of emitted as an invalid bare identifier.
+  // Known bindings and valid-identifier (camelCase) names are unaffected.
+  const needsStringModifierForm =
+    !isKnownModifier &&
+    !modName
+      .split('.')
+      .every((seg) => /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(seg));
+
+  if (ctx.flags.WITH_MODIFIER_MANAGER || needsStringModifierForm) {
     // ($n) => $__maybeModifier(modName, $n, [...positional], {named})
     const namedObj = namedProps.length > 0 ? B.object(namedProps) : B.emptyObject();
 
@@ -760,11 +774,15 @@ function buildSlots(
     const hasBlockParams = blockParams.length > 0;
 
     // Build the slot function: (ctx, ...blockParams) => [children]
+    // Reserved-word block params (`<Comp as |if|>`) are escaped to a safe
+    // identifier at the declaration site; references emit the same escaped
+    // name (serializers/value.ts emitBindingRootName).
     const params = [
       sContext,
       ...blockParams.map((name, index) => {
+        const emitName = escapeReservedBindingName(name);
         const range = blockParamRanges[index];
-        return range ? B.id(name, range) : name;
+        return range ? B.id(emitName, range) : emitName;
       }),
     ];
     const slotFunction = B.arrow(params, slotArrayExpr);
