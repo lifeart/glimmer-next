@@ -603,7 +603,20 @@ function buildModifierExpr(
     ? B.id(modName, mod.pathRange, 'PathExpression', mod.name)
     : modName;
 
-  if (ctx.flags.WITH_MODIFIER_MANAGER) {
+  // A kebab-cased (or otherwise non-identifier) UNKNOWN modifier name must not
+  // be emitted as a bare callee: `($n) => my-mod($n, …)` is parsed by JS as
+  // `($n) => (my - mod($n, …))` (subtraction), silently breaking the modifier.
+  // Force the `$_maybeModifier("my-mod", …)` string-resolution form (which the
+  // WITH_MODIFIER_MANAGER path already uses for unknown modifiers) so the name
+  // is resolved at runtime instead of emitted as an invalid bare identifier.
+  // Known bindings and valid-identifier (camelCase) names are unaffected.
+  const needsStringModifierForm =
+    !isKnownModifier &&
+    !modName
+      .split('.')
+      .every((seg) => /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(seg));
+
+  if (ctx.flags.WITH_MODIFIER_MANAGER || needsStringModifierForm) {
     // ($n) => $__maybeModifier(modName, $n, [...positional], {named})
     const namedObj = namedProps.length > 0 ? B.object(namedProps) : B.emptyObject();
 

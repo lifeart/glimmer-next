@@ -11,6 +11,20 @@ import type { SerializedValue, SourceRange, PathPart } from '../types';
 import { SYMBOLS, INTERNAL_HELPERS, getBuiltInHelperSymbol } from '../serializers/symbols';
 import { B, serializeJS, type JSExpression } from '../builder';
 import { isSafeKey, quoteKey } from '../utils/js-utils';
+import { serializeValue } from '../serializers/value';
+
+/**
+ * True when `name` is safe to emit as a bare JS callee — i.e. every
+ * dot-separated segment is a valid JS identifier. A kebab-cased helper name
+ * like `my-helper` is NOT (its only segment fails the identifier test), so
+ * emitting `my-helper(x)` as a bare callee would be parsed by JS as
+ * `my - helper(x)` (subtraction), silently breaking the call.
+ */
+function isPlainCalleeName(name: string): boolean {
+  return name
+    .split('.')
+    .every((seg) => /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(seg));
+}
 
 /**
  * Serialize a path expression, using bracket notation for hyphenated property names.
@@ -565,6 +579,31 @@ function serializeHelperCall(value: SerializedValue & { kind: 'helper' }, ctx?: 
     helperName === INTERNAL_HELPERS.STYLE_SETTER
   ) {
     return serializeJS(buildValueToExpr(value, ctx));
+  }
+
+  // Kebab-cased (or otherwise non-identifier) helper names that are NOT
+  // built-ins and NOT resolvable scope bindings must not be emitted here as a
+  // bare callee. This string serializer would otherwise produce
+  // `my-helper(x)`, which JS parses as `my - helper(x)` (subtraction),
+  // silently breaking the call — e.g. `{{yield (my-helper this.x)}}`.
+  //
+  // Route them through the same `$_maybeHelper("my-helper", …)` string-form the
+  // JSExpression serializer (serializers/value.ts buildHelper) already emits for
+  // unknown helpers, by delegating to that serializer. Valid-identifier
+  // (camelCase) names, built-ins, @-arg / this. / $_ references, and known
+  // scope bindings are unaffected (they fall through to the code below,
+  // byte-identical to before).
+  if (
+    ctx &&
+    !helperName.startsWith('@') &&
+    !helperName.startsWith('this.') &&
+    !helperName.startsWith('this[') &&
+    !helperName.startsWith('$_') &&
+    !getBuiltInHelperSymbol(helperName) &&
+    !isPlainCalleeName(helperName) &&
+    !ctx.scopeTracker.hasBinding(helperName.split(/[.[]/)[0])
+  ) {
+    return serializeValue(ctx, value, 'this');
   }
 
   // Handle @arg-prefixed helper names (helper passed as argument)
