@@ -9,6 +9,7 @@ import { registerDestructor } from '@/core/glimmer/destroyable';
 import {
   RENDERED_NODES_PROPERTY,
   COMPONENT_ID_PROPERTY,
+  MOUNT_REPARSE_HOOK,
   type DOMApi,
   type ComponentLike,
   type RenderableElement,
@@ -235,6 +236,14 @@ export function renderElement(
         } else {
           renderElement(api, el as ComponentLike, target, node as RenderableElement, placeholder, true);
         }
+      }
+      // A carrier may need to re-run work now that its staged nodes live in
+      // their REAL parent (unknown at construction time). `$_html` uses this to
+      // re-parse trusted HTML against a now-known `<table>`/`<select>` context.
+      // Undefined for every other carrier — a single property read, no-op.
+      const onMount = (el as any)[MOUNT_REPARSE_HOOK];
+      if (onMount !== undefined) {
+        onMount();
       }
       if (IS_DEV_MODE) {
         RENDERED_COMPONENTS.add(el);

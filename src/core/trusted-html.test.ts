@@ -197,6 +197,112 @@ describe('$_html trusted-HTML node helper', () => {
     expect(options[1].getAttribute('value')).toBe('b');
   });
 
+  // ---- mount-time contextual parse context -----------------------------------
+  //
+  // The real correctness of table/select foster-parenting (a `<tr>` parsed
+  // in-`<table>` gets an implicit `<tbody>`; a bare `<td>` survives) is a
+  // property of the browser's HTML parser and is applied ONLY when the innerHTML
+  // is parsed against a real `<table>`/`<select>` context element — NOT against
+  // the neutral `<template>` the initial mount would otherwise use (which yields
+  // a bare `<tr>` with no `<tbody>`). happy-dom (this vitest harness) does not
+  // implement foster-parenting, so we cannot assert the `<tbody>` structure
+  // here; instead we assert the runtime SELECTS the correct parse-context scratch
+  // element (the real parent's tag) at mount. In a real browser (and jsdom, which
+  // the Ember integration's rehydration tests run under) that scratch is what
+  // makes `<tbody>` appear. Ember's 14 unescaped-tr/td tests verify the DOM
+  // structure end-to-end.
+
+  // Records every element tag the runtime creates so a test can see which scratch
+  // context `$_html` parses against. Restores the original method after `fn`.
+  function recordTags(fn: () => void): string[] {
+    const tags: string[] = [];
+    const orig = fixture.api.element.bind(fixture.api);
+    (fixture.api as any).element = (tag: string) => {
+      tags.push(tag);
+      return orig(tag);
+    };
+    try {
+      fn();
+    } finally {
+      (fixture.api as any).element = orig;
+    }
+    return tags;
+  }
+
+  test('initial mount into a <table> re-parses against a <table> context (foster-parenting)', () => {
+    class C extends Component {
+      rowHtml = '<tr><td class="cell">data</td></tr>';
+      [$template] = template('<table id="host">{{{this.rowHtml}}}</table>', TRUSTED_FLAGS);
+    }
+    const tags = recordTags(() => render(C));
+    // One `<table>` for the real host element PLUS one `<table>` scratch created
+    // by the mount-reparse hook (proving the parse targets the real parent
+    // context, not the neutral `<template>`).
+    expect(tags.filter((t) => t === 'table').length).toBe(2);
+    // The initial (pre-mount) parse still uses the neutral `<template>`.
+    expect(tags).toContain('template');
+    // The row still renders.
+    const table = fixture.container.querySelector('#host')!;
+    expect(table.querySelector('tr td.cell')?.textContent).toBe('data');
+  });
+
+  test('initial mount into a <select> re-parses against a <select> context', () => {
+    class C extends Component {
+      optHtml = '<option value="a">A</option>';
+      [$template] = template('<select id="host">{{{this.optHtml}}}</select>', TRUSTED_FLAGS);
+    }
+    const tags = recordTags(() => render(C));
+    // real <select> + scratch <select> from the mount reparse.
+    expect(tags.filter((t) => t === 'select').length).toBe(2);
+  });
+
+  test('initial mount into a NON-context parent (<div>) does NOT reparse', () => {
+    class C extends Component {
+      html = '<b class="x">Max</b>';
+      [$template] = template('<div id="host">{{{this.html}}}</div>', TRUSTED_FLAGS);
+    }
+    const tags = recordTags(() => render(C));
+    // Only the real <div> is created (no context scratch). The pre-mount parse
+    // uses the neutral <template>, which already matches a <div> context — so no
+    // second <div> scratch and no extra <template> reparse.
+    expect(tags.filter((t) => t === 'div').length).toBe(1);
+    expect(tags.filter((t) => t === 'template').length).toBe(1);
+    // Content still renders.
+    expect(fixture.container.querySelector('#host .x')?.textContent).toBe('Max');
+  });
+
+  test('reactive update inside a <table> keeps re-parsing against the <table> context', async () => {
+    class C extends Component {
+      rowCell = cell('<tr><td class="a">A</td></tr>');
+      get rowHtml() {
+        return this.rowCell.value;
+      }
+      [$template] = template('<table id="host">{{{this.rowHtml}}}</table>', TRUSTED_FLAGS);
+    }
+    const { instance } = render(C);
+    const table = fixture.container.querySelector('#host')!;
+    expect(table.querySelector('tr td.a')?.textContent).toBe('A');
+
+    // The reactive reparse is async (scheduleRevalidate), so keep the recorder
+    // active across the flush rather than using the synchronous recordTags().
+    const tags: string[] = [];
+    const orig = fixture.api.element.bind(fixture.api);
+    (fixture.api as any).element = (tag: string) => {
+      tags.push(tag);
+      return orig(tag);
+    };
+    (instance as any).rowCell.update('<tr><td class="b">B</td></tr>');
+    await flush();
+    (fixture.api as any).element = orig;
+
+    // The reactive reparse targets the real <table> parent (a <table> scratch),
+    // not a neutral <template>.
+    expect(tags).toContain('table');
+    expect(tags).not.toContain('template');
+    expect(table.querySelector('tr td.a')).toBeNull();
+    expect(table.querySelector('tr td.b')?.textContent).toBe('B');
+  });
+
   // ---- teardown --------------------------------------------------------------
 
   test('teardown removes the rendered range', async () => {

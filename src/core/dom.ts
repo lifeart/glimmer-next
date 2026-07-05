@@ -22,6 +22,7 @@ import {
   RENDERING_CONTEXT_PROPERTY,
   RENDERED_NODES_PROPERTY,
   COMPONENT_ID_PROPERTY,
+  MOUNT_REPARSE_HOOK,
 } from './types';
 
 import {
@@ -2465,12 +2466,16 @@ function parseTrustedHtml(api: DOMApi, html: string, parent: Element | null): No
  *   - the range updates reactively whenever the getter's tracked cells change
  *     (a `formula` + `opcodeFor`, mirroring gxt's reactive text binding),
  *   - CONTEXTUAL PARSE: unlike Ember's out-of-band `RENDERING_CONTEXT` probe,
- *     gxt reads the REAL parent straight off `endAnchor.parentNode` once the
- *     range is mounted, so a reactive reparse targets the true `<table>`/
- *     `<select>` context. The initial mount (parent not yet known, the range is
- *     staged into the carrier's `RENDERED_NODES` for `renderElement` to insert)
- *     parses against a `<template>`, which already preserves table-/select-
- *     family descendants — so `<tr>`/`<td>`/`<option>` survive with no probe.
+ *     gxt reads the REAL parent straight off `endAnchor.parentNode`. A reactive
+ *     reparse targets the true `<table>`/`<select>` context directly. The
+ *     initial mount can't (the parent element isn't built when `$_html` runs, so
+ *     the range is staged into the carrier's `RENDERED_NODES` for
+ *     `renderElement` to insert): it parses context-neutrally against a
+ *     `<template>` — which keeps `<tr>`/`<td>`/`<option>` alive — then, via the
+ *     `MOUNT_REPARSE_HOOK` `renderElement` fires once the nodes reach their real
+ *     parent, RE-parses against a table-/select-family parent so the browser's
+ *     foster-parenting (implicit `<tbody>`, contextual `<td>`) applies, matching
+ *     a native in-`<table>` innerHTML assignment.
  *
  * The carrier is a first-class destroyable unit: `destroyElementSync` reclaims
  * the anchors + the current content (so a keyed each-row that yields `{{{v}}}`
@@ -2509,6 +2514,31 @@ export function $_html(getter: unknown, ctx: any): any {
     carrier[RENDERED_NODES_PROPERTY] = [startAnchor, ...contentNodes, endAnchor];
     lastHtml = html;
     lastParent = parent;
+  };
+
+  // Mount-time contextual reparse. The initial parse (opcode `firstRun`) runs
+  // BEFORE the carrier is inserted — its real parent is not created yet (a
+  // `<table>{{{tr}}}` compiles to `_DOM('table', …, [$_html(…)])`, and the
+  // `$_html(…)` argument is evaluated before `_DOM` builds the `<table>`), so
+  // it parses context-neutrally against a `<template>`. That preserves
+  // `<tr>`/`<td>`/`<option>` but does NOT apply table foster-parenting — a real
+  // browser parsing `<tr>` into a `<template>` yields a BARE `<tr>` with no
+  // implicit `<tbody>` (and contextual `<td>` differs), unlike an in-`<table>`
+  // innerHTML parse. `renderElement` invokes this hook once the staged nodes
+  // are inserted into their real parent, so when that parent is a table-/select-
+  // family element we re-parse against the true `<table>`/`<select>` context
+  // (via `renderInto` → `parseTrustedHtml`), matching the browser's own
+  // `<tbody>`-wrapping / contextual parse. A no-op for every non-context parent
+  // (the `<template>` result already matches) and for the reactive path (which
+  // already reparses off the now-known `endAnchor.parentNode`).
+  carrier[MOUNT_REPARSE_HOOK] = () => {
+    const parent = api.parent(endAnchor) as Element | null;
+    if (parent === null || parent === lastParent) return;
+    const contextTag = (parent as Element).tagName
+      ? (parent as Element).tagName.toLowerCase()
+      : '';
+    if (!HTML_REPARSE_CONTEXT_TAGS.has(contextTag)) return;
+    renderInto(lastHtml, parent);
   };
 
   // Reactive setup mirrors gxt's normal reactive text / renderable binding

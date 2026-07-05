@@ -21,6 +21,12 @@ export const RENDERING_CONTEXT_PROPERTY = Symbol('rendering-context');
 export const RENDERED_NODES_PROPERTY = Symbol('nodes');
 export const COMPONENT_ID_PROPERTY = Symbol('id');
 export const ADDED_TO_TREE_FLAG = Symbol('addedToTree');
+// Optional post-insert callback a carrier can expose so it can re-run work once
+// its staged nodes have been inserted into their REAL parent (known only at
+// `renderElement` time, not at carrier-construction time). `$_html` uses it to
+// re-parse trusted HTML against a now-known table-/select-family parent so the
+// browser's contextual parser (implicit `<tbody>`, contextual `<td>`) applies.
+export const MOUNT_REPARSE_HOOK = Symbol('mount-reparse');
 
 // ============================================
 // Core Types
