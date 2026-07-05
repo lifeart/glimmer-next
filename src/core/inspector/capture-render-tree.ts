@@ -37,6 +37,27 @@ import {
 } from '../shared';
 import { IfCondition } from '../control-flow/if';
 import { AsyncListComponent, SyncListComponent } from '../control-flow/list';
+import { HOST_HOOKS } from '../host-hooks';
+
+const ELEMENT_NODE = 1;
+
+/**
+ * The nearest ELEMENT ancestor of `node` (its enclosing element) — the value
+ * Ember/`@glimmer/interfaces` `CapturedBounds.parentElement` must be a
+ * `SimpleElement`. `node.parentNode` is usually already the containing element
+ * (a comment/text/element marker attached to the DOM), but it can be a
+ * `DocumentFragment` (a component staged in a fragment) or the `Document`, and
+ * for a detached node it is `null`. Walking up to the first real element keeps
+ * `bounds.parentElement` highlightable in the Inspector; returns `null` when
+ * `node` has no element ancestor at all (fully detached).
+ */
+function nearestParentElement(node: Node): Node | null {
+  let current: Node | null = node.parentNode;
+  while (current && current.nodeType !== ELEMENT_NODE) {
+    current = current.parentNode;
+  }
+  return current;
+}
 
 /**
  * DOM bounds for a captured node — the Ember `CapturedRenderNode['bounds']`
@@ -73,21 +94,34 @@ export interface CapturedRenderNode {
   children: CapturedRenderNode[];
 }
 
+/**
+ * Derive the DOM `bounds` of a component from the nodes GXT tracks for it
+ * (`RENDERED_NODES_PROPERTY`, via {@link getBounds} — which also carries the
+ * `BOUNDS` weakmap fallback). `firstNode` / `lastNode` are the first / last
+ * rendered node; `parentElement` is the nearest ENCLOSING ELEMENT of
+ * `firstNode` (see {@link nearestParentElement}).
+ *
+ * Returns `null` only when the component genuinely has no DOM to point at — it
+ * rendered no nodes, OR its nodes are fully detached (no element ancestor and
+ * no parent to anchor highlighting to). A single-node component collapses to
+ * `firstNode === lastNode`.
+ */
 function boundsFor(component: ComponentLike): CapturedRenderNodeBounds | null {
   const possibleBounds = component ? getBounds(component) : [];
-  if (possibleBounds.length === 1) {
-    const node = possibleBounds[0]!;
-    return { firstNode: node, lastNode: node, parentElement: node.parentNode! };
-  } else if (possibleBounds.length > 1) {
-    const first = possibleBounds[0]!;
-    const last = possibleBounds[possibleBounds.length - 1]!;
-    return {
-      firstNode: first,
-      lastNode: last,
-      parentElement: first.parentNode!,
-    };
+  if (possibleBounds.length === 0) {
+    return null;
   }
-  return null;
+  const firstNode = possibleBounds[0]!;
+  const lastNode = possibleBounds[possibleBounds.length - 1]!;
+  // Prefer the nearest real element ancestor (interface: `parentElement` is a
+  // `SimpleElement`); fall back to the immediate parent (fragment / document)
+  // so a component with attached-but-non-element-parented nodes still yields
+  // bounds. `null` parent → fully detached → no bounds.
+  const parentElement = nearestParentElement(firstNode) ?? firstNode.parentNode;
+  if (!parentElement) {
+    return null;
+  }
+  return { firstNode, lastNode, parentElement };
 }
 
 /**
@@ -177,8 +211,21 @@ export function componentToRenderTree(
     }
   }
 
+  // Name resolution, host-first. GXT core only has minification-fragile names
+  // (`debugName` — DEV-only, itself `constructor.name` — and the minified
+  // runtime `constructor.name`). The stable registered name (Ember's
+  // `"hello-world"`) is host/registry-owned, so consult the host hook FIRST.
+  // The hook returns `undefined` for GXT-internal control-flow/wrapper
+  // instances, so their `debugName` prefixes below still reclassify them into
+  // the `if` / `each` / `yield` / `svg` keyword names.
+  const hostName = HOST_HOOKS.resolveComponentName
+    ? HOST_HOOKS.resolveComponentName(component)
+    : undefined;
   let componentName: string =
-    anyComponent.debugName || component.constructor.name || '(unknown)';
+    hostName ||
+    anyComponent.debugName ||
+    component.constructor.name ||
+    '(unknown)';
 
   const hasArgs = $args in component;
   const hasDebugArgs = $_debug_args in component;
