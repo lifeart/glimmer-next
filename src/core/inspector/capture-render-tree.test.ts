@@ -15,6 +15,7 @@ import {
   type CapturedRenderNode,
 } from './capture-render-tree';
 import { IfCondition } from '../control-flow/if';
+import { HOST_HOOKS, registerHostHooks } from '../host-hooks';
 
 /**
  * These tests pin the Ember `captureRenderTree` node shape produced from GXT's
@@ -38,6 +39,9 @@ describe('captureRenderTree — Ember-shaped render tree from GXT TREE', () => {
     TREE.clear();
     CHILD.clear();
     PARENT.clear();
+    // HOST_HOOKS is a module-local singleton; drop any hook a test installed so
+    // it can't leak into the next test.
+    delete (HOST_HOOKS as { resolveComponentName?: unknown }).resolveComponentName;
     window.close();
   });
 
@@ -317,6 +321,136 @@ describe('captureRenderTree — Ember-shaped render tree from GXT TREE', () => {
 
       const [node] = captureRenderTree();
       expect(node!.children.map((c) => c.id).sort()).toEqual(['2', '3']);
+    });
+  });
+
+  /**
+   * `bounds` derivation from RENDERED_NODES (via getBounds) + `parentElement`
+   * hardening. The Ember Inspector uses `bounds`
+   * (`{ parentElement, firstNode, lastNode }`) to HIGHLIGHT a component's DOM,
+   * so `parentElement` must be the enclosing element and `bounds` must stay
+   * `null` (not a malformed object) when the component has no highlightable DOM.
+   */
+  describe('bounds derivation — parentElement / empty-DOM', () => {
+    test('single attached node → parentElement is the enclosing element', () => {
+      const el = document.createElement('span');
+      container.appendChild(el);
+      const comp = makeComponent(1, {
+        debugName: 'Single',
+        renderedNodes: [el],
+      });
+
+      const node = componentToRenderTree(comp)!;
+      expect(node.bounds).not.toBe(null);
+      expect(node.bounds!.firstNode).toBe(el);
+      expect(node.bounds!.lastNode).toBe(el);
+      // firstNode.parentNode is already an element → used directly.
+      expect(node.bounds!.parentElement).toBe(container);
+      expect((node.bounds!.parentElement as Node).nodeType).toBe(1);
+    });
+
+    test('comment-marker firstNode → parentElement walks to the enclosing element', () => {
+      // GXT roots/branches are typically comment markers; their parentNode is
+      // the containing element, which is what highlighting needs.
+      const marker = document.createComment('gxt-marker');
+      const tail = document.createElement('i');
+      container.append(marker, tail);
+      const comp = makeComponent(7, {
+        debugName: 'Marked',
+        renderedNodes: [marker, tail],
+      });
+
+      const node = componentToRenderTree(comp)!;
+      expect(node.bounds!.firstNode).toBe(marker);
+      expect(node.bounds!.lastNode).toBe(tail);
+      expect(node.bounds!.parentElement).toBe(container);
+      expect((node.bounds!.parentElement as Node).nodeType).toBe(1);
+    });
+
+    test('genuinely empty component (no rendered nodes) keeps bounds null', () => {
+      const comp = makeComponent(1, { debugName: 'Empty', renderedNodes: [] });
+      const node = componentToRenderTree(comp)!;
+      expect(node.bounds).toBe(null);
+    });
+
+    test('fully detached firstNode (no parent) → bounds null (no shape violation)', () => {
+      // A rendered node that is not attached anywhere: it cannot be highlighted
+      // and has no parentElement, so bounds must be null rather than a
+      // malformed `{ parentElement: null, … }`.
+      const orphan = document.createElement('div'); // never appended
+      const comp = makeComponent(8, {
+        debugName: 'Detached',
+        renderedNodes: [orphan],
+      });
+      const node = componentToRenderTree(comp)!;
+      expect(node.bounds).toBe(null);
+    });
+
+    test('nodes parented by a DocumentFragment fall back to that parent', () => {
+      // Staged-in-fragment component: no element ancestor exists, so
+      // parentElement falls back to the immediate (fragment) parent — still a
+      // non-null bounds the caller can reason about.
+      const frag = document.createDocumentFragment();
+      const el = document.createElement('p');
+      frag.appendChild(el);
+      const comp = makeComponent(9, {
+        debugName: 'Fragmented',
+        renderedNodes: [el],
+      });
+      const node = componentToRenderTree(comp)!;
+      expect(node.bounds).not.toBe(null);
+      expect(node.bounds!.firstNode).toBe(el);
+      expect(node.bounds!.parentElement).toBe(
+        frag as unknown as Node,
+      );
+    });
+  });
+
+  /**
+   * `name` resolution. GXT core only has minification-fragile names
+   * (`debugName` / `constructor.name`); the stable registered name is
+   * host/registry-owned. The `resolveComponentName` host hook lets the host
+   * supply it, consulted BEFORE the gxt fallbacks.
+   */
+  describe('name resolution — resolveComponentName host hook', () => {
+    test('host hook name wins over debugName', () => {
+      registerHostHooks({
+        resolveComponentName: (c) =>
+          (c as { debugName?: string }).debugName === 'MinifiedXe'
+            ? 'hello-world'
+            : undefined,
+      });
+      const comp = makeComponent(1, {
+        debugName: 'MinifiedXe',
+        args: { name: 'a' },
+      });
+      const node = componentToRenderTree(comp)!;
+      expect(node.name).toBe('hello-world');
+    });
+
+    test('host hook returning undefined falls back to debugName', () => {
+      registerHostHooks({ resolveComponentName: () => undefined });
+      const comp = makeComponent(1, { debugName: 'FromDebugName' });
+      const node = componentToRenderTree(comp)!;
+      expect(node.name).toBe('FromDebugName');
+    });
+
+    test('host hook does NOT mask control-flow keyword names (returns undefined for internals)', () => {
+      // A host owns real components, not gxt internals — it returns undefined
+      // for an IfCondition, so the `if` keyword mapping still applies.
+      registerHostHooks({
+        resolveComponentName: (c) =>
+          (c as { debugName?: string }).debugName?.startsWith('IfCondition')
+            ? undefined
+            : 'should-not-appear',
+      });
+      const ifComp = makeComponent(3, {
+        debugName: 'IfCondition-1',
+        args: { if: true },
+      });
+      const [node] = captureRenderTree([ifComp]);
+      expect(node!.name).toBe('if');
+      expect(node!.args.positional).toEqual([true]);
     });
   });
 });

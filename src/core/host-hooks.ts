@@ -257,6 +257,36 @@ export interface HostHooks {
    * default.
    */
   onLeaveRenderScope?: () => void;
+  /**
+   * Resolve a HUMAN-MEANINGFUL name for a component instance, consulted by the
+   * render-tree serializer (`captureRenderTree` / `componentToRenderTree`) that
+   * feeds the Ember Inspector.
+   *
+   * GXT core only has minification-fragile names for a component: `debugName`
+   * (DEV-only, itself just `constructor.name`) and `constructor.name` (a
+   * minified runtime class name like `xe` / `Factory` in a production build).
+   * The stable, registered name (e.g. Ember's `"hello-world"` /
+   * `"my-app@component:foo/bar"`) is COMPILE-TIME / registry information that
+   * only the HOST owns. This hook lets the host supply it.
+   *
+   * Consulted FIRST in name resolution: when it returns a non-empty string that
+   * becomes the node `name`; when it returns `undefined` / `null` / `''` the
+   * serializer falls back to `debugName` → `constructor.name` → `'(unknown)'`.
+   *
+   * Contract: return `undefined` for components the host does NOT own — in
+   * particular GXT-internal control-flow / wrapper instances (`IfCondition`,
+   * `SyncListComponent` / `AsyncListComponent`, slot contexts, `SVGProvider`,
+   * `UnstableChildWrapper`). The serializer relies on their `debugName` prefixes
+   * to reclassify them into the `'if'` / `'each'` / `'yield'` / `'svg'` keyword
+   * names, so a host name for them would mask that mapping.
+   *
+   * No-op by default (standalone GXT never registers it, so the render-tree
+   * name resolution is unchanged).
+   *
+   * @param component the component instance being serialized.
+   * @returns the meaningful name, or `undefined` / `null` to fall back.
+   */
+  resolveComponentName?: (component: object) => string | undefined | null;
 }
 
 /**
