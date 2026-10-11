@@ -18,6 +18,18 @@ export {
   type CachedCell,
 } from '@/core/reactive';
 
+// Host tag primitives: Glimmer tag protocol on gxt cells (one reactive system
+// for hosts such as Ember's native layer). See src/core/tags.ts.
+export {
+  tagFor,
+  tagMetaFor,
+  peekTagFor,
+  dirtyCell,
+  currentRevision,
+  UNSET,
+  type TagMeta,
+} from '@/core/tags';
+
 // Keyed selector primitive (O(2) fan-out for `selected === key` bindings)
 export { keyedSelector, type KeyedSelector } from '@/core/selector';
 
