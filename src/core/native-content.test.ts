@@ -18,7 +18,7 @@ import * as main from './index';
 import { Component } from './component';
 import { RENDERED_NODES_PROPERTY, COMPONENT_ID_PROPERTY, addToTree, $template } from './shared';
 import { $SELF } from './self';
-import { cId } from './tree';
+import { cId, nativeTreeParent } from './tree';
 import { $_c, $_args, $_edp, bindNativeContent } from './dom';
 import { createDOMFixture, type DOMFixture } from './__test-utils__';
 import { renderElement } from './render-core';
@@ -428,3 +428,21 @@ function withSelf(tpl: unknown, self: object) {
     return { [COMPONENT_ID_PROPERTY]: cId(), [$SELF]: self, [$template]: tpl };
   };
 }
+
+describe('nativeTreeParent (EMBER_NATIVE if / each tree parent)', () => {
+  test('a descendant active parent wins; an ancestor (the invoker) does not', () => {
+    const root = { [COMPONENT_ID_PROPERTY]: cId(), [RENDERED_NODES_PROPERTY]: [] } as any;
+    const invoker = { [COMPONENT_ID_PROPERTY]: cId(), [RENDERED_NODES_PROPERTY]: [] } as any;
+    const component = { [COMPONENT_ID_PROPERTY]: cId(), [RENDERED_NODES_PROPERTY]: [] } as any;
+    const wrapper = { [COMPONENT_ID_PROPERTY]: cId(), [RENDERED_NODES_PROPERTY]: [] } as any;
+    const stranger = { [COMPONENT_ID_PROPERTY]: cId(), [RENDERED_NODES_PROPERTY]: [] } as any;
+    addToTree(root, invoker);
+    addToTree(invoker, component);
+    addToTree(component, wrapper);
+    expect(nativeTreeParent(wrapper, component)).toBe(wrapper);
+    expect(nativeTreeParent(invoker, component)).toBe(component);
+    expect(nativeTreeParent(stranger, component)).toBe(component);
+    expect(nativeTreeParent(null, component)).toBe(component);
+    expect(nativeTreeParent(component, component)).toBe(component);
+  });
+});

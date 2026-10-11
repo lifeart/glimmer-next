@@ -25,7 +25,7 @@ import {
   RENDERED_NODES_PROPERTY,
   COMPONENT_ID_PROPERTY,
 } from '@/core/shared';
-import { cId, addToTree } from '@/core/tree';
+import { cId, addToTree, nativeTreeParent } from '@/core/tree';
 import { opcodeFor } from '@/core/vm';
 import { initDOM } from '@/core/context';
 import { setParentContext, getParentContext } from '../tracking';
@@ -149,7 +149,9 @@ export class IfCondition {
         activeParent[COMPONENT_ID_PROPERTY] !==
           (parentContext as any)?.[COMPONENT_ID_PROPERTY]
       ) {
-        treeParent = activeParent;
+        treeParent = EMBER_NATIVE
+          ? (nativeTreeParent(activeParent as any, parentContext as any) as any)
+          : activeParent;
       }
     }
     // Remember the resolved tree parent so the async destroy below registers on

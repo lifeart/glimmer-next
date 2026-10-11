@@ -36,7 +36,7 @@ import {
   isEmpty,
 } from '@/core/shared';
 import { RENDERING_CONTEXT_PROPERTY } from '@/core/types';
-import { TREE, CHILD, PARENT, cId, addToTree, releaseId } from '@/core/tree';
+import { TREE, CHILD, PARENT, cId, addToTree, releaseId, nativeTreeParent } from '@/core/tree';
 import { isRehydrationScheduled } from '@/core/ssr/rehydration';
 import { initDOM } from '@/core/context';
 import {
@@ -666,7 +666,9 @@ export class BasicListComponent<T extends { id: number }> {
     // the list to that wrapper (rather than the top-level component)
     // ensures the list is destroyed when its enclosing iteration is
     // torn down, so its opcode on the source cell is unregistered.
-    const parentCtx = (getParentContext() as Component<any> | null) || ctx;
+    const parentCtx = EMBER_NATIVE
+      ? (nativeTreeParent(getParentContext() as any, ctx as any) as unknown as Component<any>)
+      : (getParentContext() as Component<any> | null) || ctx;
     // @ts-expect-error typings error
     addToTree(parentCtx, this, 'from list constructor');
     this[RENDERED_NODES_PROPERTY] = [];
