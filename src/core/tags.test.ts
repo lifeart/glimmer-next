@@ -8,6 +8,8 @@ import {
   cell,
   cached,
   cellFor,
+  rawCellFor,
+  lazyRawCellFor,
   formula,
   getTracker,
   setTracker,
@@ -106,6 +108,28 @@ describe('tagFor', () => {
     expect(t._value).toBe('init');
     foo.x = 'next';
     expect(t._value).toBe('next');
+  });
+
+  test('the UNSET check never evaluates an existing LazyCell (re-entrant host accessor)', () => {
+    // Shape of the compat @tracked path: a lazy cell whose initializer reads
+    // obj[key], and an accessor that re-enters rawCellFor while that
+    // initializer runs. Evaluating the LazyCell inside rawCellFor's existing-
+    // cell check recursed until the stack overflowed.
+    let reads = 0;
+    class Host {
+      get x(): unknown {
+        reads++;
+        return rawCellFor(this as never, 'x' as never) !== undefined ? 1 : 0;
+      }
+    }
+    const obj = new Host();
+    const lazy = lazyRawCellFor(obj as never, 'x' as never);
+    expect(rawCellFor(obj as never, 'x' as never)).toBe(lazy);
+    expect(lazyRawCellFor(obj as never, 'x' as never)).toBe(lazy);
+    expect(reads).toBe(0);
+    // resolving it later goes through the accessor exactly once
+    expect(lazy.value).toBe(1);
+    expect(reads).toBe(1);
   });
 
   test('cellFor on a tagFor cell seeds it in place from obj[key]', () => {

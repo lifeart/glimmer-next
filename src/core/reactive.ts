@@ -76,6 +76,14 @@ export const cellsMap = new WeakMap<
  */
 export const UNSET: unique symbol = Symbol('gxt.tag.unset') as never;
 
+// True only for a plain host-tag cell still holding `UNSET`. Reads the raw
+// slot, NOT `_value`: a `LazyCell`'s `_value` getter evaluates its initializer,
+// and these checks run on re-entrant paths (a host accessor reached from that
+// very initializer calling `rawCellFor`) — evaluating there recurses forever.
+function isUnsetCell(cell: Cell<unknown>): boolean {
+  return (cell as unknown as { __value: unknown }).__value === UNSET;
+}
+
 export function getCells() {
   return Array.from(DEBUG_CELLS);
 }
@@ -782,7 +790,7 @@ export function lazyRawCellFor<T extends object, K extends keyof T>(
   } else {
     const existing = refs.get(key);
     if (existing !== undefined) {
-      if (existing._value === UNSET) {
+      if (isUnsetCell(existing)) {
         // Host `tagFor` cell (src/core/tags.ts): seed it in place.
         existing._value = typeof init === 'function' ? init() : obj[key];
       }
@@ -810,7 +818,7 @@ export function rawCellFor<T extends object, K extends keyof T>(
     // and cellFor is on the per-property hot path during template setup.
     const existing = refs.get(key);
     if (existing !== undefined) {
-      if (existing._value === UNSET) {
+      if (isUnsetCell(existing)) {
         // Host `tagFor` cell (src/core/tags.ts): seed it in place. For a host
         // accessor (Ember @tracked) the `obj[key]` read initializes this same
         // cell through the host's storage and returns the value.
