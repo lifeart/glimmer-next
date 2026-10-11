@@ -13,7 +13,8 @@ import { processTemplate, type ResolvedHBS } from './babel';
 import { compile, formatErrorForDisplay, generateSourceMap, type MappingTreeNode, type SourceMapV3 } from './compiler/index';
 import { resolveTemplateTypeHintsWithChecker, mergeTypeHints } from './type-checker-hints';
 
-import { SYMBOLS, RECYCLE_IMPORT, RECYCLE_SYMBOLS, NATIVE_SYMBOLS, OUTLET_SYMBOLS, MAIN_IMPORT } from './symbols';
+import { SYMBOLS, RECYCLE_IMPORT, RECYCLE_SYMBOLS, MAIN_IMPORT } from './symbols';
+import { buildTemplateTagFunction, nativeTemplateSymbols, selfPreamble } from './template-wrapper';
 import { defaultFlags, type Flags } from './flags';
 
 // The opt-in row-recycling entry points ($_eachRecycled / $_eachSyncRecycled)
@@ -52,9 +53,7 @@ function withRecycleImport(moduleCode: string, usedRecycle: boolean): string {
 // Under a flag the assembler imports its symbols explicitly (unused named
 // imports are tree-shaken).
 function withNativeImport(moduleCode: string, flags: Flags): string {
-  const symbols: string[] = [];
-  if (flags.EMBER_NATIVE === true) symbols.push(...NATIVE_SYMBOLS);
-  if (flags.EMBER_OUTLET === true) symbols.push(...OUTLET_SYMBOLS);
+  const symbols = nativeTemplateSymbols(flags);
   if (symbols.length === 0) return moduleCode;
   return `import { ${symbols.join(', ')} } from '${MAIN_IMPORT}';\n${moduleCode}`;
 }
@@ -132,6 +131,8 @@ interface ProcessedTemplate {
   usedArgsAlias: boolean;
   usedSlots: boolean;
   usedFw: boolean;
+  /** EMBER_SELF (G6): the body reads the self alias `$s`. */
+  usedSelf: boolean;
 }
 
 /**
@@ -398,6 +399,7 @@ function processTransformedFiles(
       usedArgsAlias: result.usedArgsAlias,
       usedSlots: result.usedSlots,
       usedFw: result.usedFw,
+      usedSelf: result.usedSelf,
     });
   });
 
@@ -408,6 +410,8 @@ function processTransformedFiles(
 
     let result = '';
     const finContext = template.flags.hasThisAccess ? 'this' : 'this';
+    // EMBER_SELF (G6): `const $s = $_self(this);` iff the body reads `$s`.
+    const maybeSelf = selfPreamble(template);
     // Ground truth from the compiler (see ProcessedTemplate): inject each
     // preamble local iff the compiled body actually emitted a free reference to
     // it. Replaces the old substring scans — `code.includes('$fw')` matched a
@@ -425,27 +429,15 @@ function processTransformedFiles(
     const declareReturn = `return ${SYMBOLS.FINALIZE_COMPONENT}(roots, ${finContext});`;
 
     if (isTemplateTag) {
-      result = `function () {
-      ${maybeFw}
-      ${SYMBOLS.$_GET_ARGS}(this, arguments);
-      ${maybeArgsAlias}
-      ${maybeSlots}
-      ${declareRoots}
-      ${declareReturn}
-    }`;
-      // EMBER_NATIVE (G14): brand template-only templates so the host can tell
-      // them apart from its own function-shaped values (`isTemplateFn`).
-      // Class-body templates are carried by their class and stay unbranded.
-      // The call wrapper defeats JS name inference (`const Foo = $_tpl(function
-      // () {…})` has an empty `.name`), so name the function after its binding.
-      if (globalFlags.EMBER_NATIVE === true && template.flags.isClassTemplate !== true) {
-        const name = template.flags.templateName;
-        const fn = name ? `function ${name}${result.slice('function '.length)}` : result;
-        result = `$_tpl(${fn})`;
-      }
+      // Shared with the runtime compiler (plugins/template-wrapper.ts) so AOT
+      // and runtime-compiled templates are emitted identically.
+      result = buildTemplateTagFunction(template, globalFlags, {
+        isClassTemplate: template.flags.isClassTemplate,
+        templateName: template.flags.templateName,
+      });
     } else {
       result = isClass
-        ? `() => {
+        ? `() => {${maybeSelf === '' ? '' : `\n      ${maybeSelf}`}
       ${maybeSlots}
       ${maybeFw}
       ${hasArgs ? `const $a = this[${SYMBOLS.$args}];` : ''}
@@ -453,7 +445,7 @@ function processTransformedFiles(
       ${declareReturn}
     }`
         : `(() => {
-      ${SYMBOLS.$_GET_ARGS}(this, arguments);
+      ${SYMBOLS.$_GET_ARGS}(this, arguments);${maybeSelf === '' ? '' : `\n      ${maybeSelf}`}
       ${maybeArgsAlias}
       ${maybeSlots}
       ${maybeFw}

@@ -122,6 +122,12 @@ export const NATIVE_SYMBOLS: readonly string[] = ['$_tpl', '$__tag'];
 // byte-identical); the module assembler imports it only under the flag.
 export const OUTLET_SYMBOLS: readonly string[] = ['$_outlet'];
 
+// Ember property tags (EMBER_PROPERTY_TAGS, G8): member taps use `$__tag`
+// (also a NATIVE_SYMBOLS member). Ember template self (EMBER_SELF, G6): the
+// wrapper preamble `const $s = $_self(this)`. Same rule as NATIVE_SYMBOLS.
+export const PROPERTY_TAG_SYMBOLS: readonly string[] = ['$__tag'];
+export const SELF_SYMBOLS: readonly string[] = ['$_self'];
+
 export const RECYCLE_SYMBOLS: readonly string[] = [
   SYMBOLS.EACH_RECYCLED,
   SYMBOLS.EACH_SYNC_RECYCLED,

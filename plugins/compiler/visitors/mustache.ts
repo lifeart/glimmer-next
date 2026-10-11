@@ -139,7 +139,13 @@ export function visitMustache(
 
   // In compat mode, transform bare {{this}} to {{this.__gxtSelfString__}}
   // Ember's {{this}} calls toString() on the component instance.
-  if (ctx.flags.IS_GLIMMER_COMPAT_MODE && node.path.type === 'PathExpression') {
+  // (EMBER_SELF, G6: `{{this}}` is the template self `$s`, rendered as text by
+  // the runtime — no compat-bridge property.)
+  if (
+    ctx.flags.IS_GLIMMER_COMPAT_MODE &&
+    !ctx.flags.EMBER_SELF &&
+    node.path.type === 'PathExpression'
+  ) {
     const head = node.path.head;
     if (head.type === 'ThisHead' && node.path.tail.length === 0 && node.params.length === 0 && node.hash.pairs.length === 0) {
       const resolved = resolvePath(ctx, 'this.__gxtSelfString__');

@@ -18,7 +18,7 @@ import type {
 } from '../types';
 import { isSerializedValue, isRuntimeTag } from '../types';
 import { SYMBOLS, EVENT_TYPE, INTERNAL_HELPERS } from './symbols';
-import { buildValue, buildPathExpression, buildNativeArg } from './value';
+import { buildValue, buildPathExpression, buildNativeArg, selfHeadedName } from './value';
 import { B, serializeJS, type JSExpression, type JSProperty } from '../builder';
 import { escapeReservedBindingName } from '../utils/js-utils';
 
@@ -599,6 +599,9 @@ function buildModifierExpr(
     modName = needsBracket
       ? `${SYMBOLS.ARGS_ALIAS}["${argName}"]`
       : `${SYMBOLS.ARGS_ALIAS}.${argName}`;
+  } else {
+    // EMBER_SELF (G6): a `this.modifier` reference reads the template self.
+    modName = selfHeadedName(ctx, modName);
   }
 
   // Ember native layer: literal-or-thunk arguments (buildNativeArg) — the host
@@ -889,6 +892,9 @@ function buildComponentCall(
       dynamicTag = needsBracket
         ? `${SYMBOLS.ARGS_ALIAS}["${head}"]${rest}`
         : `${SYMBOLS.ARGS_ALIAS}.${head}${rest}`;
+    } else {
+      // EMBER_SELF (G6): `<this.foo.Bar />` reads the template self.
+      dynamicTag = selfHeadedName(ctx, dynamicTag);
     }
     const tagRef = B.runtimeRef(dynamicTag, tagRange);
     const tagGetter = B.reactiveGetter(tagRef, tagRange);

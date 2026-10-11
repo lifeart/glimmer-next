@@ -1,5 +1,6 @@
 import { getTracker } from '../reactive';
 import { tagFor } from '../tags';
+import { hostGetProp } from '../host-hooks';
 
 /**
  * Non-defining member tap (Ember native layer, EMBER_NATIVE compile flag).
@@ -19,6 +20,12 @@ import { tagFor } from '../tags';
  *
  * Primitive / nullish heads fall back to a plain member read, exactly like
  * `$__cellFor`.
+ *
+ * Also the EMBER_PROPERTY_TAGS (G8) tap for every member segment of `this.*` /
+ * `@arg.*` / let-binding paths. When the host registered a `getProp` hook
+ * (Ember: metal `_getProp` — `unknownProperty`, `[]` tags of array values,
+ * DEV tag-consumption bookkeeping), an object / function head is read through
+ * it instead (Glimmer global-context `getProp` parity).
  */
 export function $__tag(obj: unknown, key: string): unknown {
   if (obj === null || obj === undefined) {
@@ -27,6 +34,9 @@ export function $__tag(obj: unknown, key: string): unknown {
   const t = typeof obj;
   if (t !== 'object' && t !== 'function') {
     return (obj as Record<string, unknown>)[key];
+  }
+  if (hostGetProp !== null) {
+    return hostGetProp(obj as object, key);
   }
   const tracker = getTracker();
   if (tracker !== null) {

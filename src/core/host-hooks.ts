@@ -297,6 +297,18 @@ export interface HostHooks {
    * `$_outlet` throws when no outlet component is registered.
    */
   outletComponent?: unknown;
+  /**
+   * Property read with tag consumption (G8, the EMBER_PROPERTY_TAGS compile
+   * flag; Glimmer's global-context `getProp`). Under the flag every member
+   * segment of a `this.*` / `@arg.*` / block-param path compiles to
+   * `$__tag(obj, "key")`; for an object / function head the tap delegates to
+   * this hook, which must return the property value and consume whatever tags
+   * make the read reactive (Ember: metal `_getProp` — `tagFor(obj, key)`,
+   * `unknownProperty`, the `[]` tag of an array value). Without the hook the
+   * tap consumes gxt's own `tagFor(obj, key)` and reads `obj[key]`. Only
+   * reached by EMBER_NATIVE / EMBER_PROPERTY_TAGS output.
+   */
+  getProp?: (obj: object, key: string) => unknown;
 }
 
 /**
@@ -325,6 +337,13 @@ export let hostNormalizeAttrValue: NonNullable<
 > | null = null;
 
 /**
+ * Hot-path cache for {@link HostHooks.getProp} (read by every `$__tag` member
+ * tap): `null` unless a host registered the hook. Kept in lock-step with
+ * `HOST_HOOKS.getProp` by `registerHostHooks`.
+ */
+export let hostGetProp: NonNullable<HostHooks['getProp']> | null = null;
+
+/**
  * Merge the given hooks into the active slot table. Later registrations
  * override earlier ones per-key; passing `undefined` for a key is ignored
  * (use an explicit no-op function to disable a default the host set
@@ -341,6 +360,7 @@ export function registerHostHooks(hooks: HostHooks): void {
   // Reads `HOST_HOOKS.normalizeAttrValue` so a later `registerHostHooks({})`
   // after tests clear the table resets the cache back to `null`.
   hostNormalizeAttrValue = HOST_HOOKS.normalizeAttrValue ?? null;
+  hostGetProp = HOST_HOOKS.getProp ?? null;
   // Cross-instance host-presence sentinel. HOST_HOOKS is module-local, so a
   // consumer bundled into a different entry chunk (e.g. the list frame-mode
   // gate) sees its OWN empty copy. This single globalThis flag — set true the

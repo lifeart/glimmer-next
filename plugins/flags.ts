@@ -76,6 +76,30 @@ export type Flags = {
   // shadows the keyword. `$_outlet` is auto-imported only under this flag, so
   // standalone and compat output are byte-identical.
   EMBER_OUTLET: boolean;
+  // Ember property tags (G8; the Ember native layer). Compile-time only,
+  // emission-affecting, default off: every MEMBER segment of a `this.*`,
+  // `@arg.*`, block-param or let-binding path is read through the non-defining
+  // tap `$__tag(obj, "key")` instead of a plain `obj?.key` read. The tap returns
+  // the property value AND consumes the per-(obj, key) property tag (through the
+  // host `getProp` hook when one is registered — Ember: `_getProp`, which also
+  // honours `unknownProperty` and array `[]` tags), so a `set()` /
+  // `notifyPropertyChange()` on an UNTRACKED property (controllers, POJOs, test
+  // contexts, query params) re-renders exactly the bindings that read it —
+  // Glimmer's global-context `getProp` parity. `$__tag` is auto-imported only
+  // under this flag (or EMBER_NATIVE), so standalone and compat output are
+  // byte-identical.
+  EMBER_PROPERTY_TAGS: boolean;
+  // Ember template self (G6; the Ember native layer). Compile-time only,
+  // emission-affecting, default off: a template reads its `this` (the Ember
+  // "self") through `const $s = $_self(this)` — `this.x` emits `$s.x`, `{{this}}`
+  // emits `$s` — while `this` stays the RENDER NODE (the ctx passed to `$_tag` /
+  // `$_c` / helpers / slots). `$_self(node)` returns `node[$SELF]` when the host
+  // set one (a loose route template whose self is its controller, a test
+  // context), else the node itself (components: self === node). The render node
+  // is never the host object, so gxt never writes `args` / tree ids / rendered
+  // nodes onto a controller or a test context. `$_self` is auto-imported only
+  // under this flag; standalone and compat output are byte-identical.
+  EMBER_SELF: boolean;
 };
 
 export function defaultFlags() {
@@ -98,5 +122,7 @@ export function defaultFlags() {
     EMBER_TRUSTED_HTML: false,
     EMBER_NATIVE: false,
     EMBER_OUTLET: false,
+    EMBER_PROPERTY_TAGS: false,
+    EMBER_SELF: false,
   } as Flags;
 }

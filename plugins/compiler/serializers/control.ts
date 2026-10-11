@@ -742,7 +742,15 @@ function buildIf(
   // IMPORTANT: Always use `this` (not ctxName) for this.X paths because `this`
   // refers to the component instance, while ctxName may refer to a nested
   // block context (e.g., inside {{#each}}) that doesn't have the property.
-  if (ctx.flags.IS_GLIMMER_COMPAT_MODE && ctx.flags.WITH_EMBER_INTEGRATION && control.condition.kind === 'path') {
+  // Not in the Ember native layer (EMBER_NATIVE): there is no compat bridge
+  // hook to consult, and the plain getter would bypass the self alias (G6) and
+  // the property-tag tap (G8) the condition path already carries.
+  if (
+    ctx.flags.IS_GLIMMER_COMPAT_MODE &&
+    ctx.flags.WITH_EMBER_INTEGRATION &&
+    !ctx.flags.EMBER_NATIVE &&
+    control.condition.kind === 'path'
+  ) {
     const expr = control.condition.expression;
     const thisMatch = expr.match(/^this\.([a-zA-Z_$][a-zA-Z0-9_$]*)$/);
     if (thisMatch) {

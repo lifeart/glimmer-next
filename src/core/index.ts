@@ -80,6 +80,8 @@ export { $template, $args, $fwProp } from '@/core/shared';
 export { syncDom, takeRenderingControl, flushRevalidation } from '@/core/runtime';
 // Template-function brand (G14): compiler-emitted `$_tpl` + host-side check.
 export { $_tpl, isTemplateFn } from '@/core/template-fn';
+// Template self (G6): compiler-emitted `$_self` + the host-side `$SELF` key.
+export { $_self, $SELF } from '@/core/self';
 export {
   getCurried,
   isCurried,

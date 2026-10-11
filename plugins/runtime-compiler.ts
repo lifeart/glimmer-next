@@ -42,7 +42,10 @@
 
 import { compile as compilerCompile, type CompileOptions, type CompileResult, type AstTransform } from './compiler/index';
 import { SYMBOLS, CONSTANTS, EVENT_TYPE } from './symbols';
-import { type Flags } from './flags';
+import { type Flags, defaultFlags } from './flags';
+import { buildTemplateTagFunction, templateScopeNames } from './template-wrapper';
+import { cId } from '../src/core/tree';
+import { COMPONENT_ID_PROPERTY } from '../src/core/types';
 
 // Re-export types
 export type { CompileOptions, CompileResult, AstTransform, Flags };
@@ -463,6 +466,91 @@ export function compile(
 }
 
 /**
+ * Options for {@link compileTemplateSource}.
+ */
+export interface TemplateSourceOptions {
+  /** Module name for diagnostics. */
+  moduleName?: string;
+  /**
+   * Host compiler flags, merged over `defaultFlags()` exactly like the AOT vite
+   * plugin (`compiler(mode, { flags })`) merges them.
+   */
+  flags?: Partial<Flags>;
+  /** Names bound in the template's lexical scope (strict-mode scope values). */
+  bindings?: Set<string>;
+  /**
+   * Lexical-scope predicate (like the AOT babel plugin's JS-scope check): a
+   * name for which it returns true is a lexical binding. For hosts that
+   * resolve free names through the caller's scope (an `eval` callback).
+   */
+  lexicalScope?: (name: string) => boolean;
+  /** Name of the branded function (`$_tpl(function Name() {…})`, EMBER_NATIVE). */
+  templateName?: string;
+  /** Pretty-print the body like an AOT development build. */
+  format?: boolean;
+}
+
+/**
+ * The AOT-identical SOURCE of a runtime-compiled template.
+ */
+export interface TemplateSource {
+  /**
+   * A JS function expression — byte-identical to the `<template>` wrapper the
+   * AOT assembler (plugins/test.ts) emits for the same template under the same
+   * flags (both use plugins/template-wrapper.ts). '' when compilation failed.
+   */
+  source: string;
+  /**
+   * The free runtime identifiers `source` may reference. The host binds each to
+   * the export of the same name from the main `@lifeart/gxt` entry (the AOT
+   * import source) — e.g. `new Function(...scopeNames, 'return ' + source)`.
+   */
+  scopeNames: readonly string[];
+  /** The compiled body (`const roots = …`). */
+  code: string;
+  errors: CompileResult['errors'];
+  warnings: CompileResult['warnings'];
+  usedSelf: CompileResult['usedSelf'];
+}
+
+/**
+ * Compile a template to the SOURCE of its template function, exactly as the
+ * AOT pipeline would emit it under `options.flags` — WITHOUT evaluating it and
+ * without touching global scope (no `setupGlobalScope`, no Map/Set patching).
+ * For hosts that own symbol binding (the Ember native layer compiles test /
+ * runtime templates with the same flag constant as its AOT build).
+ */
+export function compileTemplateSource(
+  template: string,
+  options: TemplateSourceOptions = {}
+): TemplateSource {
+  const flags: Flags = { ...defaultFlags(), ...options.flags };
+  const result = compilerCompile(template, {
+    bindings: options.bindings ?? new Set(),
+    filename: options.moduleName || 'runtime-template',
+    lexicalScope: options.lexicalScope,
+    // The AOT assembler's per-template flag surfacing (plugins/test.ts).
+    flags: {
+      ...flags,
+      IS_GLIMMER_COMPAT_MODE: flags.IS_GLIMMER_COMPAT_MODE ?? true,
+      WITH_TYPE_OPTIMIZATION: false,
+    },
+    format: options.format ? { enabled: true, baseIndent: '      ' } : false,
+  });
+  return {
+    source:
+      result.errors.length > 0
+        ? ''
+        : buildTemplateTagFunction(result, flags, { templateName: options.templateName }),
+    scopeNames: templateScopeNames(flags),
+    code: result.code,
+    errors: result.errors,
+    warnings: result.warnings,
+    usedSelf: result.usedSelf,
+  };
+}
+
+/**
  * Options for creating a scoped compiler
  */
 export interface CreateCompilerOptions extends Omit<RuntimeCompileOptions, 'scopeValues'> {
@@ -810,6 +898,10 @@ export function template(
       [$template]: universalTemplate,
       [$args]: args || {},
       $_eval: evalFn, // Store eval function for deferred rendering
+      // A render-tree identity BEFORE gxt adds the instance to the tree
+      // (`_component` → addToTree), so render contexts (provideContext /
+      // getContext) flow into the template's yielded blocks.
+      [COMPONENT_ID_PROPERTY]: cId(),
     };
     return instance;
   }

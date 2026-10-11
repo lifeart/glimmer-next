@@ -272,6 +272,11 @@ export interface CompilerContext {
   usedSlots: boolean;
   /** `$fw` — set when splat-attributes emit the forwarded `$fw` tuple/spread. */
   usedFw: boolean;
+  /**
+   * `$s` (EMBER_SELF, G6: `const $s = $_self(this)`) — set when a `this` path
+   * head is emitted as the self alias.
+   */
+  usedSelf: boolean;
 
   /**
    * Ground-truth emission report (see emission-report.ts). The serializer
@@ -373,6 +378,7 @@ export function createContext(
     usedArgsAlias: false,
     usedSlots: false,
     usedFw: false,
+    usedSelf: false,
     emissionReport: createEmissionReport(new Set(options.bindings ?? [])),
     inAttributeValue: false,
     seenNodes: new Set(),

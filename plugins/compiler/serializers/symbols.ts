@@ -68,6 +68,12 @@ export const SYMBOLS = {
   // Short alias for this[$args] in compiled output
   ARGS_ALIAS: '$a',
 
+  // EMBER_SELF (G6): the template's self, declared by the wrapper preamble as
+  // `const $s = $_self(this)`; `this` path heads read it. `$_self` itself is
+  // emitted only in the preamble (module assembler / runtime compiler).
+  SELF_ALIAS: '$s',
+  SELF: '$_self',
+
   // Built-in helpers
   COMPONENT_HELPER: '$_componentHelper',
   MODIFIER_HELPER: '$_modifierHelper',
@@ -159,6 +165,7 @@ const NON_REPORTED_SYMBOL_VALUES: ReadonlySet<string> = new Set<string>([
   SYMBOLS.LOCAL_NODE,
   SYMBOLS.ARGS_PROPERTY,
   SYMBOLS.ARGS_ALIAS,
+  SYMBOLS.SELF_ALIAS,
   SYMBOLS.SCOPE_KEY,
   SYMBOLS.EVAL_KEY,
   SYMBOLS.TEMPLATE,

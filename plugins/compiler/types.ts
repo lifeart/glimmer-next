@@ -127,6 +127,21 @@ export interface CompilerFlags {
    * plugins/flags.ts.
    */
   readonly EMBER_OUTLET?: boolean;
+  /**
+   * Ember property tags (G8). When true, every member segment of a `this.*`,
+   * `@arg.*`, block-param or let-binding path emits the non-defining tap
+   * `$__tag(obj, "key")` (consumes the property tag via the host `getProp`
+   * hook, returns the value) instead of a plain member read. Off (default)
+   * keeps compat/standalone output byte-identical. See plugins/flags.ts.
+   */
+  readonly EMBER_PROPERTY_TAGS?: boolean;
+  /**
+   * Ember template self (G6). When true, `this` path heads emit `$s` (declared
+   * by the template wrapper as `const $s = $_self(this)`), separating the
+   * template's self from its render node. Off (default) keeps compat/standalone
+   * output byte-identical. See plugins/flags.ts.
+   */
+  readonly EMBER_SELF?: boolean;
 }
 
 /**
@@ -156,6 +171,8 @@ export const DEFAULT_FLAGS: CompilerFlags = Object.freeze({
   EMBER_TRUSTED_HTML: false, // $_html trusted-HTML node helper for {{{...}}} (host opt-in)
   EMBER_NATIVE: false, // Ember native layer: $__tag taps + $_tpl brand (host opt-in)
   EMBER_OUTLET: false, // {{outlet}} -> $_outlet(ctx) host outlet component (host opt-in)
+  EMBER_PROPERTY_TAGS: false, // $__tag(obj, "k") member taps on this/@arg/block-param paths (host opt-in)
+  EMBER_SELF: false, // `this` path heads read `$s = $_self(this)` (host opt-in)
 });
 
 /**
@@ -525,6 +542,12 @@ export interface CompileResult {
   readonly usedArgsAlias: boolean;
   readonly usedSlots: boolean;
   readonly usedFw: boolean;
+  /**
+   * EMBER_SELF (G6): `true` when the output references the self alias `$s`, so
+   * the wrapper must declare `const $s = $_self(this)`. Always `false` with the
+   * flag off.
+   */
+  readonly usedSelf: boolean;
   /**
    * Ground-truth "the template declares block params" flag. `true` when the
    * compile registered any `as |…|` block param — a component/element block, a

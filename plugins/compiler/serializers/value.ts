@@ -314,6 +314,18 @@ export function buildPathExpression(
   // $_maybeHelper for dynamic resolution via eval().
   if (!isKnown && ctx.flags.IS_GLIMMER_COMPAT_MODE) {
     if (ctx.flags.WITH_EMBER_INTEGRATION && !ctx.flags.WITH_EVAL_SUPPORT) {
+      // Ember native layer (EMBER_SELF / EMBER_PROPERTY_TAGS): the implicit
+      // head is the template's SELF (never a block render context).
+      if (ctx.flags.EMBER_SELF || ctx.flags.EMBER_PROPERTY_TAGS) {
+        const implicit = buildEmberMemberChain(
+          ctx,
+          B.runtimeRef(selfRootName(ctx), value.sourceRange),
+          expression.split('.').map((name) => ({ name })),
+          0,
+          value.sourceRange
+        );
+        return wrapInGetter ? B.reactiveGetter(implicit, value.sourceRange) : implicit;
+      }
       // Treat as this.expression — Ember's implicit this
       const thisPath = `${ctxName}.${expression}`;
       if (wrapInGetter) {
@@ -340,6 +352,16 @@ export function buildPathExpression(
   const staticLiteral = getStaticLiteralValue(ctx, value.expression, value.isArg);
   if (staticLiteral !== undefined) {
     return buildLiteral(staticLiteral, value.sourceRange);
+  }
+
+  // Ember native layer: `this` heads read the template self (G6 EMBER_SELF)
+  // and `this.*` / `@arg.*` member segments go through the property-tag tap
+  // (G8 EMBER_PROPERTY_TAGS).
+  if (ctx.flags.EMBER_SELF || ctx.flags.EMBER_PROPERTY_TAGS) {
+    const emberPath = buildEmberHeadPath(ctx, value);
+    if (emberPath !== null) {
+      return wrapInGetter ? B.reactiveGetter(emberPath, value.sourceRange) : emberPath;
+    }
   }
 
   // Ember-dialect {{#each}} row-item reactive tap.
@@ -523,7 +545,13 @@ function buildBlockParamCellTap(
 
   const head = segs[0].name;
   const binding = ctx.scopeTracker.resolve(head);
-  if (!binding || binding.kind !== 'block-param') return null;
+  if (!binding) return null;
+  // EMBER_PROPERTY_TAGS (G8): `{{#let}}` aliases are block params in Glimmer —
+  // their member reads are property reads too.
+  const tappable =
+    binding.kind === 'block-param' ||
+    (binding.kind === 'let-binding' && ctx.flags.EMBER_PROPERTY_TAGS === true);
+  if (!tappable) return null;
   // The {{#each}} index is a reactive Cell (read via `.value`), not a raw
   // value — never cellFor-tap it.
   if (binding.isEachIndex) return null;
@@ -544,7 +572,8 @@ function buildBlockParamCellTap(
   );
   // EMBER_NATIVE: the non-defining tap (never installs an own accessor that
   // would shadow a host `@tracked` prototype accessor).
-  const tapSymbol = ctx.flags.EMBER_NATIVE ? SYMBOLS.TAG_TAP : SYMBOLS.CELL_FOR;
+  const tapSymbol =
+    ctx.flags.EMBER_NATIVE || ctx.flags.EMBER_PROPERTY_TAGS ? SYMBOLS.TAG_TAP : SYMBOLS.CELL_FOR;
   for (let i = 1; i < segs.length; i++) {
     expr = B.call(
       tapSymbol,
@@ -553,6 +582,105 @@ function buildBlockParamCellTap(
     );
   }
   return expr;
+}
+
+/**
+ * EMBER_SELF (G6): the emitted name of a `this` path head — the self alias `$s`
+ * (declared by the template wrapper as `const $s = $_self(this)`) under the
+ * flag, else `this`. Records the ground-truth `usedSelf` preamble flag.
+ */
+export function selfRootName(ctx: CompilerContext): string {
+  if (ctx.flags.EMBER_SELF) {
+    ctx.usedSelf = true;
+    return SYMBOLS.SELF_ALIAS;
+  }
+  return 'this';
+}
+
+/**
+ * EMBER_SELF (G6): rewrite a `this`-headed callee / tag string (`this.helper`,
+ * `this.foo.Bar`, `this["x"]`) to read the self alias. Any other string is
+ * returned unchanged; with the flag off the input is always returned as-is.
+ */
+export function selfHeadedName(ctx: CompilerContext, name: string): string {
+  if (!ctx.flags.EMBER_SELF) return name;
+  if (name === 'this') return selfRootName(ctx);
+  if (name.startsWith('this.') || name.startsWith('this[') || name.startsWith('this?.')) {
+    return selfRootName(ctx) + name.slice(4);
+  }
+  return name;
+}
+
+/**
+ * Build `segments[startIndex…]` as member reads of `root`: under
+ * EMBER_PROPERTY_TAGS each segment is the non-defining property-tag tap
+ * `$__tag(obj, "key")` (Glimmer `getProp`: consumes the property tag through the
+ * host `getProp` hook, returns the value; nullish-safe), otherwise a plain
+ * member read (optional from the second member on, like buildPathBase).
+ */
+function buildEmberMemberChain(
+  ctx: CompilerContext,
+  root: JSExpression,
+  segments: ReadonlyArray<{ name: string; range?: SourceRange }>,
+  startIndex: number,
+  sourceRange: SourceRange | undefined
+): JSExpression {
+  let expr = root;
+  for (let i = startIndex; i < segments.length; i++) {
+    const { name, range } = segments[i];
+    if (ctx.flags.EMBER_PROPERTY_TAGS) {
+      expr = B.call(SYMBOLS.TAG_TAP, [expr, B.string(name, range)], sourceRange);
+      continue;
+    }
+    const useOptional = i > startIndex;
+    if (!/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(name)) {
+      expr = B.computedMember(expr, B.string(name, range), undefined, useOptional);
+    } else {
+      expr = useOptional
+        ? B.optionalMember(expr, name, undefined, range)
+        : B.member(expr, name, undefined, range);
+    }
+  }
+  return expr;
+}
+
+/**
+ * Ember native layer: a path whose head is `this` (G6 self alias + G8 taps)
+ * or an `@arg` with member segments (G8 taps after the arg read — the arg
+ * itself is already reactive through gxt's args). Returns null for paths this
+ * does not own (block params, let-bindings, scope bindings, a bare `@arg`).
+ */
+function buildEmberHeadPath(ctx: CompilerContext, value: PathValue): JSExpression | null {
+  const expression = value.expression;
+  if (value.isArg) {
+    if (!ctx.flags.EMBER_PROPERTY_TAGS) return null;
+    const segs = value.parts && value.parts.length > 0
+      ? value.parts.map((p) => ({ name: p.name, range: p.range }))
+      : null;
+    if (segs === null || segs.length < 2) return null;
+    ctx.usedArgsAlias = true;
+    const argName = segs[0].name;
+    const alias = B.runtimeRef(SYMBOLS.ARGS_ALIAS, value.rootRange ?? value.sourceRange);
+    const argRead = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(argName)
+      ? B.member(alias, argName, undefined, segs[0].range)
+      : B.computedMember(alias, B.string(argName, segs[0].range), undefined, false);
+    return buildEmberMemberChain(ctx, argRead, segs, 1, value.sourceRange);
+  }
+  const isThis =
+    expression === 'this' ||
+    expression.startsWith('this.') ||
+    expression.startsWith('this?.') ||
+    expression.startsWith('this[');
+  if (!isThis) return null;
+  const segs = getPathSegments(value);
+  if (segs === null || segs[0].name !== 'this' || segs.some((seg) => seg.name.length === 0)) {
+    // A shape the segment builder does not own (bracket access): the plain
+    // path, with the head read from the self alias.
+    if (!ctx.flags.EMBER_SELF) return null;
+    return B.runtimeRef(selfHeadedName(ctx, toSafeJSPath(expression)), value.sourceRange);
+  }
+  const root = B.runtimeRef(selfRootName(ctx), segs[0].range ?? value.rootRange ?? value.sourceRange);
+  return buildEmberMemberChain(ctx, root, segs, 1, value.sourceRange);
 }
 
 /**
@@ -670,6 +798,9 @@ function buildHelper(
     resolvedName = needsBracket
       ? `${SYMBOLS.ARGS_ALIAS}["${argName}"]`
       : `${SYMBOLS.ARGS_ALIAS}.${argName}`;
+  } else {
+    // EMBER_SELF (G6): a `this.helper` callee reads the template self.
+    resolvedName = selfHeadedName(ctx, name);
   }
 
   // Check if it's a known binding (component/helper from scope)
