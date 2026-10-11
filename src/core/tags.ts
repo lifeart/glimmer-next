@@ -18,7 +18,9 @@
  *     cell is enqueued for the DOM drain only when something is subscribed to
  *     it (own opcodes or dependent formulas): an unsubscribed tag has nothing
  *     to re-execute, and enqueueing it would make the drain materialize a
- *     permanent empty `opsForTag` entry per dirtied tag.
+ *     permanent empty `opsForTag` entry per dirtied tag. `scheduleRevalidate`
+ *     (and so the host's `scheduleRevalidate` hook) is called for every dirty,
+ *     as Glimmer's `DIRTY_TAG` does.
  *   - `currentRevision()` is the global revision (Glimmer `CURRENT_TAG`);
  *     `cell._revision` is the per-tag revision (Glimmer `valueForTag`).
  *
@@ -87,8 +89,11 @@ export function dirtyCell(cell: Cell<unknown>): void {
   const id = cell.id;
   if (relatedTags.has(id) || opsForTag.has(id)) {
     tagsToRevalidate.add(cell);
-    scheduleRevalidate();
   }
+  // Always signal: like Glimmer's DIRTY_TAG -> scheduleRevalidate, a host uses
+  // this hook as "reactive state changed" (Ember: open a runloop so async
+  // observers / settledness see the change), even for unsubscribed tags.
+  scheduleRevalidate();
 }
 
 /** The global revision: advances on every value change and every `dirtyCell`. */

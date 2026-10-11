@@ -26,6 +26,7 @@ import {
   UNSET,
 } from './tags';
 import { opcodeFor } from './vm';
+import { HOST_HOOKS } from './host-hooks';
 import { syncDom } from './runtime';
 
 // An instance of a class whose `key` is a gxt `@tracked` field with the given
@@ -173,16 +174,26 @@ describe('dirtyCell', () => {
     expect(runs).toBe(2);
   });
 
-  test('an unsubscribed tag is not enqueued for the DOM drain', async () => {
+  test('an unsubscribed tag is not enqueued for the DOM drain, but still signals the host', async () => {
     await syncDom();
-    const t = tagFor({}, 'lonely');
-    const r0 = t._revision;
-    dirtyCell(t);
-    expect(t._revision).toBeGreaterThan(r0);
-    expect(tagsToRevalidate.has(t)).toBe(false);
-    await syncDom();
-    expect(opsForTag.has(t.id)).toBe(false);
-    expect(relatedTags.has(t.id)).toBe(false);
+    let signals = 0;
+    const prevHook = HOST_HOOKS.scheduleRevalidate;
+    HOST_HOOKS.scheduleRevalidate = () => {
+      signals++;
+    };
+    try {
+      const t = tagFor({}, 'lonely');
+      const r0 = t._revision;
+      dirtyCell(t);
+      expect(t._revision).toBeGreaterThan(r0);
+      expect(tagsToRevalidate.has(t)).toBe(false);
+      expect(signals).toBe(1);
+      await syncDom();
+      expect(opsForTag.has(t.id)).toBe(false);
+      expect(relatedTags.has(t.id)).toBe(false);
+    } finally {
+      HOST_HOOKS.scheduleRevalidate = prevHook;
+    }
   });
 
   test('a host value stored in the tag cell is read by a formula tracking the tag', async () => {
