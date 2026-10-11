@@ -17,9 +17,11 @@ import {
   MergedCell,
   formula,
   deepFnValue,
+  getTracker,
   registerLeafOwnersForFormula,
   type AnyCell,
 } from '@/core/reactive';
+import { tagFor } from '@/core/tags';
 import { opcodeFor } from '@/core/vm';
 import {
   $_debug_args,
@@ -187,11 +189,20 @@ function subscribeReactiveCollection(value: unknown): void {
  * entangles an Ember tracked collection (`trackedArray` / `trackedSet` /
  * `trackedMap` from `@ember/reactive`, whose proxies consume their collection
  * tag on those reads) with the list. Do the same read inside the list-tag
- * formula so an in-place `push` / `splice` re-syncs the rows. A plain array /
- * Set / Map read is a no-op.
+ * formula so an in-place `push` / `splice` re-syncs the rows.
+ *
+ * It also consumes the iterable's `[]` property tag — Ember's
+ * `transform-each-track-array` wraps every `{{#each x}}` source in
+ * `(-track-array x)`, which consumes `tagFor(iterable, '[]')` for ANY object
+ * iterable, so `notifyPropertyChange(iterable, '[]')` (EmberArray mutation
+ * methods, `arrayContentDidChange`, a mutated Set / forEach-able / iterable
+ * delegate, a nested `{{#each item as |x|}}` over a row's array) re-syncs the
+ * rows. The tag is the same per-(obj, key) cell the host dirties.
  */
 export function consumeIterationTags(value: unknown): void {
   if (value === null || typeof value !== 'object') return;
+  const tracker = getTracker();
+  if (tracker !== null) tracker.add(tagFor(value, '[]'));
   if (Array.isArray(value)) {
     void value.length;
     return;
@@ -1210,7 +1221,12 @@ export class BasicListComponent<T extends { id: number }> {
           if (isPrimitive(item)) {
             return index;
           }
-          const values = this.tag.value as T[];
+          // The tag holds the RAW iterable (a Set / forEach-able / Symbol.iterator
+          // object as well as an array): locate the item in its normalized rows.
+          const rawValues = this.tag.value as unknown;
+          const values = (
+            Array.isArray(rawValues) ? rawValues : normalizeIterableValue<T>(rawValues)
+          ) as T[];
           const itemIndex = values.indexOf(item);
           if (itemIndex === -1) {
             return values.findIndex((value: T, i) => {
@@ -1416,7 +1432,12 @@ export class BasicListComponent<T extends { id: number }> {
               if (isPrimitive(item)) {
                 return index;
               }
-              const values = this.tag.value as T[];
+              // The tag holds the RAW iterable (a Set / forEach-able / Symbol.iterator
+              // object as well as an array): locate the item in its normalized rows.
+              const rawValues = this.tag.value as unknown;
+              const values = (
+                Array.isArray(rawValues) ? rawValues : normalizeIterableValue<T>(rawValues)
+              ) as T[];
               const itemIndex = values.indexOf(item);
               if (itemIndex === -1) {
                 return values.findIndex((value: T, i) => {
