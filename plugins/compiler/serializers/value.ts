@@ -233,6 +233,41 @@ function buildValueNoGetter(
 }
 
 /**
+ * EMBER_NATIVE argument convention (Ember native layer, G4/G9): every argument
+ * of a helper / modifier / curry call site is either a primitive LITERAL or a
+ * zero-arg THUNK (`() => expr`) — never an eagerly evaluated value. The host
+ * managers then unwrap EXACTLY (call a function argument once) instead of
+ * guessing with the arrow-function heuristic (`$_unwrapHelperArg`), which
+ * wrongly calls an arrow-function VALUE (e.g. the result of a nested
+ * `(fn …)` / user helper). Laziness is also what Glimmer does: a nested
+ * sub-expression is a reference read only when the consumer reads it, and a
+ * modifier's arguments are read by the modifier (inside its own tracking
+ * frame), not by the element-creation formula.
+ */
+export function buildNativeArg(
+  ctx: CompilerContext,
+  value: SerializedValue,
+  ctxName: string
+): JSExpression {
+  switch (value.kind) {
+    case 'literal':
+      return buildLiteral(value.value, value.sourceRange);
+    case 'path': {
+      const expr = buildPathExpression(ctx, value, false, ctxName);
+      // A statically folded path (type hints) is a literal — keep it one.
+      return expr.type === 'literal' ? expr : B.getter(expr, value.sourceRange);
+    }
+    case 'getter':
+      return B.getter(buildValueNoGetter(ctx, value.value, ctxName), value.sourceRange);
+    case 'spread':
+      return buildValue(ctx, value, ctxName);
+    default:
+      // helper / raw / concat: a sub-expression, evaluated when read.
+      return B.getter(buildValue(ctx, value, ctxName), value.sourceRange);
+  }
+}
+
+/**
  * Build a literal value.
  */
 function buildLiteral(
@@ -752,8 +787,16 @@ function buildSpecialHelper(
   sourceRange?: SourceRange,
   pathRange?: SourceRange
 ): JSExpression {
-  const posArgs = positional.map(arg => buildValue(ctx, arg, ctxName));
   const callee = pathRange ? B.id(name, pathRange, 'PathExpression', name) : name;
+
+  // Ember native layer (G9): every curry argument — the definition included —
+  // follows the literal-or-thunk convention; the runtime builds a curried
+  // value whose arguments stay lazy until the curried value is invoked.
+  if (ctx.flags.EMBER_NATIVE) {
+    return buildNativeCurryCall(ctx, callee, positional, named, ctxName, sourceRange);
+  }
+
+  const posArgs = positional.map(arg => buildValue(ctx, arg, ctxName));
 
   // In compat mode, wrap $_componentHelper hash values in getter functions
   // for reactivity. This preserves reactivity so curried component args
@@ -765,6 +808,29 @@ function buildSpecialHelper(
   }
 
   const namedObj = buildNamedArgsObject(ctx, named, ctxName);
+  return B.call(callee, [B.array(posArgs), namedObj], sourceRange);
+}
+
+/**
+ * Ember native layer (G9): `$_componentHelper` / `$_helperHelper` /
+ * `$_modifierHelper([definition, ...positional], {named})` with every argument
+ * — the definition included — in the literal-or-thunk convention
+ * (buildNativeArg). The runtime (EMBER_NATIVE) returns a curried value.
+ */
+function buildNativeCurryCall(
+  ctx: CompilerContext,
+  callee: string | JSExpression,
+  positional: readonly SerializedValue[],
+  named: ReadonlyMap<string, SerializedValue>,
+  ctxName: string,
+  sourceRange?: SourceRange
+): JSExpression {
+  const posArgs = positional.map(arg => buildNativeArg(ctx, arg, ctxName));
+  const props = [];
+  for (const [key, val] of named) {
+    props.push(B.prop(key, buildNativeArg(ctx, val, ctxName), false, val.sourceRange));
+  }
+  const namedObj = props.length > 0 ? B.object(props) : B.emptyObject();
   return B.call(callee, [B.array(posArgs), namedObj], sourceRange);
 }
 
@@ -786,12 +852,15 @@ function buildMaybeHelper(
   resolvedRef?: string,
   nameRange?: SourceRange
 ): JSExpression {
-  const posArgs = positional.map(arg => buildValue(ctx, arg, ctxName));
+  // Ember native layer (G4): literal-or-thunk arguments (buildNativeArg).
+  const native = ctx.flags.EMBER_NATIVE === true;
+  const buildArg = native ? buildNativeArg : buildValue;
+  const posArgs = positional.map(arg => buildArg(ctx, arg, ctxName));
 
   // Build named args
   const namedProps = [];
   for (const [key, val] of named) {
-    namedProps.push(B.prop(key, buildValue(ctx, val, ctxName), false, val.sourceRange));
+    namedProps.push(B.prop(key, buildArg(ctx, val, ctxName), false, val.sourceRange));
   }
 
   // For unknown bindings, context is passed directly as last arg
@@ -806,6 +875,26 @@ function buildMaybeHelper(
     : B.string(name, nameRange);
   if (!resolvedRef) {
     ctx.emissionReport.maybeHelperNames.add(name);
+  }
+
+  // Ember native layer (G4): one uniform 5-argument shape for known AND
+  // unknown helpers — `$_maybeHelper(ref, [args], {named}, ctx, site)`. `ctx`
+  // is the enclosing render context (the host reads its owner from it; a
+  // per-call-site helper instance lives — and is destroyed — with it) and
+  // `site` the per-template call-site index: (ctx, site) identifies one call
+  // site INSTANCE, exactly the lifetime of a Glimmer helper reference (one
+  // helper per call site per block instance, destroyed with the block). Like
+  // `$_uid(ctx, N)`, a per-compilation index is enough — the ctx key keeps
+  // templates / instances apart.
+  if (native) {
+    const namedObj = namedProps.length > 0 ? B.object(namedProps) : B.emptyObject();
+    return B.call(SYMBOLS.MAYBE_HELPER, [
+      helperRef,
+      B.array(posArgs),
+      namedObj,
+      B.id(ctxName),
+      B.num(ctx.helperSiteCounter++),
+    ], sourceRange);
   }
 
   if (resolvedRef) {
@@ -1126,6 +1215,9 @@ function buildBuiltInHelper(
     symbol === SYMBOLS.HELPER_HELPER ||
     symbol === SYMBOLS.MODIFIER_HELPER
   ) {
+    if (ctx.flags.EMBER_NATIVE) {
+      return buildNativeCurryCall(ctx, helperId, positional, named, ctxName, sourceRange);
+    }
     const posArgs = positional.map(arg => buildValue(ctx, arg, ctxName));
     const namedObj = buildNamedArgsObject(ctx, named, ctxName);
     return B.call(helperId, [B.array(posArgs), namedObj], sourceRange);

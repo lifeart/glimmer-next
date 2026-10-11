@@ -296,6 +296,31 @@ function createYieldExpression(
     }
   }
 
+  // Ember native layer: keep the yield params as values; the yield
+  // serializer builds them with the enclosing render context (see
+  // HBSControlExpression.nativeBlockParams).
+  if (ctx.flags.EMBER_NATIVE === true) {
+    const nativeBlockParams = node.params.map((p) => {
+      const result = getVisit(ctx)(ctx, p, false);
+      if (result !== null && (typeof result === 'string' || isSerializedValue(result))) {
+        return result;
+      }
+      return '';
+    });
+    return {
+      _nodeType: 'control',
+      type: 'yield',
+      condition: literal(''),
+      blockParams: [],
+      nativeBlockParams,
+      children: [],
+      inverse: null,
+      key: slotName,
+      isSync: true,
+      sourceRange: range,
+    };
+  }
+
   // Collect yield params
   const blockParams = node.params.map((p) => {
     const result = getVisit(ctx)(ctx, p, false);

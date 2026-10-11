@@ -55,7 +55,17 @@ export type Flags = {
   //   - block-param member taps emit the non-defining `$__tag(obj, 'k')`
   //     instead of `$__cellFor(obj, 'k')` (which installs an own accessor that
   //     would shadow Ember `@tracked` prototype accessors);
-  //   - `$_tpl` / `$__tag` are auto-imported only under this flag.
+  //   - `$_tpl` / `$__tag` are auto-imported only under this flag;
+  //   - helper / modifier / curry call sites (G4 / G9): literal-or-thunk
+  //     arguments, `$_maybeHelper(ref, [args], {named}, ctx, site)`,
+  //     `$_maybeModifier(ref, $n, [args], {named}, ctx)`, an unbound `{{on}}` is
+  //     Ember's built-in modifier, `<@comp />` is a dynamic component, yield
+  //     params are built against the enclosing render context.
+  // Also a RUNTIME build constant (inlined by the consumer's `define`, like the
+  // WITH_* flags): the Ember-only runtime branches — the host helper manager
+  // owning every helper value (G4), curried values (G9), Ember keyword-helper
+  // semantics (G-kw), `$_dc` nullish / definition-object handling, list-tag
+  // entanglement with Ember tracked collections — fold away when false.
   EMBER_NATIVE: boolean;
   // Ember `{{outlet}}` keyword (G3; the Ember native layer). Compile-time only,
   // emission-affecting, default off: `{{outlet}}` emits `$_outlet(ctx)` — the

@@ -233,6 +233,14 @@ export interface CompilerContext {
   uniqueIdCounter: number;
 
   /**
+   * Per-template helper call-site index (EMBER_NATIVE, G4): every
+   * `$_maybeHelper(ref, args, named, ctx, site)` gets its own `site`; the host
+   * keys per-call-site helper state on (ctx, site) — reset per compilation for
+   * the same reason as `uniqueIdCounter`.
+   */
+  helperSiteCounter: number;
+
+  /**
    * Ground-truth flag: set to `true` by the {{#each}} serializer
    * (serializers/control.ts `buildEach`) the moment it emits a recycled
    * entry point ($_eachRecycled / $_eachSyncRecycled) for a
@@ -360,6 +368,7 @@ export function createContext(
     letBlockCounter: 0,
     unboundCounter: 0,
     uniqueIdCounter: 0,
+    helperSiteCounter: 0,
     usedRecycle: false,
     usedArgsAlias: false,
     usedSlots: false,

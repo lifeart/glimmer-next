@@ -294,7 +294,11 @@ function isComponentTag(ctx: CompilerContext, tag: HBSTag): boolean {
   // which allows custom renderers to handle them dynamically.
   return (
     ctx.scopeTracker.hasBinding(tag) ||
-    tag.includes('.')
+    tag.includes('.') ||
+    // Ember native layer: `<@comp />` / `{{component @comp}}` invoke the
+    // component passed as an argument (Glimmer: an `@`-headed tag is always a
+    // dynamic component, never an HTML element).
+    (ctx.flags.EMBER_NATIVE === true && tag.startsWith('@'))
   );
 }
 

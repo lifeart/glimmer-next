@@ -418,6 +418,15 @@ export interface HBSControlExpression {
    * EMBER_IN_ELEMENT flag is on). Absent → emit the historic 3-arg call.
    */
   readonly inElementMode?: InElementMode;
+  /**
+   * `{{yield …}}` params as VALUES (only under the EMBER_NATIVE flag). The
+   * yield serializer builds them with the JSExpression serializer and the
+   * enclosing render context, so helper calls in yield params go through
+   * `$_maybeHelper` (host helper manager, call-site keyed on the block ctx)
+   * instead of the string serializer's direct calls. A plain string entry is
+   * raw code (a visitor result that was already a string).
+   */
+  readonly nativeBlockParams?: ReadonlyArray<SerializedValue | string>;
 }
 
 /**

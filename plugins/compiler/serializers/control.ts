@@ -10,7 +10,7 @@ import { addWarning } from '../context';
 import type { HBSControlExpression, HBSChild, HBSNode, SerializedValue } from '../types';
 import { isHBSControlExpression, isHBSNode, isSerializedValue } from '../types';
 import { SYMBOLS } from './symbols';
-import { buildValue } from './value';
+import { buildValue, buildPathExpression } from './value';
 import {
   extractStaticBlock,
   buildStaticBlockDefExpr,
@@ -108,7 +108,19 @@ function buildYield(
   const slotName = control.key || 'default';
 
   // Build the params getter: () => [param1, param2, ...]
-  const paramIdentifiers = control.blockParams.map(p => B.id(p));
+  // Ember native layer: params are values built against the enclosing render
+  // context (helper calls → `$_maybeHelper(…, ctxName, site)`, block-param
+  // member reads → `$__tag` taps). A path is a plain read (the param getter is
+  // already lazy); every other value is built as usual.
+  const paramIdentifiers = control.nativeBlockParams
+    ? control.nativeBlockParams.map((p) =>
+        typeof p === 'string'
+          ? B.id(p)
+          : p.kind === 'path'
+            ? buildPathExpression(ctx, p, false, ctxName)
+            : buildValue(ctx, p, ctxName)
+      )
+    : control.blockParams.map(p => B.id(p));
   const paramsGetter = B.arrow([], B.array(paramIdentifiers));
 
   // $_slot("name", paramsGetter, $slots, ctx)

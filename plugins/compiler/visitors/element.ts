@@ -295,7 +295,11 @@ export function visitElement(
   const baseEvents = processEvents(ctx, node, styleEvents);
 
   // Optimize text children (pure function)
-  const { children: optimizedChildren, additionalEvents } = optimizeTextChild(actualTag, children);
+  const { children: optimizedChildren, additionalEvents } = optimizeTextChild(
+    actualTag,
+    children,
+    ctx.flags.EMBER_NATIVE === true
+  );
   const events = [...baseEvents, ...additionalEvents];
 
   // Compute tag name source range: starts after '<', spans ORIGINAL tag name length
@@ -461,7 +465,11 @@ function visitElementInner(
   const baseEvents = processEvents(ctx, node, styleEvents);
 
   // Optimize text children (pure function)
-  const { children: optimizedChildren, additionalEvents } = optimizeTextChild(actualTag, children);
+  const { children: optimizedChildren, additionalEvents } = optimizeTextChild(
+    actualTag,
+    children,
+    ctx.flags.EMBER_NATIVE === true
+  );
   const events = [...baseEvents, ...additionalEvents];
 
   // Compute tag name source range for the original tag (handles wrapped names)
@@ -797,7 +805,12 @@ function processEvents(
     // scope: () => ({ on })), the user's modifier must take effect — fall through to
     // the generic custom-modifier path which respects scope bindings.
     const isShadowedOn = modName === 'on' && ctx.scopeTracker.hasBinding('on');
-    if (modName === 'on' && !isShadowedOn) {
+    // Ember native layer: an unbound `{{on}}` is Ember's built-in `on`
+    // modifier (strict-mode auto-import parity) — it takes the generic modifier
+    // path below and is emitted as `$_maybeModifier("on", …)`, which the host
+    // modifier manager resolves (Glimmer `on` semantics: listener re-added only
+    // when its inputs change, once/passive/capture, argument asserts).
+    if (modName === 'on' && !isShadowedOn && !ctx.flags.EMBER_NATIVE) {
       // Native event handler
       const eventName = mod.params[0];
       if (eventName?.type === 'StringLiteral') {
@@ -869,9 +882,16 @@ interface TextChildOptimization {
  */
 function optimizeTextChild(
   tag: string,
-  children: HBSChild[]
+  children: HBSChild[],
+  emberNative = false
 ): TextChildOptimization {
   const noChange = { children, additionalEvents: [] };
+
+  // Ember native layer: a lowercase PATH tag (`<card.title>Hello</card.title>`,
+  // `<@comp>text</@comp>`) is a dynamic component — its text child is the
+  // component's default block, not a `textContent` binding (which would land
+  // in the forwarded attributes and drop the block).
+  if (emberNative && (tag.includes('.') || tag.startsWith('@'))) return noChange;
 
   if (children.length !== 1) return noChange;
 

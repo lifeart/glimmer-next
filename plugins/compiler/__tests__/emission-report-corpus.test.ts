@@ -70,6 +70,26 @@ const COMBOS: Array<[string, Record<string, unknown>]> = [
       EMBER_OUTLET: true,
     },
   ],
+  // The full Ember native-layer flag set (with the helper / modifier managers):
+  // G4 `$_maybeHelper(ref, args, named, ctx, site)`, literal-or-thunk
+  // arguments, G9 curry sites, `$_maybeModifier(…, ctx)`, unbound `{{on}}`
+  // as the Ember built-in modifier, `<@comp />` → `$_dc`, yield params built
+  // against the block context.
+  [
+    'ember-native-managers',
+    {
+      IS_GLIMMER_COMPAT_MODE: true,
+      WITH_EMBER_INTEGRATION: true,
+      WITH_HELPER_MANAGER: true,
+      WITH_MODIFIER_MANAGER: true,
+      FORCE_SYNC_LIST: true,
+      EMBER_ATTR_CONCAT: true,
+      EMBER_IN_ELEMENT: true,
+      EMBER_TRUSTED_HTML: true,
+      EMBER_NATIVE: true,
+      EMBER_OUTLET: true,
+    },
+  ],
 ];
 
 function compileWith(
@@ -333,6 +353,22 @@ const CORPUS: Array<[string, string, string[]]> = [
   ['outlet-in-block', '<Layout>{{outlet}}</Layout>', ['Layout']],
   ['outlet-in-if', '{{#if this.a}}{{outlet}}{{/if}}', []],
   ['outlet-shadowed', '{{#let this.x as |outlet|}}<p>{{outlet}}</p>{{/let}}{{outlet}}', []],
+
+  // --- Ember native-layer invocations (G4 / G9 / G-kw) ---
+  ['native-helper-named', '<p>{{fmt this.a 2 k=this.b}}</p>', ['fmt']],
+  ['native-helper-nested', '{{fmt (concat "a" this.b) (fmt this.c)}}', ['fmt', 'concat']],
+  ['native-helper-unbound-kw', '{{neq this.a this.b}}{{(and this.a this.b)}}{{if (not this.c) "x"}}', []],
+  ['native-modifier-args', '<div {{tagIt this.a (concat "x" this.b) k=this.c}}></div>', ['tagIt', 'concat']],
+  ['native-on-imported', '<button {{on "click" (fn this.go 1)}}></button>', ['on', 'fn']],
+  ['native-on-unbound', '<button {{on "click" this.go passive=true}}></button>', []],
+  ['native-dynamic-modifier', '<div {{(if this.c (modifier tagIt 1)) this.x}}></div>', ['tagIt']],
+  [
+    'native-curry',
+    '{{#let (component Cmp a=this.x) (helper fmt 1) (modifier tagIt) as |C H M|}}<C @b={{H 2}} {{M}} />{{/let}}',
+    ['Cmp', 'fmt', 'tagIt'],
+  ],
+  ['native-yield-curry', '{{yield (hash title=(component Cmp a=this.y) v=(fmt this.z))}}', ['Cmp', 'fmt']],
+  ['native-arg-component', '<@comp @a={{this.x}} />{{component @other b=1}}', []],
 
   // --- splattributes ---
   ['splat', '<div ...attributes>x</div>', []],
