@@ -138,6 +138,12 @@ let unstableWrapperId: number = 0;
 
 // Import and re-export $_MANAGERS from manager-integration
 import { $_MANAGERS } from './manager-integration';
+import {
+  $_curry,
+  CURRIED_COMPONENT,
+  CURRIED_HELPER,
+  CURRIED_MODIFIER,
+} from './curried';
 export { $_MANAGERS };
 
 export function $_TO_VALUE(reference: unknown) {
@@ -167,6 +173,11 @@ export function $_unwrapHelperArg(value: unknown): unknown {
  * Handles both class/function components and string component names.
  */
 export function $_componentHelper(params: any[], hash: Record<string, unknown>) {
+  if (EMBER_NATIVE) {
+    // Ember native layer (G9): a curried component value, resolved by the host
+    // component manager when `$_c` / `$_dc` render it.
+    return $_curry(CURRIED_COMPONENT, params, hash) as never;
+  }
   const componentFn = $_unwrapHelperArg(params[0]);
 
   // For string component names, return a special wrapper that will be resolved at render time
@@ -203,6 +214,11 @@ export function $_componentHelper(params: any[], hash: Record<string, unknown>) 
  * Modifier helper - curries a modifier with pre-bound args.
  */
 export function $_modifierHelper(params: any[], hash: Record<string, unknown>) {
+  if (EMBER_NATIVE) {
+    // Ember native layer (G9): a curried modifier value, resolved by the host
+    // modifier manager when `$_maybeModifier` installs it.
+    return $_curry(CURRIED_MODIFIER, params, hash) as never;
+  }
   const modifierFn = $_unwrapHelperArg(params[0]) as Function;
   const boundParams = params.slice(1);
 
@@ -230,6 +246,11 @@ export function $_modifierHelper(params: any[], hash: Record<string, unknown>) {
  * Helper helper - curries a helper with pre-bound args.
  */
 export function $_helperHelper(params: any[], hash: Record<string, unknown>) {
+  if (EMBER_NATIVE) {
+    // Ember native layer (G9): a curried helper value, resolved by the host
+    // helper manager when `$_maybeHelper` invokes it.
+    return $_curry(CURRIED_HELPER, params, hash) as never;
+  }
   const helperFn = $_unwrapHelperArg(params[0]) as Function;
   const boundParams = params.slice(1);
 
@@ -1318,6 +1339,7 @@ export const $_maybeHelper = (
   args: any[],
   _hashOrCtx?: Record<string, unknown> | any, // Hash object for known bindings, context for unknown, or undefined
   _maybeCtx?: any, // Optional 4th arg: context when 3rd arg is hash for unknown bindings
+  _site?: number, // EMBER_NATIVE: per-template call-site index (host per-call-site state)
 ) => {
   // Determine context and hash based on arguments:
   // - 4 args: _hashOrCtx is hash, _maybeCtx is context (unknown binding with named args)
@@ -1333,6 +1355,17 @@ export const $_maybeHelper = (
   const _ctx = _maybeCtx ?? (isCtxIn3rd ? _hashOrCtx : undefined);
   // Default _hash to empty object when not provided
   const _hash = _maybeCtx ? _hashOrCtx : (isCtxIn3rd ? {} : (_hashOrCtx ?? {}));
+  if (EMBER_NATIVE) {
+    // Ember native layer (G4): the host helper manager owns EVERY helper value
+    // it claims — plain functions (Ember's default helper manager: positional
+    // arguments + the named hash as a trailing argument), setHelperManager /
+    // class-based helpers, curried helpers and built-in keyword names. The
+    // compiler passes literal-or-thunk arguments, the render context and the
+    // call-site index (`$_maybeHelper(ref, [args], {named}, ctx, site)`).
+    if ($_MANAGERS.helper.canHandle(value)) {
+      return $_MANAGERS.helper.handle(value, args, _hash, _ctx, _site);
+    }
+  }
   if (typeof value === 'function') {
     if (value.helperType === 'ember') {
       // @ts-expect-error amount of args
@@ -2184,6 +2217,13 @@ export function applyDynamicManagerFwSplit(
   return fw;
 }
 
+// `$_dc` (EMBER_NATIVE): what a nullish dynamic component renders — nothing.
+function DC_EMPTY(this: Component<any>) {
+  // eslint-disable-next-line prefer-rest-params
+  $_GET_ARGS(this, arguments);
+  return $_fin([], this);
+}
+
 export function $_dc(
   comp: () => ComponentReturnType | Component,
   args: Record<string, unknown>,
@@ -2209,7 +2249,18 @@ export function $_dc(
   // whole branch away.
   let splatSplitDone = false;
   const destructor = opcodeFor(_cmp, (value: any) => {
-    if (typeof value !== 'function') {
+    if (EMBER_NATIVE && (value === null || value === undefined)) {
+      // Ember native layer: a nullish dynamic component renders nothing
+      // (Glimmer) — and stays swappable for a later real definition.
+      value = DC_EMPTY;
+    }
+    if (
+      typeof value !== 'function' &&
+      // Ember native layer: a definition object the host component manager
+      // claims (`templateOnly()`, …) is a component to render, not an
+      // already-rendered instance.
+      !(EMBER_NATIVE && $_MANAGERS.component.canHandle(value))
+    ) {
       result = value;
       // @ts-expect-error typings error
       addToTree(ctx, result, 'from Dynamic component opcode');
@@ -2242,6 +2293,11 @@ export function $_dc(
       api.insert(parent, newTarget, target);
       unregisterFromParent(result);
       destroyElementSync(result, false, api);
+      if (EMBER_NATIVE) {
+        // The outgoing placeholder was popped off the destroyed result, so its
+        // teardown left it in the DOM — one stray anchor per swap. Remove it.
+        api.destroy(target!);
+      }
       result = component(value, args, ctx);
       result![RENDERED_NODES_PROPERTY].push(newTarget!);
       renderElement(api, ctx, parent, result, newTarget!);
@@ -2293,10 +2349,13 @@ export const $_maybeModifier = (
   element: HTMLElement,
   props: any[],
   hashArgs: () => Record<string, unknown>,
+  // EMBER_NATIVE: the enclosing render context (owner / interactivity of the
+  // render tree). Never passed by compat / standalone emission.
+  ctx?: unknown,
 ) => {
   if (WITH_EMBER_INTEGRATION) {
     if ($_MANAGERS.modifier.canHandle(modifier)) {
-      return $_MANAGERS.modifier.handle(modifier, element, props, hashArgs);
+      return $_MANAGERS.modifier.handle(modifier, element, props, hashArgs, ctx);
     }
   }
 

@@ -180,6 +180,25 @@ function subscribeReactiveCollection(value: unknown): void {
   }
 }
 
+/**
+ * Ember native layer (EMBER_NATIVE build constant): Glimmer's `{{#each}}`
+ * reads an array's `length` (a collection's `size`) while it builds the
+ * iterator, inside the list reference's tracking frame — which is what
+ * entangles an Ember tracked collection (`trackedArray` / `trackedSet` /
+ * `trackedMap` from `@ember/reactive`, whose proxies consume their collection
+ * tag on those reads) with the list. Do the same read inside the list-tag
+ * formula so an in-place `push` / `splice` re-syncs the rows. A plain array /
+ * Set / Map read is a no-op.
+ */
+export function consumeIterationTags(value: unknown): void {
+  if (value === null || typeof value !== 'object') return;
+  if (Array.isArray(value)) {
+    void value.length;
+    return;
+  }
+  void (value as { size?: unknown }).size;
+}
+
 export function normalizeIterableValue<T>(value: unknown): T[] {
   // Fast paths: empty or already-an-array
   if (
@@ -778,6 +797,7 @@ export class BasicListComponent<T extends { id: number }> {
           // proxy reference → the formula is const → the each would freeze on
           // in-place mutation.
           subscribeReactiveCollection(v);
+          if (EMBER_NATIVE) consumeIterationTags(v);
           return v;
         }, 'list tag');
         registerDestructor(ctx, () => {

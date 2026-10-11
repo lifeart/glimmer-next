@@ -70,6 +70,8 @@ export const $_MANAGERS = {
       _element: Element,
       _props: unknown[],
       _hashArgs: () => Record<string, unknown>,
+      // EMBER_NATIVE emission only: the enclosing render context.
+      _ctx?: unknown,
     ): unknown {
       return undefined;
     },
@@ -86,7 +88,15 @@ export const $_MANAGERS = {
      * Handle the helper and return the computed value.
      * Only called if canHandle() returned true.
      */
-    handle(_helper: unknown, _params: unknown[], _hash: unknown): unknown {
+    handle(
+      _helper: unknown,
+      _params: unknown[],
+      _hash: unknown,
+      // EMBER_NATIVE emission only: the render context and the per-template
+      // call-site index (`$_maybeHelper(ref, args, named, ctx, site)`).
+      _ctx?: unknown,
+      _site?: number,
+    ): unknown {
       return undefined;
     },
   },

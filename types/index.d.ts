@@ -26,6 +26,13 @@ declare global {
   const WITH_DYNAMIC_EVAL: boolean;
   const ASYNC_COMPILE_TRANSFORMS: boolean;
   const WITH_TYPE_CHECKER_HINTS: boolean;
+  /**
+   * Ember native layer (plugins/flags.ts). Also a RUNTIME build constant: the
+   * native-only runtime branches (G4 host helper manager in `$_maybeHelper`,
+   * G9 curried values, G-kw keyword semantics, `$_dc` nullish/definition
+   * handling) fold away in standalone / compat builds (`false`).
+   */
+  const EMBER_NATIVE: boolean;
 }
 
 declare module 'glint-environment-gxt/globals' {
