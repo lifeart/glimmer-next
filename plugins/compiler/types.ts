@@ -234,6 +234,16 @@ export interface BindingInfo {
    * swap channel, so recycled-row params are excluded from the row-item tap.
    */
   readonly recycledRow?: boolean;
+  /**
+   * The JS identifier a `{{#let}}` binding is DECLARED and REFERENCED under,
+   * when it differs from its (reserved-word-escaped) template name. Set only
+   * when the binding's name occurs in one of the let's own value expressions
+   * (`{{#let (hash a=1) as |hash|}}`, `{{#let b a as |a b|}}`): Glimmer
+   * evaluates let values in the OUTER scope, but a JS `let` is in scope for its
+   * whole block, so keeping the name would make the value read the binding
+   * itself (infinite recursion / TDZ). See serializers/control.ts buildLet.
+   */
+  readonly emitName?: string;
 }
 
 // ============================================================================
@@ -452,6 +462,12 @@ export interface HBSControlExpression {
    * EMBER_IN_ELEMENT flag is on). Absent → emit the historic 3-arg call.
    */
   readonly inElementMode?: InElementMode;
+  /**
+   * `{{#each-in obj as |key value|}}` (G5, EMBER_NATIVE): an `each` over the
+   * `$__eachIn(obj)` entry pairs whose row callback destructures each pair
+   * into these block params (`([key, value], $index, ctx) => …`).
+   */
+  readonly eachInParams?: readonly string[];
   /**
    * `{{yield …}}` params as VALUES (only under the EMBER_NATIVE flag). The
    * yield serializer builds them with the JSExpression serializer and the

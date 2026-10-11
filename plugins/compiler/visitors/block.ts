@@ -7,7 +7,8 @@
 import type { ASTv1 } from '@glimmer/syntax';
 import type { CompilerContext, VisitFn } from '../context';
 import type { SerializedValue, HBSControlExpression, HBSChild, HBSNode, AttributeTuple, SourceRange, LetBinding, InElementMode } from '../types';
-import { literal, getter, isSerializedValue, isHBSNode } from '../types';
+import { literal, getter, helper, isSerializedValue, isHBSNode } from '../types';
+import { INTERNAL_HELPERS } from '../serializers/symbols';
 import { getNodeRange, serializeValueToString, getBlockParamRanges, getPathExpressionString } from './utils';
 import { addWarning } from '../context';
 import { isLooseBlockComponent } from './loose';
@@ -64,6 +65,8 @@ function isComponentBlock(ctx: CompilerContext, node: ASTv1.BlockStatement): boo
   // `{{#if}}` resolves to the user-provided `if` component when present.
   if (ctx.scopeTracker.hasBinding(name)) return true;
   if (BUILTIN_BLOCK_KEYWORDS.has(name)) return false;
+  // `{{#each-in}}` is a keyword in the Ember native layer (G5).
+  if (name === 'each-in' && ctx.flags.EMBER_NATIVE === true) return false;
   // Dotted path
   if (name.includes('.')) return true;
   // In compat mode, hyphenated names are component invocations (Ember convention).
@@ -443,6 +446,31 @@ export function visitBlock(
         range
       );
 
+    case 'each-in':
+      if (ctx.flags.EMBER_NATIVE === true) {
+        return createEachInBlock(
+          ctx,
+          node,
+          childElements,
+          inverseElements,
+          blockParams,
+          keyValue,
+          range
+        );
+      }
+      return createControlBlock(
+        ctx,
+        node,
+        name,
+        childElements,
+        inverseElements,
+        blockParams,
+        blockParamRanges,
+        keyValue,
+        syncValue,
+        range
+      );
+
     case 'if':
     case 'each':
     default:
@@ -599,6 +627,39 @@ function describeInsertBeforeValue(value: ASTv1.Expression): string {
     default:
       return value.type;
   }
+}
+
+/**
+ * Ember `{{#each-in obj as |key value|}}…{{else}}…{{/each-in}}` (G5, the Ember
+ * native layer): an `each` over `$__eachIn(obj)` — the object's entries as
+ * STABLE `[key, value]` pairs (Glimmer `@identity` keying: a row is kept while
+ * its key's value is unchanged) — whose row callback destructures each pair
+ * into the block params. Children were visited with `key` / `value` in scope
+ * as plain block params.
+ */
+function createEachInBlock(
+  ctx: CompilerContext,
+  node: ASTv1.BlockStatement,
+  children: HBSChild[],
+  inverse: HBSChild[] | null,
+  blockParams: string[],
+  keyValue: string | null,
+  range?: SourceRange
+): HBSControlExpression {
+  const source = getVisit(ctx)(ctx, node.params[0], false);
+  const sourceValue = source !== null && isSerializedValue(source) ? source : literal(null);
+  return {
+    _nodeType: 'control',
+    type: 'each',
+    condition: getter(helper(INTERNAL_HELPERS.EACH_IN, [sourceValue], new Map(), range), range),
+    blockParams: [],
+    children,
+    inverse,
+    key: keyValue ?? '@identity',
+    isSync: true,
+    sourceRange: range,
+    eachInParams: blockParams.slice(0, 2),
+  };
 }
 
 /**

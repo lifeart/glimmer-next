@@ -58,6 +58,7 @@ import {
   type FrameSharedEntry,
 } from './list-frames';
 import { setParentContext, getParentContext } from '../tracking';
+import { isNativeRuntime } from '../native-content';
 import { HOST_HOOKS } from '@/core/host-hooks';
 
 // Re-export getFirstNode for backward compatibility
@@ -975,13 +976,26 @@ export class BasicListComponent<T extends { id: number }> {
     return hasDupes;
   }
 
+  /**
+   * Glimmer `@identity` for PRIMITIVE items (the Ember native runtime): a
+   * primitive row is keyed by its value (type-qualified, duplicates
+   * position-qualified like duplicate object refs), so `[1, 2, 3] → [1, 3]`
+   * keeps — moves — the `3` row instead of re-creating it, and index cells
+   * follow the move. Off (gxt's historic default): primitive keys are
+   * position-qualified (`value:index`), a moved primitive row is re-created.
+   */
+  protected primitiveByValue = false;
+
   private setupKeyForItem() {
     if (this.key === '@identity') {
       let cnt = 0;
       const map: WeakMap<T & object, string> = new WeakMap();
+      const primitiveByValue = (this.primitiveByValue = isNativeRuntime());
       const baseKeyOf = (item: T, i: number): string => {
         if (isPrimitive(item) || isEmpty(item)) {
-          return `${String(item)}:${i}`;
+          return primitiveByValue
+            ? `\u0000${typeof item}:${String(item)}`
+            : `${String(item)}:${i}`;
         }
         const existing = map.get(item as T & object);
         if (existing !== undefined) return existing;
@@ -991,7 +1005,7 @@ export class BasicListComponent<T extends { id: number }> {
       };
       this.keyForItem = (item: T, i: number, items?: T[]) => {
         const baseKey = baseKeyOf(item, i);
-        if (isPrimitive(item) || isEmpty(item)) {
+        if (!primitiveByValue && (isPrimitive(item) || isEmpty(item))) {
           // Primitive base keys are already position-qualified, so the
           // duplicate-detection step below is unnecessary and would
           // misfire (every primitive of the same value would re-qualify
@@ -1218,7 +1232,7 @@ export class BasicListComponent<T extends { id: number }> {
     if (this.hasIndex) {
       const indexFormula = formula(
         () => {
-          if (isPrimitive(item)) {
+          if (isPrimitive(item) && !this.primitiveByValue) {
             return index;
           }
           // The tag holds the RAW iterable (a Set / forEach-able / Symbol.iterator
@@ -1429,7 +1443,7 @@ export class BasicListComponent<T extends { id: number }> {
         if (this.hasIndex) {
           const indexFormula = formula(
             () => {
-              if (isPrimitive(item)) {
+              if (isPrimitive(item) && !this.primitiveByValue) {
                 return index;
               }
               // The tag holds the RAW iterable (a Set / forEach-able / Symbol.iterator

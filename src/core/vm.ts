@@ -107,6 +107,47 @@ export function evaluateOpcode(tag: AnyCell, op: tagOp) {
  */
 export const checkOpcode = evaluateOpcode;
 
+/**
+ * `opcodeFor` for a binding whose CURRENT value was just computed by a
+ * `checkOpcode` read of the same tag (which also subscribed the tag to its
+ * cells): applies `op` to that value in the same frame `evaluateOpcode` uses
+ * (rendering, no tracker) instead of re-reading the tag, then registers `op`
+ * for updates. Used by the EMBER_NATIVE dynamic-content binding
+ * (native-content.ts), where the second create-time read would run a
+ * side-effecting getter twice (Glimmer reads once).
+ */
+export function opcodeForValue(tag: AnyCell, op: tagOp, value: unknown) {
+  const wasRendering = isRendering();
+  const previousTracker = getTracker();
+  if (!wasRendering) {
+    setIsRendering(true);
+  }
+  setTracker(null);
+  try {
+    op(value);
+  } finally {
+    setTracker(previousTracker);
+    if (!wasRendering) {
+      setIsRendering(false);
+    }
+  }
+  const ops = opsFor(tag)!;
+  ops.push(op);
+  return () => {
+    const index = ops.indexOf(op);
+    if (index > -1) {
+      ops.splice(index, 1);
+    }
+    if (ops.length === 0) {
+      opsForTag.delete(tag.id);
+      releaseOpArray(ops);
+      if ('destroy' in tag) {
+        tag.destroy();
+      }
+    }
+  };
+}
+
 export function opcodeFor(tag: AnyCell, op: tagOp) {
   evaluateOpcode(tag, op);
   const ops = opsFor(tag)!;

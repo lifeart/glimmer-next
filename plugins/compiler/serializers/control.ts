@@ -236,8 +236,12 @@ function buildEach(
   // Build condition (iterable) expression
   const conditionExpr = buildValue(ctx, control.condition, ctxName);
 
-  // Ensure we have proper block params
-  const paramNames = normalizeEachParams(control.blockParams);
+  // Ensure we have proper block params. `{{#each-in}}` (EMBER_NATIVE, G5):
+  // the row item is a `[key, value]` pair destructured into eachInParams.
+  const eachInParams = control.eachInParams;
+  const paramNames = eachInParams !== undefined
+    ? ['$__entry', '$index']
+    : normalizeEachParams(control.blockParams);
   const paramRanges = control.blockParamRanges ?? [];
 
   // Validate and normalize key
@@ -307,7 +311,7 @@ function buildEach(
 
   // Build the callback body with index replacement
   // Pass all param names so they can be tracked as known bindings during serialization
-  const bodyExpr = buildEachBody(ctx, control.children, newCtxName, paramNames, hasStable, isRecycled);
+  const bodyExpr = buildEachBody(ctx, control.children, newCtxName, paramNames, hasStable, isRecycled, eachInParams);
 
   // Static-block fast path (RESEARCH_LIST_TRACKING_OPTIMIZATION.md §2.A1/§4):
   // when the body is a single qualifying inline element, ALSO emit a
@@ -318,7 +322,7 @@ function buildEach(
   // code byte-identical to not having the fast path. `key="@recycle"` rows
   // render against per-row state objects, not raw items — keep them on the
   // compiled-callback path.
-  const staticBlockParts = isRecycled ? null : extractStaticBlock(control);
+  const staticBlockParts = isRecycled || eachInParams !== undefined ? null : extractStaticBlock(control);
   let blockDefExpr: JSExpression | null = null;
   let blockValuesExpr: JSExpression | null = null;
   if (staticBlockParts !== null) {
@@ -355,6 +359,10 @@ function buildEach(
   // rename transparent. Non-reserved names pass through unchanged.
   const callbackParams = [
     ...paramNames.map((name, index) => {
+      if (index === 0 && eachInParams !== undefined && eachInParams.length > 0) {
+        // `{{#each-in}}`: destructure the `[key, value]` pair.
+        return `[${eachInParams.map(escapeReservedBindingName).join(', ')}]`;
+      }
       const emitName = escapeReservedBindingName(name);
       const range = paramRanges[index];
       return range ? B.id(emitName, range) : emitName;
@@ -452,7 +460,8 @@ function buildEachBody(
   ctxName: string,
   paramNames: string[],
   hasStable: boolean,
-  isRecycled = false
+  isRecycled = false,
+  eachInParams?: readonly string[]
 ): JSExpression {
   const indexParam = paramNames[1] ?? '$index';
   const usesIndex = childrenUseIndex(children, indexParam);
@@ -460,6 +469,10 @@ function buildEachBody(
   // Add block params in a dedicated scope frame so nested each/if blocks with
   // matching block-param names shadow rather than clobber outer bindings.
   ctx.scopeTracker.enterScope('control-block');
+  // `{{#each-in}}` key / value params: plain values destructured from the pair.
+  for (const param of eachInParams ?? []) {
+    ctx.scopeTracker.addBinding(param, { kind: 'block-param', name: param });
+  }
   paramNames.forEach((param, i) => {
     ctx.scopeTracker.addBinding(param, {
       kind: 'block-param',
@@ -859,24 +872,39 @@ function buildLet(
 ): JSExpression {
   const bindings = control.letBindings ?? [];
 
-  // Collect non-primitive binding names (these are getters that need calling).
-  // Uses the ESCAPED emit name: reserved-word `{{#let … as |class|}}` bindings
-  // emit `let __bp_class = …` and references emit `__bp_class`, so the
-  // getter-ref → call rewrite (replaceLetGetterRefsInExpr) must match the
-  // escaped identifier. Non-reserved names are unchanged.
-  const getterNames = new Set<string>();
-  for (const binding of bindings) {
-    if (!binding.isPrimitive) {
-      getterNames.add(escapeReservedBindingName(binding.name));
-    }
-  }
+  // Build the value expressions first (in binding order — buildValue advances
+  // per-template counters such as the helper call-site index).
+  const valueExprs = bindings.map((binding) => buildValue(ctx, binding.value, ctxName));
 
-  // Build variable declarations. Reserved-word binding names (`if`, `class`, …)
-  // are escaped to a safe identifier at the declaration site; references emit
-  // the same escaped name (serializers/value.ts emitBindingRootName).
-  const varDecls: JSStatement[] = bindings.map((binding) => {
-    const emitName = escapeReservedBindingName(binding.name);
-    const valueExpr = buildValue(ctx, binding.value, ctxName);
+  // Emit names. Reserved-word binding names (`if`, `class`, …) are escaped to
+  // a safe identifier at the declaration site; references emit the same name
+  // (serializers/value.ts emitBindingRootName). Glimmer evaluates every let
+  // value in the OUTER scope, but a JS `let` is in scope (TDZ) for its whole
+  // block: a binding whose name occurs in one of this let's value expressions —
+  // `{{#let (hash a=1) as |hash|}}` with a lexical `hash` helper (the getter
+  // would call itself forever), a swap `{{#let b a as |a b|}}` — is declared
+  // under a fresh per-template name instead (BindingInfo.emitName). A let whose
+  // values don't mention its own names emits byte-identically.
+  const emitNames = bindings.map((binding) => {
+    const escaped = escapeReservedBindingName(binding.name);
+    if (!valueExprs.some((expr) => readsIdentifier(expr, escaped))) return escaped;
+    return `${escaped}$${++ctx.letBlockCounter}`;
+  });
+
+  // Collect non-primitive binding names (these are getters that need calling).
+  // Uses the EMIT name (escaped / renamed), so the getter-ref → call rewrite
+  // (replaceLetGetterRefsInExpr) matches the declared identifier.
+  const getterNames = new Set<string>();
+  bindings.forEach((binding, index) => {
+    if (!binding.isPrimitive) {
+      getterNames.add(emitNames[index]!);
+    }
+  });
+
+  // Build variable declarations.
+  const varDecls: JSStatement[] = bindings.map((binding, index) => {
+    const emitName = emitNames[index]!;
+    const valueExpr = valueExprs[index]!;
     if (binding.isPrimitive) {
       return B.varDecl('let', emitName, valueExpr);
     } else {
@@ -891,9 +919,15 @@ function buildLet(
   // Add let bindings in a fresh scope frame so nested `{{#let}}` blocks
   // shadow rather than clobber the outer binding.
   ctx.scopeTracker.enterScope('let');
-  for (const binding of bindings) {
-    ctx.scopeTracker.addBinding(binding.name, { kind: 'let-binding', name: binding.name });
-  }
+  bindings.forEach((binding, index) => {
+    const emitName = emitNames[index]!;
+    ctx.scopeTracker.addBinding(
+      binding.name,
+      emitName === escapeReservedBindingName(binding.name)
+        ? { kind: 'let-binding', name: binding.name }
+        : { kind: 'let-binding', name: binding.name, emitName },
+    );
+  });
 
   // Build children as JSExpressions
   const childExprs = buildChildrenExprs(ctx, control.children, ctxName);
@@ -920,6 +954,34 @@ function buildLet(
 
   const arrowFn = B.arrowBlock([], body, control.sourceRange);
   return B.spread(B.call(arrowFn, [], control.sourceRange));
+}
+
+/**
+ * Whether a built JS expression READS the identifier `name`: an identifier, the
+ * root of a runtime reference (`name.x`, `name?.[…]`), or a word in raw code.
+ * String literals, member property names and object keys are not reads.
+ */
+function readsIdentifier(node: unknown, name: string): boolean {
+  if (node === null || typeof node !== 'object') return false;
+  if (Array.isArray(node)) return node.some((item) => readsIdentifier(item, name));
+  const n = node as Record<string, unknown>;
+  switch (n.type) {
+    case 'literal':
+      return false;
+    case 'identifier':
+      return n.name === name;
+    case 'runtimeRef':
+      return String(n.symbol).split(/[?.[]/)[0] === name;
+    case 'raw':
+      return new RegExp(
+        `(^|[^\\w$.'"])${name.replace(/[$]/g, '\\$&')}(?![\\w$'"])`,
+      ).test(String(n.code));
+  }
+  for (const key in n) {
+    if (key === 'sourceRange' || key === 'type') continue;
+    if (readsIdentifier(n[key], name)) return true;
+  }
+  return false;
 }
 
 /**

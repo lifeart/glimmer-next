@@ -915,6 +915,12 @@ function optimizeTextChild(
   const child = children[0];
   if (typeof child !== 'string' && !isSerializedValue(child)) return noChange;
 
+  // Ember native layer (G15): a dynamic `{{value}}` child is Glimmer dynamic
+  // CONTENT — it may be (or later become) a SafeString (trusted HTML), a DOM
+  // node or a component, which a `textContent` binding would stringify. Only
+  // static text folds.
+  if (emberNative && typeof child !== 'string') return noChange;
+
   // A trusting mustache (`{{{expr}}}` → `helper(TRUSTED_HTML, …)`, lowered to
   // `$_html(…)`) is a NODE-producing helper — it returns a live DOM range, not a
   // string — so it must stay a child in the children array. Folding it into a

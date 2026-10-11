@@ -34,6 +34,7 @@ import {
   currentGlobalRevision,
   tagsToRevalidate,
   relatedTags,
+  relatedTagsForCell,
   opsForTag,
 } from '@/core/reactive';
 import { scheduleRevalidate } from '@/core/runtime';
@@ -94,6 +95,32 @@ export function dirtyCell(cell: Cell<unknown>): void {
   // this hook as "reactive state changed" (Ember: open a runloop so async
   // observers / settledness see the change), even for unsubscribed tags.
   scheduleRevalidate();
+}
+
+/**
+ * Late-bound dependencies: make every formula currently subscribed to
+ * `source` ALSO subscribe to `cells`, without re-running anything. A host tag
+ * that gains a dependency after it was consumed (Ember: an `UpdatableTag` that
+ * gets its first `updateTag` subtag — an alias / computed property read for the
+ * first time — after a binding already consumed the property tag) would
+ * otherwise leave those bindings blind to the new dependency: Glimmer
+ * validates updatable tags lazily, gxt subscribes formulas to cells eagerly.
+ * A formula's next evaluation re-tracks its cells as usual.
+ */
+export function entangleSubscribers(source: Cell<unknown>, cells: Iterable<Cell<unknown>>): void {
+  const formulas = relatedTags.get(source.id);
+  if (formulas === undefined || formulas.size === 0) return;
+  for (const formula of formulas) {
+    let related = formula.relatedCells;
+    if (related === null) {
+      related = formula.relatedCells = new Set();
+    }
+    for (const c of cells) {
+      if (c === source || related.has(c)) continue;
+      related.add(c);
+      relatedTagsForCell(c).add(formula);
+    }
+  }
 }
 
 /** The global revision: advances on every value change and every `dirtyCell`. */

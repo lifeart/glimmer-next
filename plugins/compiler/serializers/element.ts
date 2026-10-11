@@ -18,7 +18,7 @@ import type {
 } from '../types';
 import { isSerializedValue, isRuntimeTag } from '../types';
 import { SYMBOLS, EVENT_TYPE, INTERNAL_HELPERS } from './symbols';
-import { buildValue, buildPathExpression, buildNativeArg, selfHeadedName } from './value';
+import { buildValue, buildPathExpression, buildNativeArg, selfHeadedName, emittedRootName } from './value';
 import { B, serializeJS, type JSExpression, type JSProperty } from '../builder';
 import { escapeReservedBindingName } from '../utils/js-utils';
 
@@ -933,6 +933,13 @@ function buildComponentCall(
     } else {
       // EMBER_SELF (G6): `<this.foo.Bar />` reads the template self.
       dynamicTag = selfHeadedName(ctx, dynamicTag);
+      // A renamed `{{#let}}` head (BindingInfo.emitName) is referenced under
+      // its declared name.
+      const head = dynamicTag.split(/[?.[]/)[0]!;
+      const emittedHead = emittedRootName(ctx, head);
+      if (emittedHead !== head && ctx.scopeTracker.resolve(head)?.emitName !== undefined) {
+        dynamicTag = emittedHead + dynamicTag.slice(head.length);
+      }
     }
     const tagRef = B.runtimeRef(dynamicTag, tagRange);
     const tagGetter = B.reactiveGetter(tagRef, tagRange);
@@ -968,7 +975,8 @@ function buildComponentCall(
 
   // Rewrite reserved words (e.g. `if`, `let`, `class`) to their safe alias
   // so template scope bindings that shadow GXT built-ins emit valid JS.
-  const safeTag = jsSafeBindingId(tag);
+  const renamed = ctx.scopeTracker.resolve(tag)?.emitName;
+  const safeTag = renamed ?? jsSafeBindingId(tag);
   return B.call(SYMBOLS.COMPONENT, [B.id(safeTag, tagRange, 'ElementNode'), argsExpr, B.id(ctxName)], sourceRange, formatted, 'ComponentNode');
 }
 

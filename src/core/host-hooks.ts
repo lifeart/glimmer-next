@@ -328,6 +328,43 @@ export interface HostHooks {
     ctx: object,
     optional: boolean,
   ) => 'component' | 'helper' | null;
+  /**
+   * Glimmer dynamic-content classification (G15; the Ember native layer). A
+   * content-position `{{value}}` renders whatever its value IS, re-deciding on
+   * every change (Glimmer's dynamic content switch): text, a DOM node, trusted
+   * HTML, a component, a helper result. gxt recognizes text and DOM nodes
+   * itself; this hook tells it which other values are host constructs:
+   *   - `'html'`: trusted HTML (Ember `SafeString`, `htmlSafe(...)`) — its
+   *     `toHTML()` is parsed and inserted as nodes, never escaped;
+   *   - `'component'`: a component definition (a class with a component
+   *     manager, `templateOnly()`, a curried `(component …)`) — rendered as a
+   *     component with no arguments;
+   *   - `'helper'`: a helper definition with a host helper manager (or a
+   *     curried `(helper …)`) — invoked with no arguments, its result rendered
+   *     as content;
+   *   - `undefined` / `null`: not a host construct (text: `String(value)`; a
+   *     plain function keeps being called, as gxt always did).
+   * Consulted only once the EMBER_NATIVE runtime registered the dynamic-content
+   * binding (dom.ts); a gxt `$_tpl` template function is a component without
+   * asking.
+   */
+  classifyContent?: (value: unknown) => 'html' | 'component' | 'helper' | null | undefined;
+  /**
+   * Host assertion channel for gxt's host-parity runtime checks (Ember: the
+   * `@ember/debug` `assert`, so `expectAssertion` / the Ember assertion stubs
+   * see them). Called with the failure message; it is expected to throw. When
+   * absent (or when it returns), gxt throws an `Error` with the same message.
+   */
+  assert?: (message: string) => void;
+  /**
+   * `{{#each-in obj}}` entries (G5; the EMBER_NATIVE `$__eachIn` iteration
+   * source): `[key, value]` pairs in iteration order, read INSIDE the source
+   * formula so whatever the host consumes makes the iteration reactive (Ember:
+   * Glimmer's `toEachInIterator` — Maps / native iterables of pairs,
+   * forEach-ables, arrays, plain objects with per-key and object tags).
+   * Without the hook gxt iterates own enumerable keys.
+   */
+  eachInEntries?: (obj: object) => ReadonlyArray<[unknown, unknown]> | null | undefined;
 }
 
 /**
@@ -368,6 +405,16 @@ export let hostGetProp: NonNullable<HostHooks['getProp']> | null = null;
  * (use an explicit no-op function to disable a default the host set
  * earlier).
  */
+/**
+ * Fail a host-parity runtime check: through the host's `assert` hook when one is
+ * registered (it throws), else (or if it returns) as an `Error`.
+ */
+export function hostAssertFailed(message: string): never {
+  const hook = HOST_HOOKS.assert;
+  if (hook !== undefined) hook(message);
+  throw new Error(message);
+}
+
 export function registerHostHooks(hooks: HostHooks): void {
   for (const key of Object.keys(hooks) as Array<keyof HostHooks>) {
     const value = hooks[key];

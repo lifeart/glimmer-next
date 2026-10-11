@@ -23,6 +23,8 @@
  */
 
 import { $_MANAGERS } from './manager-integration';
+import { hostAssertFailed } from './host-hooks';
+import { isNativeRuntime } from './native-content';
 
 const CURRIED: unique symbol = Symbol.for('gxt.curried') as never;
 
@@ -61,6 +63,7 @@ export interface ResolvedCurried {
 
 const KIND_NAMES = ['component', 'helper', 'modifier'];
 
+
 /** Unwrap one literal-or-thunk argument (EMBER_NATIVE argument convention). */
 function argValue(value: unknown): unknown {
   return typeof value === 'function' ? (value as () => unknown)() : value;
@@ -82,6 +85,20 @@ export function $_curry(
   const definition = argValue(params[0]);
   if (definition === null || definition === undefined) {
     return definition;
+  }
+  if (
+    kind !== CURRIED_COMPONENT &&
+    typeof definition === 'string' &&
+    typeof params[0] === 'function' &&
+    isNativeRuntime()
+  ) {
+    // Ember native runtime: a helper / modifier NAME may only be a string
+    // LITERAL (`(helper "name")`); a dynamic string — the definition arrived as
+    // a thunk — is Glimmer's `-disallow-dynamic-resolution` assertion.
+    const keyword = KIND_NAMES[kind];
+    hostAssertFailed(
+      `Passing a dynamic string to the \`(${keyword})\` keyword is disallowed. (\`(${keyword} …)\` evaluated into "${definition}".) This ensures we can statically analyze the template and determine which ${keyword}s are used. If the ${keyword} is a global ${keyword}, use \`(${keyword} "${definition}")\` instead; otherwise, import it into the template.`,
+    );
   }
   const state: CurriedState = {
     kind,

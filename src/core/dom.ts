@@ -36,7 +36,7 @@ import {
   materializeAbsentPathCell,
   registerLeafOwnersForFormula,
 } from '@/core/reactive';
-import { opcodeFor, checkOpcode } from '@/core/vm';
+import { opcodeFor, opcodeForValue, checkOpcode } from '@/core/vm';
 import {
   SyncListComponent,
   AsyncListComponent,
@@ -72,6 +72,20 @@ import { isRehydrationScheduled } from './ssr/rehydration-state';
 import { createHotReload } from './hmr';
 import { CONSTANTS } from '../../plugins/symbols';
 import { initDOM, provideContext, RENDERING_CONTEXT, cleanupFastContext } from './context';
+import {
+  CONTENT_COMPONENT,
+  CONTENT_HELPER,
+  CONTENT_HTML,
+  CONTENT_TEXT,
+  nativeContentKind,
+  nativeContentText,
+  NO_INITIAL,
+  isContentComponent,
+  isNativeRuntime,
+  setNativeContentBinding,
+  takeInitialContent,
+  type ContentKind,
+} from './native-content';
 import { SVGProvider, HTMLProvider, MathMLProvider } from './provider';
 import { IfCondition, type IfFunction } from './control-flow/if';
 
@@ -84,6 +98,7 @@ import {
 } from './tracking';
 import {
   HOST_HOOKS,
+  hostAssertFailed,
   hostNormalizeAttrValue,
   isHostFunctionalHelper,
   markHostFunctionalHelper,
@@ -1058,13 +1073,24 @@ export function $_inElement(
   // rendering (mirrors the classic Glimmer build-time assert). Dev throws the
   // parity message; production degrades to the default clear/replace.
   if (typeof mode === 'string') {
-    if (IS_DEV_MODE) {
-      throw new Error(
-        `Can only pass null to insertBefore in in-element, received: ${mode}`,
-      );
+    const message = `Can only pass null to insertBefore in in-element, received: ${mode}`;
+    if (HOST_HOOKS.assert !== undefined) {
+      // The host owns its assertion policy (Ember: `@ember/debug` assert —
+      // throws in DEBUG builds, stripped in production).
+      HOST_HOOKS.assert(message);
+    } else if (IS_DEV_MODE) {
+      throw new Error(message);
     }
     mode = IN_ELEMENT_CLEAR;
   }
+  // Ember native runtime: the destination is resolved — and the block
+  // rendered — when the in-element is MOUNTED (renderElement's mount hook),
+  // in document order like Glimmer's append-as-you-go builder, not when the
+  // enclosing template function builds its nodes: a destination created by
+  // the same render (`document.getElementById(…)`, the root element itself)
+  // exists and is in place by then, and content appended to the root element
+  // lands after the content rendered before the in-element.
+  const deferToMount = isNativeRuntime();
   const api = initDOM(ctx);
   return component(
     function UnstableChildWrapper(this: Component<any>) {
@@ -1084,28 +1110,53 @@ export function $_inElement(
         // @ts-ignore $_eval may exist on ctx
         if (ctx?.$_eval) { this.$_eval = ctx.$_eval; }
       }
+      if (deferToMount) {
+        // @ts-expect-error symbol index
+        this[MOUNT_REPARSE_HOOK] = () => {
+          // @ts-expect-error symbol index
+          this[MOUNT_REPARSE_HOOK] = undefined;
+          renderInElementBody();
+        };
+        return $_fin([], this);
+      }
+      renderInElementBody();
+      return $_fin([], this);
+    } as unknown as Component<any>,
+    {},
+    ctx,
+  );
+
+  function renderInElementBody() {
       let appendRef!: HTMLElement;
       if (isFn(elementRef)) {
         let result = elementRef();
         if (isFn(result)) {
           result = result();
         }
-        if (isTagLike(result)) {
+        if (result !== null && result !== undefined && isTagLike(result)) {
           appendRef = result.value;
         } else {
           appendRef = result;
         }
-      } else if (isTagLike(elementRef)) {
+      } else if (elementRef !== null && elementRef !== undefined && isTagLike(elementRef)) {
         appendRef = elementRef.value;
       } else {
         appendRef = elementRef;
       }
       if (!appendRef) {
+        if (deferToMount) {
+          // Glimmer / Ember: a nullish destination is an assertion (a host
+          // whose assert returns — a production build — renders nothing).
+          const message = 'You cannot pass a null or undefined destination element to in-element';
+          if (HOST_HOOKS.assert !== undefined) HOST_HOOKS.assert(message);
+          else hostAssertFailed(message);
+          return;
+        }
         if (IS_DEV_MODE) {
           const errMsg = `in-element: target element is null or undefined. isFn: ${isFn(elementRef)}, isTagLike: ${isTagLike(elementRef)}, fnResult: ${isFn(elementRef) ? String(elementRef()) : 'N/A'}`;
           console.error(errMsg);
         }
-        return $_fin([], this);
+        return;
       }
       // Clear/replace mode (Glimmer/Ember default): remove the target's
       // existing children before rendering our block body.
@@ -1136,11 +1187,7 @@ export function $_inElement(
           appendRef.innerHTML = '';
         }
       });
-      return $_fin([], this);
-    } as unknown as Component<any>,
-    {},
-    ctx,
-  );
+  }
 }
 
 export function $_ucw(
@@ -1394,6 +1441,16 @@ export const $_maybeHelper = (
     // class-based helpers, curried helpers and built-in keyword names. The
     // compiler passes literal-or-thunk arguments, the render context and the
     // call-site index (`$_maybeHelper(ref, [args], {named}, ctx, site)`).
+    // An argument-less `{{Comp}}` whose value is a COMPONENT (Glimmer's
+    // ambiguous append, G15): the value itself — the content binding renders
+    // it as a component instead of invoking it as a helper.
+    if (
+      args.length === 0 &&
+      Object.keys(_hash).length === 0 &&
+      isContentComponent(value)
+    ) {
+      return value;
+    }
     if ($_MANAGERS.helper.canHandle(value)) {
       return $_MANAGERS.helper.handle(value, args, _hash, _ctx, _site);
     }
@@ -2774,6 +2831,130 @@ export function $_looseAppend(
   return '';
 }
 
+/**
+ * Glimmer dynamic content (G15; the EMBER_NATIVE runtime registers this as the
+ * native-content binding, see native-content.ts). Binds the reactive content
+ * formula `f` to the already-inserted `textNode`:
+ *   - a TEXT value writes the text node (the historic binding);
+ *   - a NODE / trusted HTML / COMPONENT / HELPER value renders a content unit —
+ *     a render-tree child of `treeParent` holding the rendered nodes — before
+ *     the text node (left empty as its anchor), spliced into `owner`'s rendered
+ *     nodes just before it so moves, first-node lookups and teardown include it;
+ *   - a change of kind or of the rendered value (node / HTML string /
+ *     definition identity) destroys the unit and renders the new value; a
+ *     helper unit's own result stays reactive inside it.
+ */
+export function bindNativeContent(
+  api: DOMApi,
+  treeParent: ComponentLike,
+  owner: ComponentLike | null,
+  textNode: Node,
+  f: MergedCell,
+): () => void {
+  let kind: ContentKind = CONTENT_TEXT;
+  let rendered: unknown = undefined;
+  let unit: ComponentLike | null = null;
+
+  // The unit REPLACES the text node in the owner's rendered nodes (in place:
+  // the list may be mid-iteration by renderElement) and holds the text node as
+  // its last node, so moves / first-node lookups / teardown see the content.
+  const swapInOwner = (from: unknown, to: unknown) => {
+    if (owner === null) return;
+    const nodes = owner[RENDERED_NODES_PROPERTY] as unknown[];
+    const index = nodes.indexOf(from);
+    if (index !== -1) nodes[index] = to;
+  };
+
+  const removeUnit = () => {
+    if (unit === null) return;
+    const current = unit;
+    unit = null;
+    swapInOwner(current, textNode);
+    // The anchor text node stays: only the unit's content is torn down.
+    const nodes = current[RENDERED_NODES_PROPERTY] as unknown[];
+    const anchorIndex = nodes.lastIndexOf(textNode);
+    if (anchorIndex !== -1) nodes.splice(anchorIndex, 1);
+    destroyElementSync(current, false, api);
+  };
+
+  const renderUnit = (next: ContentKind, value: unknown) => {
+    const parent = api.parent(textNode) as Node | null;
+    const created: ComponentLike = {
+      [$args]: {},
+      [COMPONENT_ID_PROPERTY]: cId(),
+      [RENDERED_NODES_PROPERTY]: [],
+      [RENDERING_CONTEXT_PROPERTY]: null,
+    } as unknown as ComponentLike;
+    addToTree(treeParent, created);
+    unit = created;
+    swapInOwner(textNode, created);
+    if (parent !== null) {
+      if (next === CONTENT_COMPONENT) {
+        const instance = component(
+          value as typeof Component,
+          $_args({}, false, $_edp as unknown as FwType),
+          created as Component<any>,
+        );
+        created[RENDERED_NODES_PROPERTY].push(instance as never);
+        renderElement(api, created, parent, instance as never, textNode, true);
+      } else {
+        let content: unknown;
+        if (next === CONTENT_HTML) {
+          content = parseTrustedHtml(api, rendered as string, parent as Element);
+        } else if (next === CONTENT_HELPER) {
+          content = () => $_maybeHelper(value, [], {}, created, 0);
+        } else if ((value as Node).nodeType === 11) {
+          // A DocumentFragment: its children are the content (it empties on insert).
+          content = Array.from((value as DocumentFragment).childNodes);
+        } else {
+          content = value;
+        }
+        renderElement(api, created, parent, content as never, textNode);
+      }
+    }
+    created[RENDERED_NODES_PROPERTY].push(textNode as never);
+  };
+
+  const apply = (value: unknown) => {
+    const next = nativeContentKind(api, value);
+    if (next === CONTENT_TEXT) {
+      if (kind !== CONTENT_TEXT) {
+        removeUnit();
+        kind = CONTENT_TEXT;
+        rendered = undefined;
+      }
+      api.textContent(textNode, nativeContentText(value));
+      registerLeafOwnersForFormula(f);
+      return;
+    }
+    const identity =
+      next === CONTENT_HTML ? resolveTrustedHtml(value) : value;
+    if (next === kind && identity === rendered) return;
+    removeUnit();
+    if (kind === CONTENT_TEXT) api.textContent(textNode, '');
+    kind = next;
+    rendered = identity;
+    renderUnit(next, value);
+  };
+  // Creation applies the value `resolveRenderable` already read (one read per
+  // create, Glimmer parity); a formula bound without one is evaluated here.
+  const initial = takeInitialContent(f);
+  const opDestructor =
+    initial === NO_INITIAL ? opcodeFor(f, apply) : opcodeForValue(f, apply, initial);
+
+  return () => {
+    opDestructor();
+    removeUnit();
+  };
+}
+
+// Module-level: the `typeof` guard keeps importing the published dist safe for
+// a consumer that does not define the EMBER_NATIVE build constant (it is left
+// to the consumer's `define`, like the WITH_* flags).
+if (typeof EMBER_NATIVE !== 'undefined' && EMBER_NATIVE) {
+  setNativeContentBinding(bindNativeContent);
+}
+
 export const $_api = (ctx: any) => initDOM(ctx);
 
 export function $_fin(
@@ -2817,6 +2998,13 @@ export function renderComponent(
     owner?: Root;
     args?: Record<string, unknown>;
     element?: ComponentRenderTarget;
+    /**
+     * Insert the rendered nodes before this child of the target (`null`:
+     * append). Omitted: before the target's current last child (historic).
+     * Rendering straight into the live target, in document order, lets a
+     * template find elements it rendered earlier in the same render.
+     */
+    nextSibling?: Node | null;
   } = {},
 ): ComponentReturnType {
   const appRoot = params.owner ?? createRoot();
@@ -2848,7 +3036,7 @@ export function renderComponent(
     instance,
     targetElement as unknown as HTMLElement,
     instance as any,
-    targetElement.lastChild,
+    'nextSibling' in params ? (params.nextSibling ?? null) : targetElement.lastChild,
   );
 
   return instance;

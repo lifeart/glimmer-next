@@ -25,6 +25,7 @@ import {
   peekTagFor,
   dirtyCell,
   currentRevision,
+  entangleSubscribers,
   UNSET,
 } from './tags';
 import { opcodeFor } from './vm';
@@ -248,5 +249,35 @@ describe('dirtyCell', () => {
       setTracker(prev);
     }
     expect(frame.has(t)).toBe(true);
+  });
+});
+
+describe('entangleSubscribers (late-bound dependencies)', () => {
+  test('a formula subscribed to `source` re-runs when an entangled cell is dirtied', async () => {
+    const source = cell('s');
+    const late = cell('late');
+    let runs = 0;
+    const f = formula(() => {
+      runs++;
+      return source.value;
+    }, 'entangle');
+    const destroy = opcodeFor(f, () => {});
+    expect(runs).toBe(1);
+    dirtyCell(late as Cell<unknown>);
+    await syncDom();
+    expect(runs).toBe(1); // not subscribed yet
+    entangleSubscribers(source as Cell<unknown>, [late as Cell<unknown>]);
+    expect(runs).toBe(1); // entangling re-runs nothing
+    dirtyCell(late as Cell<unknown>);
+    await syncDom();
+    expect(runs).toBe(2);
+    destroy();
+  });
+
+  test('no subscribers: a no-op', () => {
+    const source = cell(1);
+    const late = cell(2);
+    entangleSubscribers(source as Cell<unknown>, [late as Cell<unknown>]);
+    expect(relatedTags.has(late.id)).toBe(false);
   });
 });

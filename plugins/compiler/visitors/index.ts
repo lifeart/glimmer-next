@@ -19,7 +19,7 @@ import { getNodeRange, resolvePath, setSourceForRanges, getPathPartRanges, getPa
 
 // Re-export for compile.ts
 export { setSourceForRanges };
-import { visitText, isWhitespaceOnly } from './text';
+import { visitText, dropsWhitespaceText } from './text';
 import { visitMustache } from './mustache';
 import { visitBlock } from './block';
 import { visitElement } from './element';
@@ -343,7 +343,7 @@ export function visitChildren(
 
   for (const child of children) {
     // Skip whitespace-only text nodes
-    if (child.type === 'TextNode' && isWhitespaceOnly(child.chars)) {
+    if (child.type === 'TextNode' && dropsWhitespaceText(ctx, child.chars)) {
       ctx.seenNodes.add(child);
       continue;
     }

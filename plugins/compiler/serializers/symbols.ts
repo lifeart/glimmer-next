@@ -137,6 +137,10 @@ export const SYMBOLS = {
   // optional)` — the runtime asks the host whether `name` is a component or a
   // helper. Auto-reportable (in emittedSymbols) via SYMBOLS.
   LOOSE_APPEND: '$_looseAppend',
+  // Ember `{{#each-in}}` (EMBER_NATIVE, G5): the iteration source of the
+  // lowered `each` — `$__eachIn(obj)` returns the object's entries as stable
+  // `[key, value]` pairs. Auto-reportable (in emittedSymbols) via SYMBOLS.
+  EACH_IN: '$__eachIn',
 
   // Unstable child wrapper
   UCW: '$_ucw',
@@ -310,6 +314,10 @@ export const INTERNAL_HELPERS = {
   // component, so (like OUTLET) the element visitor keeps it a child. Never a
   // real runtime import — purely a compile-time routing sentinel.
   LOOSE_APPEND: '$__looseAppend',
+  // Marker for the `{{#each-in}}` iteration source (EMBER_NATIVE, G5):
+  // positional[0] = the iterated object. buildHelper lowers it to
+  // `$__eachIn(obj)` (SYMBOLS.EACH_IN). Never a real runtime import.
+  EACH_IN: '$__each_in',
 } as const;
 
 /**

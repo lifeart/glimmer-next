@@ -6,6 +6,7 @@
  */
 
 import type { CompilerContext } from '../context';
+import { addError } from '../context';
 import type { SerializedValue, SourceRange, PathValue } from '../types';
 import { SYMBOLS, INTERNAL_HELPERS, getBuiltInHelperSymbol } from './symbols';
 import {
@@ -36,9 +37,19 @@ function emitBindingRootName(
     binding &&
     (binding.kind === 'block-param' || binding.kind === 'let-binding')
   ) {
-    return escapeReservedBindingName(rootName);
+    // A `{{#let}}` binding renamed because it shadows a name its own value
+    // reads (BindingInfo.emitName) is referenced under that fresh name.
+    return binding.emitName ?? escapeReservedBindingName(rootName);
   }
   return rootName;
+}
+
+/**
+ * The emitted JS root identifier of a template name (`emitBindingRootName`),
+ * exported for the element serializer's component-tag references.
+ */
+export function emittedRootName(ctx: CompilerContext, rootName: string): string {
+  return emitBindingRootName(ctx, rootName);
 }
 
 export interface BuildPathExpressionOptions {
@@ -567,7 +578,7 @@ function buildBlockParamCellTap(
 
   // $__cellFor($__cellFor(item, "v"), "x")
   let expr: JSExpression = B.runtimeRef(
-    escapeReservedBindingName(head),
+    binding.emitName ?? escapeReservedBindingName(head),
     segs[0].range ?? value.rootRange ?? value.sourceRange
   );
   // EMBER_NATIVE: the non-defining tap (never installs an own accessor that
@@ -792,6 +803,20 @@ function buildHelper(
       B.num(ctx.helperSiteCounter++),
       B.bool(optional),
     ], sourceRange);
+  }
+  // `{{#each-in}}` iteration source (EMBER_NATIVE, G5): `$__eachIn(obj)`.
+  if (name === INTERNAL_HELPERS.EACH_IN) {
+    const source = positional[0];
+    // Read in place: the call already runs inside the each's source getter.
+    const sourceExpr =
+      source === undefined
+        ? B.nil()
+        : source.kind === 'path'
+          ? buildPathExpression(ctx, source, false, ctxName)
+          : source.kind === 'getter'
+            ? buildValueNoGetter(ctx, source.value, ctxName)
+            : buildValue(ctx, source, ctxName);
+    return B.call(SYMBOLS.EACH_IN, [sourceExpr], sourceRange);
   }
   if (name === INTERNAL_HELPERS.ELEMENT_HELPER) {
     const tagValue = positional[0] ?? { kind: 'literal', value: 'div' };
@@ -1032,6 +1057,15 @@ function buildMaybeHelper(
     : B.string(name, nameRange);
   if (!resolvedRef) {
     ctx.emissionReport.maybeHelperNames.add(name);
+    if (ctx.strictMode) {
+      // Glimmer strict mode: no resolver — a free name is not in scope.
+      addError(
+        ctx,
+        `Attempted to resolve a helper in a strict mode template, but that value was not in scope: ${name}`,
+        'E002',
+        nameRange ?? sourceRange
+      );
+    }
   }
 
   // Ember native layer (G4): one uniform 5-argument shape for known AND

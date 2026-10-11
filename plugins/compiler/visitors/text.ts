@@ -45,6 +45,21 @@ export function isWhitespaceOnly(str: string): boolean {
 }
 
 /**
+ * Whether a whitespace-only text node is DROPPED as formatting whitespace.
+ *
+ * gxt's own dialect drops whitespace-only text that spans lines or has more
+ * than one character (`isWhitespaceOnly`). Glimmer keeps every text node the
+ * parser produced (Handlebars' standalone-line stripping and `~` already ran),
+ * so `{{a}}⏎  {{b}}` renders "a⏎  b" and `<p></p>⏎<p></p>` keeps the newline.
+ * Under the Ember native layer (EMBER_NATIVE) gxt follows Glimmer; whitespace
+ * between named blocks is still ignored by the slot builder, as in Glimmer.
+ * Standalone and compat output are unchanged.
+ */
+export function dropsWhitespaceText(ctx: CompilerContext, str: string): boolean {
+  return ctx.flags.EMBER_NATIVE !== true && isWhitespaceOnly(str);
+}
+
+/**
  * Visit a TextNode.
  *
  * Returns the text content as a string, or null for whitespace-only nodes.
@@ -59,11 +74,11 @@ export function visitText(
   const chars = node.chars;
 
   // Filter out whitespace-only text nodes that span multiple lines
-  // or have multiple whitespace characters
-  if (isWhitespaceOnly(chars)) {
+  // or have multiple whitespace characters (not under EMBER_NATIVE)
+  if (dropsWhitespaceText(_ctx, chars)) {
     return null;
   }
 
-  // Decode HTML entities
-  return decodeHtmlEntities(chars);
+  // Decode HTML entities (the EMBER_NATIVE parse already decoded them)
+  return _ctx.flags.EMBER_NATIVE === true ? chars : decodeHtmlEntities(chars);
 }

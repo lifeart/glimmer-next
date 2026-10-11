@@ -26,6 +26,7 @@ export {
   peekTagFor,
   dirtyCell,
   currentRevision,
+  entangleSubscribers,
   UNSET,
   type TagMeta,
 } from '@/core/tags';

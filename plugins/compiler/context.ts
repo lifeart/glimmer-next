@@ -216,6 +216,15 @@ export interface CompilerContext {
    */
   readonly looseMode: boolean;
 
+  /**
+   * Ember strict-mode resolution (EMBER_LOOSE_COMPONENTS flag AND a template
+   * compiled with an explicit `strictMode: true` — Ember's runtime
+   * `template()`, `precompileTemplate(…, { strictMode: true })`): a free helper
+   * name that would be resolved BY NAME through the host is Glimmer's
+   * compile-time error instead ("… but that value was not in scope: name").
+   */
+  readonly strictMode: boolean;
+
   /** Optional filename for error messages */
   readonly filename?: string;
 
@@ -381,6 +390,7 @@ export function createContext(
     warnings: [],
     source,
     looseMode: flags.EMBER_LOOSE_COMPONENTS === true && options.strictMode === false,
+    strictMode: flags.EMBER_LOOSE_COMPONENTS === true && options.strictMode === true,
     filename: options.filename,
     elementContext: {
       namespace: 'html',
