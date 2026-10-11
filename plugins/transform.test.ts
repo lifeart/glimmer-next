@@ -1407,3 +1407,33 @@ export class HostComp extends Component {
     expect(result.code).not.toContain('$_maybeHelper(Custom');
   });
 });
+
+describe('G2 end-to-end: strict-mode imported <LinkTo> through transform()', () => {
+  // The scope bindings reach the compiler from babel's view of the module
+  // scope (processTemplate). An imported `LinkTo` must compile to a lexical
+  // component call in compat mode, not the by-name `$_tag('link-to')` the
+  // PascalCase→kebab mapping produces for unbound tags.
+  const source = `import { LinkTo } from '@ember/routing';
+
+<template>
+  <nav><LinkTo @route="index">Home</LinkTo></nav>
+</template>
+`;
+  const unboundSource = `<template>
+  <nav><LinkTo @route="index">Home</LinkTo></nav>
+</template>
+`;
+  const flags = { ...defaultFlags(), ASYNC_COMPILE_TRANSFORMS: false, IS_GLIMMER_COMPAT_MODE: true };
+
+  test('imported LinkTo keeps its import and emits $_c(LinkTo, …)', () => {
+    const result = transform(preprocess(source, 'application.gjs'), 'application.gjs', 'production', false, flags, source) as TransformResult;
+    expect(result.code).toMatch(/import \{ LinkTo \} from ['"]@ember\/routing['"]/);
+    expect(result.code).toMatch(/\$_c\(\s*LinkTo\b/);
+    expect(result.code).not.toMatch(/\$_tag\(\s*['"]link-to['"]/);
+  });
+
+  test('negative control: an unbound <LinkTo> still takes the kebab registry path', () => {
+    const result = transform(preprocess(unboundSource, 'application.gjs'), 'application.gjs', 'production', false, flags, unboundSource) as TransformResult;
+    expect(result.code).toMatch(/\$_tag\(\s*['"]link-to['"]/);
+  });
+});

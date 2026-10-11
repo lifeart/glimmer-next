@@ -205,7 +205,12 @@ export function visitElement(
 
   // In compat mode, transform known PascalCase built-in component names to kebab-case.
   // e.g. <LinkTo> → <link-to>, <Outlet> → <outlet>
-  if (ctx.flags.IS_GLIMMER_COMPAT_MODE) {
+  // Only for UNBOUND names (G2): the mapping stands in for a by-name registry
+  // lookup, so it must never shadow a lexical binding. A strict-mode
+  // `import { LinkTo } from '@ember/routing'` (or a block param / `scope`
+  // entry named `LinkTo`) must stay `$_c(LinkTo, …)`, not `$_tag('link-to')`.
+  // (`Foo::Bar` above needs no such guard: `::` names cannot be JS bindings.)
+  if (ctx.flags.IS_GLIMMER_COMPAT_MODE && !hasRealBinding(ctx, actualTag)) {
     actualTag = transformPascalToKebab(actualTag);
     // Mutate node.tag so downstream processing (namespace checks, etc.) sees the kebab name
     (node as any).tag = actualTag;
@@ -1058,6 +1063,19 @@ const PASCAL_TO_KEBAB_MAP: Record<string, string> = {
   LinkTo: 'link-to',
   Outlet: 'outlet',
 };
+
+/**
+ * True when `name` resolves to a genuine binding (lexical scope / `scope`
+ * entry / block param), NOT the synthetic `compat-component` binding that
+ * block.ts registers for a curly `{{#link-to}}` → `LinkTo` conversion. That
+ * synthetic entry is never removed from its scope frame, so a later
+ * `<LinkTo>` in the same template must still get the registry (kebab)
+ * mapping — mirroring the serializer's `isSyntheticCompatBinding` rule.
+ */
+function hasRealBinding(ctx: CompilerContext, name: string): boolean {
+  const binding = ctx.scopeTracker.resolve(name);
+  return binding !== undefined && binding.kind !== 'compat-component';
+}
 
 /**
  * Transform known PascalCase built-in component names to kebab-case.
