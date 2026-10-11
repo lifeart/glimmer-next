@@ -156,6 +156,11 @@ export {
 // DOM API exports for custom rendering contexts
 export { HTMLBrowserDOMApi, type DOMApi } from '@/core/dom-api';
 
+// Insert a rendered value (component / nodes / text) before an anchor and
+// register it with its render context — for host-managed render regions (the
+// Ember native outlet swaps route components between its own anchors).
+export { renderElement } from '@/core/render-core';
+
 // Symbol exports for Ember integration
 export {
   RENDERING_CONTEXT_PROPERTY,

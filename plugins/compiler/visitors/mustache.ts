@@ -8,7 +8,7 @@ import type { ASTv1 } from '@glimmer/syntax';
 import type { CompilerContext, VisitFn } from '../context';
 import type { SerializedValue, HBSControlExpression, HBSNode, SourceRange } from '../types';
 import { literal, path, helper, getter, raw, isSerializedValue } from '../types';
-import { getNodeRange, resolvePath, serializeValueToString, getPathPartRanges, getPathExpressionString } from './utils';
+import { getNodeRange, resolvePath, serializeValueToString, getPathPartRanges, getPathExpressionString, hasRealBinding } from './utils';
 import { INTERNAL_HELPERS } from '../serializers/symbols';
 
 /**
@@ -173,8 +173,18 @@ export function visitMustache(
     }
   }
 
-  // Handle yield/outlet
-  if (pathName === 'yield' || pathName === 'outlet') {
+  // Ember `{{outlet}}` keyword (EMBER_OUTLET, G3): emit the internal OUTLET
+  // marker (lowered to `$_outlet(ctx)` by buildHelper). A genuine binding named
+  // `outlet` (`{{#let … as |outlet|}}`, `{{#each … as |outlet|}}`, a lexical
+  // `outlet`) shadows the keyword (Ember block-param semantics) and falls
+  // through to the ordinary path below. Without the flag the historic
+  // `$_slot("default")` lowering is unchanged (byte-identical compat output).
+  if (pathName === 'outlet' && ctx.flags.EMBER_OUTLET) {
+    if (!hasRealBinding(ctx, 'outlet')) {
+      return helper(INTERNAL_HELPERS.OUTLET, [], new Map(), range);
+    }
+  } else if (pathName === 'yield' || pathName === 'outlet') {
+    // Handle yield/outlet
     return createYieldExpression(ctx, node, range);
   }
 

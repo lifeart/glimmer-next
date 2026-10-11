@@ -287,6 +287,16 @@ export interface HostHooks {
    * @returns the meaningful name, or `undefined` / `null` to fall back.
    */
   resolveComponentName?: (component: object) => string | undefined | null;
+  /**
+   * The component an Ember `{{outlet}}` renders (G3). Under the EMBER_OUTLET
+   * compile flag `{{outlet}}` emits `$_outlet(ctx)`, which renders this
+   * definition through the regular component machinery (as `$_c` would, with
+   * no args) as a child of the enclosing render context. The host component
+   * resolves what to render (the route template for this outlet level) from
+   * that context chain and owns its reactivity. gxt has no routing of its own:
+   * `$_outlet` throws when no outlet component is registered.
+   */
+  outletComponent?: unknown;
 }
 
 /**

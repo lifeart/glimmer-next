@@ -16,7 +16,7 @@ import type {
   SourceRange,
 } from '../types';
 import { literal, helper, getter, isSerializedValue, runtimeTag } from '../types';
-import { getNodeRange, serializeValueToString, getAttributeNameRange, getPathExpressionString, getElementBlockParamRanges } from './utils';
+import { getNodeRange, serializeValueToString, getAttributeNameRange, getPathExpressionString, getElementBlockParamRanges, hasRealBinding } from './utils';
 import { withElementContext, addWarning } from '../context';
 import { SYMBOLS, INTERNAL_HELPERS } from '../serializers/symbols';
 
@@ -882,10 +882,12 @@ function optimizeTextChild(
   // `$_html(…)`) is a NODE-producing helper — it returns a live DOM range, not a
   // string — so it must stay a child in the children array. Folding it into a
   // `@textContent` binding would stringify the carrier (`[object Object]`).
+  // The same holds for the Ember `{{outlet}}` marker (`$_outlet(…)`, G3): it
+  // renders a component.
   if (
     isSerializedValue(child) &&
     child.kind === 'helper' &&
-    child.name === INTERNAL_HELPERS.TRUSTED_HTML
+    (child.name === INTERNAL_HELPERS.TRUSTED_HTML || child.name === INTERNAL_HELPERS.OUTLET)
   ) {
     return noChange;
   }
@@ -1063,19 +1065,6 @@ const PASCAL_TO_KEBAB_MAP: Record<string, string> = {
   LinkTo: 'link-to',
   Outlet: 'outlet',
 };
-
-/**
- * True when `name` resolves to a genuine binding (lexical scope / `scope`
- * entry / block param), NOT the synthetic `compat-component` binding that
- * block.ts registers for a curly `{{#link-to}}` → `LinkTo` conversion. That
- * synthetic entry is never removed from its scope frame, so a later
- * `<LinkTo>` in the same template must still get the registry (kebab)
- * mapping — mirroring the serializer's `isSyntheticCompatBinding` rule.
- */
-function hasRealBinding(ctx: CompilerContext, name: string): boolean {
-  const binding = ctx.scopeTracker.resolve(name);
-  return binding !== undefined && binding.kind !== 'compat-component';
-}
 
 /**
  * Transform known PascalCase built-in component names to kebab-case.

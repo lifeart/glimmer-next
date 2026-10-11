@@ -13,7 +13,7 @@ import { processTemplate, type ResolvedHBS } from './babel';
 import { compile, formatErrorForDisplay, generateSourceMap, type MappingTreeNode, type SourceMapV3 } from './compiler/index';
 import { resolveTemplateTypeHintsWithChecker, mergeTypeHints } from './type-checker-hints';
 
-import { SYMBOLS, RECYCLE_IMPORT, RECYCLE_SYMBOLS, NATIVE_SYMBOLS, MAIN_IMPORT } from './symbols';
+import { SYMBOLS, RECYCLE_IMPORT, RECYCLE_SYMBOLS, NATIVE_SYMBOLS, OUTLET_SYMBOLS, MAIN_IMPORT } from './symbols';
 import { defaultFlags, type Flags } from './flags';
 
 // The opt-in row-recycling entry points ($_eachRecycled / $_eachSyncRecycled)
@@ -46,13 +46,17 @@ function withRecycleImport(moduleCode: string, usedRecycle: boolean): string {
   return `${RECYCLE_IMPORT_STATEMENT}\n${moduleCode}`;
 }
 
-// EMBER_NATIVE: the native-layer symbols ($_tpl brand, $__tag tap) are not part
-// of the always-on barrel auto-import (babel.ts imports Object.values(SYMBOLS)),
-// so flag-off output stays byte-identical. Under the flag the assembler imports
-// them explicitly (unused named imports are tree-shaken).
+// EMBER_NATIVE / EMBER_OUTLET: the native-layer symbols ($_tpl brand, $__tag
+// tap, $_outlet) are not part of the always-on barrel auto-import (babel.ts
+// imports Object.values(SYMBOLS)), so flag-off output stays byte-identical.
+// Under a flag the assembler imports its symbols explicitly (unused named
+// imports are tree-shaken).
 function withNativeImport(moduleCode: string, flags: Flags): string {
-  if (flags.EMBER_NATIVE !== true) return moduleCode;
-  return `import { ${NATIVE_SYMBOLS.join(', ')} } from '${MAIN_IMPORT}';\n${moduleCode}`;
+  const symbols: string[] = [];
+  if (flags.EMBER_NATIVE === true) symbols.push(...NATIVE_SYMBOLS);
+  if (flags.EMBER_OUTLET === true) symbols.push(...OUTLET_SYMBOLS);
+  if (symbols.length === 0) return moduleCode;
+  return `import { ${symbols.join(', ')} } from '${MAIN_IMPORT}';\n${moduleCode}`;
 }
 
 function buildLineOffsets(source: string): number[] {

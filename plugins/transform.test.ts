@@ -1438,6 +1438,48 @@ describe('G2 end-to-end: strict-mode imported <LinkTo> through transform()', () 
   });
 });
 
+describe('EMBER_OUTLET end-to-end through transform() (G3 {{outlet}})', () => {
+  // The Ember native layer compiles route templates with EMBER_OUTLET:
+  // `{{outlet}}` emits `$_outlet(ctx)` and the module imports `$_outlet` from
+  // @lifeart/gxt (outside the always-on barrel import). Flag off must be
+  // byte-identical to the historic `$_slot("default")` output.
+  const source = `import Layout from './layout.gjs';
+
+export default <template><main>{{outlet}}</main><Layout>{{outlet}}</Layout></template>;
+`;
+  const emberFlags = {
+    ...defaultFlags(),
+    ASYNC_COMPILE_TRANSFORMS: false,
+    IS_GLIMMER_COMPAT_MODE: true,
+    WITH_EMBER_INTEGRATION: true,
+    WITH_HELPER_MANAGER: true,
+    WITH_MODIFIER_MANAGER: true,
+  };
+  const compileWith = (flags: typeof emberFlags) =>
+    (transform(preprocess(source, 'application.gjs'), 'application.gjs', 'production', false, flags, source) as TransformResult).code;
+
+  test('flag on: {{outlet}} emits $_outlet(ctx) and $_outlet is imported from @lifeart/gxt', () => {
+    const code = compileWith({ ...emberFlags, EMBER_OUTLET: true });
+    expect(code).toContain('$_outlet(this)');
+    expect(code).toMatch(/\$_outlet\(ctx\d+\)/);
+    expect(code).toMatch(/import \{ \$_outlet \} from ['"]@lifeart\/gxt['"]/);
+    expect(code).not.toContain('$_slot(');
+  });
+
+  test('flag on together with EMBER_NATIVE: one import carries $_tpl, $__tag and $_outlet', () => {
+    const code = compileWith({ ...emberFlags, EMBER_NATIVE: true, EMBER_OUTLET: true });
+    expect(code).toMatch(/import \{ \$_tpl, \$__tag, \$_outlet \} from ['"]@lifeart\/gxt['"]/);
+    expect(code).toMatch(/export default \$_tpl\(function \(\)/);
+  });
+
+  test('flag off: no $_outlet anywhere — the historic $_slot("default") lowering, byte-identical', () => {
+    const off = compileWith(emberFlags);
+    expect(off).not.toContain('$_outlet');
+    expect(off).toContain('$_slot("default"');
+    expect(compileWith({ ...emberFlags, EMBER_OUTLET: false })).toBe(off);
+  });
+});
+
 describe('EMBER_NATIVE end-to-end through transform() (G14 brand + $__tag taps)', () => {
   // The Ember native layer compiles with EMBER_NATIVE: template-only templates
   // get the `$_tpl` brand (host `isTemplateFn`), class-body templates do not,

@@ -119,6 +119,11 @@ export const SYMBOLS = {
   // `<EmberHtmlRaw @value={{expr}} />` transform + `$_tag`-wrapper special-case +
   // out-of-band reparse pass. Auto-reportable (in emittedSymbols) via SYMBOLS.
   HTML: '$_html',
+  // Ember `{{outlet}}` keyword (EMBER_OUTLET flag, G3). The mustache visitor
+  // emits the internal `$__outlet` marker below; buildHelper lowers it to
+  // `$_outlet(ctx)`, which renders the host outlet component as a child of the
+  // enclosing template context. Auto-reportable (in emittedSymbols) via SYMBOLS.
+  OUTLET: '$_outlet',
 
   // Unstable child wrapper
   UCW: '$_ucw',
@@ -278,6 +283,12 @@ export const INTERNAL_HELPERS = {
   // intercepts this name and emits `$_html(() => inner, ctx)` (SYMBOLS.HTML).
   // Never a real runtime import — purely a compile-time routing sentinel.
   TRUSTED_HTML: '$__html',
+  // Marker for an Ember `{{outlet}}` (EMBER_OUTLET flag, G3) in content
+  // position. buildHelper lowers it to `$_outlet(ctx)` (SYMBOLS.OUTLET); like
+  // TRUSTED_HTML it produces DOM (a component), so the element visitor keeps it
+  // a child instead of folding it into a `@textContent` binding. Never a real
+  // runtime import — purely a compile-time routing sentinel.
+  OUTLET: '$__outlet',
 } as const;
 
 /**

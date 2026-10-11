@@ -57,6 +57,15 @@ export type Flags = {
   //     would shadow Ember `@tracked` prototype accessors);
   //   - `$_tpl` / `$__tag` are auto-imported only under this flag.
   EMBER_NATIVE: boolean;
+  // Ember `{{outlet}}` keyword (G3; the Ember native layer). Compile-time only,
+  // emission-affecting, default off: `{{outlet}}` emits `$_outlet(ctx)` — the
+  // runtime renders the host's outlet component (`registerHostHooks({
+  // outletComponent })`) as a child of the enclosing template context —
+  // instead of the historic `$_slot("default")` (which renders nothing in
+  // Ember). A genuine binding named `outlet` (block param / lexical scope)
+  // shadows the keyword. `$_outlet` is auto-imported only under this flag, so
+  // standalone and compat output are byte-identical.
+  EMBER_OUTLET: boolean;
 };
 
 export function defaultFlags() {
@@ -78,5 +87,6 @@ export function defaultFlags() {
     EMBER_IN_ELEMENT: false,
     EMBER_TRUSTED_HTML: false,
     EMBER_NATIVE: false,
+    EMBER_OUTLET: false,
   } as Flags;
 }

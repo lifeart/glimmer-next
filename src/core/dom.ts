@@ -2610,6 +2610,29 @@ export function $_html(getter: unknown, ctx: any): any {
   return carrier;
 }
 
+/**
+ * Ember `{{outlet}}` (G3): the compiler emits `$_outlet(ctx)` for `{{outlet}}`
+ * under the EMBER_OUTLET flag. gxt has no routing of its own — the host owns
+ * what an outlet renders. This renders the host's outlet component
+ * (`registerHostHooks({ outletComponent })`) through the regular component
+ * machinery (`$_c`, no args) with `ctx` — the enclosing template context, or
+ * the block context inside a block — as its render-tree parent, so the host
+ * component can read its outlet state from that context chain (`getContext`).
+ */
+export function $_outlet(ctx: Component<any>): ComponentReturnType {
+  const outlet = HOST_HOOKS.outletComponent;
+  if (outlet === undefined) {
+    throw new Error(
+      '`{{outlet}}` has no host outlet component: register one with `registerHostHooks({ outletComponent })`.',
+    );
+  }
+  return component(
+    outlet as typeof Component,
+    $_args({}, false, $_edp as unknown as FwType),
+    ctx,
+  ) as ComponentReturnType;
+}
+
 export const $_api = (ctx: any) => initDOM(ctx);
 
 export function $_fin(

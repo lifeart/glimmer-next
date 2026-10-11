@@ -117,6 +117,11 @@ export const RECYCLE_IMPORT = '@lifeart/gxt/recycle';
 // MAIN_IMPORT only when the flag is on.
 export const NATIVE_SYMBOLS: readonly string[] = ['$_tpl', '$__tag'];
 
+// Ember `{{outlet}}` keyword (EMBER_OUTLET compile flag, G3). Same rule as
+// NATIVE_SYMBOLS: outside the always-on barrel import (flag-off output stays
+// byte-identical); the module assembler imports it only under the flag.
+export const OUTLET_SYMBOLS: readonly string[] = ['$_outlet'];
+
 export const RECYCLE_SYMBOLS: readonly string[] = [
   SYMBOLS.EACH_RECYCLED,
   SYMBOLS.EACH_SYNC_RECYCLED,

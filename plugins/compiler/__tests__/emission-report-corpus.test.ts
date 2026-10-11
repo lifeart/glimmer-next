@@ -57,6 +57,19 @@ const COMBOS: Array<[string, Record<string, unknown>]> = [
       EMBER_ATTR_CONCAT: true,
     },
   ],
+  // The Ember native layer's emission-affecting flags ($__tag taps, G3
+  // `$_outlet`) — every shape must keep the report invariant under them too.
+  [
+    'ember-native',
+    {
+      IS_GLIMMER_COMPAT_MODE: true,
+      WITH_EMBER_INTEGRATION: true,
+      FORCE_SYNC_LIST: true,
+      EMBER_ATTR_CONCAT: true,
+      EMBER_NATIVE: true,
+      EMBER_OUTLET: true,
+    },
+  ],
 ];
 
 function compileWith(
@@ -315,6 +328,12 @@ const CORPUS: Array<[string, string, string[]]> = [
   ['yield-hasblock-named', '<div>{{if (has-block "body") "y" "n"}}</div>', []],
   ['yield-hasblock-params', '<div>{{if (has-block-params) "y" "n"}}</div>', []],
 
+  // --- outlet (G3: `$_outlet(ctx)` under EMBER_OUTLET, `$_slot` otherwise) ---
+  ['outlet', '<main>{{outlet}}</main>', []],
+  ['outlet-in-block', '<Layout>{{outlet}}</Layout>', ['Layout']],
+  ['outlet-in-if', '{{#if this.a}}{{outlet}}{{/if}}', []],
+  ['outlet-shadowed', '{{#let this.x as |outlet|}}<p>{{outlet}}</p>{{/let}}{{outlet}}', []],
+
   // --- splattributes ---
   ['splat', '<div ...attributes>x</div>', []],
   ['splat-with-attr', '<div class="x" ...attributes>{{yield}}</div>', []],
@@ -488,11 +507,23 @@ describe('emission-report anti-regression corpus', () => {
       expect(on.code).toContain('$_qStr(');
     });
 
+    test('EMBER_OUTLET reaches the adapter → $_outlet (not $_slot)', () => {
+      const tpl = '<main>{{outlet}}</main>';
+      const off = templateToTypescript(tpl, flags({ EMBER_OUTLET: false }), new Set());
+      const on = templateToTypescript(tpl, flags({ EMBER_OUTLET: true }), new Set());
+      expect(off.errors).toHaveLength(0);
+      expect(on.errors).toHaveLength(0);
+      expect(off.code).not.toContain('$_outlet(');
+      expect(on.code).toContain('$_outlet(this)');
+      expect(on.code).not.toContain('$_slot(');
+    });
+
     test('adapter code matches compile() code for the same flags', () => {
       const cases: Array<[string, Partial<Flags>]> = [
         ['{{#each this.items as |it|}}<li>{{it.n}}</li>{{/each}}', { FORCE_SYNC_LIST: true }],
         ['<div class="a {{this.b}} c"></div>', { EMBER_ATTR_CONCAT: true }],
         ['<div>{{unbound this.x}}</div>', {}],
+        ['<main>{{outlet}}</main>', { EMBER_OUTLET: true }],
       ];
       for (const [tpl, extra] of cases) {
         const f = flags(extra);

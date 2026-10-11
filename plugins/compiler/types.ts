@@ -119,6 +119,14 @@ export interface CompilerFlags {
    * byte-identical. See plugins/flags.ts.
    */
   readonly EMBER_NATIVE?: boolean;
+  /**
+   * Ember `{{outlet}}` keyword (G3). When true, `{{outlet}}` — unless `outlet`
+   * is a genuine binding (block param / lexical scope) — emits `$_outlet(ctx)`
+   * (renders the host outlet component) instead of `$_slot("default")`. Off
+   * (default) keeps compat/standalone output byte-identical. See
+   * plugins/flags.ts.
+   */
+  readonly EMBER_OUTLET?: boolean;
 }
 
 /**
@@ -147,6 +155,7 @@ export const DEFAULT_FLAGS: CompilerFlags = Object.freeze({
   EMBER_IN_ELEMENT: false, // $_inElement insertBefore mode arg (host opt-in)
   EMBER_TRUSTED_HTML: false, // $_html trusted-HTML node helper for {{{...}}} (host opt-in)
   EMBER_NATIVE: false, // Ember native layer: $__tag taps + $_tpl brand (host opt-in)
+  EMBER_OUTLET: false, // {{outlet}} -> $_outlet(ctx) host outlet component (host opt-in)
 });
 
 /**

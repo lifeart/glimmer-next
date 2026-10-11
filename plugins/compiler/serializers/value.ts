@@ -601,6 +601,12 @@ function buildHelper(
     const innerExpr = inner ? buildValue(ctx, inner, ctxName) : B.string('', sourceRange);
     return B.call(SYMBOLS.HTML, [innerExpr, B.id(ctxName)], sourceRange);
   }
+  // Ember `{{outlet}}` marker (EMBER_OUTLET, G3): `$_outlet(ctx)` renders the
+  // host outlet component with the enclosing render context (`ctxName` — `this`
+  // at template level, the block context inside a block) as its tree parent.
+  if (name === INTERNAL_HELPERS.OUTLET) {
+    return B.call(SYMBOLS.OUTLET, [B.id(ctxName)], sourceRange);
+  }
   if (name === INTERNAL_HELPERS.ELEMENT_HELPER) {
     const tagValue = positional[0] ?? { kind: 'literal', value: 'div' };
     const tagExpr = buildValue(ctx, tagValue, ctxName);
