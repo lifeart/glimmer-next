@@ -208,6 +208,14 @@ export interface CompilerContext {
   /** Original source code */
   readonly source: string;
 
+  /**
+   * Ember loose-mode resolution (G11): `true` when the template is LOOSE
+   * (`CompileOptions.strictMode === false`) AND the host opted in with the
+   * EMBER_LOOSE_COMPONENTS flag. Free component / component-or-helper names
+   * are then resolved by name through the host.
+   */
+  readonly looseMode: boolean;
+
   /** Optional filename for error messages */
   readonly filename?: string;
 
@@ -301,6 +309,14 @@ export interface CompilerContext {
    */
   inAttributeValue: boolean;
 
+  /**
+   * Transient flag: true while visiting the parts of a quoted attribute /
+   * named-arg value with interpolation (`data-x="{{foo}}"`, a ConcatStatement).
+   * Read only by the Ember loose-mode resolution (G11): a mustache there is a
+   * helper position, never a content-position `$_looseAppend`.
+   */
+  inAttributeConcat: boolean;
+
   /** Set of already-processed nodes (prevents double processing) */
   readonly seenNodes: Set<ASTv1.Node>;
 
@@ -364,6 +380,7 @@ export function createContext(
     errors: [],
     warnings: [],
     source,
+    looseMode: flags.EMBER_LOOSE_COMPONENTS === true && options.strictMode === false,
     filename: options.filename,
     elementContext: {
       namespace: 'html',
@@ -381,6 +398,7 @@ export function createContext(
     usedSelf: false,
     emissionReport: createEmissionReport(new Set(options.bindings ?? [])),
     inAttributeValue: false,
+    inAttributeConcat: false,
     seenNodes: new Set(),
     formatter,
     visitors: {

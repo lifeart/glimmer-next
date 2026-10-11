@@ -130,6 +130,13 @@ export const SYMBOLS = {
   // `$_outlet(ctx)`, which renders the host outlet component as a child of the
   // enclosing template context. Auto-reportable (in emittedSymbols) via SYMBOLS.
   OUTLET: '$_outlet',
+  // Ember loose-mode ambiguous append (EMBER_LOOSE_COMPONENTS flag, G11). The
+  // mustache visitor emits the internal `$__looseAppend` marker below for a
+  // content-position `{{name …}}` with no lexical binding in a loose template;
+  // buildHelper lowers it to `$_looseAppend("name", [args], {named}, ctx, site,
+  // optional)` — the runtime asks the host whether `name` is a component or a
+  // helper. Auto-reportable (in emittedSymbols) via SYMBOLS.
+  LOOSE_APPEND: '$_looseAppend',
 
   // Unstable child wrapper
   UCW: '$_ucw',
@@ -296,6 +303,13 @@ export const INTERNAL_HELPERS = {
   // a child instead of folding it into a `@textContent` binding. Never a real
   // runtime import — purely a compile-time routing sentinel.
   OUTLET: '$__outlet',
+  // Marker for an Ember loose-mode ambiguous append (EMBER_LOOSE_COMPONENTS
+  // flag, G11): positional[0] = the name literal, positional[1] = the
+  // `optional` literal, then the call's positional arguments. buildHelper
+  // lowers it to `$_looseAppend(…)` (SYMBOLS.LOOSE_APPEND); it may render a
+  // component, so (like OUTLET) the element visitor keeps it a child. Never a
+  // real runtime import — purely a compile-time routing sentinel.
+  LOOSE_APPEND: '$__looseAppend',
 } as const;
 
 /**

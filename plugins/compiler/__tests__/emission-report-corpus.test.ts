@@ -474,6 +474,36 @@ const CORPUS: Array<[string, string, string[]]> = [
   ],
 ];
 
+// Ember loose-mode templates (G11: EMBER_LOOSE_COMPONENTS + `strictMode:
+// false`): by-name components (`$_c("foo-bar", …)`), the ambiguous append
+// (`$_looseAppend`), helper / modifier names — the report must keep the
+// invariant for them too.
+const LOOSE_CORPUS: ReadonlyArray<readonly [string, string, string[]]> = [
+  ['loose-angle', '<FooBar @a={{this.x}} class="c">t</FooBar><Foo::Bar />', []],
+  ['loose-block', '{{#foo-bar a=1 as |v|}}{{v}}{{/foo-bar}}', []],
+  ['loose-append', '<p>{{foo-bar}}{{foo-bar 1 k=this.v}}{{name}}</p>', []],
+  ['loose-component-name', '{{component "foo-bar" a=1}}{{#let (component "x-y") as |C|}}<C />{{/let}}', []],
+  ['loose-helper-positions', '<p title={{fmt this.a}} data-x="[{{fmt this.b}}]">{{if (fmt this.c) "y"}}</p>', []],
+  ['loose-modifier', '<div {{my-mod this.a k=1}}></div>', []],
+  ['loose-mixed-lexical', '<Lex @x={{1}} /><Free />{{lexHelper 1}}{{freeHelper 1}}', ['Lex', 'lexHelper']],
+];
+
+describe('emission-report: Ember loose mode (G11)', () => {
+  const [, nativeFlags] = COMBOS[COMBOS.length - 1]!;
+  const looseFlags = { ...nativeFlags, EMBER_LOOSE_COMPONENTS: true };
+  for (const [name, tpl, bindings] of LOOSE_CORPUS) {
+    test(`${name} [ember-native-loose]`, () => {
+      const r = compile(tpl, {
+        flags: looseFlags as any,
+        bindings: new Set(bindings),
+        strictMode: false,
+      });
+      expect(r.errors).toHaveLength(0);
+      assertReportInvariant('ember-native-loose', tpl, r);
+    });
+  }
+});
+
 describe('emission-report anti-regression corpus', () => {
   test(`corpus size is substantial (>= 60 shapes)`, () => {
     expect(CORPUS.length).toBeGreaterThanOrEqual(60);

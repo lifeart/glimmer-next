@@ -10,6 +10,8 @@ import type { SerializedValue, HBSControlExpression, HBSNode, SourceRange } from
 import { literal, path, helper, getter, raw, isSerializedValue } from '../types';
 import { getNodeRange, resolvePath, serializeValueToString, getPathPartRanges, getPathExpressionString, hasRealBinding } from './utils';
 import { INTERNAL_HELPERS } from '../serializers/symbols';
+import { addError, addWarning } from '../context';
+import { isLooseAppend, looseFreePathError } from './loose';
 
 /**
  * Get the visit function from context.
@@ -157,6 +159,36 @@ export function visitMustache(
   // In compat mode, transform {{input ...}} / {{textarea ...}} to <Input /> / <Textarea />
   if ((pathName === 'input' || pathName === 'textarea') && ctx.flags.IS_GLIMMER_COMPAT_MODE) {
     return createInputTextareaElement(ctx, node, pathName, range);
+  }
+
+  // Ember loose mode (G11): `{{free.path}}` (a free head with members) is
+  // Glimmer's compile-time error.
+  if (
+    !ctx.inAttributeValue &&
+    !ctx.inAttributeConcat &&
+    node.path.head.type === 'VarHead' &&
+    node.path.tail.length > 0
+  ) {
+    const message = looseFreePathError(ctx, node.path.head.name, pathName, 'append');
+    if (message !== null) {
+      addError(ctx, message, 'E002', range);
+      return literal('');
+    }
+  }
+
+  // Ember loose mode (G11): a content-position `{{name …}}` whose callee has
+  // no lexical binding is a component OR a helper, resolved by name at render
+  // time (Glimmer's append syntax context) — replaces the compat inline-curly
+  // guess below. A trusting `{{{name}}}` stays a helper.
+  if (
+    node.escaped !== false &&
+    isLooseAppend(
+      ctx,
+      pathName,
+      node.path.head.type === 'VarHead' && node.path.tail.length === 0
+    )
+  ) {
+    return createLooseAppend(ctx, node, pathName, range);
   }
 
   // In compat mode, transform inline curly components: {{foo-bar arg=val}} → HBSNode
@@ -452,6 +484,12 @@ function createComponentElement(
   let tag: string;
   let isStaticName = false;
 
+  // Ember loose mode (G11): `{{component "foo-bar" a=1}}` invokes the
+  // component registered as `foo-bar` (resolved by the host by name).
+  if (ctx.looseMode && firstParam.type === 'StringLiteral') {
+    return createLooseNamedComponent(ctx, node, firstParam.value, range);
+  }
+
   if (firstParam.type === 'StringLiteral') {
     // Static name: {{component "foo-bar"}} → <FooBar>
     tag = toPascalCase(firstParam.value);
@@ -506,6 +544,66 @@ function createComponentElement(
     children: [],
     sourceRange: range,
   };
+}
+
+/**
+ * Ember loose mode (G11): `{{component "foo-bar" a=1}}` → a by-name component
+ * node (`$_c("foo-bar", $_args({ a: … }))`). Positional arguments after the
+ * name are not supported (a W005 warning, like curly block components).
+ */
+function createLooseNamedComponent(
+  ctx: CompilerContext,
+  node: ASTv1.MustacheStatement,
+  name: string,
+  range?: SourceRange
+): HBSNode {
+  if (node.params.length > 1) {
+    addWarning(
+      ctx,
+      `Positional parameters are not supported on component invocation "{{component "${name}"}}" and will be ignored`,
+      'W005'
+    );
+  }
+  const attributes: Array<[string, SerializedValue]> = [];
+  for (const pair of node.hash.pairs) {
+    const value = getVisit(ctx)(ctx, pair.value, false);
+    if (value !== null && isSerializedValue(value)) {
+      attributes.push([`@${pair.key}`, getter(value, range)]);
+    }
+  }
+  return { ...createSelfClosingComponentNode(name, attributes, range), byName: true };
+}
+
+/**
+ * Ember loose mode (G11): a content-position `{{name …}}` — a component or a
+ * helper, decided by the host at render time. Lowered by buildHelper to
+ * `$_looseAppend("name", [args], {named}, ctx, site, optional)`; `optional`
+ * (no arguments at all) renders nothing when `name` is neither (Glimmer's
+ * ResolveOptionalComponentOrHelper), otherwise the host throws.
+ */
+function createLooseAppend(
+  ctx: CompilerContext,
+  node: ASTv1.MustacheStatement,
+  pathName: string,
+  range?: SourceRange
+): SerializedValue {
+  const positional = node.params.map((param) => {
+    const result = getVisit(ctx)(ctx, param, false);
+    if (result === null) return literal(null);
+    if (typeof result === 'string') return literal(result);
+    if (isSerializedValue(result)) return result;
+    return raw(JSON.stringify(result));
+  });
+  const hashArgs = collectHashArgs(ctx, node.hash.pairs);
+  const optional = node.params.length === 0 && node.hash.pairs.length === 0;
+  const pathRange = getNodeRange(node.path);
+  return helper(
+    INTERNAL_HELPERS.LOOSE_APPEND,
+    [literal(pathName), literal(optional), ...positional],
+    hashArgs,
+    range,
+    pathRange
+  );
 }
 
 /**

@@ -11,6 +11,7 @@
  */
 import {
   SYMBOLS,
+  LOOSE_SYMBOLS,
   NATIVE_SYMBOLS,
   OUTLET_SYMBOLS,
   PROPERTY_TAG_SYMBOLS,
@@ -87,6 +88,35 @@ export function buildTemplateTagFunction(
   return result;
 }
 
+/** The maker's parameter: the values of the call's `scope` option. */
+export const PRECOMPILE_SCOPE_PARAM = '$__scope';
+
+/**
+ * G10 (Ember native layer): the build-time replacement for the template-string
+ * argument of an Ember `precompileTemplate(\`…\`, { scope, strictMode })` call
+ * — a template MAKER the host's runtime `precompileTemplate` calls (lazily)
+ * with the values of the call's `scope` option:
+ *
+ *   ($__scope) => { const { a, b } = $__scope; return $_tpl(function () {…}); }
+ *
+ * The scope keys are the template's only lexical names (bound as `const`s, so
+ * a renamed entry `scope: () => ({ shadowArray: array })` binds `shadowArray`);
+ * the template function itself is exactly the `<template>` wrapper
+ * (buildTemplateTagFunction). Without scope keys: `() => $_tpl(function () {…})`.
+ */
+export function buildPrecompileTemplateMaker(
+  template: WrappableTemplate,
+  flags: Partial<Flags>,
+  scopeKeys: readonly string[],
+): string {
+  const fn = buildTemplateTagFunction(template, flags, {});
+  if (scopeKeys.length === 0) return `() => ${fn}`;
+  return `(${PRECOMPILE_SCOPE_PARAM}) => {
+      const { ${scopeKeys.join(', ')} } = ${PRECOMPILE_SCOPE_PARAM};
+      return ${fn};
+    }`;
+}
+
 /**
  * The Ember-native-layer runtime symbols a module compiled under `flags` may
  * reference, beyond the always-on barrel (`Object.values(SYMBOLS)`): the AOT
@@ -99,6 +129,7 @@ export function nativeTemplateSymbols(flags: Partial<Flags>): string[] {
   if (flags.EMBER_OUTLET === true) symbols.push(...OUTLET_SYMBOLS);
   if (flags.EMBER_PROPERTY_TAGS === true) symbols.push(...PROPERTY_TAG_SYMBOLS);
   if (flags.EMBER_SELF === true) symbols.push(...SELF_SYMBOLS);
+  if (flags.EMBER_LOOSE_COMPONENTS === true) symbols.push(...LOOSE_SYMBOLS);
   return Array.from(new Set(symbols));
 }
 

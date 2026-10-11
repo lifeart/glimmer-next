@@ -142,6 +142,16 @@ export interface CompilerFlags {
    * output byte-identical. See plugins/flags.ts.
    */
   readonly EMBER_SELF?: boolean;
+  /**
+   * Ember loose-mode resolution (G11). When true, a template compiled with
+   * `strictMode: false` (CompileOptions.strictMode) resolves free component /
+   * component-or-helper names through the host by name: `<FooBar>` /
+   * `<Foo::Bar>` / `{{#foo-bar}}` / `{{component "foo-bar"}}` emit
+   * `$_c("foo-bar", …)`, a content-position `{{foo-bar …}}` emits
+   * `$_looseAppend(…)`. Off (default) — or a strict template — keeps
+   * compat/standalone output byte-identical. See plugins/flags.ts.
+   */
+  readonly EMBER_LOOSE_COMPONENTS?: boolean;
 }
 
 /**
@@ -173,6 +183,7 @@ export const DEFAULT_FLAGS: CompilerFlags = Object.freeze({
   EMBER_OUTLET: false, // {{outlet}} -> $_outlet(ctx) host outlet component (host opt-in)
   EMBER_PROPERTY_TAGS: false, // $__tag(obj, "k") member taps on this/@arg/block-param paths (host opt-in)
   EMBER_SELF: false, // `this` path heads read `$s = $_self(this)` (host opt-in)
+  EMBER_LOOSE_COMPONENTS: false, // loose templates resolve free names by name (host opt-in)
 });
 
 /**
@@ -382,6 +393,12 @@ export interface HBSNode {
   readonly sourceRange?: SourceRange;
   /** Source range of just the tag name (for component source mapping) */
   readonly tagRange?: SourceRange;
+  /**
+   * Ember loose mode (G11, EMBER_LOOSE_COMPONENTS): `tag` is a component NAME
+   * the host resolves at runtime (`$_c("foo-bar", …)` →
+   * `$_MANAGERS.component`), not a lexical binding or an HTML element.
+   */
+  readonly byName?: boolean;
 }
 
 /**
@@ -746,6 +763,13 @@ export interface CompileOptions {
   readonly customizeComponentName?: (input: string) => string;
   /** CALLBACK to determine if a variable is in the lexical scope of the template. */
   readonly lexicalScope?: (variable: string) => boolean;
+  /**
+   * Ember template mode. `false` = a LOOSE (resolver-mode) template: under the
+   * EMBER_LOOSE_COMPONENTS flag its free component / component-or-helper names
+   * are resolved by name through the host (G11). `true` / omitted = strict
+   * (the historic behaviour; `<template>` tags are always strict).
+   */
+  readonly strictMode?: boolean;
   /** Type hints for type-directed optimization. Only used when WITH_TYPE_OPTIMIZATION is true. */
   readonly typeHints?: TypeHints;
   /**

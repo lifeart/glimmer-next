@@ -32,6 +32,7 @@ const EMBER_NATIVE_FLAGS: Partial<Flags> = {
   EMBER_OUTLET: true,
   EMBER_SELF: true,
   EMBER_PROPERTY_TAGS: true,
+  EMBER_LOOSE_COMPONENTS: true,
 };
 
 const CORPUS = [

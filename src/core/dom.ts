@@ -173,11 +173,11 @@ export function $_unwrapHelperArg(value: unknown): unknown {
  * Component helper - curries a component with pre-bound args.
  * Handles both class/function components and string component names.
  */
-export function $_componentHelper(params: any[], hash: Record<string, unknown>) {
+export function $_componentHelper(params: any[], hash: Record<string, unknown>, ctx?: unknown) {
   if (EMBER_NATIVE) {
     // Ember native layer (G9): a curried component value, resolved by the host
     // component manager when `$_c` / `$_dc` render it.
-    return $_curry(CURRIED_COMPONENT, params, hash) as never;
+    return $_curry(CURRIED_COMPONENT, params, hash, ctx) as never;
   }
   const componentFn = $_unwrapHelperArg(params[0]);
 
@@ -214,11 +214,11 @@ export function $_componentHelper(params: any[], hash: Record<string, unknown>) 
 /**
  * Modifier helper - curries a modifier with pre-bound args.
  */
-export function $_modifierHelper(params: any[], hash: Record<string, unknown>) {
+export function $_modifierHelper(params: any[], hash: Record<string, unknown>, ctx?: unknown) {
   if (EMBER_NATIVE) {
     // Ember native layer (G9): a curried modifier value, resolved by the host
     // modifier manager when `$_maybeModifier` installs it.
-    return $_curry(CURRIED_MODIFIER, params, hash) as never;
+    return $_curry(CURRIED_MODIFIER, params, hash, ctx) as never;
   }
   const modifierFn = $_unwrapHelperArg(params[0]) as Function;
   const boundParams = params.slice(1);
@@ -246,11 +246,11 @@ export function $_modifierHelper(params: any[], hash: Record<string, unknown>) {
 /**
  * Helper helper - curries a helper with pre-bound args.
  */
-export function $_helperHelper(params: any[], hash: Record<string, unknown>) {
+export function $_helperHelper(params: any[], hash: Record<string, unknown>, ctx?: unknown) {
   if (EMBER_NATIVE) {
     // Ember native layer (G9): a curried helper value, resolved by the host
     // helper manager when `$_maybeHelper` invokes it.
-    return $_curry(CURRIED_HELPER, params, hash) as never;
+    return $_curry(CURRIED_HELPER, params, hash, ctx) as never;
   }
   const helperFn = $_unwrapHelperArg(params[0]) as Function;
   const boundParams = params.slice(1);
@@ -2722,6 +2722,56 @@ export function $_outlet(ctx: Component<any>): ComponentReturnType {
     $_args({}, false, $_edp as unknown as FwType),
     ctx,
   ) as ComponentReturnType;
+}
+
+/**
+ * Ember loose-mode ambiguous append (G11): the compiler emits
+ * `$_looseAppend("name", [args], {named}, ctx, site, optional)` for a
+ * content-position `{{name …}}` in a LOOSE template (EMBER_LOOSE_COMPONENTS +
+ * `strictMode: false`) whose callee has no lexical binding. Whether `name` is a
+ * component or a helper is registry knowledge only the host has, so it asks
+ * `HOST_HOOKS.resolveComponentOrHelper` once per render of the call site
+ * (Glimmer resolves it once per template + owner):
+ *   - `'component'`: rendered through the component machinery as a child of
+ *     `ctx` — `$_c(name, $_args(named))`; positional arguments curry it
+ *     (`$_curry`), so the host receives them as the component's positional
+ *     arguments;
+ *   - `'helper'`: a reactive helper binding, exactly what a helper mustache
+ *     compiles to (`() => $_maybeHelper(name, args, named, ctx, site)`);
+ *   - `null`: nothing (an `optional` — argument-less — miss).
+ * Arguments follow the literal-or-thunk convention of `$_maybeHelper` /
+ * component args.
+ */
+export function $_looseAppend(
+  name: string,
+  positional: unknown[],
+  named: Record<string, unknown>,
+  ctx: Component<any>,
+  site: number,
+  optional: boolean,
+): unknown {
+  const resolve = HOST_HOOKS.resolveComponentOrHelper;
+  if (resolve === undefined) {
+    throw new Error(
+      `\`{{${name}}}\` in a loose-mode template has no host resolver: register one with \`registerHostHooks({ resolveComponentOrHelper })\`.`,
+    );
+  }
+  const kind = resolve(name, ctx, optional);
+  if (kind === 'component') {
+    const definition =
+      positional.length === 0
+        ? name
+        : $_curry(CURRIED_COMPONENT, [name, ...positional], {});
+    return component(
+      definition as unknown as typeof Component,
+      $_args(named, {}, $_edp as unknown as FwType),
+      ctx,
+    );
+  }
+  if (kind === 'helper') {
+    return () => $_maybeHelper(name, positional, named, ctx, site);
+  }
+  return '';
 }
 
 export const $_api = (ctx: any) => initDOM(ctx);

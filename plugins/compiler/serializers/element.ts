@@ -192,6 +192,7 @@ export function buildComponent(
   // ($_c) keep the in-args merge. The tag test mirrors buildComponentCall's
   // own `$_dc` routing rule (`typeof tag === 'string' && tag.includes('.')`).
   const isDynamicComponent =
+    node.byName !== true &&
     typeof node.tag === 'string' &&
     (node.tag.includes('.') || (ctx.flags.EMBER_NATIVE === true && node.tag.startsWith('@')));
   const dynamicSplat = isDynamicComponent && hasSplatAttrs;
@@ -222,13 +223,13 @@ export function buildComponent(
   if (node.selfClosing) {
     // Self-closing component - empty slots object
     const argsCall = buildComponentArgsExpr(ctx, args, B.emptyObject(), finalPropsExpr, ctxName);
-    return buildComponentCall(ctx, node.tag, argsCall, ctxName, useFormatted, node.sourceRange, node.tagRange, dynamicSplat);
+    return buildComponentCall(ctx, node.tag, argsCall, ctxName, useFormatted, node.sourceRange, node.tagRange, dynamicSplat, node.byName === true);
   }
 
   // Component with children/slots
   const slotsExpr = buildSlots(ctx, node);
   const argsCall = buildComponentArgsExpr(ctx, args, slotsExpr, finalPropsExpr, ctxName);
-  return buildComponentCall(ctx, node.tag, argsCall, ctxName, useFormatted, node.sourceRange, node.tagRange, dynamicSplat);
+  return buildComponentCall(ctx, node.tag, argsCall, ctxName, useFormatted, node.sourceRange, node.tagRange, dynamicSplat, node.byName === true);
 }
 
 /**
@@ -309,10 +310,25 @@ function buildComponentProps(
     // Emits free `$fw` references → the `const $fw = $_GET_FW(...)` preamble
     // local is required.
     ctx.usedFw = true;
+    // Ember native layer: Glimmer concatenates classes in SOURCE order, so a
+    // `class` written BEFORE `...attributes` on a component invocation
+    // (`<Qux class="bar" ...attributes />`) precedes the forwarded classes —
+    // the compat `__splatLocal__` marker lists what comes after the splat
+    // (`__class__` for a class). Other props keep the historic order.
+    const nativeClassFirst =
+      ctx.flags.EMBER_NATIVE === true && !classWrittenAfterSplat(properties);
+    const classTuples = nativeClassFirst ? properties.filter(([key]) => key === '') : [];
+    const propsHead: JSExpression[] =
+      classTuples.length > 0 ? [B.spread(buildTupleArray(ctx, classTuples, ctxName))] : [];
+    const propsTail =
+      classTuples.length > 0
+        ? buildTupleArray(ctx, properties.filter(([key]) => key !== ''), ctxName)
+        : propsExpr;
     const elements = [
       B.array([
+        ...propsHead,
         B.spread(B.computedMember(B.id(SYMBOLS.LOCAL_FW), B.num(0))),
-        B.spread(propsExpr),
+        B.spread(propsTail),
       ]),
       B.array([
         B.spread(B.computedMember(B.id(SYMBOLS.LOCAL_FW), B.num(1))),
@@ -328,6 +344,20 @@ function buildComponentProps(
 
   const elements = [propsExpr, attrsExpr, evtsExpr];
   return useFormatted ? B.formattedArray(elements, true) : B.array(elements);
+}
+
+/**
+ * True when the compat `__splatLocal__` marker (see visitors/element.ts
+ * `rewriteSplatLocalOverrides`) says a `class` is written AFTER `...attributes`.
+ */
+function classWrittenAfterSplat(properties: readonly PropertyTuple[]): boolean {
+  for (const [key, value] of properties) {
+    if (key !== '__splatLocal__') continue;
+    if (value && value.kind === 'literal' && typeof value.value === 'string') {
+      return value.value.split(',').includes('__class__');
+    }
+  }
+  return false;
 }
 
 /**
@@ -854,11 +884,19 @@ function buildComponentCall(
   // When true (dynamic component in splat context), emit the forwarded-props
   // tuple `$fw` as a dedicated 4th `$_dc` argument so the runtime can thread
   // the parent's `...attributes` into the resolved component.
-  emitForwardedProps = false
+  emitForwardedProps = false,
+  // Ember loose mode (G11): `tag` is a component NAME the host resolves.
+  byName = false
 ): JSExpression {
   // Handle RuntimeTag (namespace providers, dynamic components)
   if (isRuntimeTag(tag)) {
     return B.call(SYMBOLS.COMPONENT, [B.id(tag.symbol), argsExpr, B.id(ctxName)], sourceRange, formatted, 'ElementNode');
+  }
+
+  // Ember loose mode (G11, EMBER_LOOSE_COMPONENTS): `$_c("foo-bar", …)` — the
+  // host component manager resolves the name through its registry.
+  if (byName) {
+    return B.call(SYMBOLS.COMPONENT, [B.stringSingle(tag, tagRange), argsExpr, B.id(ctxName)], sourceRange, formatted, 'ComponentNode');
   }
 
   // Check for dynamic component (dotted path like context.V or this.Component)

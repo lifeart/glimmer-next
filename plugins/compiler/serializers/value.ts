@@ -770,6 +770,29 @@ function buildHelper(
   if (name === INTERNAL_HELPERS.OUTLET) {
     return B.call(SYMBOLS.OUTLET, [B.id(ctxName)], sourceRange);
   }
+  // Ember loose-mode ambiguous append (EMBER_LOOSE_COMPONENTS, G11):
+  // `$_looseAppend("name", [args], {named}, ctx, site, optional)` with the
+  // native literal-or-thunk argument convention (like `$_maybeHelper`) and the
+  // call site's helper-site index (a helper resolution keys its instance on
+  // (ctx, site)). positional[0] / [1] are the name and `optional` literals.
+  if (name === INTERNAL_HELPERS.LOOSE_APPEND) {
+    const [nameValue, optionalValue, ...args] = positional;
+    const looseName = nameValue && nameValue.kind === 'literal' ? String(nameValue.value) : '';
+    const optional = optionalValue !== undefined && optionalValue.kind === 'literal' && optionalValue.value === true;
+    const posArgs = args.map(arg => buildNativeArg(ctx, arg, ctxName));
+    const namedProps = [];
+    for (const [key, val] of named) {
+      namedProps.push(B.prop(key, buildNativeArg(ctx, val, ctxName), false, val.sourceRange));
+    }
+    return B.call(SYMBOLS.LOOSE_APPEND, [
+      B.string(looseName, pathRange),
+      B.array(posArgs),
+      namedProps.length > 0 ? B.object(namedProps) : B.emptyObject(),
+      B.id(ctxName),
+      B.num(ctx.helperSiteCounter++),
+      B.bool(optional),
+    ], sourceRange);
+  }
   if (name === INTERNAL_HELPERS.ELEMENT_HELPER) {
     const tagValue = positional[0] ?? { kind: 'literal', value: 'div' };
     const tagExpr = buildValue(ctx, tagValue, ctxName);
@@ -962,7 +985,10 @@ function buildNativeCurryCall(
     props.push(B.prop(key, buildNativeArg(ctx, val, ctxName), false, val.sourceRange));
   }
   const namedObj = props.length > 0 ? B.object(props) : B.emptyObject();
-  return B.call(callee, [B.array(posArgs), namedObj], sourceRange);
+  // The render context (3rd argument): the curried value keeps it so a
+  // curried HELPER rendered without arguments (`{{helper "name"}}`, `{{h}}`)
+  // reaches the host helper manager with its owner (a by-name definition).
+  return B.call(callee, [B.array(posArgs), namedObj, B.id(ctxName)], sourceRange);
 }
 
 /**

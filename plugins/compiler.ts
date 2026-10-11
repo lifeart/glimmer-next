@@ -30,6 +30,16 @@ export function hasHbsTaggedTemplate(code: string): boolean {
   return /(?<![.\w'"`])hbs\s*`/.test(code);
 }
 
+/**
+ * G10 pre-filter (EMBER_NATIVE): a script module that MAY call Ember's
+ * `precompileTemplate` (imports `@ember/template-compilation` and mentions the
+ * name). Only gates whether the module is parsed — the babel pass then
+ * identifies the calls through the import binding (plugins/babel.ts).
+ */
+export function mayCallPrecompileTemplate(code: string): boolean {
+  return code.includes('@ember/template-compilation') && code.includes('precompileTemplate');
+}
+
 const extensionsToResolve = [
   '.mjs',
   '.js',
@@ -126,8 +136,27 @@ export function compiler(mode: string, options: Options = {}): Plugin {
       // Files that merely import from @lifeart/gxt don't need the babel transform
       // (which injects symbol imports that may conflict with existing declarations).
       const hasHbsTemplate = hasHbsTaggedTemplate(code);
-      if (!hasHbsTemplate) {
+      // G10 (EMBER_NATIVE): Ember `precompileTemplate(…)` calls compile at
+      // build time too.
+      const hasPrecompileTemplate =
+        flags.EMBER_NATIVE === true && mayCallPrecompileTemplate(code);
+      if (!hasHbsTemplate && !hasPrecompileTemplate) {
         return;
+      }
+      if (scriptFileRegex.test(file) && !hasHbsTemplate) {
+        // A precompileTemplate-only module: compile errors must surface (a
+        // skipped module would leave the string to fail at runtime with a
+        // misleading "not compiled at build time").
+        const result = transform(
+          code, file,
+          mode as 'development' | 'production',
+          false, flags, code,
+          { precompileOnly: true },
+        );
+        if (result && typeof (result as Promise<unknown>).then === 'function') {
+          return (result as Promise<any>).then((r) => toViteResult(r));
+        }
+        return toViteResult(result as any);
       }
       if (scriptFileRegex.test(file)) {
         try {

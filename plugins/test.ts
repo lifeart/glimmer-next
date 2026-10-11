@@ -14,7 +14,12 @@ import { compile, formatErrorForDisplay, generateSourceMap, type MappingTreeNode
 import { resolveTemplateTypeHintsWithChecker, mergeTypeHints } from './type-checker-hints';
 
 import { SYMBOLS, RECYCLE_IMPORT, RECYCLE_SYMBOLS, MAIN_IMPORT } from './symbols';
-import { buildTemplateTagFunction, nativeTemplateSymbols, selfPreamble } from './template-wrapper';
+import {
+  buildPrecompileTemplateMaker,
+  buildTemplateTagFunction,
+  nativeTemplateSymbols,
+  selfPreamble,
+} from './template-wrapper';
 import { defaultFlags, type Flags } from './flags';
 
 // The opt-in row-recycling entry points ($_eachRecycled / $_eachSyncRecycled)
@@ -363,6 +368,9 @@ function processTransformedFiles(
       bindings,
       filename: fileName,
       lexicalScope: content.lexicalScope,
+      // G10: a `precompileTemplate(…)` template carries its own strict/loose
+      // mode (EMBER_LOOSE_COMPONENTS applies to the loose ones).
+      strictMode: templateFlags.precompile?.strictMode,
       flags: {
         ...globalFlags,
         IS_GLIMMER_COMPAT_MODE: globalFlags.IS_GLIMMER_COMPAT_MODE ?? true,
@@ -428,7 +436,14 @@ function processTransformedFiles(
     const declareRoots = `const roots = ${template.code};`;
     const declareReturn = `return ${SYMBOLS.FINALIZE_COMPONENT}(roots, ${finContext});`;
 
-    if (isTemplateTag) {
+    if (template.flags.precompile !== undefined) {
+      // G10: the template maker replacing a `precompileTemplate` string.
+      result = buildPrecompileTemplateMaker(
+        template,
+        globalFlags,
+        template.flags.precompile.scopeKeys,
+      );
+    } else if (isTemplateTag) {
       // Shared with the runtime compiler (plugins/template-wrapper.ts) so AOT
       // and runtime-compiled templates are emitted identically.
       result = buildTemplateTagFunction(template, globalFlags, {
@@ -653,6 +668,17 @@ function resolveGxtBabelDeps(): { presetTypescript: string; decoratorTransforms:
   return gxtBabelDeps;
 }
 
+export interface TransformOptions {
+  /**
+   * G10 (EMBER_NATIVE): the module is a plain script whose only gxt work is
+   * its Ember `precompileTemplate(…)` calls. The babel pass then ONLY rewrites
+   * those calls (and imports the runtime symbols): no decorator lowering, no
+   * TypeScript stripping of `.js` files, none of the gxt `template()` / `hbs` /
+   * class-body conventions — the host's own pipeline still owns the rest.
+   */
+  precompileOnly?: boolean;
+}
+
 export function transform(
   source: string,
   fileName: string,
@@ -660,20 +686,29 @@ export function transform(
   isLibBuild: boolean = false,
   flags: Flags = defaultFlags(),
   originalGtsSource?: string,
+  options: TransformOptions = {},
 ): TransformResult | Promise<TransformResult> {
   const rawTxt: string = source;
   const hbsToProcess: ResolvedHBS[] = [];
   const programResults: string[] = [];
   const isAsync = flags.ASYNC_COMPILE_TRANSFORMS;
+  const precompileOnly = options.precompileOnly === true;
 
   const babelDeps = resolveGxtBabelDeps();
-  const plugins: PluginItem[] = [processTemplate(hbsToProcess, mode)];
-  if (!isLibBuild) {
+  const plugins: PluginItem[] = [
+    processTemplate(hbsToProcess, mode, {
+      // G10 is Ember-native-layer behaviour: off unless EMBER_NATIVE.
+      precompileTemplate: flags.EMBER_NATIVE === true,
+      precompileOnly,
+    }),
+  ];
+  if (!isLibBuild && !precompileOnly) {
     plugins.push(babelDeps.decoratorTransforms);
   }
   const replacedFileName = fileName
     .replace('.gts', '.ts')
     .replace('.gjs', '.js');
+  const isTypeScript = /\.(ts|gts|mts|cts)$/.test(fileName);
   const babelConfig = {
     // Hermetic: never inherit the host's babel setup (see resolveGxtBabelDeps).
     configFile: false,
@@ -681,12 +716,18 @@ export function transform(
     browserslistConfigFile: false,
     plugins,
     filename: replacedFileName,
-    presets: [
-      [
-        babelDeps.presetTypescript,
-        { allExtensions: true, onlyRemoveTypeImports: true, allowDeclareFields: true },
-      ],
-    ],
+    presets:
+      precompileOnly && !isTypeScript
+        ? []
+        : [
+            [
+              babelDeps.presetTypescript,
+              { allExtensions: true, onlyRemoveTypeImports: true, allowDeclareFields: true },
+            ],
+          ],
+    // precompileOnly leaves decorators for the host pipeline: parse them only
+    // (the legacy syntax decorator-transforms itself enables).
+    ...(precompileOnly ? { parserOpts: { plugins: ['decorators-legacy' as const] } } : {}),
     // Enable source maps
     sourceMaps: true,
     sourceFileName: fileName,

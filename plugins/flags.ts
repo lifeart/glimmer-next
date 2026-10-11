@@ -100,6 +100,28 @@ export type Flags = {
   // nodes onto a controller or a test context. `$_self` is auto-imported only
   // under this flag; standalone and compat output are byte-identical.
   EMBER_SELF: boolean;
+  // Ember loose-mode (resolver) resolution (G11; the Ember native layer).
+  // Compile-time only, emission-affecting, default off. Applies ONLY to
+  // templates compiled with `strictMode: false` (CompileOptions.strictMode — a
+  // build-time `precompileTemplate(…, { strictMode: false })` (G10), a host's
+  // runtime-compiled loose template); strict templates (`<template>`, the
+  // default) are unchanged. In a loose template a free name the template has
+  // no lexical binding for is resolved BY NAME by the host, with Glimmer's
+  // syntax rules:
+  //   - `<FooBar>` / `<Foo::Bar>` (uppercase-first or `::`) is a component:
+  //     `$_c("foo-bar", …)` / `$_c("foo/bar", …)` (Ember's component-name
+  //     dasherization); a lowercase tag stays an element;
+  //   - `{{#foo-bar}}…{{/foo-bar}}` and `{{component "foo-bar"}}` are
+  //     components: `$_c("foo-bar", …)`;
+  //   - `{{foo-bar …}}` in content position is a component OR a helper:
+  //     `$_looseAppend("foo-bar", [args], {named}, ctx, site, optional)` asks the
+  //     host (`resolveComponentOrHelper`) once per render; `optional` (no
+  //     arguments) renders nothing when neither exists;
+  //   - helper (sub-expression / attribute) and modifier positions already
+  //     pass the name string to the host managers.
+  // `$_looseAppend` is auto-imported only under this flag; standalone and
+  // compat output are byte-identical.
+  EMBER_LOOSE_COMPONENTS: boolean;
 };
 
 export function defaultFlags() {
@@ -124,5 +146,6 @@ export function defaultFlags() {
     EMBER_OUTLET: false,
     EMBER_PROPERTY_TAGS: false,
     EMBER_SELF: false,
+    EMBER_LOOSE_COMPONENTS: false,
   } as Flags;
 }

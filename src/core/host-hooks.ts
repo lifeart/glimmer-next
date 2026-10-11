@@ -309,6 +309,25 @@ export interface HostHooks {
    * reached by EMBER_NATIVE / EMBER_PROPERTY_TAGS output.
    */
   getProp?: (obj: object, key: string) => unknown;
+  /**
+   * Ember loose-mode ambiguous append (G11, the EMBER_LOOSE_COMPONENTS compile
+   * flag). In a LOOSE template a content-position `{{name …}}` whose callee has
+   * no lexical binding compiles to `$_looseAppend(name, …)`, which asks this
+   * hook — once per render of the call site — what `name` is for the render
+   * tree `ctx` belongs to (Glimmer's ResolveComponentOrHelper /
+   * ResolveOptionalComponentOrHelper): `'component'` renders it through the
+   * component machinery (`$_c(name, …)` → the host component manager resolves
+   * the name), `'helper'` renders a reactive helper binding
+   * (`$_maybeHelper(name, …)` → the host helper manager), `null` renders
+   * nothing. `optional` is true when the call has no arguments at all; for a
+   * non-optional miss the host is expected to throw its own "nothing was
+   * found" error.
+   */
+  resolveComponentOrHelper?: (
+    name: string,
+    ctx: object,
+    optional: boolean,
+  ) => 'component' | 'helper' | null;
 }
 
 /**

@@ -18,6 +18,7 @@ import type {
 import { literal, helper, getter, isSerializedValue, runtimeTag } from '../types';
 import { getNodeRange, serializeValueToString, getAttributeNameRange, getPathExpressionString, getElementBlockParamRanges, hasRealBinding } from './utils';
 import { withElementContext, addWarning } from '../context';
+import { looseComponentTagName } from './loose';
 import { SYMBOLS, INTERNAL_HELPERS } from '../serializers/symbols';
 
 /**
@@ -197,9 +198,16 @@ export function visitElement(
   const range = getNodeRange(node);
   let actualTag = node.tag;
 
+  // Ember loose mode (G11, EMBER_LOOSE_COMPONENTS + a `strictMode: false`
+  // template): an unbound uppercase-first / `::` tag is a component the host
+  // resolves BY NAME — `$_c("foo-bar", …)` with Ember's dasherized registry
+  // name. Replaces the compat by-name stand-ins below (`Foo::Bar` →
+  // `foo--bar`, `LinkTo` → `link-to` elements).
+  const looseName = looseComponentTagName(ctx, actualTag, range);
+
   // In compat mode, transform Foo::Bar namespaced components to foo--bar kebab-case.
   // The Glimmer parser preserves :: in tag names, so we convert here.
-  if (ctx.flags.IS_GLIMMER_COMPAT_MODE && actualTag.indexOf('::') !== -1) {
+  if (looseName === null && ctx.flags.IS_GLIMMER_COMPAT_MODE && actualTag.indexOf('::') !== -1) {
     actualTag = transformNamespacedTag(actualTag);
   }
 
@@ -210,7 +218,7 @@ export function visitElement(
   // `import { LinkTo } from '@ember/routing'` (or a block param / `scope`
   // entry named `LinkTo`) must stay `$_c(LinkTo, …)`, not `$_tag('link-to')`.
   // (`Foo::Bar` above needs no such guard: `::` names cannot be JS bindings.)
-  if (ctx.flags.IS_GLIMMER_COMPAT_MODE && !hasRealBinding(ctx, actualTag)) {
+  if (looseName === null && ctx.flags.IS_GLIMMER_COMPAT_MODE && !hasRealBinding(ctx, actualTag)) {
     actualTag = transformPascalToKebab(actualTag);
     // Mutate node.tag so downstream processing (namespace checks, etc.) sees the kebab name
     (node as any).tag = actualTag;
@@ -237,7 +245,7 @@ export function visitElement(
   }
 
   // Manual component name customization for traceability
-  if (ctx.customizeComponentName && isComponentName(actualTag)) {
+  if (looseName === null && ctx.customizeComponentName && isComponentName(actualTag)) {
     actualTag = ctx.customizeComponentName(actualTag);
   }
 
@@ -294,7 +302,8 @@ export function visitElement(
   const properties = processProperties(ctx, regularAttrs, hasSplatAttrs);
   const baseEvents = processEvents(ctx, node, styleEvents);
 
-  // Optimize text children (pure function)
+  // Optimize text children (pure function). (A by-name component keeps its
+  // uppercase source tag here, which optimizeTextChild never folds.)
   const { children: optimizedChildren, additionalEvents } = optimizeTextChild(
     actualTag,
     children,
@@ -310,13 +319,14 @@ export function visitElement(
   } : undefined;
 
   // Manual component name customization for traceability
-  if (ctx.customizeComponentName && isComponentName(actualTag)) {
+  if (looseName === null && ctx.customizeComponentName && isComponentName(actualTag)) {
     actualTag = ctx.customizeComponentName(actualTag);
   }
 
   const hbsNode: HBSNode = {
     _nodeType: 'element',
-    tag: actualTag,
+    tag: looseName ?? actualTag,
+    ...(looseName !== null ? { byName: true } : {}),
     selfClosing: node.selfClosing,
     blockParams: node.blockParams,
     blockParamRanges: blockParamRanges ?? undefined,
@@ -674,7 +684,14 @@ function visitAttributeValue(
   }
 
   if (value.type === 'ConcatStatement') {
-    const result = getVisit(ctx)(ctx, value, false);
+    const _prevInConcat = ctx.inAttributeConcat;
+    ctx.inAttributeConcat = true;
+    let result: ReturnType<ReturnType<typeof getVisit>>;
+    try {
+      result = getVisit(ctx)(ctx, value, false);
+    } finally {
+      ctx.inAttributeConcat = _prevInConcat;
+    }
     if (result !== null && isSerializedValue(result)) {
       return result;
     }
@@ -907,7 +924,9 @@ function optimizeTextChild(
   if (
     isSerializedValue(child) &&
     child.kind === 'helper' &&
-    (child.name === INTERNAL_HELPERS.TRUSTED_HTML || child.name === INTERNAL_HELPERS.OUTLET)
+    (child.name === INTERNAL_HELPERS.TRUSTED_HTML ||
+      child.name === INTERNAL_HELPERS.OUTLET ||
+      child.name === INTERNAL_HELPERS.LOOSE_APPEND)
   ) {
     return noChange;
   }

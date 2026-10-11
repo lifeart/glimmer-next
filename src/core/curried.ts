@@ -42,6 +42,12 @@ export interface CurriedState {
   readonly positional: readonly unknown[];
   /** Curried named arguments (literal-or-thunk values). */
   readonly named: Readonly<Record<string, unknown>>;
+  /**
+   * The render context the value was curried in (EMBER_NATIVE emission passes
+   * it): what a curried helper rendered WITHOUT arguments hands the host helper
+   * manager (its owner resolves a by-name definition).
+   */
+  readonly ctx?: unknown;
 }
 
 export interface ResolvedCurried {
@@ -71,6 +77,7 @@ export function $_curry(
   kind: CurriedKind,
   params: readonly unknown[],
   named: Readonly<Record<string, unknown>>,
+  ctx?: unknown,
 ): unknown {
   const definition = argValue(params[0]);
   if (definition === null || definition === undefined) {
@@ -81,6 +88,7 @@ export function $_curry(
     definition,
     positional: params.slice(1),
     named,
+    ctx,
   };
   const curried = function curriedValue() {
     // gxt renders a function value by calling it: `{{H}}` — a curried HELPER
@@ -88,7 +96,7 @@ export function $_curry(
     // a curried helper invokes it), through the host helper manager.
     // eslint-disable-next-line prefer-rest-params
     if (kind === CURRIED_HELPER && arguments.length === 0) {
-      return $_MANAGERS.helper.handle(curried, [], {});
+      return $_MANAGERS.helper.handle(curried, [], {}, state.ctx);
     }
     throw new Error(
       `A curried ${KIND_NAMES[kind]} cannot be called directly; invoke it in a template.`,

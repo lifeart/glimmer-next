@@ -128,6 +128,11 @@ export const OUTLET_SYMBOLS: readonly string[] = ['$_outlet'];
 export const PROPERTY_TAG_SYMBOLS: readonly string[] = ['$__tag'];
 export const SELF_SYMBOLS: readonly string[] = ['$_self'];
 
+// Ember loose-mode resolution (EMBER_LOOSE_COMPONENTS, G11): the ambiguous
+// append `$_looseAppend`. Same rule as NATIVE_SYMBOLS (imported only under the
+// flag; flag-off output stays byte-identical).
+export const LOOSE_SYMBOLS: readonly string[] = ['$_looseAppend'];
+
 export const RECYCLE_SYMBOLS: readonly string[] = [
   SYMBOLS.EACH_RECYCLED,
   SYMBOLS.EACH_SYNC_RECYCLED,

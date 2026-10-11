@@ -488,6 +488,12 @@ export interface TemplateSourceOptions {
   templateName?: string;
   /** Pretty-print the body like an AOT development build. */
   format?: boolean;
+  /**
+   * Ember template mode: `false` compiles a LOOSE (resolver-mode) template —
+   * under EMBER_LOOSE_COMPONENTS its free component / component-or-helper names
+   * resolve by name through the host (G11). Omitted / `true`: strict.
+   */
+  strictMode?: boolean;
 }
 
 /**
@@ -529,6 +535,7 @@ export function compileTemplateSource(
     bindings: options.bindings ?? new Set(),
     filename: options.moduleName || 'runtime-template',
     lexicalScope: options.lexicalScope,
+    strictMode: options.strictMode,
     // The AOT assembler's per-template flag surfacing (plugins/test.ts).
     flags: {
       ...flags,

@@ -10,6 +10,7 @@ import type { SerializedValue, HBSControlExpression, HBSChild, HBSNode, Attribut
 import { literal, getter, isSerializedValue, isHBSNode } from '../types';
 import { getNodeRange, serializeValueToString, getBlockParamRanges, getPathExpressionString } from './utils';
 import { addWarning } from '../context';
+import { isLooseBlockComponent } from './loose';
 
 /**
  * Get the visit function from context.
@@ -78,7 +79,10 @@ function isComponentBlock(ctx: CompilerContext, node: ASTv1.BlockStatement): boo
 function convertComponentBlock(
   ctx: CompilerContext,
   node: ASTv1.BlockStatement,
-  range?: SourceRange
+  range?: SourceRange,
+  // Ember loose mode (G11): the block name is a component the host resolves
+  // BY NAME (`$_c("foo-bar", …)`) — no compat PascalCase / synthetic binding.
+  byName = false
 ): HBSNode {
   // isComponentBlock already verified node.path.type === 'PathExpression'
   const pathExpr = node.path as ASTv1.PathExpression;
@@ -91,10 +95,9 @@ function convertComponentBlock(
   // Also register the PascalCase tag as a temporary binding so the serializer's
   // isComponentTag() recognizes it and uses $_c (component call) with proper slots
   // instead of $_tag (element call) with flat children.
-  const tag = (ctx.flags.IS_GLIMMER_COMPAT_MODE && rawTag.includes('-'))
-    ? toPascalCase(rawTag)
-    : rawTag;
-  const needsTagBinding = ctx.flags.IS_GLIMMER_COMPAT_MODE && rawTag.includes('-') && !ctx.scopeTracker.hasBinding(tag);
+  const compatCurly = !byName && ctx.flags.IS_GLIMMER_COMPAT_MODE && rawTag.includes('-');
+  const tag = compatCurly ? toPascalCase(rawTag) : rawTag;
+  const needsTagBinding = compatCurly && !ctx.scopeTracker.hasBinding(tag);
   if (needsTagBinding) {
     ctx.scopeTracker.addBinding(tag, { kind: 'compat-component', name: tag });
   }
@@ -112,9 +115,7 @@ function convertComponentBlock(
   //      binding (e.g. `{{#if some.thing}}` where `if` is in scope). The
   //      condition/item/etc. would otherwise be silently dropped.
   const isShadowedKeyword = BUILTIN_BLOCK_KEYWORDS.has(rawTag);
-  const forwardPositional =
-    (ctx.flags.IS_GLIMMER_COMPAT_MODE && rawTag.includes('-')) ||
-    isShadowedKeyword;
+  const forwardPositional = !byName && (compatCurly || isShadowedKeyword);
   if (forwardPositional && node.params.length > 0) {
     for (let i = 0; i < node.params.length; i++) {
       const param = node.params[i];
@@ -221,6 +222,7 @@ function convertComponentBlock(
     hasStableChild: hasStable,
     sourceRange: range,
     tagRange,
+    ...(byName ? { byName: true } : {}),
   };
 }
 
@@ -245,8 +247,13 @@ function convertComponentHelperBlock(
 ): HBSNode | null {
   const firstParam = node.params[0];
   let tag: string;
+  // Ember loose mode (G11): `{{#component "foo-bar"}}` resolves `foo-bar` by
+  // name through the host (`$_c("foo-bar", …)`).
+  const byName = ctx.looseMode && firstParam.type === 'StringLiteral';
 
-  if (firstParam.type === 'StringLiteral') {
+  if (byName) {
+    tag = (firstParam as ASTv1.StringLiteral).value;
+  } else if (firstParam.type === 'StringLiteral') {
     tag = toPascalCase(firstParam.value);
   } else if (firstParam.type === 'PathExpression') {
     tag = getPathExpressionString(firstParam);
@@ -262,7 +269,14 @@ function convertComponentHelperBlock(
   });
 
   // Remaining positional params (after the component name)
-  const positionalParams = node.params.slice(1);
+  const positionalParams = byName ? [] : node.params.slice(1);
+  if (byName && node.params.length > 1) {
+    addWarning(
+      ctx,
+      `Positional parameters are not supported on component block "{{#component "${tag}"}}" and will be ignored`,
+      'W005'
+    );
+  }
   for (let i = 0; i < positionalParams.length; i++) {
     const param = positionalParams[i];
     const value = getVisit(ctx)(ctx, param, false);
@@ -307,6 +321,7 @@ function convertComponentHelperBlock(
     selfClosing: false,
     hasStableChild: hasStable,
     sourceRange: range,
+    ...(byName ? { byName: true } : {}),
   };
 }
 
@@ -321,6 +336,20 @@ export function visitBlock(
   node: ASTv1.BlockStatement
 ): HBSControlExpression | SerializedValue | HBSNode | null {
   const range = getNodeRange(node);
+
+  // Ember loose mode (G11): `{{#foo-bar …}}…{{/foo-bar}}` with no lexical
+  // binding for `foo-bar` is a component resolved by name (Glimmer's block
+  // syntax context), whatever its spelling.
+  if (
+    node.path.type === 'PathExpression' &&
+    isLooseBlockComponent(
+      ctx,
+      getPathExpressionString(node.path),
+      node.path.head.type === 'VarHead' && node.path.tail.length === 0
+    )
+  ) {
+    return convertComponentBlock(ctx, node, range, true);
+  }
 
   // Detect component block invocations before checking params
   if (isComponentBlock(ctx, node)) {

@@ -107,14 +107,14 @@ describe('EMBER_NATIVE: modifier call sites', () => {
     expect(c).toMatch(
       /\$_maybeModifier\(\$__if\([^\n]*\), \$n, \[\(\) => this\.x\], \{ k: \(\) => this\.y \}, this\)/
     );
-    expect(c).toContain('$_modifierHelper([() => tagIt, 1], {})');
+    expect(c).toContain('$_modifierHelper([() => tagIt, 1], {}, this)');
   });
 });
 
 describe('EMBER_NATIVE: curry sites (G9) and dynamic components', () => {
   test('(component …): definition and args are literal-or-thunk', () => {
     const c = code('{{#let (component Cmp a=this.x b=1) as |C|}}<C />{{/let}}', NATIVE, ['Cmp']);
-    expect(c).toContain('$_componentHelper([() => Cmp], { a: () => this.x, b: 1 })');
+    expect(c).toContain('$_componentHelper([() => Cmp], { a: () => this.x, b: 1 }, this)');
   });
 
   test('(helper …) / (modifier …) curry with thunked positional args', () => {
@@ -123,9 +123,9 @@ describe('EMBER_NATIVE: curry sites (G9) and dynamic components', () => {
       NATIVE,
       ['fmt', 'tagIt', 'concat']
     );
-    expect(c).toContain('$_helperHelper([() => fmt, () => this.a], {})');
+    expect(c).toContain('$_helperHelper([() => fmt, () => this.a], {}, this)');
     expect(c).toMatch(
-      /\$_modifierHelper\(\[\(\) => tagIt, \(\) => \$_maybeHelper\(concat, \["a", \(\) => this\.b\], \{\}, this, \d+\)\], \{\}\)/
+      /\$_modifierHelper\(\[\(\) => tagIt, \(\) => \$_maybeHelper\(concat, \["a", \(\) => this\.b\], \{\}, this, \d+\)\], \{\}, this\)/
     );
     // the curried helper's invocation is itself a helper call site
     expect(c).toMatch(/\$_maybeHelper\(H\(\), \[3\], \{\}, this, \d+\)/);
@@ -134,7 +134,7 @@ describe('EMBER_NATIVE: curry sites (G9) and dynamic components', () => {
 
   test('a curried component inside a yielded (hash) keeps thunked args', () => {
     const c = code('{{yield (hash title=(component Cmp a=2))}}', NATIVE, ['Cmp']);
-    expect(c).toContain('$_componentHelper([() => Cmp], { a: 2 })');
+    expect(c).toContain('$_componentHelper([() => Cmp], { a: 2 }, this)');
   });
 
   test('<@comp /> and {{component @comp}} are dynamic components', () => {

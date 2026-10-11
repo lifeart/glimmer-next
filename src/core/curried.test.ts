@@ -77,6 +77,14 @@ describe('curried values (G9)', () => {
       expect(calls).toHaveLength(1);
       expect(calls[0][0]).toBe(h);
       expect(calls[0][1]).toEqual([]);
+      // the render context it was curried in reaches the host (a by-name
+      // definition resolves with that render tree's owner)
+      const renderCtx = {};
+      const named = $_curry(CURRIED_HELPER, ['hello-world'], {}, renderCtx);
+      expect((named as () => unknown)()).toBe('value');
+      expect(calls[1][0]).toBe(named);
+      expect(calls[1][3]).toBe(renderCtx);
+      expect(getCurried(named)!.ctx).toBe(renderCtx);
       // a curried component is still not callable
       const c = $_curry(CURRIED_COMPONENT, [() => function cmp() {}], {});
       expect(() => (c as () => unknown)()).toThrow(/curried component/);
