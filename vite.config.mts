@@ -337,6 +337,8 @@ export default defineConfig(({ mode }) => ({
             "node:path",
             "node:fs",
             "node:url",
+            "module",
+            "node:module",
           ]
         : ["happy-dom", "express", "vite"],
     },

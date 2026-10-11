@@ -7,6 +7,7 @@ import {
   transformAsync,
   type BabelFileResult,
 } from '@babel/core';
+import { createRequire } from 'node:module';
 import { Preprocessor } from 'content-tag';
 import { processTemplate, type ResolvedHBS } from './babel';
 import { compile, formatErrorForDisplay, generateSourceMap, type MappingTreeNode, type SourceMapV3 } from './compiler/index';
@@ -605,6 +606,38 @@ function processTransformedFiles(
   return { code, map };
 }
 
+/**
+ * The babel pass below is HERMETIC (G1). It exists only to strip TypeScript,
+ * lower decorators and let `processTemplate` read each `<template>`'s lexical
+ * scope, so it must not see the host project's babel setup:
+ *
+ * - No root `babel.config.*`, no `.babelrc*`, no browserslist lookup. A host
+ *   `@babel/plugin-transform-typescript` (default `onlyRemoveTypeImports:
+ *   false`) elides every import referenced only inside a `<template>` before
+ *   `processTemplate` reads the scope — `<Counter />` then silently degrades
+ *   from `$_c(Counter, …)` to a by-name `$_tag('Counter', …)` and the import
+ *   vanishes. Host plugins also made the output depend on host env vars (e.g.
+ *   a classic template-compilation plugin compiling the template first).
+ * - `@babel/preset-typescript` and `decorator-transforms` (gxt `dependencies`)
+ *   resolve from gxt's OWN location. Bare names resolve relative to
+ *   `process.cwd()`, which only worked when a package-manager shim happened to
+ *   put them on NODE_PATH.
+ *
+ * Resolved lazily (first transform) and memoized; `import.meta.url` is this
+ * module (plugins/test.ts in-repo, dist/gxt.compiler.es.js when published).
+ */
+let gxtBabelDeps: { presetTypescript: string; decoratorTransforms: string } | undefined;
+function resolveGxtBabelDeps(): { presetTypescript: string; decoratorTransforms: string } {
+  if (gxtBabelDeps === undefined) {
+    const gxtRequire = createRequire(import.meta.url);
+    gxtBabelDeps = {
+      presetTypescript: gxtRequire.resolve('@babel/preset-typescript'),
+      decoratorTransforms: gxtRequire.resolve('decorator-transforms'),
+    };
+  }
+  return gxtBabelDeps;
+}
+
 export function transform(
   source: string,
   fileName: string,
@@ -618,19 +651,24 @@ export function transform(
   const programResults: string[] = [];
   const isAsync = flags.ASYNC_COMPILE_TRANSFORMS;
 
+  const babelDeps = resolveGxtBabelDeps();
   const plugins: PluginItem[] = [processTemplate(hbsToProcess, mode)];
   if (!isLibBuild) {
-    plugins.push('module:decorator-transforms');
+    plugins.push(babelDeps.decoratorTransforms);
   }
   const replacedFileName = fileName
     .replace('.gts', '.ts')
     .replace('.gjs', '.js');
   const babelConfig = {
+    // Hermetic: never inherit the host's babel setup (see resolveGxtBabelDeps).
+    configFile: false,
+    babelrc: false,
+    browserslistConfigFile: false,
     plugins,
     filename: replacedFileName,
     presets: [
       [
-        '@babel/preset-typescript',
+        babelDeps.presetTypescript,
         { allExtensions: true, onlyRemoveTypeImports: true, allowDeclareFields: true },
       ],
     ],
