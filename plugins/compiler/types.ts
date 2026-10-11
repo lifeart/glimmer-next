@@ -111,6 +111,14 @@ export interface CompilerFlags {
    * (the Ember bridge). See plugins/flags.ts.
    */
   readonly EMBER_TRUSTED_HTML?: boolean;
+  /**
+   * Ember NATIVE layer dialect. When true, block-param member taps emit the
+   * non-defining `$__tag(obj, 'k')` instead of `$__cellFor(obj, 'k')` (the
+   * template-function `$_tpl` brand is applied by the module assembler,
+   * plugins/test.ts). Off (default) keeps compat/standalone output
+   * byte-identical. See plugins/flags.ts.
+   */
+  readonly EMBER_NATIVE?: boolean;
 }
 
 /**
@@ -138,6 +146,7 @@ export const DEFAULT_FLAGS: CompilerFlags = Object.freeze({
   EMBER_ATTR_CONCAT: false, // $_qStr ember-dialect quoted-attr concat (host opt-in)
   EMBER_IN_ELEMENT: false, // $_inElement insertBefore mode arg (host opt-in)
   EMBER_TRUSTED_HTML: false, // $_html trusted-HTML node helper for {{{...}}} (host opt-in)
+  EMBER_NATIVE: false, // Ember native layer: $__tag taps + $_tpl brand (host opt-in)
 });
 
 /**

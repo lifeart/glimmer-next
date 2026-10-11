@@ -10,6 +10,11 @@ export type ResolvedHBS = {
   template: string;
   flags: {
     hasThisAccess: boolean;
+    /**
+     * The template is a class-body template (`[$template] = hbs\`…\``): the
+     * class carries it, so it is not a standalone template-only template.
+     */
+    isClassTemplate?: boolean;
   };
   bindings: Set<string>;
   /** CALLBACK to determine if a variable is in the lexical scope */
@@ -1153,6 +1158,7 @@ export function processTemplate(
               template,
               flags: {
                 hasThisAccess: hasThisAccess,
+                isClassTemplate: path.parentPath?.isClassProperty() === true,
               },
               bindings: getScopeBindings(path),
               lexicalScope: (name: string) => path.scope.hasBinding(name),

@@ -1437,3 +1437,60 @@ describe('G2 end-to-end: strict-mode imported <LinkTo> through transform()', () 
     expect(result.code).toMatch(/\$_tag\(\s*['"]link-to['"]/);
   });
 });
+
+describe('EMBER_NATIVE end-to-end through transform() (G14 brand + $__tag taps)', () => {
+  // The Ember native layer compiles with EMBER_NATIVE: template-only templates
+  // get the `$_tpl` brand (host `isTemplateFn`), class-body templates do not,
+  // and block-param member taps use the non-defining `$__tag`. Flag off must be
+  // byte-identical to the historic output (compat / standalone).
+  const source = `import Component from '@glimmer/component';
+
+export const Row = <template>{{#each @items as |item|}}<li>{{item.label}}</li>{{/each}}</template>;
+
+export default class List extends Component {
+  <template><Row @items={{@items}} />{{yield this}}</template>
+}
+
+export const Yielder = <template><Row @items={{@items}} as |r|>{{r.name}}</Row></template>;
+`;
+  const emberFlags = {
+    ...defaultFlags(),
+    ASYNC_COMPILE_TRANSFORMS: false,
+    IS_GLIMMER_COMPAT_MODE: true,
+    WITH_EMBER_INTEGRATION: true,
+    WITH_HELPER_MANAGER: true,
+    WITH_MODIFIER_MANAGER: true,
+  };
+  const compileWith = (flags: typeof emberFlags) =>
+    (transform(preprocess(source, 'list.gjs'), 'list.gjs', 'production', false, flags, source) as TransformResult).code;
+
+  test('flag on: template-only templates are $_tpl-branded, the class template is not', () => {
+    const code = compileWith({ ...emberFlags, EMBER_NATIVE: true });
+    expect(code).toMatch(/const Row = \$_tpl\(function \(\)/);
+    expect(code).toMatch(/const Yielder = \$_tpl\(function \(\)/);
+    expect(code).toMatch(/\[?\$?template\]? = function \(\)/);
+    expect(code).not.toMatch(/template\]? = \$_tpl\(/);
+    expect(code.match(/\$_tpl\(/g)).toHaveLength(2);
+  });
+
+  test('flag on: block-param member reads use the non-defining $__tag (each row AND yielded param)', () => {
+    const code = compileWith({ ...emberFlags, EMBER_NATIVE: true });
+    expect(code).toContain('$__tag(item, "label")');
+    expect(code).toContain('$__tag(r, "name")');
+    expect(code).not.toContain('$__cellFor(');
+  });
+
+  test('flag on: $_tpl and $__tag are imported from @lifeart/gxt', () => {
+    const code = compileWith({ ...emberFlags, EMBER_NATIVE: true });
+    expect(code).toMatch(/import \{ \$_tpl, \$__tag \} from ['"]@lifeart\/gxt['"]/);
+  });
+
+  test('flag off: no brand, no $__tag, no extra import — the historic $__cellFor tap', () => {
+    const off = compileWith(emberFlags);
+    expect(off).not.toContain('$_tpl');
+    expect(off).not.toContain('$__tag');
+    expect(off).toContain('$__cellFor(item, "label")');
+    // byte-identical with an explicit EMBER_NATIVE: false
+    expect(compileWith({ ...emberFlags, EMBER_NATIVE: false })).toBe(off);
+  });
+});

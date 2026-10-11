@@ -1,5 +1,6 @@
 import {
   setIsRendering,
+  isRendering,
   type MergedCell,
   executeTag,
   hasAsyncOpcodes,
@@ -160,6 +161,64 @@ function syncDomSync() {
   }
   tagsToRevalidate.clear();
   setIsRendering(false);
+}
+
+/**
+ * Host-driven revalidation pass — for hosts that own scheduling through the
+ * `scheduleRevalidate` host hook and re-run passes until the UI is valid
+ * (Ember's native layer: backburner render queue + `_RERENDER_LOOP_LIMIT`).
+ *
+ * Same work as the synchronous `syncDom()`, with one difference: the queued
+ * cells are taken (snapshot + clear) at the START of the pass, so a cell
+ * dirtied DURING the pass — a re-executing formula, or a component created by
+ * an `{{#if}}` swap, writing state another binding consumed in an earlier pass
+ * — stays queued for the host's next pass. `syncDom()` clears the queue at the
+ * END of the pass and silently drops such writes (its own microtask scheduler
+ * never re-runs within a pass); hosts that loop must not lose them.
+ *
+ * The rendering flag is restored even when an opcode throws (e.g. a host
+ * backtracking assertion), so the host can recover and re-throw.
+ *
+ * Synchronous only: hosts using it compile with ASYNC_COMPILE_TRANSFORMS off.
+ *
+ * @returns true when cells were dirtied during the pass (another pass needed).
+ */
+export function flushRevalidation(): boolean {
+  if (tagsToRevalidate.size === 0) {
+    return false;
+  }
+  const primaryCells = Array.from(tagsToRevalidate);
+  tagsToRevalidate.clear();
+  if (primaryCells.length > 1) {
+    primaryCells.sort((a, b) => a.id - b.id);
+  }
+  let sharedTags: MergedCell[] | null = null;
+  const wasRendering = isRendering();
+  setIsRendering(true);
+  try {
+    for (const cell of primaryCells) {
+      executeTag(cell, false);
+      const subTags = relatedTags.get(cell.id);
+      if (subTags !== undefined) {
+        relatedTags.delete(cell.id);
+        if (sharedTags === null) sharedTags = [];
+        for (const tag of subTags) sharedTags.push(tag);
+        subTags.clear();
+      }
+    }
+    if (sharedTags !== null) {
+      sortSharedTags(sharedTags);
+      const epoch = nextExecutionEpoch();
+      for (const tag of sharedTags) {
+        if (shouldExecuteSharedTag(tag, epoch)) {
+          executeTag(tag, false);
+        }
+      }
+    }
+  } finally {
+    setIsRendering(wasRendering);
+  }
+  return tagsToRevalidate.size > 0;
 }
 
 /**

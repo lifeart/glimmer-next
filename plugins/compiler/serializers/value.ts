@@ -507,9 +507,12 @@ function buildBlockParamCellTap(
     escapeReservedBindingName(head),
     segs[0].range ?? value.rootRange ?? value.sourceRange
   );
+  // EMBER_NATIVE: the non-defining tap (never installs an own accessor that
+  // would shadow a host `@tracked` prototype accessor).
+  const tapSymbol = ctx.flags.EMBER_NATIVE ? SYMBOLS.TAG_TAP : SYMBOLS.CELL_FOR;
   for (let i = 1; i < segs.length; i++) {
     expr = B.call(
-      SYMBOLS.CELL_FOR,
+      tapSymbol,
       [expr, B.string(segs[i].name, segs[i].range)],
       value.sourceRange
     );

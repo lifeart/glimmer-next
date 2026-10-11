@@ -13,7 +13,7 @@ import { processTemplate, type ResolvedHBS } from './babel';
 import { compile, formatErrorForDisplay, generateSourceMap, type MappingTreeNode, type SourceMapV3 } from './compiler/index';
 import { resolveTemplateTypeHintsWithChecker, mergeTypeHints } from './type-checker-hints';
 
-import { SYMBOLS, RECYCLE_IMPORT, RECYCLE_SYMBOLS } from './symbols';
+import { SYMBOLS, RECYCLE_IMPORT, RECYCLE_SYMBOLS, NATIVE_SYMBOLS, MAIN_IMPORT } from './symbols';
 import { defaultFlags, type Flags } from './flags';
 
 // The opt-in row-recycling entry points ($_eachRecycled / $_eachSyncRecycled)
@@ -44,6 +44,15 @@ function withRecycleImport(moduleCode: string, usedRecycle: boolean): string {
   if (!usedRecycle) return moduleCode;
   if (RECYCLE_IMPORT_FROM_RE.test(moduleCode)) return moduleCode;
   return `${RECYCLE_IMPORT_STATEMENT}\n${moduleCode}`;
+}
+
+// EMBER_NATIVE: the native-layer symbols ($_tpl brand, $__tag tap) are not part
+// of the always-on barrel auto-import (babel.ts imports Object.values(SYMBOLS)),
+// so flag-off output stays byte-identical. Under the flag the assembler imports
+// them explicitly (unused named imports are tree-shaken).
+function withNativeImport(moduleCode: string, flags: Flags): string {
+  if (flags.EMBER_NATIVE !== true) return moduleCode;
+  return `import { ${NATIVE_SYMBOLS.join(', ')} } from '${MAIN_IMPORT}';\n${moduleCode}`;
 }
 
 function buildLineOffsets(source: string): number[] {
@@ -420,6 +429,12 @@ function processTransformedFiles(
       ${declareRoots}
       ${declareReturn}
     }`;
+      // EMBER_NATIVE (G14): brand template-only templates so the host can tell
+      // them apart from its own function-shaped values (`isTemplateFn`).
+      // Class-body templates are carried by their class and stay unbranded.
+      if (globalFlags.EMBER_NATIVE === true && template.flags.isClassTemplate !== true) {
+        result = `$_tpl(${result})`;
+      }
     } else {
       result = isClass
         ? `() => {
@@ -450,7 +465,7 @@ function processTransformedFiles(
   const anyRecycle = processedTemplates.some((template) => template.usedRecycle);
 
   // Build final code by replacing $placeholder markers
-  let src = withRecycleImport(txt ?? '', anyRecycle);
+  let src = withNativeImport(withRecycleImport(txt ?? '', anyRecycle), globalFlags);
   const templateInsertPositions: { start: number; end: number; templateIndex: number }[] = [];
 
   programResults.forEach((result, index) => {

@@ -110,6 +110,13 @@ export const RECYCLE_IMPORT = '@lifeart/gxt/recycle';
 
 // The compiler-emitted recycle entry points. Auto-imported from RECYCLE_IMPORT
 // (not MAIN_IMPORT) and gated on actual key="@recycle" usage in the module.
+// Ember NATIVE-layer symbols (EMBER_NATIVE compile flag): the template-function
+// brand and the non-defining member tap. Deliberately NOT in SYMBOLS (the
+// always-on barrel auto-import) so compat / standalone output stays
+// byte-identical; the module assembler (plugins/test.ts) imports them from
+// MAIN_IMPORT only when the flag is on.
+export const NATIVE_SYMBOLS: readonly string[] = ['$_tpl', '$__tag'];
+
 export const RECYCLE_SYMBOLS: readonly string[] = [
   SYMBOLS.EACH_RECYCLED,
   SYMBOLS.EACH_SYNC_RECYCLED,

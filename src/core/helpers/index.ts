@@ -12,3 +12,4 @@ export { $__and } from './and';
 export { $__cellFor } from './cell-for';
 export { $_qStr } from './quoted-str';
 export { $_uid } from './unique-id';
+export { $__tag } from './tag';

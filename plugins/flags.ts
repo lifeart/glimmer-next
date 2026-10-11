@@ -46,6 +46,17 @@ export type Flags = {
   // retires the bridge's `<EmberHtmlRaw>` transform + `$_tag`-wrapper
   // special-case + out-of-band contextual-reparse pass.
   EMBER_TRUSTED_HTML: boolean;
+  // Ember NATIVE layer dialect (the Ember build that runs on gxt without the
+  // Glimmer VM and without the compat bridge). Compile-time only, emission-
+  // affecting, default off (standalone and compat output are byte-identical):
+  //   - template-only templates (`const X = <template>…</template>`,
+  //     `export default <template>…</template>`) are wrapped in `$_tpl(...)`,
+  //     the template-function brand the host checks with `isTemplateFn` (G14);
+  //   - block-param member taps emit the non-defining `$__tag(obj, 'k')`
+  //     instead of `$__cellFor(obj, 'k')` (which installs an own accessor that
+  //     would shadow Ember `@tracked` prototype accessors);
+  //   - `$_tpl` / `$__tag` are auto-imported only under this flag.
+  EMBER_NATIVE: boolean;
 };
 
 export function defaultFlags() {
@@ -66,5 +77,6 @@ export function defaultFlags() {
     EMBER_ATTR_CONCAT: false,
     EMBER_IN_ELEMENT: false,
     EMBER_TRUSTED_HTML: false,
+    EMBER_NATIVE: false,
   } as Flags;
 }

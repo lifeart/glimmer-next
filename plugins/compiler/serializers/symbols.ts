@@ -95,6 +95,9 @@ export const SYMBOLS = {
   // serializer for a member read whose head is a block param, gated by
   // WITH_EMBER_INTEGRATION + IS_GLIMMER_COMPAT_MODE.
   CELL_FOR: '$__cellFor',
+  // Ember NATIVE-layer twin of CELL_FOR (EMBER_NATIVE flag): a non-defining
+  // tag-consuming member read (src/core/helpers/tag.ts).
+  TAG_TAP: '$__tag',
   // Ember-dialect quoted-attribute concat. Emitted by the concat serializer for
   // interpolated quoted attribute values (`class="a {{b}} c"`) instead of
   // `[...].join('')`, gated by the EMBER_ATTR_CONCAT flag. Applies Ember string
