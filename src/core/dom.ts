@@ -144,6 +144,7 @@ import {
   CURRIED_HELPER,
   CURRIED_MODIFIER,
 } from './curried';
+import { splatLocalPlan } from './splat-local';
 export { $_MANAGERS };
 
 export function $_TO_VALUE(reference: unknown) {
@@ -909,6 +910,30 @@ function _DOM(
     // signals "no dedup needed" to the inner loops, removing both the
     // Set allocation and the per-key has/add calls.
     const seenKeys: Set<string> | null = hasSplatAttrs ? new Set<string>() : null;
+    // EMBER_NATIVE: Glimmer `...attributes` precedence (splat-local.ts) — the
+    // local attributes written AFTER `...attributes` are applied first and claim
+    // their keys; class values keep source order (reordered below).
+    let classAfterSplat = true;
+    let forwardedClasses = 0;
+    if (EMBER_NATIVE && hasSplatAttrs === true) {
+      const plan = splatLocalPlan(tagProps[0], tagProps[1]);
+      classAfterSplat = plan !== undefined && plan.classAfterSplat;
+      if (plan !== undefined) {
+        for (let i = 0; i < plan.keys.length; i++) {
+          seenKeys!.add(plan.keys[i]!);
+        }
+        addAttrs(api, plan.attrs as TagAttr[], element, null, destructors);
+        addProperties(
+          api,
+          plan.props as TagProp[],
+          element,
+          null,
+          destructors,
+          classNameModifiers,
+          setShadowNode,
+        );
+      }
+    }
 
     if (hasSplatAttrs === true) {
       for (let i = 0; i < tagProps[3]![2].length; i++) {
@@ -941,6 +966,9 @@ function _DOM(
         classNameModifiers,
         setShadowNode,
       );
+      if (EMBER_NATIVE) {
+        forwardedClasses = classNameModifiers.length;
+      }
     }
     addProperties(
       api,
@@ -951,6 +979,10 @@ function _DOM(
       classNameModifiers,
       setShadowNode,
     );
+    if (EMBER_NATIVE && !classAfterSplat && forwardedClasses !== 0) {
+      // A class written before `...attributes` precedes the forwarded classes.
+      classNameModifiers.push(...classNameModifiers.splice(0, forwardedClasses));
+    }
   }
 
   mergeClassModifiers(api, element, classNameModifiers, destructors);
