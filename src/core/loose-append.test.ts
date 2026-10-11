@@ -6,7 +6,7 @@
  * Ember native layer); the helper / nothing / no-host branches are covered here.
  */
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
-import { $_looseAppend } from './dom';
+import { $_looseAppend, $_looseBuiltins } from './dom';
 import { HOST_HOOKS, registerHostHooks } from './host-hooks';
 import { $_MANAGERS } from './manager-integration';
 
@@ -64,5 +64,37 @@ describe('$_looseAppend', () => {
     // WITH_EMBER_INTEGRATION off (standalone vitest build) it reaches the
     // string-helper fallback, so only the shape is asserted here.
     expect((binding as () => unknown).length).toBe(0);
+  });
+});
+
+describe('$_looseBuiltins', () => {
+  let saved: typeof HOST_HOOKS.looseBuiltins;
+  beforeEach(() => {
+    saved = HOST_HOOKS.looseBuiltins;
+  });
+  afterEach(() => {
+    HOST_HOOKS.looseBuiltins = saved;
+  });
+
+  test('hands the render context and the names to the host hook', () => {
+    const calls: unknown[][] = [];
+    registerHostHooks({ looseBuiltins: (...args) => void calls.push(args) });
+    const ctx = {};
+    $_looseBuiltins(ctx, ['array', 'hash']);
+    expect(calls).toEqual([[ctx, ['array', 'hash']]]);
+  });
+
+  test('a host check that throws propagates (Ember assertion)', () => {
+    registerHostHooks({
+      looseBuiltins: () => {
+        throw new Error('You attempted to overwrite the built-in helper "array"');
+      },
+    });
+    expect(() => $_looseBuiltins({}, ['array'])).toThrow(/overwrite the built-in helper "array"/);
+  });
+
+  test('without a host hook it does nothing', () => {
+    HOST_HOOKS.looseBuiltins = undefined;
+    expect(() => $_looseBuiltins({}, ['array'])).not.toThrow();
   });
 });

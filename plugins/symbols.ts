@@ -131,7 +131,10 @@ export const SELF_SYMBOLS: readonly string[] = ['$_self'];
 // Ember loose-mode resolution (EMBER_LOOSE_COMPONENTS, G11): the ambiguous
 // append `$_looseAppend`. Same rule as NATIVE_SYMBOLS (imported only under the
 // flag; flag-off output stays byte-identical).
-export const LOOSE_SYMBOLS: readonly string[] = ['$_looseAppend'];
+// The loose wrapper preamble `$_looseBuiltins(this, [names])` (see
+// template-wrapper.ts looseBuiltinsPreamble) is part of the same set.
+export const LOOSE_BUILTINS_SYMBOL = '$_looseBuiltins';
+export const LOOSE_SYMBOLS: readonly string[] = ['$_looseAppend', LOOSE_BUILTINS_SYMBOL];
 
 export const RECYCLE_SYMBOLS: readonly string[] = [
   SYMBOLS.EACH_RECYCLED,

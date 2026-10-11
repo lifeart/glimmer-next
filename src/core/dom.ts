@@ -2782,6 +2782,17 @@ export function $_outlet(ctx: Component<any>): ComponentReturnType {
 }
 
 /**
+ * Ember loose-mode built-ins (G11): the wrapper preamble of a LOOSE template
+ * that lowered free `array` / `fn` / `hash` / `unique-id` to gxt built-ins —
+ * hands the names to `HOST_HOOKS.looseBuiltins` (the host's resolution-time
+ * checks) on every render of the template.
+ */
+export function $_looseBuiltins(ctx: object, names: readonly string[]): void {
+  const hook = HOST_HOOKS.looseBuiltins;
+  if (hook !== undefined) hook(ctx, names);
+}
+
+/**
  * Ember loose-mode ambiguous append (G11): the compiler emits
  * `$_looseAppend("name", [args], {named}, ctx, site, optional)` for a
  * content-position `{{name …}}` in a LOOSE template (EMBER_LOOSE_COMPONENTS +

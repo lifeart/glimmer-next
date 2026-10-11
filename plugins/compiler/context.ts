@@ -294,6 +294,14 @@ export interface CompilerContext {
    * head is emitted as the self alias.
    */
   usedSelf: boolean;
+  /**
+   * Ember loose-mode built-ins (G11): the free names among `array` / `hash` /
+   * `fn` / `unique-id` a LOOSE template lowers to gxt's own built-ins. Glimmer
+   * resolves them through the host resolver (which asserts when the owner
+   * registers a helper with the same name); the wrapper hands the names to the
+   * host (`$_looseBuiltins`). Always empty unless `looseMode`.
+   */
+  readonly looseBuiltins: Set<string>;
 
   /**
    * Ground-truth emission report (see emission-report.ts). The serializer
@@ -406,6 +414,7 @@ export function createContext(
     usedSlots: false,
     usedFw: false,
     usedSelf: false,
+    looseBuiltins: new Set(),
     emissionReport: createEmissionReport(new Set(options.bindings ?? [])),
     inAttributeValue: false,
     inAttributeConcat: false,
@@ -475,6 +484,21 @@ export function setSerializeChildFunction(
   fn: SerializeChildFn
 ): void {
   (ctx.visitors as VisitorRegistry).serializeChild = fn;
+}
+
+// Ember's built-in helpers (classic resolver BUILTIN_HELPERS) that a LOOSE
+// template lowers to gxt built-ins (`concat` / `get` reach the host by name).
+const LOOSE_RESOLVED_BUILTINS: ReadonlySet<string> = new Set(['array', 'fn', 'hash', 'unique-id']);
+
+/**
+ * Record a free (unshadowed) helper name the template lowers itself, when it is
+ * one Glimmer would resolve through the host in a loose template (see
+ * `CompilerContext.looseBuiltins`).
+ */
+export function recordLooseBuiltin(ctx: CompilerContext, name: string): void {
+  if (ctx.looseMode && LOOSE_RESOLVED_BUILTINS.has(name)) {
+    ctx.looseBuiltins.add(name);
+  }
 }
 
 /**

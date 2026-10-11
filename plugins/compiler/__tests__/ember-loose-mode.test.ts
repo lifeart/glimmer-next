@@ -17,6 +17,7 @@ import { describe, test, expect } from 'vitest';
 import { compile } from '../compile';
 import { dasherizeComponentName } from '../visitors/loose';
 import { nativeTemplateSymbols, templateScopeNames } from '../../template-wrapper';
+import { compileTemplateSource } from '../../runtime-compiler';
 
 const NATIVE = {
   IS_GLIMMER_COMPAT_MODE: true,
@@ -194,10 +195,49 @@ describe('ambiguous append: $_looseAppend', () => {
 
 describe('runtime symbol import', () => {
   test('$_looseAppend is imported / bound only under the flag', () => {
-    expect(nativeTemplateSymbols({ EMBER_LOOSE_COMPONENTS: true })).toEqual(['$_looseAppend']);
+    expect(nativeTemplateSymbols({ EMBER_LOOSE_COMPONENTS: true })).toEqual([
+      '$_looseAppend',
+      '$_looseBuiltins',
+    ]);
     expect(nativeTemplateSymbols({ EMBER_NATIVE: true })).not.toContain('$_looseAppend');
     expect(templateScopeNames({ EMBER_LOOSE_COMPONENTS: true })).toContain('$_looseAppend');
     expect(templateScopeNames({})).not.toContain('$_looseAppend');
+  });
+});
+
+describe('built-ins Glimmer resolves by name: looseBuiltins + the $_looseBuiltins preamble', () => {
+  test('free array / fn / hash / unique-id are recorded (sorted, deduped)', () => {
+    expect(looseCompile(`{{array this.foo 'LOL'}}`).looseBuiltins).toEqual(['array']);
+    expect(
+      looseCompile('{{#let (hash a=(array 1) b=(fn this.f 1)) as |h|}}{{h.a}}{{unique-id}}{{array 2}}{{/let}}')
+        .looseBuiltins
+    ).toEqual(['array', 'fn', 'hash', 'unique-id']);
+    expect(looseCompile('<div class={{concat "a" (array 1)}}></div>').looseBuiltins).toEqual(['array']);
+  });
+
+  test('names that reach the host by name, keywords and shadowed names are not recorded', () => {
+    expect(looseCompile('{{concat "a" "b"}}{{get this.o "a"}}{{if this.a "b"}}{{eq 1 2}}').looseBuiltins).toEqual([]);
+    expect(looseCompile('{{array 1}}{{hash a=1}}', ['array', 'hash']).looseBuiltins).toEqual([]);
+    expect(looseCompile('{{#each this.list as |fn|}}{{fn 1}}{{/each}}').looseBuiltins).toEqual([]);
+  });
+
+  test('strict templates and the flag off record nothing', () => {
+    const tpl = '{{array 1}}{{hash a=1}}{{fn this.f}}{{unique-id}}';
+    expect(compile(tpl, { flags: LOOSE_FLAGS as never }).looseBuiltins).toEqual([]);
+    expect(compile(tpl, { flags: LOOSE_FLAGS as never, strictMode: true }).looseBuiltins).toEqual([]);
+    expect(compile(tpl, { flags: NATIVE as never, strictMode: false }).looseBuiltins).toEqual([]);
+  });
+
+  test('the template function hands the names to the host on every render', () => {
+    const flags = LOOSE_FLAGS as never;
+    const looseSource = compileTemplateSource('{{hash a=1}}{{array 2}}', { flags, strictMode: false }).source;
+    expect(looseSource).toContain('$_GET_ARGS(this, arguments);\n      $_looseBuiltins(this, ["array","hash"]);');
+    for (const source of [
+      compileTemplateSource('{{hash a=1}}{{array 2}}', { flags, strictMode: true }).source,
+      compileTemplateSource('{{foo-bar}}', { flags, strictMode: false }).source,
+    ]) {
+      expect(source).not.toContain('$_looseBuiltins');
+    }
   });
 });
 

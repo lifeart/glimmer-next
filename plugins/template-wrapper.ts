@@ -11,6 +11,7 @@
  */
 import {
   SYMBOLS,
+  LOOSE_BUILTINS_SYMBOL,
   LOOSE_SYMBOLS,
   NATIVE_SYMBOLS,
   OUTLET_SYMBOLS,
@@ -28,6 +29,8 @@ export interface WrappableTemplate {
   readonly usedFw: boolean;
   /** EMBER_SELF (G6): the body reads the self alias `$s`. */
   readonly usedSelf?: boolean;
+  /** EMBER_LOOSE_COMPONENTS (G11): free built-ins Glimmer resolves by name. */
+  readonly looseBuiltins?: readonly string[];
 }
 
 export interface TemplateFunctionOptions {
@@ -43,6 +46,20 @@ export interface TemplateFunctionOptions {
  */
 export function selfPreamble(template: WrappableTemplate): string {
   return template.usedSelf === true ? 'const $s = $_self(this);' : '';
+}
+
+/**
+ * EMBER_LOOSE_COMPONENTS (G11) preamble statement: a LOOSE template that lowers
+ * free `array` / `fn` / `hash` / `unique-id` to gxt built-ins hands those names
+ * to the host on every render (`$_looseBuiltins` → the `looseBuiltins` host
+ * hook; Ember asserts that the owner does not register a helper with a
+ * built-in's name, as its resolver does). '' for every other template.
+ */
+export function looseBuiltinsPreamble(template: WrappableTemplate): string {
+  const names = template.looseBuiltins;
+  return names === undefined || names.length === 0
+    ? ''
+    : `${LOOSE_BUILTINS_SYMBOL}(this, ${JSON.stringify(names)});`;
 }
 
 /**
@@ -64,12 +81,14 @@ export function buildTemplateTagFunction(
   const maybeArgsAlias = template.usedArgsAlias ? `const $a = this[${SYMBOLS.$args}];` : '';
   const self = selfPreamble(template);
   const maybeSelf = self === '' ? '' : `\n      ${self}`;
+  const builtins = looseBuiltinsPreamble(template);
+  const maybeBuiltins = builtins === '' ? '' : `\n      ${builtins}`;
   const declareRoots = `const roots = ${template.code};`;
   const declareReturn = `return ${SYMBOLS.FINALIZE_COMPONENT}(roots, this);`;
 
   let result = `function () {
       ${maybeFw}
-      ${SYMBOLS.$_GET_ARGS}(this, arguments);${maybeSelf}
+      ${SYMBOLS.$_GET_ARGS}(this, arguments);${maybeSelf}${maybeBuiltins}
       ${maybeArgsAlias}
       ${maybeSlots}
       ${declareRoots}

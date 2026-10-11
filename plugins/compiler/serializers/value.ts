@@ -6,7 +6,7 @@
  */
 
 import type { CompilerContext } from '../context';
-import { addError } from '../context';
+import { addError, recordLooseBuiltin } from '../context';
 import type { SerializedValue, SourceRange, PathValue } from '../types';
 import { SYMBOLS, INTERNAL_HELPERS, getBuiltInHelperSymbol } from './symbols';
 import {
@@ -862,6 +862,9 @@ function buildHelper(
     name.startsWith('this[') ||
     name.startsWith('$_') ||
     ctx.scopeTracker.hasBinding(rootName);
+  if (!isKnown) {
+    recordLooseBuiltin(ctx, name);
+  }
 
   // Compat-mode `{{unique-id}}` / `(unique-id)`: emit a stable per-(context,
   // call-site) id via the $_uid runtime helper instead of routing through

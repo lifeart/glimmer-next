@@ -7,6 +7,7 @@
 
 import type { ASTv1 } from '@glimmer/syntax';
 import type { CompilerContext } from '../context';
+import { recordLooseBuiltin } from '../context';
 import type { SerializedValue, SourceRange, PathPart } from '../types';
 import { SYMBOLS, INTERNAL_HELPERS, getBuiltInHelperSymbol } from '../serializers/symbols';
 import { B, serializeJS, type JSExpression } from '../builder';
@@ -661,6 +662,9 @@ function serializeHelperCall(value: SerializedValue & { kind: 'helper' }, ctx?: 
   }
 
   // Use symbol for built-in helpers
+  if (ctx && !ctx.scopeTracker.hasBinding(helperName)) {
+    recordLooseBuiltin(ctx, helperName);
+  }
   const symbolName = getBuiltInHelperSymbol(helperName) ?? helperName;
 
   // Special handling for hash helper - wrap values in getters for lazy evaluation

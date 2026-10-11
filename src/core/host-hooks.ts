@@ -329,6 +329,16 @@ export interface HostHooks {
     optional: boolean,
   ) => 'component' | 'helper' | null;
   /**
+   * Ember loose-mode built-ins (G11). A LOOSE template lowers the free names
+   * `array` / `fn` / `hash` / `unique-id` to gxt's own built-ins, where Glimmer
+   * resolves them through the host resolver; such a template calls this once
+   * per render (`$_looseBuiltins(ctx, names)`, the wrapper preamble) with the
+   * names it used, so the host can apply its resolution-time checks (Ember:
+   * "You attempted to overwrite the built-in helper …" when the owner
+   * registers a helper with one of those names). Without the hook: nothing.
+   */
+  looseBuiltins?: (ctx: object, names: readonly string[]) => void;
+  /**
    * Glimmer dynamic-content classification (G15; the Ember native layer). A
    * content-position `{{value}}` renders whatever its value IS, re-deciding on
    * every change (Glimmer's dynamic content switch): text, a DOM node, trusted

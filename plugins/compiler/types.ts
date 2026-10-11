@@ -582,6 +582,13 @@ export interface CompileResult {
    */
   readonly usedSelf: boolean;
   /**
+   * EMBER_LOOSE_COMPONENTS (G11): the free built-in helper names (`array`,
+   * `fn`, `hash`, `unique-id`; sorted) a LOOSE template lowered to gxt
+   * built-ins — Glimmer resolves them through the host resolver. Empty for a
+   * strict template or with the flag off.
+   */
+  readonly looseBuiltins: readonly string[];
+  /**
    * Ground-truth "the template declares block params" flag. `true` when the
    * compile registered any `as |…|` block param — a component/element block, a
    * `<:name … as |x|>` named block, or `{{#each … as |x|}}`. TEMPLATE-LEVEL

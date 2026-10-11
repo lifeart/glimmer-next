@@ -138,6 +138,8 @@ interface ProcessedTemplate {
   usedFw: boolean;
   /** EMBER_SELF (G6): the body reads the self alias `$s`. */
   usedSelf: boolean;
+  /** EMBER_LOOSE_COMPONENTS (G11): free built-ins Glimmer resolves by name. */
+  looseBuiltins: readonly string[];
 }
 
 /**
@@ -408,6 +410,7 @@ function processTransformedFiles(
       usedSlots: result.usedSlots,
       usedFw: result.usedFw,
       usedSelf: result.usedSelf,
+      looseBuiltins: result.looseBuiltins,
     });
   });
 
