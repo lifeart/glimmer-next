@@ -1466,8 +1466,9 @@ export const Yielder = <template><Row @items={{@items}} as |r|>{{r.name}}</Row><
 
   test('flag on: template-only templates are $_tpl-branded, the class template is not', () => {
     const code = compileWith({ ...emberFlags, EMBER_NATIVE: true });
-    expect(code).toMatch(/const Row = \$_tpl\(function \(\)/);
-    expect(code).toMatch(/const Yielder = \$_tpl\(function \(\)/);
+    // named after the binding (the call wrapper would defeat name inference)
+    expect(code).toMatch(/const Row = \$_tpl\(function Row\(\)/);
+    expect(code).toMatch(/const Yielder = \$_tpl\(function Yielder\(\)/);
     expect(code).toMatch(/\[?\$?template\]? = function \(\)/);
     expect(code).not.toMatch(/template\]? = \$_tpl\(/);
     expect(code.match(/\$_tpl\(/g)).toHaveLength(2);
@@ -1478,6 +1479,12 @@ export const Yielder = <template><Row @items={{@items}} as |r|>{{r.name}}</Row><
     expect(code).toContain('$__tag(item, "label")');
     expect(code).toContain('$__tag(r, "name")');
     expect(code).not.toContain('$__cellFor(');
+  });
+
+  test('flag on: an anonymous default-export template is branded and stays anonymous', () => {
+    const src = `<template>hi</template>\n`;
+    const code = (transform(preprocess(src, 'route.gjs'), 'route.gjs', 'production', false, { ...emberFlags, EMBER_NATIVE: true }, src) as TransformResult).code;
+    expect(code).toMatch(/export default \$_tpl\(function \(\)/);
   });
 
   test('flag on: $_tpl and $__tag are imported from @lifeart/gxt', () => {

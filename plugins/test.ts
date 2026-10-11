@@ -432,8 +432,12 @@ function processTransformedFiles(
       // EMBER_NATIVE (G14): brand template-only templates so the host can tell
       // them apart from its own function-shaped values (`isTemplateFn`).
       // Class-body templates are carried by their class and stay unbranded.
+      // The call wrapper defeats JS name inference (`const Foo = $_tpl(function
+      // () {…})` has an empty `.name`), so name the function after its binding.
       if (globalFlags.EMBER_NATIVE === true && template.flags.isClassTemplate !== true) {
-        result = `$_tpl(${result})`;
+        const name = template.flags.templateName;
+        const fn = name ? `function ${name}${result.slice('function '.length)}` : result;
+        result = `$_tpl(${fn})`;
       }
     } else {
       result = isClass

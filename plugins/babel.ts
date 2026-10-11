@@ -15,6 +15,12 @@ export type ResolvedHBS = {
      * class carries it, so it is not a standalone template-only template.
      */
     isClassTemplate?: boolean;
+    /**
+     * The binding a template-only template initializes (`const Foo =
+     * <template>…</template>`), so a wrapped template function can keep the
+     * name JS would otherwise infer from the declarator.
+     */
+    templateName?: string;
   };
   bindings: Set<string>;
   /** CALLBACK to determine if a variable is in the lexical scope */
@@ -1159,6 +1165,11 @@ export function processTemplate(
               flags: {
                 hasThisAccess: hasThisAccess,
                 isClassTemplate: path.parentPath?.isClassProperty() === true,
+                templateName:
+                  path.parentPath?.isVariableDeclarator() &&
+                  t.isIdentifier(path.parentPath.node.id)
+                    ? path.parentPath.node.id.name
+                    : undefined,
               },
               bindings: getScopeBindings(path),
               lexicalScope: (name: string) => path.scope.hasBinding(name),
