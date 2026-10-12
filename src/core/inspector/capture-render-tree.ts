@@ -271,10 +271,14 @@ export function componentToRenderTree(
     .filter((el): el is CapturedRenderNode => el !== null);
 
   // GXT's internal `UnstableChildWrapper` is a transparent single-child block
-  // wrapper — collapse it so it is not a user-visible render node.
+  // wrapper — collapse it so it is not a user-visible render node. Not under
+  // the Ember native runtime: the host flattens every node it has no name for
+  // itself, and keys what the wrapper's elements carry (their modifiers'
+  // render nodes) by the wrapper, so it needs the wrapper's node.
   if (
     componentName.startsWith('UnstableChildWrapper') &&
-    children.length === 1
+    children.length === 1 &&
+    !isNativeRuntime()
   ) {
     visited.delete(component);
     return children[0]!;

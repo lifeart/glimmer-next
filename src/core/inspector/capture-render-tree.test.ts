@@ -16,6 +16,8 @@ import {
 } from './capture-render-tree';
 import { IfCondition } from '../control-flow/if';
 import { HOST_HOOKS, registerHostHooks } from '../host-hooks';
+import { setNativeContentBinding } from '../native-content';
+import { bindNativeContent } from '../dom';
 
 /**
  * These tests pin the Ember `captureRenderTree` node shape produced from GXT's
@@ -120,6 +122,36 @@ describe('captureRenderTree — Ember-shaped render tree from GXT TREE', () => {
     expect(childNode.bounds!.firstNode).toBe(childEl);
     expect(childNode.bounds!.lastNode).toBe(childEl);
     expect(childNode.bounds!.parentElement).toBe(container);
+  });
+
+  test('a single-child UnstableChildWrapper collapses — except under the Ember native runtime', () => {
+    const el = document.createElement('i');
+    container.appendChild(el);
+    const root = makeComponent(1, { debugName: 'Root' });
+    const wrapper = makeComponent(2, { debugName: 'UnstableChildWrapper-1' });
+    const child = makeComponent(3, { debugName: 'Child', renderedNodes: [el] });
+    TREE.set(1, root);
+    TREE.set(2, wrapper);
+    TREE.set(3, child);
+    CHILD.set(1, new Set([2]));
+    CHILD.set(2, new Set([3]));
+    PARENT.set(1, null as unknown as number);
+    PARENT.set(2, 1);
+    PARENT.set(3, 2);
+
+    // standalone / compat: the wrapper is not a user-visible node
+    expect(captureRenderTree()[0]!.children.map((node) => node.instance)).toEqual([child]);
+
+    // Ember native: the host flattens unnamed nodes itself and keys the
+    // wrapper's elements' modifier nodes by the wrapper — it keeps its node
+    setNativeContentBinding(bindNativeContent);
+    try {
+      const [wrapperNode] = captureRenderTree()[0]!.children;
+      expect(wrapperNode!.instance).toBe(wrapper);
+      expect(wrapperNode!.children.map((node) => node.instance)).toEqual([child]);
+    } finally {
+      setNativeContentBinding(null);
+    }
   });
 
   test('multi-node component derives bounds from first/last rendered node', () => {

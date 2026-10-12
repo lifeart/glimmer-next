@@ -500,6 +500,31 @@ describe('EMBER_NATIVE {{#if}} block bounds', () => {
     expect(bounds().component.parentElement).toBe(root);
   });
 
+  test("the Inspector keeps a branch wrapper node: the host keys its elements' modifiers by it", async () => {
+    const Child = compileNative('<i>child</i>');
+    const self = { a: true };
+    const { parent, instance } = render(
+      withSelf(
+        compileNative('{{#if this.a}}<Child />{{/if}}', { Child }),
+        self,
+      ),
+    );
+    const [node] = captureRenderTree([parent as any]);
+    const component = node.children.find(
+      (child) => child.instance === instance,
+    )!;
+    const [block] = component.children;
+    expect(block.name).toBe('if');
+    const [wrapper] = block.children;
+    const ifc = ifs()[0];
+    // the branch's wrapper (one child) is not collapsed into that child
+    expect(wrapper.instance).toBe(ifc.prevComponent);
+    expect(wrapper.children).toHaveLength(1);
+    expect(wrapper.children[0].bounds!.firstNode).toBe(
+      fixture.container.querySelector('i'),
+    );
+  });
+
   test('true → false → true within one revalidation leaves the DOM untouched', async () => {
     const self = { a: true };
     render(
