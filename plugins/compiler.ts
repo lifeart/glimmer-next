@@ -1,4 +1,4 @@
-import { type Plugin, type TransformResult as ViteTransformResult } from 'vite';
+import { type Plugin, type Rollup } from 'vite';
 import { Preprocessor } from 'content-tag';
 import { transform } from './test';
 import { type Flags, defaultFlags } from './flags.ts';
@@ -17,10 +17,12 @@ export const stripGXTDebug: (babel: { types: any }) => {
   visitor: Record<string, unknown>;
 } = stripGXTDebugPlugin;
 
-// Helper to cast our TransformResult to Vite's expected type
-// The types are compatible at runtime but TS is strict about sourcesContent nullability
-function toViteResult(result: ReturnType<typeof transform>): ViteTransformResult | undefined {
-  return result as ViteTransformResult | undefined;
+// Helper to cast our TransformResult to the `transform` hook's return type.
+// Use Rollup's hook type, not Vite's dev-server `TransformResult`: the latter
+// carries Rollup's `SourceMap`, whose `sourcesContent` became
+// `(string | null)[]` in rollup 4.62.3 and no longer fits the hook's map type.
+function toViteResult(result: ReturnType<typeof transform>): Rollup.TransformResult {
+  return result as Rollup.TransformResult;
 }
 
 const p = new Preprocessor();
