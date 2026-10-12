@@ -57,7 +57,12 @@ import {
   type EachFrame,
   type FrameSharedEntry,
 } from './list-frames';
-import { setParentContext, getParentContext } from '../tracking';
+import {
+  setParentContext,
+  getParentContext,
+  pushParentContext,
+  popParentContext,
+} from '../tracking';
 import { isNativeRuntime } from '../native-content';
 import { HOST_HOOKS } from '@/core/host-hooks';
 
@@ -554,8 +559,12 @@ export class BasicListComponent<T extends { id: number }> {
     // First-error-wins: a throwing row destructor must not leak the remaining
     // rowCtxs. Registry bookkeeping still runs for each row; first error after.
     let firstError: unknown = undefined;
-    for (const rowCtx of rowCtxMap.values()) {
+    for (const [key, rowCtx] of rowCtxMap) {
       const rowId = rowCtx[COMPONENT_ID_PROPERTY];
+      // EMBER_NATIVE: an unwrapped row's nested blocks are tree children of
+      // its rowCtx (`buildNativeRow`), which nothing below reaches — collect
+      // them before `destroySync` runs rowCtx's tree cleanup.
+      const nativeChildren = EMBER_NATIVE ? CHILD.get(rowId) : undefined;
       // Run ONLY the rowCtx's OWN destructors (its inline-element binding
       // opcodes + any host `onRowContextCreated` pre-destroy hook) via the
       // non-cascading `destroySync` — NOT `destroyElementSync`, which would
@@ -573,6 +582,13 @@ export class BasicListComponent<T extends { id: number }> {
           if (firstError === undefined) firstError = e;
         }
       }
+      if (nativeChildren !== undefined && nativeChildren.size > 0) {
+        try {
+          this.destroyRowChildren(nativeChildren, this.keyMap.get(key));
+        } catch (e) {
+          if (firstError === undefined) firstError = e;
+        }
+      }
       CHILD.delete(rowId);
       TREE.delete(rowId);
       PARENT.delete(rowId);
@@ -580,6 +596,26 @@ export class BasicListComponent<T extends { id: number }> {
     }
     rowCtxMap.clear();
     if (firstError !== undefined) reportDestructionError(firstError);
+  }
+  /**
+   * EMBER_NATIVE bulk teardown of a row ctx's tree children (skipDom: the bulk
+   * clear removes the DOM). Skips what the bulk keyMap pass destroys itself:
+   * the row's own value (a wrapper component, a component row) and the parts
+   * of an array row — so what is left is the nested blocks of an unwrapped
+   * row (see `buildNativeRow`).
+   */
+  private destroyRowChildren(
+    children: Set<number>,
+    row: GenericReturnType | undefined,
+  ): void {
+    for (const childId of children) {
+      const child = TREE.get(childId);
+      if (child === undefined || child === row || isDestructionStarted(child)) {
+        continue;
+      }
+      if (isArray(row) && row.includes(child)) continue;
+      destroyElementSync(child, true, this.api);
+    }
   }
   /**
    * Fast-path for updates that preserve all existing items and only append
@@ -1198,7 +1234,48 @@ export class BasicListComponent<T extends { id: number }> {
       }
       return row;
     }
+    if (EMBER_NATIVE) {
+      return this.buildNativeRow(item, idx, bodyCtx);
+    }
     return this.ItemComponent(item, idx, bodyCtx as unknown as Component<any>);
+  }
+  /**
+   * EMBER_NATIVE row body. The Ember native build keeps Glimmer's template
+   * whitespace, so a row is typically `\n  <tr>…</tr>\n`; the compiler emits
+   * such a body — static text around ONE stable node — unwrapped, as a plain
+   * `[text, node, text]` array, instead of a per-row UnstableChildWrapper
+   * component (`hasStableChildAmidStaticText` in the compiler's control
+   * serializer). Without a wrapper, the row's ctx stands in for it:
+   *   - it is the active parent context while the body builds, so the nested
+   *     blocks the body creates (`{{#if}}` / `{{#each}}`, which attach to the
+   *     active parent) belong to the row and are torn down with it
+   *     (`destroyRowCtx`, `teardownAllRowCtxs`) — not to the list, which
+   *     outlives the row;
+   *   - the static strings become Text nodes the row owns (keyMap), so moves
+   *     and removal see real nodes. An array row is inserted without
+   *     registering its nodes on the list (`renderElement`'s skipRegistration),
+   *     like a wrapped row's nodes, which live on the wrapper.
+   */
+  private buildNativeRow(
+    item: T,
+    idx: number | MergedCell,
+    bodyCtx: ComponentLike,
+  ): GenericReturnType {
+    pushParentContext(bodyCtx);
+    let row: GenericReturnType;
+    try {
+      row = this.ItemComponent(item, idx, bodyCtx as unknown as Component<any>);
+    } finally {
+      popParentContext();
+    }
+    if (isArray(row)) {
+      const api = this.api;
+      for (let i = 0; i < row.length; i++) {
+        const part: unknown = row[i];
+        if (typeof part === 'string') row[i] = api.text(part);
+      }
+    }
+    return row;
   }
 
   // Construct a NEW row for `key`/`item` at `index`, register its maps + marker,
@@ -1284,7 +1361,7 @@ export class BasicListComponent<T extends { id: number }> {
       const parent = api.parent(targetNode)!;
       api.insert(parent, marker, targetNode);
       if (row !== undefined && row !== null) {
-        renderElement(api, self, parent, row, targetNode);
+        renderElement(api, self, parent, row, targetNode, EMBER_NATIVE && isArray(row));
       }
     } else {
       this._moveSet.add(key);
@@ -1505,7 +1582,7 @@ export class BasicListComponent<T extends { id: number }> {
           // (e.g., primitive-key rows where every shift invalidates
           // every key and triggers a mid-sync teardown).
           if (row !== undefined && row !== null) {
-            renderElement(api, self, parent, row, targetNode);
+            renderElement(api, self, parent, row, targetNode, EMBER_NATIVE && isArray(row));
           }
         } else {
           moveSet.add(key);
@@ -1620,7 +1697,7 @@ export class BasicListComponent<T extends { id: number }> {
           api.insert(moveParent, marker, anchor);
           // Skip renderElement if ItemComponent produced no output.
           if (row !== undefined && row !== null) {
-            renderElement(api, self, moveParent, row, anchor);
+            renderElement(api, self, moveParent, row, anchor, EMBER_NATIVE && isArray(row));
           }
         } else {
           this.relocateItem(marker, anchor, moveParent);
@@ -2010,7 +2087,17 @@ export class SyncListComponent<
         safeToCascade = true;
       }
     }
-    if (safeToCascade) {
+    if (EMBER_NATIVE && rowIsArray) {
+      // An unwrapped native row (`buildNativeRow`): its components and nested
+      // blocks are tree children of its rowCtx, already destroyed — with their
+      // DOM — by `destroyRowCtx` above. What is left is the row's own nodes.
+      const parts = row as Array<ComponentLike | Node>;
+      for (let i = 0; i < parts.length; i++) {
+        if (!isDestructionStarted(parts[i] as object)) {
+          destroyElementSync(parts[i], false, this.api);
+        }
+      }
+    } else if (safeToCascade) {
       destroyElementSync(row as ComponentLike, false, this.api);
     } else {
       // Shared/root row — scope DOM cleanup to this row's rendered nodes only.

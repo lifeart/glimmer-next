@@ -299,8 +299,15 @@ function buildEach(
       ? SYMBOLS.EACH_SYNC
       : SYMBOLS.EACH;
 
-  // Check for stable children
-  const hasStable = hasStableChildsForControlNode(control.children);
+  // Check for stable children (rendered without a per-row
+  // UnstableChildWrapper). Under EMBER_NATIVE that includes static text around
+  // one stable child — Glimmer whitespace, see hasStableChildAmidStaticText —
+  // except for recycled rows, whose runtime renders the body as emitted.
+  const hasStable =
+    hasStableChildsForControlNode(control.children) ||
+    (ctx.flags.EMBER_NATIVE === true &&
+      !isRecycled &&
+      hasStableChildAmidStaticText(control.children));
 
   // Detect at compile time whether the body actually reads `index`. When
   // false, we can let the runtime skip allocating a per-row reactive
@@ -1159,6 +1166,31 @@ function replaceLetGetterRefsInStmt(stmt: JSStatement, getterNames: Set<string>)
 // ============================================================================
 // Stability Detection
 // ============================================================================
+
+/**
+ * EMBER_NATIVE: static text around exactly ONE stable child (see
+ * hasStableChildsForControlNode). The native build keeps Glimmer's template
+ * whitespace, so this is the common `{{#each}}` row shape (`\n  <tr>…</tr>\n`).
+ * Static text is inert — a text node created once per row, never re-rendered —
+ * so such a body needs no per-row UnstableChildWrapper either: it is emitted as
+ * a plain array, which the list's native row path owns (list.ts buildNativeRow).
+ */
+function hasStableChildAmidStaticText(children: readonly HBSChild[] | null): boolean {
+  if (!children) return false;
+  let stableChild: NonNullable<HBSChild> | null = null;
+  let hasText = false;
+  for (const child of children) {
+    if (child === null) continue;
+    if (typeof child === 'string') {
+      hasText = true;
+    } else if (stableChild === null) {
+      stableChild = child;
+    } else {
+      return false;
+    }
+  }
+  return hasText && stableChild !== null && hasStableChildsForControlNode([stableChild]);
+}
 
 /**
  * Check if children are stable for control nodes.
