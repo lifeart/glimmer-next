@@ -12,7 +12,10 @@
  *     expando property;
  *   - block params that are not JS identifiers (`-in-element`) and block
  *     params that shadow the `component` / `mount` / `input` / `textarea`
- *     keywords are ordinary bindings.
+ *     keywords are ordinary bindings;
+ *   - an empty `<Foo></Foo>` / `<foo-bar></foo-bar>` carries no compat
+ *     `@__hasBlock__` marker (no extra arg, no stray attribute); the component
+ *     still gets its empty default block, so `has-block` is true.
  *
  * The runtime side reads the EMBER_NATIVE / WITH_EMBER_INTEGRATION build
  * constants, which vitest exposes as globals (turned on per test, as the Ember
@@ -69,6 +72,20 @@ function compileNative(tpl: string) {
   // eslint-disable-next-line no-new-func
   return new Function(...scopeNames, `"use strict"; return ${code};`)(
     ...scopeNames.map((name) => exported[name]),
+  ) as (...args: unknown[]) => unknown;
+}
+
+function compileNativeWith(tpl: string, scope: Record<string, unknown>) {
+  const { source: code, scopeNames, errors } = compileTemplateSource(tpl, {
+    flags: NATIVE_FLAGS,
+    bindings: new Set(Object.keys(scope)),
+  });
+  expect(errors).toHaveLength(0);
+  const exported = main as unknown as Record<string, unknown>;
+  // eslint-disable-next-line no-new-func
+  return new Function(...scopeNames, ...Object.keys(scope), `"use strict"; return ${code};`)(
+    ...scopeNames.map((name) => exported[name]),
+    ...Object.values(scope),
   ) as (...args: unknown[]) => unknown;
 }
 
@@ -131,6 +148,25 @@ describe('compiler: EMBER_NATIVE block params', () => {
   test('flag off: historic output', () => {
     expect(source('{{#let this.v as |-in-element|}}{{-in-element}}{{/let}}', COMPAT_FLAGS)).toContain('let -in-element');
     expect(source('{{#let this.v as |input|}}{{input}}{{/let}}', COMPAT_FLAGS)).toContain("$_tag('Input'");
+  });
+});
+
+describe('compiler: EMBER_NATIVE empty-block invocations', () => {
+  test('<Foo></Foo> gets an empty default block and no @__hasBlock__ arg', () => {
+    const empty = source('<Foo @a={{1}}></Foo>', NATIVE_FLAGS, ['Foo']);
+    expect(empty).not.toContain('__hasBlock__');
+    expect(empty).toContain('{ default_: false, default: ctx0 => [] }');
+    expect(source('<Foo as |x|></Foo>', NATIVE_FLAGS, ['Foo'])).not.toContain('__hasBlock__');
+    expect(source('<Foo />', NATIVE_FLAGS, ['Foo'])).not.toContain('default:');
+  });
+
+  test('<foo-bar></foo-bar> gets no @__hasBlock__ attribute', () => {
+    expect(source('<foo-bar></foo-bar>')).not.toContain('__hasBlock__');
+  });
+
+  test('flag off: the compat marker (historic)', () => {
+    expect(source('<Foo></Foo>', COMPAT_FLAGS, ['Foo'])).toContain('__hasBlock__: "default"');
+    expect(source('<foo-bar></foo-bar>', COMPAT_FLAGS)).toContain('["@__hasBlock__", "default"]');
   });
 });
 
@@ -274,5 +310,14 @@ describe('EMBER_NATIVE attribute writes', () => {
     expect(fixture.container.textContent).toBe('a-a-a');
     await set(self, 'v', 'b');
     expect(fixture.container.textContent).toBe('b-b-b');
+  });
+
+  test('an empty <Foo></Foo> has a block, <Foo /> none; <foo-bar></foo-bar> has no attribute', () => {
+    const Foo = compileNative('{{#if (has-block)}}B{{else}}-{{/if}}');
+    render(withSelf(compileNativeWith('<Foo></Foo><Foo />[<foo-bar></foo-bar>]', { Foo }), {}));
+    expect(fixture.container.textContent).toBe('B-[]');
+    // `data-node-id` is gxt's own dev-mode node id, not a template attribute.
+    const names = fixture.container.querySelector('foo-bar')!.getAttributeNames();
+    expect(names.filter((name) => name !== 'data-node-id')).toEqual([]);
   });
 });

@@ -226,7 +226,17 @@ export function visitElement(
 
   // In compat mode, add @__hasBlock__="default" to empty component invocations.
   // <Foo></Foo> gets the marker; self-closing <Foo /> does not.
-  if (ctx.flags.IS_GLIMMER_COMPAT_MODE && !node.selfClosing && node.children.length === 0) {
+  // Not under EMBER_NATIVE: the marker is read only by the compat bridge, and
+  // natively it would be an extra `this.args` key (or, on `<foo-bar></foo-bar>`,
+  // a stray attribute), which Glimmer never has. A non-self-closing component
+  // already gets an empty default slot from the serializer, so `has-block`
+  // stays true without it.
+  if (
+    ctx.flags.IS_GLIMMER_COMPAT_MODE &&
+    !ctx.flags.EMBER_NATIVE &&
+    !node.selfClosing &&
+    node.children.length === 0
+  ) {
     if (isComponentName(actualTag) || actualTag.includes('-')) {
       const hasMarker = node.attributes.some(a => a.name === '@__hasBlock__');
       if (!hasMarker) {
