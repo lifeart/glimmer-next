@@ -107,6 +107,11 @@ export function nativeTreeParent(
   return ctx;
 }
 
+// EMBER_NATIVE: bumped whenever a tree node is torn down (its id is released
+// for reuse; the node may be re-added elsewhere) — invalidates context.ts'
+// memoized context lookups.
+export let treeEpoch = 0;
+
 export function addToTree(
   ctx: ComponentLike,
   node: ComponentLike,
@@ -195,6 +200,7 @@ export function addToTree(
       TREE.delete(ID);
       // Recycle the ID for reuse
       releaseId(ID);
+      if (EMBER_NATIVE) treeEpoch++;
     }
   });
 }

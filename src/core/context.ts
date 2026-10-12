@@ -12,7 +12,7 @@ import {
   type ComponentLike,
   type RootLike,
 } from './types';
-import { TREE, PARENT } from './tree';
+import { TREE, PARENT, treeEpoch } from './tree';
 import { isFn } from './shared';
 
 const CONTEXTS = new WeakMap<ComponentLike | RootLike, Map<symbol, any>>();
@@ -80,6 +80,81 @@ export function getDocument(ctx: ComponentLike | RootLike): Document {
   return document;
 }
 
+// EMBER_NATIVE: memoized context lookups. The Ember native layer reads the
+// render tree's owner / interactivity from element modifiers and helper call
+// sites (per `{{#each}}` row), and each read walked the ancestor chain up to
+// the root that provides them. The walk memoizes its result on every ANCESTOR
+// it passed (keyed by the node object, never by a recyclable id; not on the
+// starting node, typically a per-row ctx), so the next row's lookup stops one
+// level up, at the shared list / component.
+//
+// A memo is valid for one (context epoch, tree epoch):
+//   - `provideContext` of any memoized key, and the teardown of a node's
+//     provided contexts, bump the context epoch — a newly provided value is
+//     never shadowed by a memo below it;
+//   - tearing down a tree node (tree.ts) bumps the tree epoch — a node's
+//     parent never changes while it is alive, so a memo can only go stale
+//     through a teardown (a recycled id, a node re-added elsewhere).
+// RENDERING_CONTEXT keeps its own fast path and is never memoized.
+let contextEpoch = 0;
+const NOT_FOUND = Symbol('context-not-found');
+const UNDEFINED_VALUE = Symbol('context-undefined');
+interface ContextMemo {
+  contextEpoch: number;
+  treeEpoch: number;
+  /** key → the value provided above the node (or NOT_FOUND / UNDEFINED_VALUE) */
+  values: Map<symbol, unknown>;
+}
+const CONTEXT_MEMO = new WeakMap<object, ContextMemo>();
+// Reused walk buffer (lookups never nest: the walk runs no user code).
+const memoPath: object[] = [];
+
+function currentMemo(node: object): ContextMemo | undefined {
+  const memo = CONTEXT_MEMO.get(node);
+  return memo !== undefined &&
+    memo.contextEpoch === contextEpoch &&
+    memo.treeEpoch === treeEpoch
+    ? memo
+    : undefined;
+}
+
+function memoizedContext(ctx: ComponentLike | RootLike, key: symbol): unknown {
+  let current: ComponentLike | RootLike | undefined = ctx;
+  let found: unknown = NOT_FOUND;
+  memoPath.length = 0;
+  while (current) {
+    if (current !== ctx) {
+      const memoized = currentMemo(current)?.values.get(key);
+      if (memoized !== undefined) {
+        found = memoized;
+        break;
+      }
+    }
+    const context = CONTEXTS.get(current);
+    if (context !== undefined && context.has(key)) {
+      const value = context.get(key);
+      found = value === undefined ? UNDEFINED_VALUE : value;
+      break;
+    }
+    if (current !== ctx) memoPath.push(current);
+    const parent = PARENT.get(current[COMPONENT_ID_PROPERTY]);
+    if (parent == null) break;
+    // PARENT without TREE: an inconsistent tree — stop, like the plain walk.
+    current = TREE.get(parent) as ComponentLike | undefined;
+  }
+  for (let i = 0; i < memoPath.length; i++) {
+    const node = memoPath[i]!;
+    let memo = currentMemo(node);
+    if (memo === undefined) {
+      memo = { contextEpoch, treeEpoch, values: new Map() };
+      CONTEXT_MEMO.set(node, memo);
+    }
+    memo.values.set(key, found);
+  }
+  memoPath.length = 0;
+  return found;
+}
+
 export function getContext<T>(
   ctx: ComponentLike | RootLike,
   key: symbol,
@@ -89,6 +164,15 @@ export function getContext<T>(
   // Fast path for RENDERING_CONTEXT - most common lookup
   if (key === RENDERING_CONTEXT && fastRenderingContext !== null) {
     return fastRenderingContext as T;
+  }
+  if (EMBER_NATIVE && key !== RENDERING_CONTEXT) {
+    const value = memoizedContext(ctx, key);
+    if (value === UNDEFINED_VALUE) return undefined as T;
+    if (value !== NOT_FOUND) return (isFn(value) ? value() : value) as T;
+    if (import.meta.env.DEV && required && !('document' in ctx)) {
+      console.warn('Unable to resolve context for', ctx, key);
+    }
+    return null;
   }
   let current: ComponentLike | RootLike | undefined = ctx;
   let context: Map<symbol, any> | undefined;
@@ -202,8 +286,11 @@ export function provideContext<T>(
     CONTEXTS.set(ctx, new Map());
     registerDestructor(ctx, () => {
       CONTEXTS.delete(ctx);
+      if (EMBER_NATIVE) contextEpoch++;
     });
   }
 
   CONTEXTS.get(ctx)!.set(key, value);
+  // RENDERING_CONTEXT is never memoized (its own fast path above).
+  if (EMBER_NATIVE && key !== RENDERING_CONTEXT) contextEpoch++;
 }
