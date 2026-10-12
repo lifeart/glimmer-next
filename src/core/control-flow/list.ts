@@ -1634,6 +1634,37 @@ export class BasicListComponent<T extends { id: number }> {
   }
 }
 
+/**
+ * The Text nodes of `parent` that sit OUTSIDE a list's markers, as
+ * `[before topMarker, after bottomMarker]`, or `null` when any other node (an
+ * element, a comment — e.g. another block's anchor) lives there, or the markers
+ * are not both children of `parent`.
+ *
+ * A list's bulk clear (`clearChildren(parent)`) is only correct when nothing
+ * but the list lives in `parent`. Static text around the list is the exception
+ * worth keeping: Glimmer keeps template whitespace (the Ember native build does
+ * too), so `<tbody>\n  {{#each}}…{{/each}}\n</tbody>` puts a Text node on each
+ * side of the markers. Those nodes can be put back after the clear — the same
+ * node objects, so a bound text node keeps its binding.
+ */
+function textOutsideMarkers(
+  parent: Node,
+  topMarker: Node,
+  bottomMarker: Node,
+): [Node[], Node[]] | null {
+  const before: Node[] = [];
+  for (let node = parent.firstChild; node !== topMarker; node = node.nextSibling) {
+    if (node === null || node.nodeType !== 3 /* TEXT_NODE */) return null;
+    before.push(node);
+  }
+  const after: Node[] = [];
+  for (let node = bottomMarker.nextSibling; node !== null; node = node.nextSibling) {
+    if (node.nodeType !== 3 /* TEXT_NODE */) return null;
+    after.push(node);
+  }
+  return [before, after];
+}
+
 export class SyncListComponent<
   T extends { id: number },
 > extends BasicListComponent<T> {
@@ -1697,10 +1728,18 @@ export class SyncListComponent<
     const { keyMap, bottomMarker, topMarker, indexMap, indexFormulaMap, api } =
       this;
     const parent = api.parent(bottomMarker);
+    // The bulk path needs the list to own its parent: the markers are its
+    // first and last children, or only Text nodes sit outside them (put back
+    // after the clear, see `textOutsideMarkers`).
+    const outerText =
+      parent &&
+      (parent.firstChild !== topMarker || parent.lastChild !== bottomMarker)
+        ? textOutsideMarkers(parent, topMarker, bottomMarker)
+        : null;
     if (
       parent &&
-      parent.lastChild === bottomMarker &&
-      parent.firstChild === topMarker
+      (outerText !== null ||
+        (parent.firstChild === topMarker && parent.lastChild === bottomMarker))
     ) {
       // Detach CHILD so item destructors skip parent-sibling deletes.
       this.detachTreeChildren();
@@ -1724,9 +1763,10 @@ export class SyncListComponent<
       }
       // O(n^2) FIX: bulk-clear the parent's DOM (innerHTML='' is O(1)) BEFORE
       // running the per-row CONTENT destructors below. The guard above proves
-      // this list owns the entire parent (its markers are first/last child), so
-      // a bulk clear is safe and removes every row in one reflow. The per-row
-      // `destroyElementSync(value, skipDom=true)` cascade below still runs the
+      // this list owns the entire parent (only static text sits outside its
+      // markers, and is put back), so a bulk clear is safe and removes every
+      // row in one reflow. The per-row `destroyElementSync(value, skipDom=true)`
+      // cascade below still runs the
       // reactive cleanup (registered destructors, cell/formula `.destroy()`),
       // but each row's top node is a raw <tr>/element passed to
       // `api.destroy(node)` -> `node.remove()`. When the parent still held all
@@ -1736,8 +1776,14 @@ export class SyncListComponent<
       // already emptied, those `.remove()` calls see `parentNode === null` and
       // are O(1) no-ops, collapsing teardown to linear.
       this.api.clearChildren(parent);
+      if (outerText !== null) {
+        for (const node of outerText[0]) this.api.insert(parent, node);
+      }
       this.api.insert(parent, topMarker);
       this.api.insert(parent, bottomMarker);
+      if (outerText !== null) {
+        for (const node of outerText[1]) this.api.insert(parent, node);
+      }
       for (const value of keyMap.values()) {
         try {
           destroyElementSync(value as ComponentLike, true, this.api);
