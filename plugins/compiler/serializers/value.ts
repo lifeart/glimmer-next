@@ -896,8 +896,10 @@ function buildHelper(
         // unless(cond, true, false) -> if(cond, false, true)
         transformedPositional = [positional[0], positional[2], positional[1]];
       } else {
-        // unless(cond, true) -> if(cond, "", true)
-        transformedPositional = [positional[0], { kind: 'literal', value: '' }, positional[1]];
+        // unless(cond, true) -> if(cond, "", true). Ember (EMBER_NATIVE): the
+        // missing branch is `undefined`, like the inline `if` without an inverse.
+        const missing = ctx.flags.EMBER_NATIVE === true ? undefined : '';
+        transformedPositional = [positional[0], { kind: 'literal', value: missing }, positional[1]];
       }
     } else {
       transformedPositional = positional;

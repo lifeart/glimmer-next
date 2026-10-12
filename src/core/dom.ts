@@ -413,6 +413,98 @@ export function $prop(
   }
 }
 
+/**
+ * EMBER_NATIVE: an element's `class` with Glimmer's attribute semantics.
+ *   - ONE class value is a plain dynamic attribute (the host's
+ *     normalizeAttrValue = Glimmer normalizeValue): `null` / `undefined` /
+ *     `false` remove the attribute, `''` keeps `class=""`, `true` is `""`.
+ *   - SEVERAL (the element's own class and the classes `...attributes`
+ *     forwards, in source order) merge like Glimmer's createClassListRef: the
+ *     non-empty string values (normalizeStringValue: `null` / `undefined` /
+ *     no `toString` are empty) joined by a space — no attribute at all when
+ *     every value is empty.
+ * The className property path below sets `class=""` (or `"undefined"`) for an
+ * empty value instead, and joins empty values into stray spaces.
+ */
+function nativeClassAttribute(
+  api: DOMApi,
+  element: HTMLElement,
+  classNameModifiers: Attr[],
+  destructors: Destructors,
+) {
+  if (classNameModifiers.length === 1) {
+    $nativeClass(api, element, classNameModifiers[0], destructors);
+    return;
+  }
+  $nativeClass(
+    api,
+    element,
+    () => {
+      let list = '';
+      for (let i = 0; i < classNameModifiers.length; i++) {
+        const part = classListPart(classNameModifiers[i]);
+        if (part !== '') list = list === '' ? part : `${list} ${part}`;
+      }
+      return list === '' ? null : list;
+    },
+    destructors,
+  );
+}
+
+const NOT_APPLIED = Symbol('not-applied');
+
+/**
+ * EMBER_NATIVE `class` binding (also the static-block row path's class slot):
+ * `$attr`'s write — normalized by the host, `undefined` removes — except that a
+ * reactive re-apply whose normalized value is unchanged writes nothing (the
+ * className property path it replaces had the same check). A row's
+ * `class={{if (isSelected row) "x"}}` re-evaluates on every selection change;
+ * only the rows whose class actually changes touch the DOM.
+ */
+export function $nativeClass(
+  api: DOMApi,
+  element: HTMLElement,
+  value: unknown,
+  destructors: Destructors,
+) {
+  const { result, isReactive } = resolveBindingValue(value, 'class-attr');
+  if (!isReactive) {
+    $attr(api, element, 'class', result, destructors);
+    return;
+  }
+  let applied: unknown = NOT_APPLIED;
+  destructors.push(
+    opcodeFor(result as AnyCell, (resolvedValue) => {
+      const hook = WITH_EMBER_INTEGRATION ? hostNormalizeAttrValue : null;
+      const normalized =
+        hook === null ? resolvedValue : hook('class', resolvedValue, element, false);
+      if (normalized === applied) return;
+      applied = normalized;
+      if (normalized === undefined) {
+        element.removeAttribute('class');
+      } else {
+        // @ts-expect-error type casting
+        api.attr(element, 'class', normalized);
+      }
+    }),
+  );
+}
+
+function classListPart(modifier: Attr): string {
+  let value: unknown = isFn(modifier) ? deepFnValue(modifier) : modifier;
+  if (value !== null && value !== undefined && isTagLike(value)) {
+    value = (value as AnyCell).value;
+  }
+  if (
+    value === null ||
+    value === undefined ||
+    typeof (value as { toString?: unknown }).toString !== 'function'
+  ) {
+    return '';
+  }
+  return String(value);
+}
+
 function mergeClassModifiers(
   api: DOMApi,
   element: Node,
@@ -420,6 +512,10 @@ function mergeClassModifiers(
   destructors: Destructors,
 ) {
   if (classNameModifiers.length === 0) {
+    return;
+  }
+  if (EMBER_NATIVE) {
+    nativeClassAttribute(api, element as HTMLElement, classNameModifiers, destructors);
     return;
   }
   if (IS_DEV_MODE) {
