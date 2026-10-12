@@ -7,6 +7,7 @@
 // Import types from component-class to avoid circular dependency
 import type { Component } from '@/core/component-class';
 import type { ComponentLike, DOMApi, GenericReturnType } from '@/core/types';
+import { MOUNT_REPARSE_HOOK } from '@/core/types';
 
 // Import render/destroy functions directly (no late-binding needed)
 import { renderElement } from '@/core/render-core';
@@ -18,6 +19,7 @@ import {
   $_debug_args,
   $DEBUG_REACTIVE_CONTEXTS,
   IFS_FOR_HMR,
+  isArray,
   isEmpty,
   isFn,
   isPrimitive,
@@ -47,6 +49,27 @@ export type IfFunction = () => boolean;
 // `Symbol.for` shares one identity with `list.ts` + the host across the package
 // boundary (no import → no cycle). Inert in standalone GXT (nothing reads it).
 const BLOCK_WRAPPER_SYMBOL = Symbol.for('gxt-block-wrapper');
+
+/**
+ * EMBER_NATIVE: the first (`fromStart`) / last DOM node of a rendered-nodes
+ * list, descending into nested render nodes (components, blocks, arrays) —
+ * the live edge of a block, as Glimmer's `firstNode()` / `lastNode()` delegate
+ * to the nested block at the edge. `null` when the list holds no DOM node.
+ */
+function edgeDomNode(item: unknown, fromStart: boolean): Node | null {
+  if (item === null || typeof item !== 'object') return null;
+  if (typeof (item as Node).nodeType === 'number') return item as Node;
+  const list = isArray(item)
+    ? item
+    : ((item as Record<PropertyKey, unknown>)[RENDERED_NODES_PROPERTY] as unknown[] | undefined);
+  if (!isArray(list)) return null;
+  const length = list.length;
+  for (let i = 0; i < length; i++) {
+    const found = edgeDomNode(list[fromStart ? i : length - 1 - i], fromStart);
+    if (found !== null) return found;
+  }
+  return null;
+}
 
 export class IfCondition {
   isDestructorRunning = false;
@@ -84,6 +107,13 @@ export class IfCondition {
   // for the tree parent.
   _treeParent: Component<any> | null = null;
   declare api: DOMApi;
+  // EMBER_NATIVE (Glimmer block bounds, see `settleNativeBounds` below): the live
+  // rendered nodes of the current branch (`[placeholder]` while it is empty),
+  // and whether the parent has inserted this block's first nodes — until then
+  // RENDERED_NODES lists them flat, for the parent's insertion.
+  declare nativeNodes: unknown[] | undefined;
+  declare nativeMounted: boolean | undefined;
+  declare [MOUNT_REPARSE_HOOK]: (() => void) | undefined;
 
   constructor(
     parentContext: Component<any>,
@@ -170,6 +200,18 @@ export class IfCondition {
     }
     // @ts-expect-error
     this.api = initDOM(this);
+    if (EMBER_NATIVE) {
+      // `renderElement` runs this once the parent has inserted the block's
+      // first nodes (listed flat): from then on RENDERED_NODES are the live
+      // branch (see `settleNativeBounds` below).
+      this[MOUNT_REPARSE_HOOK] = () => {
+        this[MOUNT_REPARSE_HOOK] = undefined;
+        this.nativeMounted = true;
+        if (this.nativeNodes !== undefined) {
+          this[RENDERED_NODES_PROPERTY] = this.nativeNodes as Node[];
+        }
+      };
+    }
     this.destructors.push(opcodeFor(this.condition, this.syncState.bind(this)));
     // Ensure initial branch renders synchronously even if opcodeFor deferred.
     // If opcodeFor already fired syncState, checkStatement will short-circuit
@@ -297,6 +339,9 @@ export class IfCondition {
         this.renderState(nextBranch);
         return;
       }
+      if (EMBER_NATIVE) {
+        parkPlaceholder(this);
+      }
       this.destroyPromise = this.destroyBranch();
       this.destroyPromise.then(() => {
         this.destroyPromise = null;
@@ -332,6 +377,9 @@ export class IfCondition {
     nextBranch: (ifContext: IfCondition) => GenericReturnType,
     runNumber: number,
   ) {
+    if (EMBER_NATIVE) {
+      parkPlaceholder(this);
+    }
     this.destroyBranchSync();
     if (!this.validateEpoch(runNumber)) {
       return;
@@ -493,7 +541,9 @@ export class IfCondition {
     } else {
       this.branchDomNodes = [];
     }
-    if (IS_DEV_MODE) {
+    if (EMBER_NATIVE) {
+      settleNativeBounds(this);
+    } else if (IS_DEV_MODE) {
       // HMR logic
       if (this.runNumber === 1) {
         this[RENDERED_NODES_PROPERTY] = [this.placeholder];
@@ -553,4 +603,71 @@ export class IfCondition {
       this.condition = maybeCondition;
     }
   }
+}
+
+/**
+ * EMBER_NATIVE: put the placeholder where `block`'s current branch ends (after
+ * its last node), before that branch is torn down, so the next branch renders
+ * in its place — Glimmer's `TryOpcode` re-renders at the cleared block's next
+ * sibling. A no-op while the branch is empty: the placeholder already holds the
+ * block's place. The block's nodes are `[placeholder]` until the next branch
+ * settles. (Module-level, like `settleNativeBounds`: only EMBER_NATIVE call
+ * sites reach it, so a build without the native layer drops it.)
+ */
+function parkPlaceholder(block: IfCondition): void {
+  const { api, placeholder } = block;
+  if (api.parent(placeholder) === null) {
+    const last = edgeDomNode(block[RENDERED_NODES_PROPERTY], false);
+    const parent = last === null ? null : api.parent(last);
+    if (parent !== null) {
+      api.insert(parent, placeholder, last!.nextSibling);
+    } else {
+      // No live node to follow (the branch was removed with an ancestor):
+      // render off-document, into the block's own fragment.
+      api.insert(block.target, placeholder);
+    }
+  }
+  block.nativeNodes = [placeholder];
+  block[RENDERED_NODES_PROPERTY] = [placeholder];
+}
+
+/**
+ * EMBER_NATIVE: Glimmer's block bounds once `block`'s branch has rendered. An
+ * empty branch keeps the placeholder in the DOM — Glimmer's empty block renders
+ * `<!---->` (`AppendingBlock#finalize`). A branch with content owns exactly its
+ * nodes: the placeholder leaves the DOM, and the block's rendered nodes are the
+ * branch itself, so its first / last node are read live through the nested
+ * blocks at its edges (a nested `{{#if}}`, an `{{#each}}`, content) — a parent,
+ * a row move or the Inspector never sees a stale anchor. A branch result whose
+ * edges are not its rendered DOM (raw values, nodes a sub-runtime inserted on
+ * the side) is listed as the nodes it rendered.
+ */
+function settleNativeBounds(block: IfCondition): void {
+  const { api, placeholder } = block;
+  const captured = block.branchDomNodes;
+  let nodes: unknown[];
+  let flat: Node[];
+  if (captured.length === 0) {
+    nodes = [placeholder];
+    flat = [placeholder];
+  } else {
+    if (api.parent(placeholder) !== null) {
+      api.destroy(placeholder);
+    }
+    const branch = block.prevComponent as unknown;
+    const roots = isArray(branch)
+      ? branch
+      : branch !== null && typeof branch === 'object'
+        ? [branch]
+        : null;
+    nodes =
+      roots !== null &&
+      edgeDomNode(roots, true) === captured[0] &&
+      edgeDomNode(roots, false) === captured[captured.length - 1]
+        ? roots
+        : captured.slice();
+    flat = captured.slice();
+  }
+  block.nativeNodes = nodes;
+  block[RENDERED_NODES_PROPERTY] = (block.nativeMounted === true ? nodes : flat) as Node[];
 }

@@ -78,6 +78,23 @@ function withSelf(tpl: unknown, self: object) {
   };
 }
 
+/**
+ * The first DOM node a block renders (its rendered nodes, descending into nested
+ * render nodes). Native `{{#if}}` blocks have no anchor while their branch has
+ * content (Glimmer's block bounds), so a block is located by what it rendered.
+ */
+function firstDomNode(item: unknown): Node | null {
+  if (item === null || typeof item !== 'object') return null;
+  if (typeof (item as Node).nodeType === 'number') return item as Node;
+  const list = isArray(item) ? item : (item as any)[RENDERED_NODES_PROPERTY];
+  if (!isArray(list)) return null;
+  for (const entry of list) {
+    const found = firstDomNode(entry);
+    if (found !== null) return found;
+  }
+  return null;
+}
+
 const wrapperCount = () =>
   [...TREE.values()].filter(
     (node) => (node as object).constructor?.name === 'UnstableChildWrapper',
@@ -289,7 +306,7 @@ describe('EMBER_NATIVE unwrapped each rows', () => {
       const nested = trs.map((tr) => ({
         ifc: ([...TREE.values()] as unknown[]).find(
           (node): node is IfCondition =>
-            node instanceof IfCondition && tr.contains(node.placeholder),
+            node instanceof IfCondition && tr.contains(firstDomNode(node)),
         )!,
         inner: lists().find((list) => tr.contains(list.topMarker))!,
       }));
@@ -346,7 +363,7 @@ describe('EMBER_NATIVE unwrapped each rows', () => {
       );
       const tr = fixture.container.querySelectorAll('tr')[1];
       const ifc = ([...TREE.values()] as unknown[]).find(
-        (node): node is IfCondition => node instanceof IfCondition && tr.contains(node.placeholder),
+        (node): node is IfCondition => node instanceof IfCondition && tr.contains(firstDomNode(node)),
       )!;
       await set(self, 'rows', [rows[0]]);
       expect(isDestructionStarted(ifc)).toBe(true);
