@@ -287,6 +287,105 @@ export interface HostHooks {
    * @returns the meaningful name, or `undefined` / `null` to fall back.
    */
   resolveComponentName?: (component: object) => string | undefined | null;
+  /**
+   * The component an Ember `{{outlet}}` renders (G3). Under the EMBER_OUTLET
+   * compile flag `{{outlet}}` emits `$_outlet(ctx)`, which renders this
+   * definition through the regular component machinery (as `$_c` would, with
+   * no args) as a child of the enclosing render context. The host component
+   * resolves what to render (the route template for this outlet level) from
+   * that context chain and owns its reactivity. gxt has no routing of its own:
+   * `$_outlet` throws when no outlet component is registered.
+   */
+  outletComponent?: unknown;
+  /**
+   * Property read with tag consumption (G8, the EMBER_PROPERTY_TAGS compile
+   * flag; Glimmer's global-context `getProp`). Under the flag every member
+   * segment of a `this.*` / `@arg.*` / block-param path compiles to
+   * `$__tag(obj, "key")`; for an object / function head the tap delegates to
+   * this hook, which must return the property value and consume whatever tags
+   * make the read reactive (Ember: metal `_getProp` — `tagFor(obj, key)`,
+   * `unknownProperty`, the `[]` tag of an array value). Without the hook the
+   * tap consumes gxt's own `tagFor(obj, key)` and reads `obj[key]`. Only
+   * reached by EMBER_NATIVE / EMBER_PROPERTY_TAGS output.
+   */
+  getProp?: (obj: object, key: string) => unknown;
+  /**
+   * Ember loose-mode ambiguous append (G11, the EMBER_LOOSE_COMPONENTS compile
+   * flag). In a LOOSE template a content-position `{{name …}}` whose callee has
+   * no lexical binding compiles to `$_looseAppend(name, …)`, which asks this
+   * hook — once per render of the call site — what `name` is for the render
+   * tree `ctx` belongs to (Glimmer's ResolveComponentOrHelper /
+   * ResolveOptionalComponentOrHelper): `'component'` renders it through the
+   * component machinery (`$_c(name, …)` → the host component manager resolves
+   * the name), `'helper'` renders a reactive helper binding
+   * (`$_maybeHelper(name, …)` → the host helper manager), `null` renders
+   * nothing. `optional` is true when the call has no arguments at all; for a
+   * non-optional miss the host is expected to throw its own "nothing was
+   * found" error.
+   */
+  resolveComponentOrHelper?: (
+    name: string,
+    ctx: object,
+    optional: boolean,
+  ) => 'component' | 'helper' | null;
+  /**
+   * Ember loose-mode built-ins (G11). A LOOSE template lowers the free names
+   * `array` / `fn` / `hash` / `unique-id` to gxt's own built-ins, where Glimmer
+   * resolves them through the host resolver; such a template calls this once
+   * per render (`$_looseBuiltins(ctx, names)`, the wrapper preamble) with the
+   * names it used, so the host can apply its resolution-time checks (Ember:
+   * "You attempted to overwrite the built-in helper …" when the owner
+   * registers a helper with one of those names). Without the hook: nothing.
+   */
+  looseBuiltins?: (ctx: object, names: readonly string[]) => void;
+  /**
+   * Glimmer dynamic-content classification (G15; the Ember native layer). A
+   * content-position `{{value}}` renders whatever its value IS, re-deciding on
+   * every change (Glimmer's dynamic content switch): text, a DOM node, trusted
+   * HTML, a component, a helper result. gxt recognizes text and DOM nodes
+   * itself; this hook tells it which other values are host constructs:
+   *   - `'html'`: trusted HTML (Ember `SafeString`, `htmlSafe(...)`) — its
+   *     `toHTML()` is parsed and inserted as nodes, never escaped;
+   *   - `'component'`: a component definition (a class with a component
+   *     manager, `templateOnly()`, a curried `(component …)`) — rendered as a
+   *     component with no arguments;
+   *   - `'helper'`: a helper definition with a host helper manager (or a
+   *     curried `(helper …)`) — invoked with no arguments, its result rendered
+   *     as content;
+   *   - `undefined` / `null`: not a host construct (text: `String(value)`; a
+   *     plain function keeps being called, as gxt always did).
+   * Consulted only once the EMBER_NATIVE runtime registered the dynamic-content
+   * binding (dom.ts); a gxt `$_tpl` template function is a component without
+   * asking.
+   */
+  classifyContent?: (value: unknown) => 'html' | 'component' | 'helper' | null | undefined;
+  /**
+   * Host assertion channel for gxt's host-parity runtime checks (Ember: the
+   * `@ember/debug` `assert`, so `expectAssertion` / the Ember assertion stubs
+   * see them). Called with the failure message; it is expected to throw. When
+   * absent (or when it returns), gxt throws an `Error` with the same message.
+   */
+  assert?: (message: string) => void;
+  /**
+   * `{{#each-in obj}}` entries (G5; the EMBER_NATIVE `$__eachIn` iteration
+   * source): `[key, value]` pairs in iteration order, read INSIDE the source
+   * formula so whatever the host consumes makes the iteration reactive (Ember:
+   * Glimmer's `toEachInIterator` — Maps / native iterables of pairs,
+   * forEach-ables, arrays, plain objects with per-key and object tags).
+   * Without the hook gxt iterates own enumerable keys.
+   */
+  eachInEntries?: (obj: object) => ReadonlyArray<[unknown, unknown]> | null | undefined;
+  /**
+   * A TRUSTING attribute value (the Ember native layer; the EMBER_NATIVE
+   * compiler emits `$_trustAttr(value)` for a trusting `style={{{value}}}`,
+   * Glimmer's TrustingDynamicAttribute). The hook returns the value to bind
+   * instead — e.g. a host-private wrapper its `normalizeAttrValue` hook unwraps
+   * — so the host can tell a trusting binding from a non-trusting one (Ember:
+   * the development-only warning about binding `style` to a value that is not
+   * `htmlSafe` applies to non-trusting bindings only). Without the hook:
+   * the value itself.
+   */
+  trustedAttrValue?: (value: unknown) => unknown;
 }
 
 /**
@@ -315,11 +414,28 @@ export let hostNormalizeAttrValue: NonNullable<
 > | null = null;
 
 /**
+ * Hot-path cache for {@link HostHooks.getProp} (read by every `$__tag` member
+ * tap): `null` unless a host registered the hook. Kept in lock-step with
+ * `HOST_HOOKS.getProp` by `registerHostHooks`.
+ */
+export let hostGetProp: NonNullable<HostHooks['getProp']> | null = null;
+
+/**
  * Merge the given hooks into the active slot table. Later registrations
  * override earlier ones per-key; passing `undefined` for a key is ignored
  * (use an explicit no-op function to disable a default the host set
  * earlier).
  */
+/**
+ * Fail a host-parity runtime check: through the host's `assert` hook when one is
+ * registered (it throws), else (or if it returns) as an `Error`.
+ */
+export function hostAssertFailed(message: string): never {
+  const hook = HOST_HOOKS.assert;
+  if (hook !== undefined) hook(message);
+  throw new Error(message);
+}
+
 export function registerHostHooks(hooks: HostHooks): void {
   for (const key of Object.keys(hooks) as Array<keyof HostHooks>) {
     const value = hooks[key];
@@ -331,6 +447,7 @@ export function registerHostHooks(hooks: HostHooks): void {
   // Reads `HOST_HOOKS.normalizeAttrValue` so a later `registerHostHooks({})`
   // after tests clear the table resets the cache back to `null`.
   hostNormalizeAttrValue = HOST_HOOKS.normalizeAttrValue ?? null;
+  hostGetProp = HOST_HOOKS.getProp ?? null;
   // Cross-instance host-presence sentinel. HOST_HOOKS is module-local, so a
   // consumer bundled into a different entry chunk (e.g. the list frame-mode
   // gate) sees its OWN empty copy. This single globalThis flag — set true the

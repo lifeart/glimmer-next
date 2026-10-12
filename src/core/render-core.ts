@@ -28,6 +28,7 @@ import { registerLeafOwnersForFormula } from './reactive';
 
 // Import resolveRenderable from root.ts
 import { resolveRenderable } from './root';
+import { nativeContentBinding } from './native-content';
 
 // Track which components have been rendered (dev-only: for HMR relocate)
 let RENDERED_COMPONENTS!: WeakSet<object>;
@@ -221,6 +222,16 @@ export function renderElement(
           const textNode = api.text('');
           renderedNodes[i] = textNode;
           api.insert(target, textNode, placeholder);
+          // EMBER_NATIVE dynamic content (G15): the value may be / become a
+          // node, trusted HTML or a component (native-content.ts).
+          const nativeContent = nativeContentBinding();
+          if (nativeContent !== null) {
+            registerDestructor(
+              el as ComponentLike,
+              nativeContent(api, el as ComponentLike, el as ComponentLike, textNode, node as MergedCell),
+            );
+            continue;
+          }
           registerDestructor(
             el as ComponentLike,
             opcodeFor(node as MergedCell, (value) => {
@@ -257,6 +268,15 @@ export function renderElement(
       ctx[RENDERED_NODES_PROPERTY].push(node);
     }
     api.insert(target, node, placeholder);
+    // EMBER_NATIVE dynamic content (G15, native-content.ts).
+    const nativeContent = nativeContentBinding();
+    if (nativeContent !== null) {
+      registerDestructor(
+        ctx,
+        nativeContent(api, ctx, skipRegistration ? null : ctx, node, el as MergedCell),
+      );
+      return;
+    }
     registerDestructor(
       ctx,
       opcodeFor(el, (value) => {

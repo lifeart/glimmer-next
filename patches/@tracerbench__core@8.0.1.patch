@@ -1,0 +1,31 @@
+diff --git a/dist/metrics/extract-navigation-sample.js b/dist/metrics/extract-navigation-sample.js
+index 58a0330d018d00223d9cfe0cc353ee3903837df1..742c52f5bf4e9970ff9428c7dff1ab225b056b81 100644
+--- a/dist/metrics/extract-navigation-sample.js
++++ b/dist/metrics/extract-navigation-sample.js
+@@ -32,6 +32,13 @@ function findPhases(events, markers) {
+                         if (event.args === undefined) {
+                             throw new Error(`navigationStart mark event is missing args`);
+                         }
++                        // The new renderer's initial empty document also emits a
++                        // navigationStart (documentLoaderURL ""). Since Chrome ~154 it
++                        // can be timestamped before the measured navigation's own
++                        // navigationStart; it never owns the page's marks, so skip it.
++                        if (isInitialEmptyDocumentArgs(event.args)) {
++                            continue;
++                        }
+                         navigationStartArgs = event.args;
+                     }
+                     if (marker.start === 'navigationStart') {
+@@ -111,6 +118,12 @@ function findPhases(events, markers) {
+     }
+     return phases;
+ }
++function isInitialEmptyDocumentArgs(args) {
++    return (typeof args.data === 'object' &&
++        args.data !== null &&
++        (args.data.documentLoaderURL === '' ||
++            args.data.documentLoaderURL === 'about:blank'));
++}
+ function isNavigationTimingArgs(args) {
+     return args !== undefined && typeof args.frame === 'string';
+ }

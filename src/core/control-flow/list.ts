@@ -17,9 +17,11 @@ import {
   MergedCell,
   formula,
   deepFnValue,
+  getTracker,
   registerLeafOwnersForFormula,
   type AnyCell,
 } from '@/core/reactive';
+import { tagFor } from '@/core/tags';
 import { opcodeFor } from '@/core/vm';
 import {
   $_debug_args,
@@ -34,7 +36,7 @@ import {
   isEmpty,
 } from '@/core/shared';
 import { RENDERING_CONTEXT_PROPERTY } from '@/core/types';
-import { TREE, CHILD, PARENT, cId, addToTree, releaseId } from '@/core/tree';
+import { TREE, CHILD, PARENT, cId, addToTree, releaseId, nativeTreeParent } from '@/core/tree';
 import { isRehydrationScheduled } from '@/core/ssr/rehydration';
 import { initDOM } from '@/core/context';
 import {
@@ -55,7 +57,13 @@ import {
   type EachFrame,
   type FrameSharedEntry,
 } from './list-frames';
-import { setParentContext, getParentContext } from '../tracking';
+import {
+  setParentContext,
+  getParentContext,
+  pushParentContext,
+  popParentContext,
+} from '../tracking';
+import { isNativeRuntime } from '../native-content';
 import { HOST_HOOKS } from '@/core/host-hooks';
 
 // Re-export getFirstNode for backward compatibility
@@ -178,6 +186,34 @@ function subscribeReactiveCollection(value: unknown): void {
   } catch {
     /* best-effort subscription */
   }
+}
+
+/**
+ * Ember native layer (EMBER_NATIVE build constant): Glimmer's `{{#each}}`
+ * reads an array's `length` (a collection's `size`) while it builds the
+ * iterator, inside the list reference's tracking frame — which is what
+ * entangles an Ember tracked collection (`trackedArray` / `trackedSet` /
+ * `trackedMap` from `@ember/reactive`, whose proxies consume their collection
+ * tag on those reads) with the list. Do the same read inside the list-tag
+ * formula so an in-place `push` / `splice` re-syncs the rows.
+ *
+ * It also consumes the iterable's `[]` property tag — Ember's
+ * `transform-each-track-array` wraps every `{{#each x}}` source in
+ * `(-track-array x)`, which consumes `tagFor(iterable, '[]')` for ANY object
+ * iterable, so `notifyPropertyChange(iterable, '[]')` (EmberArray mutation
+ * methods, `arrayContentDidChange`, a mutated Set / forEach-able / iterable
+ * delegate, a nested `{{#each item as |x|}}` over a row's array) re-syncs the
+ * rows. The tag is the same per-(obj, key) cell the host dirties.
+ */
+export function consumeIterationTags(value: unknown): void {
+  if (value === null || typeof value !== 'object') return;
+  const tracker = getTracker();
+  if (tracker !== null) tracker.add(tagFor(value, '[]'));
+  if (Array.isArray(value)) {
+    void value.length;
+    return;
+  }
+  void (value as { size?: unknown }).size;
 }
 
 export function normalizeIterableValue<T>(value: unknown): T[] {
@@ -523,8 +559,12 @@ export class BasicListComponent<T extends { id: number }> {
     // First-error-wins: a throwing row destructor must not leak the remaining
     // rowCtxs. Registry bookkeeping still runs for each row; first error after.
     let firstError: unknown = undefined;
-    for (const rowCtx of rowCtxMap.values()) {
+    for (const [key, rowCtx] of rowCtxMap) {
       const rowId = rowCtx[COMPONENT_ID_PROPERTY];
+      // EMBER_NATIVE: an unwrapped row's nested blocks are tree children of
+      // its rowCtx (`buildNativeRow`), which nothing below reaches — collect
+      // them before `destroySync` runs rowCtx's tree cleanup.
+      const nativeChildren = EMBER_NATIVE ? CHILD.get(rowId) : undefined;
       // Run ONLY the rowCtx's OWN destructors (its inline-element binding
       // opcodes + any host `onRowContextCreated` pre-destroy hook) via the
       // non-cascading `destroySync` — NOT `destroyElementSync`, which would
@@ -542,6 +582,13 @@ export class BasicListComponent<T extends { id: number }> {
           if (firstError === undefined) firstError = e;
         }
       }
+      if (nativeChildren !== undefined && nativeChildren.size > 0) {
+        try {
+          this.destroyRowChildren(nativeChildren, this.keyMap.get(key));
+        } catch (e) {
+          if (firstError === undefined) firstError = e;
+        }
+      }
       CHILD.delete(rowId);
       TREE.delete(rowId);
       PARENT.delete(rowId);
@@ -549,6 +596,26 @@ export class BasicListComponent<T extends { id: number }> {
     }
     rowCtxMap.clear();
     if (firstError !== undefined) reportDestructionError(firstError);
+  }
+  /**
+   * EMBER_NATIVE bulk teardown of a row ctx's tree children (skipDom: the bulk
+   * clear removes the DOM). Skips what the bulk keyMap pass destroys itself:
+   * the row's own value (a wrapper component, a component row) and the parts
+   * of an array row — so what is left is the nested blocks of an unwrapped
+   * row (see `buildNativeRow`).
+   */
+  private destroyRowChildren(
+    children: Set<number>,
+    row: GenericReturnType | undefined,
+  ): void {
+    for (const childId of children) {
+      const child = TREE.get(childId);
+      if (child === undefined || child === row || isDestructionStarted(child)) {
+        continue;
+      }
+      if (isArray(row) && row.includes(child)) continue;
+      destroyElementSync(child, true, this.api);
+    }
   }
   /**
    * Fast-path for updates that preserve all existing items and only append
@@ -635,7 +702,9 @@ export class BasicListComponent<T extends { id: number }> {
     // the list to that wrapper (rather than the top-level component)
     // ensures the list is destroyed when its enclosing iteration is
     // torn down, so its opcode on the source cell is unregistered.
-    const parentCtx = (getParentContext() as Component<any> | null) || ctx;
+    const parentCtx = EMBER_NATIVE
+      ? (nativeTreeParent(getParentContext() as any, ctx as any) as unknown as Component<any>)
+      : (getParentContext() as Component<any> | null) || ctx;
     // @ts-expect-error typings error
     addToTree(parentCtx, this, 'from list constructor');
     this[RENDERED_NODES_PROPERTY] = [];
@@ -778,6 +847,7 @@ export class BasicListComponent<T extends { id: number }> {
           // proxy reference → the formula is const → the each would freeze on
           // in-place mutation.
           subscribeReactiveCollection(v);
+          if (EMBER_NATIVE) consumeIterationTags(v);
           return v;
         }, 'list tag');
         registerDestructor(ctx, () => {
@@ -944,13 +1014,26 @@ export class BasicListComponent<T extends { id: number }> {
     return hasDupes;
   }
 
+  /**
+   * Glimmer `@identity` for PRIMITIVE items (the Ember native runtime): a
+   * primitive row is keyed by its value (type-qualified, duplicates
+   * position-qualified like duplicate object refs), so `[1, 2, 3] → [1, 3]`
+   * keeps — moves — the `3` row instead of re-creating it, and index cells
+   * follow the move. Off (gxt's historic default): primitive keys are
+   * position-qualified (`value:index`), a moved primitive row is re-created.
+   */
+  protected primitiveByValue = false;
+
   private setupKeyForItem() {
     if (this.key === '@identity') {
       let cnt = 0;
       const map: WeakMap<T & object, string> = new WeakMap();
+      const primitiveByValue = (this.primitiveByValue = isNativeRuntime());
       const baseKeyOf = (item: T, i: number): string => {
         if (isPrimitive(item) || isEmpty(item)) {
-          return `${String(item)}:${i}`;
+          return primitiveByValue
+            ? `\u0000${typeof item}:${String(item)}`
+            : `${String(item)}:${i}`;
         }
         const existing = map.get(item as T & object);
         if (existing !== undefined) return existing;
@@ -960,7 +1043,7 @@ export class BasicListComponent<T extends { id: number }> {
       };
       this.keyForItem = (item: T, i: number, items?: T[]) => {
         const baseKey = baseKeyOf(item, i);
-        if (isPrimitive(item) || isEmpty(item)) {
+        if (!primitiveByValue && (isPrimitive(item) || isEmpty(item))) {
           // Primitive base keys are already position-qualified, so the
           // duplicate-detection step below is unnecessary and would
           // misfire (every primitive of the same value would re-qualify
@@ -1151,7 +1234,48 @@ export class BasicListComponent<T extends { id: number }> {
       }
       return row;
     }
+    if (EMBER_NATIVE) {
+      return this.buildNativeRow(item, idx, bodyCtx);
+    }
     return this.ItemComponent(item, idx, bodyCtx as unknown as Component<any>);
+  }
+  /**
+   * EMBER_NATIVE row body. The Ember native build keeps Glimmer's template
+   * whitespace, so a row is typically `\n  <tr>…</tr>\n`; the compiler emits
+   * such a body — static text around ONE stable node — unwrapped, as a plain
+   * `[text, node, text]` array, instead of a per-row UnstableChildWrapper
+   * component (`hasStableChildAmidStaticText` in the compiler's control
+   * serializer). Without a wrapper, the row's ctx stands in for it:
+   *   - it is the active parent context while the body builds, so the nested
+   *     blocks the body creates (`{{#if}}` / `{{#each}}`, which attach to the
+   *     active parent) belong to the row and are torn down with it
+   *     (`destroyRowCtx`, `teardownAllRowCtxs`) — not to the list, which
+   *     outlives the row;
+   *   - the static strings become Text nodes the row owns (keyMap), so moves
+   *     and removal see real nodes. An array row is inserted without
+   *     registering its nodes on the list (`renderElement`'s skipRegistration),
+   *     like a wrapped row's nodes, which live on the wrapper.
+   */
+  private buildNativeRow(
+    item: T,
+    idx: number | MergedCell,
+    bodyCtx: ComponentLike,
+  ): GenericReturnType {
+    pushParentContext(bodyCtx);
+    let row: GenericReturnType;
+    try {
+      row = this.ItemComponent(item, idx, bodyCtx as unknown as Component<any>);
+    } finally {
+      popParentContext();
+    }
+    if (isArray(row)) {
+      const api = this.api;
+      for (let i = 0; i < row.length; i++) {
+        const part: unknown = row[i];
+        if (typeof part === 'string') row[i] = api.text(part);
+      }
+    }
+    return row;
   }
 
   // Construct a NEW row for `key`/`item` at `index`, register its maps + marker,
@@ -1187,10 +1311,15 @@ export class BasicListComponent<T extends { id: number }> {
     if (this.hasIndex) {
       const indexFormula = formula(
         () => {
-          if (isPrimitive(item)) {
+          if (isPrimitive(item) && !this.primitiveByValue) {
             return index;
           }
-          const values = this.tag.value as T[];
+          // The tag holds the RAW iterable (a Set / forEach-able / Symbol.iterator
+          // object as well as an array): locate the item in its normalized rows.
+          const rawValues = this.tag.value as unknown;
+          const values = (
+            Array.isArray(rawValues) ? rawValues : normalizeIterableValue<T>(rawValues)
+          ) as T[];
           const itemIndex = values.indexOf(item);
           if (itemIndex === -1) {
             return values.findIndex((value: T, i) => {
@@ -1232,7 +1361,7 @@ export class BasicListComponent<T extends { id: number }> {
       const parent = api.parent(targetNode)!;
       api.insert(parent, marker, targetNode);
       if (row !== undefined && row !== null) {
-        renderElement(api, self, parent, row, targetNode);
+        renderElement(api, self, parent, row, targetNode, EMBER_NATIVE && isArray(row));
       }
     } else {
       this._moveSet.add(key);
@@ -1393,10 +1522,15 @@ export class BasicListComponent<T extends { id: number }> {
         if (this.hasIndex) {
           const indexFormula = formula(
             () => {
-              if (isPrimitive(item)) {
+              if (isPrimitive(item) && !this.primitiveByValue) {
                 return index;
               }
-              const values = this.tag.value as T[];
+              // The tag holds the RAW iterable (a Set / forEach-able / Symbol.iterator
+              // object as well as an array): locate the item in its normalized rows.
+              const rawValues = this.tag.value as unknown;
+              const values = (
+                Array.isArray(rawValues) ? rawValues : normalizeIterableValue<T>(rawValues)
+              ) as T[];
               const itemIndex = values.indexOf(item);
               if (itemIndex === -1) {
                 return values.findIndex((value: T, i) => {
@@ -1448,7 +1582,7 @@ export class BasicListComponent<T extends { id: number }> {
           // (e.g., primitive-key rows where every shift invalidates
           // every key and triggers a mid-sync teardown).
           if (row !== undefined && row !== null) {
-            renderElement(api, self, parent, row, targetNode);
+            renderElement(api, self, parent, row, targetNode, EMBER_NATIVE && isArray(row));
           }
         } else {
           moveSet.add(key);
@@ -1563,7 +1697,7 @@ export class BasicListComponent<T extends { id: number }> {
           api.insert(moveParent, marker, anchor);
           // Skip renderElement if ItemComponent produced no output.
           if (row !== undefined && row !== null) {
-            renderElement(api, self, moveParent, row, anchor);
+            renderElement(api, self, moveParent, row, anchor, EMBER_NATIVE && isArray(row));
           }
         } else {
           this.relocateItem(marker, anchor, moveParent);
@@ -1575,6 +1709,37 @@ export class BasicListComponent<T extends { id: number }> {
       this.isFirstRender = false;
     }
   }
+}
+
+/**
+ * The Text nodes of `parent` that sit OUTSIDE a list's markers, as
+ * `[before topMarker, after bottomMarker]`, or `null` when any other node (an
+ * element, a comment — e.g. another block's anchor) lives there, or the markers
+ * are not both children of `parent`.
+ *
+ * A list's bulk clear (`clearChildren(parent)`) is only correct when nothing
+ * but the list lives in `parent`. Static text around the list is the exception
+ * worth keeping: Glimmer keeps template whitespace (the Ember native build does
+ * too), so `<tbody>\n  {{#each}}…{{/each}}\n</tbody>` puts a Text node on each
+ * side of the markers. Those nodes can be put back after the clear — the same
+ * node objects, so a bound text node keeps its binding.
+ */
+function textOutsideMarkers(
+  parent: Node,
+  topMarker: Node,
+  bottomMarker: Node,
+): [Node[], Node[]] | null {
+  const before: Node[] = [];
+  for (let node = parent.firstChild; node !== topMarker; node = node.nextSibling) {
+    if (node === null || node.nodeType !== 3 /* TEXT_NODE */) return null;
+    before.push(node);
+  }
+  const after: Node[] = [];
+  for (let node = bottomMarker.nextSibling; node !== null; node = node.nextSibling) {
+    if (node.nodeType !== 3 /* TEXT_NODE */) return null;
+    after.push(node);
+  }
+  return [before, after];
 }
 
 export class SyncListComponent<
@@ -1640,10 +1805,18 @@ export class SyncListComponent<
     const { keyMap, bottomMarker, topMarker, indexMap, indexFormulaMap, api } =
       this;
     const parent = api.parent(bottomMarker);
+    // The bulk path needs the list to own its parent: the markers are its
+    // first and last children, or only Text nodes sit outside them (put back
+    // after the clear, see `textOutsideMarkers`).
+    const outerText =
+      parent &&
+      (parent.firstChild !== topMarker || parent.lastChild !== bottomMarker)
+        ? textOutsideMarkers(parent, topMarker, bottomMarker)
+        : null;
     if (
       parent &&
-      parent.lastChild === bottomMarker &&
-      parent.firstChild === topMarker
+      (outerText !== null ||
+        (parent.firstChild === topMarker && parent.lastChild === bottomMarker))
     ) {
       // Detach CHILD so item destructors skip parent-sibling deletes.
       this.detachTreeChildren();
@@ -1667,9 +1840,10 @@ export class SyncListComponent<
       }
       // O(n^2) FIX: bulk-clear the parent's DOM (innerHTML='' is O(1)) BEFORE
       // running the per-row CONTENT destructors below. The guard above proves
-      // this list owns the entire parent (its markers are first/last child), so
-      // a bulk clear is safe and removes every row in one reflow. The per-row
-      // `destroyElementSync(value, skipDom=true)` cascade below still runs the
+      // this list owns the entire parent (only static text sits outside its
+      // markers, and is put back), so a bulk clear is safe and removes every
+      // row in one reflow. The per-row `destroyElementSync(value, skipDom=true)`
+      // cascade below still runs the
       // reactive cleanup (registered destructors, cell/formula `.destroy()`),
       // but each row's top node is a raw <tr>/element passed to
       // `api.destroy(node)` -> `node.remove()`. When the parent still held all
@@ -1679,8 +1853,14 @@ export class SyncListComponent<
       // already emptied, those `.remove()` calls see `parentNode === null` and
       // are O(1) no-ops, collapsing teardown to linear.
       this.api.clearChildren(parent);
+      if (outerText !== null) {
+        for (const node of outerText[0]) this.api.insert(parent, node);
+      }
       this.api.insert(parent, topMarker);
       this.api.insert(parent, bottomMarker);
+      if (outerText !== null) {
+        for (const node of outerText[1]) this.api.insert(parent, node);
+      }
       for (const value of keyMap.values()) {
         try {
           destroyElementSync(value as ComponentLike, true, this.api);
@@ -1907,7 +2087,17 @@ export class SyncListComponent<
         safeToCascade = true;
       }
     }
-    if (safeToCascade) {
+    if (EMBER_NATIVE && rowIsArray) {
+      // An unwrapped native row (`buildNativeRow`): its components and nested
+      // blocks are tree children of its rowCtx, already destroyed — with their
+      // DOM — by `destroyRowCtx` above. What is left is the row's own nodes.
+      const parts = row as Array<ComponentLike | Node>;
+      for (let i = 0; i < parts.length; i++) {
+        if (!isDestructionStarted(parts[i] as object)) {
+          destroyElementSync(parts[i], false, this.api);
+        }
+      }
+    } else if (safeToCascade) {
       destroyElementSync(row as ComponentLike, false, this.api);
     } else {
       // Shared/root row — scope DOM cleanup to this row's rendered nodes only.

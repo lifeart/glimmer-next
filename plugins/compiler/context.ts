@@ -208,6 +208,23 @@ export interface CompilerContext {
   /** Original source code */
   readonly source: string;
 
+  /**
+   * Ember loose-mode resolution (G11): `true` when the template is LOOSE
+   * (`CompileOptions.strictMode === false`) AND the host opted in with the
+   * EMBER_LOOSE_COMPONENTS flag. Free component / component-or-helper names
+   * are then resolved by name through the host.
+   */
+  readonly looseMode: boolean;
+
+  /**
+   * Ember strict-mode resolution (EMBER_LOOSE_COMPONENTS flag AND a template
+   * compiled with an explicit `strictMode: true` — Ember's runtime
+   * `template()`, `precompileTemplate(…, { strictMode: true })`): a free helper
+   * name that would be resolved BY NAME through the host is Glimmer's
+   * compile-time error instead ("… but that value was not in scope: name").
+   */
+  readonly strictMode: boolean;
+
   /** Optional filename for error messages */
   readonly filename?: string;
 
@@ -231,6 +248,14 @@ export interface CompilerContext {
    * distinct templates/instances from colliding even at the same index.
    */
   uniqueIdCounter: number;
+
+  /**
+   * Per-template helper call-site index (EMBER_NATIVE, G4): every
+   * `$_maybeHelper(ref, args, named, ctx, site)` gets its own `site`; the host
+   * keys per-call-site helper state on (ctx, site) — reset per compilation for
+   * the same reason as `uniqueIdCounter`.
+   */
+  helperSiteCounter: number;
 
   /**
    * Ground-truth flag: set to `true` by the {{#each}} serializer
@@ -264,6 +289,19 @@ export interface CompilerContext {
   usedSlots: boolean;
   /** `$fw` — set when splat-attributes emit the forwarded `$fw` tuple/spread. */
   usedFw: boolean;
+  /**
+   * `$s` (EMBER_SELF, G6: `const $s = $_self(this)`) — set when a `this` path
+   * head is emitted as the self alias.
+   */
+  usedSelf: boolean;
+  /**
+   * Ember loose-mode built-ins (G11): the free names among `array` / `hash` /
+   * `fn` / `unique-id` a LOOSE template lowers to gxt's own built-ins. Glimmer
+   * resolves them through the host resolver (which asserts when the owner
+   * registers a helper with the same name); the wrapper hands the names to the
+   * host (`$_looseBuiltins`). Always empty unless `looseMode`.
+   */
+  readonly looseBuiltins: Set<string>;
 
   /**
    * Ground-truth emission report (see emission-report.ts). The serializer
@@ -287,6 +325,14 @@ export interface CompilerContext {
    * and throw. Set/restored by visitAttributeValue.
    */
   inAttributeValue: boolean;
+
+  /**
+   * Transient flag: true while visiting the parts of a quoted attribute /
+   * named-arg value with interpolation (`data-x="{{foo}}"`, a ConcatStatement).
+   * Read only by the Ember loose-mode resolution (G11): a mustache there is a
+   * helper position, never a content-position `$_looseAppend`.
+   */
+  inAttributeConcat: boolean;
 
   /** Set of already-processed nodes (prevents double processing) */
   readonly seenNodes: Set<ASTv1.Node>;
@@ -351,6 +397,8 @@ export function createContext(
     errors: [],
     warnings: [],
     source,
+    looseMode: flags.EMBER_LOOSE_COMPONENTS === true && options.strictMode === false,
+    strictMode: flags.EMBER_LOOSE_COMPONENTS === true && options.strictMode === true,
     filename: options.filename,
     elementContext: {
       namespace: 'html',
@@ -360,12 +408,16 @@ export function createContext(
     letBlockCounter: 0,
     unboundCounter: 0,
     uniqueIdCounter: 0,
+    helperSiteCounter: 0,
     usedRecycle: false,
     usedArgsAlias: false,
     usedSlots: false,
     usedFw: false,
+    usedSelf: false,
+    looseBuiltins: new Set(),
     emissionReport: createEmissionReport(new Set(options.bindings ?? [])),
     inAttributeValue: false,
+    inAttributeConcat: false,
     seenNodes: new Set(),
     formatter,
     visitors: {
@@ -432,6 +484,21 @@ export function setSerializeChildFunction(
   fn: SerializeChildFn
 ): void {
   (ctx.visitors as VisitorRegistry).serializeChild = fn;
+}
+
+// Ember's built-in helpers (classic resolver BUILTIN_HELPERS) that a LOOSE
+// template lowers to gxt built-ins (`concat` / `get` reach the host by name).
+const LOOSE_RESOLVED_BUILTINS: ReadonlySet<string> = new Set(['array', 'fn', 'hash', 'unique-id']);
+
+/**
+ * Record a free (unshadowed) helper name the template lowers itself, when it is
+ * one Glimmer would resolve through the host in a loose template (see
+ * `CompilerContext.looseBuiltins`).
+ */
+export function recordLooseBuiltin(ctx: CompilerContext, name: string): void {
+  if (ctx.looseMode && LOOSE_RESOLVED_BUILTINS.has(name)) {
+    ctx.looseBuiltins.add(name);
+  }
 }
 
 /**

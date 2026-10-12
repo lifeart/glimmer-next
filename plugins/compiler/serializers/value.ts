@@ -6,6 +6,7 @@
  */
 
 import type { CompilerContext } from '../context';
+import { addError, recordLooseBuiltin } from '../context';
 import type { SerializedValue, SourceRange, PathValue } from '../types';
 import { SYMBOLS, INTERNAL_HELPERS, getBuiltInHelperSymbol } from './symbols';
 import {
@@ -18,7 +19,7 @@ import {
   shouldAccessCellValue,
   shouldSkipGetterWrapper,
 } from '../type-hints';
-import { escapeReservedBindingName } from '../utils/js-utils';
+import { escapeBindingName } from '../utils/js-utils';
 
 /**
  * When `rootName` refers to a block-param / let-binding whose name is a JS
@@ -36,9 +37,19 @@ function emitBindingRootName(
     binding &&
     (binding.kind === 'block-param' || binding.kind === 'let-binding')
   ) {
-    return escapeReservedBindingName(rootName);
+    // A `{{#let}}` binding renamed because it shadows a name its own value
+    // reads (BindingInfo.emitName) is referenced under that fresh name.
+    return binding.emitName ?? escapeBindingName(rootName, ctx.flags.EMBER_NATIVE);
   }
   return rootName;
+}
+
+/**
+ * The emitted JS root identifier of a template name (`emitBindingRootName`),
+ * exported for the element serializer's component-tag references.
+ */
+export function emittedRootName(ctx: CompilerContext, rootName: string): string {
+  return emitBindingRootName(ctx, rootName);
 }
 
 export interface BuildPathExpressionOptions {
@@ -233,6 +244,41 @@ function buildValueNoGetter(
 }
 
 /**
+ * EMBER_NATIVE argument convention (Ember native layer, G4/G9): every argument
+ * of a helper / modifier / curry call site is either a primitive LITERAL or a
+ * zero-arg THUNK (`() => expr`) — never an eagerly evaluated value. The host
+ * managers then unwrap EXACTLY (call a function argument once) instead of
+ * guessing with the arrow-function heuristic (`$_unwrapHelperArg`), which
+ * wrongly calls an arrow-function VALUE (e.g. the result of a nested
+ * `(fn …)` / user helper). Laziness is also what Glimmer does: a nested
+ * sub-expression is a reference read only when the consumer reads it, and a
+ * modifier's arguments are read by the modifier (inside its own tracking
+ * frame), not by the element-creation formula.
+ */
+export function buildNativeArg(
+  ctx: CompilerContext,
+  value: SerializedValue,
+  ctxName: string
+): JSExpression {
+  switch (value.kind) {
+    case 'literal':
+      return buildLiteral(value.value, value.sourceRange);
+    case 'path': {
+      const expr = buildPathExpression(ctx, value, false, ctxName);
+      // A statically folded path (type hints) is a literal — keep it one.
+      return expr.type === 'literal' ? expr : B.getter(expr, value.sourceRange);
+    }
+    case 'getter':
+      return B.getter(buildValueNoGetter(ctx, value.value, ctxName), value.sourceRange);
+    case 'spread':
+      return buildValue(ctx, value, ctxName);
+    default:
+      // helper / raw / concat: a sub-expression, evaluated when read.
+      return B.getter(buildValue(ctx, value, ctxName), value.sourceRange);
+  }
+}
+
+/**
  * Build a literal value.
  */
 function buildLiteral(
@@ -279,6 +325,18 @@ export function buildPathExpression(
   // $_maybeHelper for dynamic resolution via eval().
   if (!isKnown && ctx.flags.IS_GLIMMER_COMPAT_MODE) {
     if (ctx.flags.WITH_EMBER_INTEGRATION && !ctx.flags.WITH_EVAL_SUPPORT) {
+      // Ember native layer (EMBER_SELF / EMBER_PROPERTY_TAGS): the implicit
+      // head is the template's SELF (never a block render context).
+      if (ctx.flags.EMBER_SELF || ctx.flags.EMBER_PROPERTY_TAGS) {
+        const implicit = buildEmberMemberChain(
+          ctx,
+          B.runtimeRef(selfRootName(ctx), value.sourceRange),
+          expression.split('.').map((name) => ({ name })),
+          0,
+          value.sourceRange
+        );
+        return wrapInGetter ? B.reactiveGetter(implicit, value.sourceRange) : implicit;
+      }
       // Treat as this.expression — Ember's implicit this
       const thisPath = `${ctxName}.${expression}`;
       if (wrapInGetter) {
@@ -305,6 +363,16 @@ export function buildPathExpression(
   const staticLiteral = getStaticLiteralValue(ctx, value.expression, value.isArg);
   if (staticLiteral !== undefined) {
     return buildLiteral(staticLiteral, value.sourceRange);
+  }
+
+  // Ember native layer: `this` heads read the template self (G6 EMBER_SELF)
+  // and `this.*` / `@arg.*` member segments go through the property-tag tap
+  // (G8 EMBER_PROPERTY_TAGS).
+  if (ctx.flags.EMBER_SELF || ctx.flags.EMBER_PROPERTY_TAGS) {
+    const emberPath = buildEmberHeadPath(ctx, value);
+    if (emberPath !== null) {
+      return wrapInGetter ? B.reactiveGetter(emberPath, value.sourceRange) : emberPath;
+    }
   }
 
   // Ember-dialect {{#each}} row-item reactive tap.
@@ -488,7 +556,13 @@ function buildBlockParamCellTap(
 
   const head = segs[0].name;
   const binding = ctx.scopeTracker.resolve(head);
-  if (!binding || binding.kind !== 'block-param') return null;
+  if (!binding) return null;
+  // EMBER_PROPERTY_TAGS (G8): `{{#let}}` aliases are block params in Glimmer —
+  // their member reads are property reads too.
+  const tappable =
+    binding.kind === 'block-param' ||
+    (binding.kind === 'let-binding' && ctx.flags.EMBER_PROPERTY_TAGS === true);
+  if (!tappable) return null;
   // The {{#each}} index is a reactive Cell (read via `.value`), not a raw
   // value — never cellFor-tap it.
   if (binding.isEachIndex) return null;
@@ -504,17 +578,120 @@ function buildBlockParamCellTap(
 
   // $__cellFor($__cellFor(item, "v"), "x")
   let expr: JSExpression = B.runtimeRef(
-    escapeReservedBindingName(head),
+    binding.emitName ?? escapeBindingName(head, ctx.flags.EMBER_NATIVE),
     segs[0].range ?? value.rootRange ?? value.sourceRange
   );
+  // EMBER_NATIVE: the non-defining tap (never installs an own accessor that
+  // would shadow a host `@tracked` prototype accessor).
+  const tapSymbol =
+    ctx.flags.EMBER_NATIVE || ctx.flags.EMBER_PROPERTY_TAGS ? SYMBOLS.TAG_TAP : SYMBOLS.CELL_FOR;
   for (let i = 1; i < segs.length; i++) {
     expr = B.call(
-      SYMBOLS.CELL_FOR,
+      tapSymbol,
       [expr, B.string(segs[i].name, segs[i].range)],
       value.sourceRange
     );
   }
   return expr;
+}
+
+/**
+ * EMBER_SELF (G6): the emitted name of a `this` path head — the self alias `$s`
+ * (declared by the template wrapper as `const $s = $_self(this)`) under the
+ * flag, else `this`. Records the ground-truth `usedSelf` preamble flag.
+ */
+export function selfRootName(ctx: CompilerContext): string {
+  if (ctx.flags.EMBER_SELF) {
+    ctx.usedSelf = true;
+    return SYMBOLS.SELF_ALIAS;
+  }
+  return 'this';
+}
+
+/**
+ * EMBER_SELF (G6): rewrite a `this`-headed callee / tag string (`this.helper`,
+ * `this.foo.Bar`, `this["x"]`) to read the self alias. Any other string is
+ * returned unchanged; with the flag off the input is always returned as-is.
+ */
+export function selfHeadedName(ctx: CompilerContext, name: string): string {
+  if (!ctx.flags.EMBER_SELF) return name;
+  if (name === 'this') return selfRootName(ctx);
+  if (name.startsWith('this.') || name.startsWith('this[') || name.startsWith('this?.')) {
+    return selfRootName(ctx) + name.slice(4);
+  }
+  return name;
+}
+
+/**
+ * Build `segments[startIndex…]` as member reads of `root`: under
+ * EMBER_PROPERTY_TAGS each segment is the non-defining property-tag tap
+ * `$__tag(obj, "key")` (Glimmer `getProp`: consumes the property tag through the
+ * host `getProp` hook, returns the value; nullish-safe), otherwise a plain
+ * member read (optional from the second member on, like buildPathBase).
+ */
+function buildEmberMemberChain(
+  ctx: CompilerContext,
+  root: JSExpression,
+  segments: ReadonlyArray<{ name: string; range?: SourceRange }>,
+  startIndex: number,
+  sourceRange: SourceRange | undefined
+): JSExpression {
+  let expr = root;
+  for (let i = startIndex; i < segments.length; i++) {
+    const { name, range } = segments[i];
+    if (ctx.flags.EMBER_PROPERTY_TAGS) {
+      expr = B.call(SYMBOLS.TAG_TAP, [expr, B.string(name, range)], sourceRange);
+      continue;
+    }
+    const useOptional = i > startIndex;
+    if (!/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(name)) {
+      expr = B.computedMember(expr, B.string(name, range), undefined, useOptional);
+    } else {
+      expr = useOptional
+        ? B.optionalMember(expr, name, undefined, range)
+        : B.member(expr, name, undefined, range);
+    }
+  }
+  return expr;
+}
+
+/**
+ * Ember native layer: a path whose head is `this` (G6 self alias + G8 taps)
+ * or an `@arg` with member segments (G8 taps after the arg read — the arg
+ * itself is already reactive through gxt's args). Returns null for paths this
+ * does not own (block params, let-bindings, scope bindings, a bare `@arg`).
+ */
+function buildEmberHeadPath(ctx: CompilerContext, value: PathValue): JSExpression | null {
+  const expression = value.expression;
+  if (value.isArg) {
+    if (!ctx.flags.EMBER_PROPERTY_TAGS) return null;
+    const segs = value.parts && value.parts.length > 0
+      ? value.parts.map((p) => ({ name: p.name, range: p.range }))
+      : null;
+    if (segs === null || segs.length < 2) return null;
+    ctx.usedArgsAlias = true;
+    const argName = segs[0].name;
+    const alias = B.runtimeRef(SYMBOLS.ARGS_ALIAS, value.rootRange ?? value.sourceRange);
+    const argRead = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(argName)
+      ? B.member(alias, argName, undefined, segs[0].range)
+      : B.computedMember(alias, B.string(argName, segs[0].range), undefined, false);
+    return buildEmberMemberChain(ctx, argRead, segs, 1, value.sourceRange);
+  }
+  const isThis =
+    expression === 'this' ||
+    expression.startsWith('this.') ||
+    expression.startsWith('this?.') ||
+    expression.startsWith('this[');
+  if (!isThis) return null;
+  const segs = getPathSegments(value);
+  if (segs === null || segs[0].name !== 'this' || segs.some((seg) => seg.name.length === 0)) {
+    // A shape the segment builder does not own (bracket access): the plain
+    // path, with the head read from the self alias.
+    if (!ctx.flags.EMBER_SELF) return null;
+    return B.runtimeRef(selfHeadedName(ctx, toSafeJSPath(expression)), value.sourceRange);
+  }
+  const root = B.runtimeRef(selfRootName(ctx), segs[0].range ?? value.rootRange ?? value.sourceRange);
+  return buildEmberMemberChain(ctx, root, segs, 1, value.sourceRange);
 }
 
 /**
@@ -598,6 +775,63 @@ function buildHelper(
     const innerExpr = inner ? buildValue(ctx, inner, ctxName) : B.string('', sourceRange);
     return B.call(SYMBOLS.HTML, [innerExpr, B.id(ctxName)], sourceRange);
   }
+  // Ember `{{outlet}}` marker (EMBER_OUTLET, G3): `$_outlet(ctx)` renders the
+  // host outlet component with the enclosing render context (`ctxName` — `this`
+  // at template level, the block context inside a block) as its tree parent.
+  if (name === INTERNAL_HELPERS.OUTLET) {
+    return B.call(SYMBOLS.OUTLET, [B.id(ctxName)], sourceRange);
+  }
+  // Ember loose-mode ambiguous append (EMBER_LOOSE_COMPONENTS, G11):
+  // `$_looseAppend("name", [args], {named}, ctx, site, optional)` with the
+  // native literal-or-thunk argument convention (like `$_maybeHelper`) and the
+  // call site's helper-site index (a helper resolution keys its instance on
+  // (ctx, site)). positional[0] / [1] are the name and `optional` literals.
+  if (name === INTERNAL_HELPERS.LOOSE_APPEND) {
+    const [nameValue, optionalValue, ...args] = positional;
+    const looseName = nameValue && nameValue.kind === 'literal' ? String(nameValue.value) : '';
+    const optional = optionalValue !== undefined && optionalValue.kind === 'literal' && optionalValue.value === true;
+    const posArgs = args.map(arg => buildNativeArg(ctx, arg, ctxName));
+    const namedProps = [];
+    for (const [key, val] of named) {
+      namedProps.push(B.prop(key, buildNativeArg(ctx, val, ctxName), false, val.sourceRange));
+    }
+    return B.call(SYMBOLS.LOOSE_APPEND, [
+      B.string(looseName, pathRange),
+      B.array(posArgs),
+      namedProps.length > 0 ? B.object(namedProps) : B.emptyObject(),
+      B.id(ctxName),
+      B.num(ctx.helperSiteCounter++),
+      B.bool(optional),
+    ], sourceRange);
+  }
+  // A trusting `style` attribute value (EMBER_NATIVE): `$_trustAttr(value)`,
+  // read in place — the call already runs inside the attribute's getter.
+  if (name === INTERNAL_HELPERS.TRUSTED_ATTR) {
+    const value = positional[0];
+    const valueExpr =
+      value === undefined
+        ? B.nil()
+        : value.kind === 'path'
+          ? buildPathExpression(ctx, value, false, ctxName)
+          : value.kind === 'getter'
+            ? buildValueNoGetter(ctx, value.value, ctxName)
+            : buildValue(ctx, value, ctxName);
+    return B.call(SYMBOLS.TRUST_ATTR, [valueExpr], sourceRange);
+  }
+  // `{{#each-in}}` iteration source (EMBER_NATIVE, G5): `$__eachIn(obj)`.
+  if (name === INTERNAL_HELPERS.EACH_IN) {
+    const source = positional[0];
+    // Read in place: the call already runs inside the each's source getter.
+    const sourceExpr =
+      source === undefined
+        ? B.nil()
+        : source.kind === 'path'
+          ? buildPathExpression(ctx, source, false, ctxName)
+          : source.kind === 'getter'
+            ? buildValueNoGetter(ctx, source.value, ctxName)
+            : buildValue(ctx, source, ctxName);
+    return B.call(SYMBOLS.EACH_IN, [sourceExpr], sourceRange);
+  }
   if (name === INTERNAL_HELPERS.ELEMENT_HELPER) {
     const tagValue = positional[0] ?? { kind: 'literal', value: 'div' };
     const tagExpr = buildValue(ctx, tagValue, ctxName);
@@ -626,6 +860,9 @@ function buildHelper(
     resolvedName = needsBracket
       ? `${SYMBOLS.ARGS_ALIAS}["${argName}"]`
       : `${SYMBOLS.ARGS_ALIAS}.${argName}`;
+  } else {
+    // EMBER_SELF (G6): a `this.helper` callee reads the template self.
+    resolvedName = selfHeadedName(ctx, name);
   }
 
   // Check if it's a known binding (component/helper from scope)
@@ -639,6 +876,9 @@ function buildHelper(
     name.startsWith('this[') ||
     name.startsWith('$_') ||
     ctx.scopeTracker.hasBinding(rootName);
+  if (!isKnown) {
+    recordLooseBuiltin(ctx, name);
+  }
 
   // Compat-mode `{{unique-id}}` / `(unique-id)`: emit a stable per-(context,
   // call-site) id via the $_uid runtime helper instead of routing through
@@ -670,8 +910,10 @@ function buildHelper(
         // unless(cond, true, false) -> if(cond, false, true)
         transformedPositional = [positional[0], positional[2], positional[1]];
       } else {
-        // unless(cond, true) -> if(cond, "", true)
-        transformedPositional = [positional[0], { kind: 'literal', value: '' }, positional[1]];
+        // unless(cond, true) -> if(cond, "", true). Ember (EMBER_NATIVE): the
+        // missing branch is `undefined`, like the inline `if` without an inverse.
+        const missing = ctx.flags.EMBER_NATIVE === true ? undefined : '';
+        transformedPositional = [positional[0], { kind: 'literal', value: missing }, positional[1]];
       }
     } else {
       transformedPositional = positional;
@@ -743,8 +985,16 @@ function buildSpecialHelper(
   sourceRange?: SourceRange,
   pathRange?: SourceRange
 ): JSExpression {
-  const posArgs = positional.map(arg => buildValue(ctx, arg, ctxName));
   const callee = pathRange ? B.id(name, pathRange, 'PathExpression', name) : name;
+
+  // Ember native layer (G9): every curry argument — the definition included —
+  // follows the literal-or-thunk convention; the runtime builds a curried
+  // value whose arguments stay lazy until the curried value is invoked.
+  if (ctx.flags.EMBER_NATIVE) {
+    return buildNativeCurryCall(ctx, callee, positional, named, ctxName, sourceRange);
+  }
+
+  const posArgs = positional.map(arg => buildValue(ctx, arg, ctxName));
 
   // In compat mode, wrap $_componentHelper hash values in getter functions
   // for reactivity. This preserves reactivity so curried component args
@@ -757,6 +1007,32 @@ function buildSpecialHelper(
 
   const namedObj = buildNamedArgsObject(ctx, named, ctxName);
   return B.call(callee, [B.array(posArgs), namedObj], sourceRange);
+}
+
+/**
+ * Ember native layer (G9): `$_componentHelper` / `$_helperHelper` /
+ * `$_modifierHelper([definition, ...positional], {named})` with every argument
+ * — the definition included — in the literal-or-thunk convention
+ * (buildNativeArg). The runtime (EMBER_NATIVE) returns a curried value.
+ */
+function buildNativeCurryCall(
+  ctx: CompilerContext,
+  callee: string | JSExpression,
+  positional: readonly SerializedValue[],
+  named: ReadonlyMap<string, SerializedValue>,
+  ctxName: string,
+  sourceRange?: SourceRange
+): JSExpression {
+  const posArgs = positional.map(arg => buildNativeArg(ctx, arg, ctxName));
+  const props = [];
+  for (const [key, val] of named) {
+    props.push(B.prop(key, buildNativeArg(ctx, val, ctxName), false, val.sourceRange));
+  }
+  const namedObj = props.length > 0 ? B.object(props) : B.emptyObject();
+  // The render context (3rd argument): the curried value keeps it so a
+  // curried HELPER rendered without arguments (`{{helper "name"}}`, `{{h}}`)
+  // reaches the host helper manager with its owner (a by-name definition).
+  return B.call(callee, [B.array(posArgs), namedObj, B.id(ctxName)], sourceRange);
 }
 
 /**
@@ -777,12 +1053,15 @@ function buildMaybeHelper(
   resolvedRef?: string,
   nameRange?: SourceRange
 ): JSExpression {
-  const posArgs = positional.map(arg => buildValue(ctx, arg, ctxName));
+  // Ember native layer (G4): literal-or-thunk arguments (buildNativeArg).
+  const native = ctx.flags.EMBER_NATIVE === true;
+  const buildArg = native ? buildNativeArg : buildValue;
+  const posArgs = positional.map(arg => buildArg(ctx, arg, ctxName));
 
   // Build named args
   const namedProps = [];
   for (const [key, val] of named) {
-    namedProps.push(B.prop(key, buildValue(ctx, val, ctxName), false, val.sourceRange));
+    namedProps.push(B.prop(key, buildArg(ctx, val, ctxName), false, val.sourceRange));
   }
 
   // For unknown bindings, context is passed directly as last arg
@@ -797,6 +1076,35 @@ function buildMaybeHelper(
     : B.string(name, nameRange);
   if (!resolvedRef) {
     ctx.emissionReport.maybeHelperNames.add(name);
+    if (ctx.strictMode) {
+      // Glimmer strict mode: no resolver — a free name is not in scope.
+      addError(
+        ctx,
+        `Attempted to resolve a helper in a strict mode template, but that value was not in scope: ${name}`,
+        'E002',
+        nameRange ?? sourceRange
+      );
+    }
+  }
+
+  // Ember native layer (G4): one uniform 5-argument shape for known AND
+  // unknown helpers — `$_maybeHelper(ref, [args], {named}, ctx, site)`. `ctx`
+  // is the enclosing render context (the host reads its owner from it; a
+  // per-call-site helper instance lives — and is destroyed — with it) and
+  // `site` the per-template call-site index: (ctx, site) identifies one call
+  // site INSTANCE, exactly the lifetime of a Glimmer helper reference (one
+  // helper per call site per block instance, destroyed with the block). Like
+  // `$_uid(ctx, N)`, a per-compilation index is enough — the ctx key keeps
+  // templates / instances apart.
+  if (native) {
+    const namedObj = namedProps.length > 0 ? B.object(namedProps) : B.emptyObject();
+    return B.call(SYMBOLS.MAYBE_HELPER, [
+      helperRef,
+      B.array(posArgs),
+      namedObj,
+      B.id(ctxName),
+      B.num(ctx.helperSiteCounter++),
+    ], sourceRange);
   }
 
   if (resolvedRef) {
@@ -1117,6 +1425,9 @@ function buildBuiltInHelper(
     symbol === SYMBOLS.HELPER_HELPER ||
     symbol === SYMBOLS.MODIFIER_HELPER
   ) {
+    if (ctx.flags.EMBER_NATIVE) {
+      return buildNativeCurryCall(ctx, helperId, positional, named, ctxName, sourceRange);
+    }
     const posArgs = positional.map(arg => buildValue(ctx, arg, ctxName));
     const namedObj = buildNamedArgsObject(ctx, named, ctxName);
     return B.call(helperId, [B.array(posArgs), namedObj], sourceRange);

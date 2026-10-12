@@ -66,6 +66,24 @@ export const cellsMap = new WeakMap<
   Map<string | number | symbol, Cell<unknown>>
 >();
 
+/**
+ * Value held by a per-(obj, key) cell that a HOST created as a pure tag via
+ * `tagFor` (src/core/tags.ts) before anything stored a value in it. gxt's own
+ * readers of the shared `cellsMap` store (`tracked`, `rawCellFor`,
+ * `lazyRawCellFor`) treat it as "not initialized yet" and seed the SAME cell
+ * in place (never replace it — the host may already be subscribed to it).
+ * Never observable when no host calls `tagFor`.
+ */
+export const UNSET: unique symbol = Symbol('gxt.tag.unset') as never;
+
+// True only for a plain host-tag cell still holding `UNSET`. Reads the raw
+// slot, NOT `_value`: a `LazyCell`'s `_value` getter evaluates its initializer,
+// and these checks run on re-entrant paths (a host accessor reached from that
+// very initializer calling `rawCellFor`) — evaluating there recurses forever.
+function isUnsetCell(cell: Cell<unknown>): boolean {
+  return (cell as unknown as { __value: unknown }).__value === UNSET;
+}
+
 export function getCells() {
   return Array.from(DEBUG_CELLS);
 }
@@ -120,7 +138,18 @@ export function tracked(
         keys.set(key, value);
         return value.value;
       } else {
-        return keys.get(key)!.value;
+        const existing = keys.get(key)!;
+        const current = existing.value;
+        if (current !== UNSET) {
+          return current;
+        }
+        // A host `tagFor(this, key)` created the shared cell before the first
+        // read: initialize it in place (no revision bump — initialization is
+        // not a change), keeping the identity the host may be subscribed to.
+        existing._value = hasInitializer
+          ? descriptor!.initializer?.call(this)
+          : descriptor?.value;
+        return existing._value;
       }
     },
     set(newValue: any) {
@@ -761,6 +790,10 @@ export function lazyRawCellFor<T extends object, K extends keyof T>(
   } else {
     const existing = refs.get(key);
     if (existing !== undefined) {
+      if (isUnsetCell(existing)) {
+        // Host `tagFor` cell (src/core/tags.ts): seed it in place.
+        existing._value = typeof init === 'function' ? init() : obj[key];
+      }
       return existing as Cell<T[K]>;
     }
   }
@@ -785,6 +818,12 @@ export function rawCellFor<T extends object, K extends keyof T>(
     // and cellFor is on the per-property hot path during template setup.
     const existing = refs.get(key);
     if (existing !== undefined) {
+      if (isUnsetCell(existing)) {
+        // Host `tagFor` cell (src/core/tags.ts): seed it in place. For a host
+        // accessor (Ember @tracked) the `obj[key]` read initializes this same
+        // cell through the host's storage and returns the value.
+        existing._value = obj[key];
+      }
       return existing as Cell<T[K]>;
     }
   }

@@ -140,7 +140,12 @@ export function compile(
   try {
     // Parse the template
     const ast = preprocess(template, {
-      mode: 'codemod',
+      // Ember native layer: Glimmer's own parse (Handlebars standalone-line and
+      // `~` whitespace control, HTML entities decoded by the tokenizer), so the
+      // text nodes match Glimmer's — EMBER_NATIVE keeps every whitespace text
+      // node (visitors/text.ts dropsWhitespaceText). Otherwise the historic
+      // source-preserving parse.
+      mode: ctx.flags.EMBER_NATIVE === true ? 'precompile' : 'codemod',
       meta: {
         moduleName: options.filename,
       },
@@ -201,6 +206,8 @@ export function compile(
       usedArgsAlias: ctx.usedArgsAlias,
       usedSlots: ctx.usedSlots,
       usedFw: ctx.usedFw,
+      usedSelf: ctx.usedSelf,
+      looseBuiltins: Array.from(ctx.looseBuiltins).sort(),
       usedBlockParams: ctx.scopeTracker.usedBlockParams,
       emittedSymbols: Array.from(ctx.emissionReport.emittedSymbols),
       maybeHelperNames: Array.from(ctx.emissionReport.maybeHelperNames),
@@ -343,6 +350,8 @@ export function compile(
       usedArgsAlias: ctx.usedArgsAlias,
       usedSlots: ctx.usedSlots,
       usedFw: ctx.usedFw,
+      usedSelf: ctx.usedSelf,
+      looseBuiltins: Array.from(ctx.looseBuiltins).sort(),
       usedBlockParams: ctx.scopeTracker.usedBlockParams,
       emittedSymbols: Array.from(ctx.emissionReport.emittedSymbols),
       maybeHelperNames: Array.from(ctx.emissionReport.maybeHelperNames),

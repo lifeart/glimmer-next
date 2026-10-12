@@ -18,9 +18,9 @@ import type {
 } from '../types';
 import { isSerializedValue, isRuntimeTag } from '../types';
 import { SYMBOLS, EVENT_TYPE, INTERNAL_HELPERS } from './symbols';
-import { buildValue, buildPathExpression } from './value';
+import { buildValue, buildPathExpression, buildNativeArg, selfHeadedName, emittedRootName } from './value';
 import { B, serializeJS, type JSExpression, type JSProperty } from '../builder';
-import { escapeReservedBindingName } from '../utils/js-utils';
+import { escapeBindingName } from '../utils/js-utils';
 
 // Forward declarations - set from index.ts to avoid circular dependency
 let buildChildrenExprs: (ctx: CompilerContext, children: readonly HBSChild[], ctxName: string) => JSExpression[];
@@ -191,7 +191,10 @@ export function buildComponent(
   // re-thread them across a component swap). Static component invocations
   // ($_c) keep the in-args merge. The tag test mirrors buildComponentCall's
   // own `$_dc` routing rule (`typeof tag === 'string' && tag.includes('.')`).
-  const isDynamicComponent = typeof node.tag === 'string' && node.tag.includes('.');
+  const isDynamicComponent =
+    node.byName !== true &&
+    typeof node.tag === 'string' &&
+    (node.tag.includes('.') || (ctx.flags.EMBER_NATIVE === true && node.tag.startsWith('@')));
   const dynamicSplat = isDynamicComponent && hasSplatAttrs;
 
   // Separate @ args from regular attributes
@@ -220,13 +223,13 @@ export function buildComponent(
   if (node.selfClosing) {
     // Self-closing component - empty slots object
     const argsCall = buildComponentArgsExpr(ctx, args, B.emptyObject(), finalPropsExpr, ctxName);
-    return buildComponentCall(ctx, node.tag, argsCall, ctxName, useFormatted, node.sourceRange, node.tagRange, dynamicSplat);
+    return buildComponentCall(ctx, node.tag, argsCall, ctxName, useFormatted, node.sourceRange, node.tagRange, dynamicSplat, node.byName === true);
   }
 
   // Component with children/slots
   const slotsExpr = buildSlots(ctx, node);
   const argsCall = buildComponentArgsExpr(ctx, args, slotsExpr, finalPropsExpr, ctxName);
-  return buildComponentCall(ctx, node.tag, argsCall, ctxName, useFormatted, node.sourceRange, node.tagRange, dynamicSplat);
+  return buildComponentCall(ctx, node.tag, argsCall, ctxName, useFormatted, node.sourceRange, node.tagRange, dynamicSplat, node.byName === true);
 }
 
 /**
@@ -307,10 +310,25 @@ function buildComponentProps(
     // Emits free `$fw` references → the `const $fw = $_GET_FW(...)` preamble
     // local is required.
     ctx.usedFw = true;
+    // Ember native layer: Glimmer concatenates classes in SOURCE order, so a
+    // `class` written BEFORE `...attributes` on a component invocation
+    // (`<Qux class="bar" ...attributes />`) precedes the forwarded classes —
+    // the compat `__splatLocal__` marker lists what comes after the splat
+    // (`__class__` for a class). Other props keep the historic order.
+    const nativeClassFirst =
+      ctx.flags.EMBER_NATIVE === true && !classWrittenAfterSplat(properties);
+    const classTuples = nativeClassFirst ? properties.filter(([key]) => key === '') : [];
+    const propsHead: JSExpression[] =
+      classTuples.length > 0 ? [B.spread(buildTupleArray(ctx, classTuples, ctxName))] : [];
+    const propsTail =
+      classTuples.length > 0
+        ? buildTupleArray(ctx, properties.filter(([key]) => key !== ''), ctxName)
+        : propsExpr;
     const elements = [
       B.array([
+        ...propsHead,
         B.spread(B.computedMember(B.id(SYMBOLS.LOCAL_FW), B.num(0))),
-        B.spread(propsExpr),
+        B.spread(propsTail),
       ]),
       B.array([
         B.spread(B.computedMember(B.id(SYMBOLS.LOCAL_FW), B.num(1))),
@@ -326,6 +344,20 @@ function buildComponentProps(
 
   const elements = [propsExpr, attrsExpr, evtsExpr];
   return useFormatted ? B.formattedArray(elements, true) : B.array(elements);
+}
+
+/**
+ * True when the compat `__splatLocal__` marker (see visitors/element.ts
+ * `rewriteSplatLocalOverrides`) says a `class` is written AFTER `...attributes`.
+ */
+function classWrittenAfterSplat(properties: readonly PropertyTuple[]): boolean {
+  for (const [key, value] of properties) {
+    if (key !== '__splatLocal__') continue;
+    if (value && value.kind === 'literal' && typeof value.value === 'string') {
+      return value.value.split(',').includes('__class__');
+    }
+  }
+  return false;
 }
 
 /**
@@ -476,6 +508,30 @@ export function buildEventHandlerExpr(
       const modExpr = modExprValue
         ? buildValue(ctx, modExprValue, ctxName)
         : B.nil();
+      if (ctx.flags.EMBER_NATIVE) {
+        // Ember native layer: literal-or-thunk invocation arguments, a plain
+        // named object (thunk values) and the render context — the same shape
+        // as a static modifier (buildModifierExpr). The modifier expression
+        // itself stays eager: the element-creation formula tracks it, so a
+        // changed definition (e.g. `{{(if c (modifier x))}}`) re-creates it.
+        const nativeExtra = extraArgs.map(a => buildNativeArg(ctx, a, ctxName));
+        const nativeNamed: JSProperty[] = [];
+        for (const [key, val] of hv.named) {
+          nativeNamed.push(B.prop(key, buildNativeArg(ctx, val, ctxName), false, val.sourceRange));
+        }
+        const nativeCall = B.call(
+          SYMBOLS.MAYBE_MODIFIER,
+          [
+            modExpr,
+            B.id('$n'),
+            B.array(nativeExtra),
+            nativeNamed.length > 0 ? B.object(nativeNamed) : B.emptyObject(),
+            B.id(ctxName),
+          ],
+          hv.sourceRange,
+        );
+        return B.arrow(['$n'], nativeCall, hv.sourceRange);
+      }
       const extraExprs = extraArgs.map(a =>
         a.kind === 'path' ? buildPathExpression(ctx, a, false) : buildValue(ctx, a, ctxName)
       );
@@ -573,11 +629,23 @@ function buildModifierExpr(
     modName = needsBracket
       ? `${SYMBOLS.ARGS_ALIAS}["${argName}"]`
       : `${SYMBOLS.ARGS_ALIAS}.${argName}`;
+  } else {
+    // EMBER_SELF (G6): a `this.modifier` reference reads the template self.
+    modName = selfHeadedName(ctx, modName);
   }
+
+  // Ember native layer: literal-or-thunk arguments (buildNativeArg) — the host
+  // modifier manager reads them inside the modifier's own tracking frame, so
+  // the element-creation formula tracks nothing and an argument change updates
+  // the modifier (Glimmer `updateModifier`) instead of re-creating it.
+  const native = ctx.flags.EMBER_NATIVE === true;
 
   // Build positional args with source ranges preserved.
   // For direct modifier calls, paths should be plain references (not reactive getters).
   const positionalExprs = mod.positional.map(arg => {
+    if (native) {
+      return buildNativeArg(ctx, arg, ctxName);
+    }
     if (arg.kind === 'path') {
       return buildPathExpression(ctx, arg, false);
     }
@@ -587,7 +655,8 @@ function buildModifierExpr(
   // Build named args object
   const namedProps = [];
   for (const [key, val] of mod.named) {
-    namedProps.push(B.prop(key, buildValue(ctx, val, ctxName), false, val.sourceRange));
+    const valueExpr = native ? buildNativeArg(ctx, val, ctxName) : buildValue(ctx, val, ctxName);
+    namedProps.push(B.prop(key, valueExpr, false, val.sourceRange));
   }
 
   // Check if modifier name is a known binding
@@ -627,12 +696,18 @@ function buildModifierExpr(
       ? (typeof modCallee === 'string' ? B.id(modCallee) : modCallee)
       : B.string(mod.name, mod.pathRange);
 
-    const callExpr = B.call(SYMBOLS.MAYBE_MODIFIER, [
+    const callArgs: JSExpression[] = [
       modRef,
       B.id('$n'),
       B.array(positionalExprs),
       namedObj,
-    ], mod.sourceRange);
+    ];
+    if (native) {
+      // The enclosing render context: the host reads the owner and the
+      // interactivity of the render tree from it.
+      callArgs.push(B.id(ctxName));
+    }
+    const callExpr = B.call(SYMBOLS.MAYBE_MODIFIER, callArgs, mod.sourceRange);
     return B.arrow(['$n'], callExpr, mod.sourceRange);
   }
 
@@ -780,7 +855,7 @@ function buildSlots(
     const params = [
       sContext,
       ...blockParams.map((name, index) => {
-        const emitName = escapeReservedBindingName(name);
+        const emitName = escapeBindingName(name, ctx.flags.EMBER_NATIVE);
         const range = blockParamRanges[index];
         return range ? B.id(emitName, range) : emitName;
       }),
@@ -809,15 +884,26 @@ function buildComponentCall(
   // When true (dynamic component in splat context), emit the forwarded-props
   // tuple `$fw` as a dedicated 4th `$_dc` argument so the runtime can thread
   // the parent's `...attributes` into the resolved component.
-  emitForwardedProps = false
+  emitForwardedProps = false,
+  // Ember loose mode (G11): `tag` is a component NAME the host resolves.
+  byName = false
 ): JSExpression {
   // Handle RuntimeTag (namespace providers, dynamic components)
   if (isRuntimeTag(tag)) {
     return B.call(SYMBOLS.COMPONENT, [B.id(tag.symbol), argsExpr, B.id(ctxName)], sourceRange, formatted, 'ElementNode');
   }
 
+  // Ember loose mode (G11, EMBER_LOOSE_COMPONENTS): `$_c("foo-bar", …)` — the
+  // host component manager resolves the name through its registry.
+  if (byName) {
+    return B.call(SYMBOLS.COMPONENT, [B.stringSingle(tag, tagRange), argsExpr, B.id(ctxName)], sourceRange, formatted, 'ComponentNode');
+  }
+
   // Check for dynamic component (dotted path like context.V or this.Component)
-  const isDynamic = tag.includes('.');
+  // Ember native layer: an `@`-headed tag (`<@comp />`) is a dynamic
+  // component too (isComponentTag routes it here).
+  const isDynamic =
+    tag.includes('.') || (ctx.flags.EMBER_NATIVE === true && tag.startsWith('@'));
 
   if (isDynamic) {
     // Wrap in reactive getter for dynamic component paths
@@ -844,6 +930,16 @@ function buildComponentCall(
       dynamicTag = needsBracket
         ? `${SYMBOLS.ARGS_ALIAS}["${head}"]${rest}`
         : `${SYMBOLS.ARGS_ALIAS}.${head}${rest}`;
+    } else {
+      // EMBER_SELF (G6): `<this.foo.Bar />` reads the template self.
+      dynamicTag = selfHeadedName(ctx, dynamicTag);
+      // A renamed `{{#let}}` head (BindingInfo.emitName) is referenced under
+      // its declared name.
+      const head = dynamicTag.split(/[?.[]/)[0]!;
+      const emittedHead = emittedRootName(ctx, head);
+      if (emittedHead !== head && ctx.scopeTracker.resolve(head)?.emitName !== undefined) {
+        dynamicTag = emittedHead + dynamicTag.slice(head.length);
+      }
     }
     const tagRef = B.runtimeRef(dynamicTag, tagRange);
     const tagGetter = B.reactiveGetter(tagRef, tagRange);
@@ -879,7 +975,8 @@ function buildComponentCall(
 
   // Rewrite reserved words (e.g. `if`, `let`, `class`) to their safe alias
   // so template scope bindings that shadow GXT built-ins emit valid JS.
-  const safeTag = jsSafeBindingId(tag);
+  const renamed = ctx.scopeTracker.resolve(tag)?.emitName;
+  const safeTag = renamed ?? jsSafeBindingId(tag);
   return B.call(SYMBOLS.COMPONENT, [B.id(safeTag, tagRange, 'ElementNode'), argsExpr, B.id(ctxName)], sourceRange, formatted, 'ComponentNode');
 }
 

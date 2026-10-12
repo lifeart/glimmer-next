@@ -110,6 +110,32 @@ export const RECYCLE_IMPORT = '@lifeart/gxt/recycle';
 
 // The compiler-emitted recycle entry points. Auto-imported from RECYCLE_IMPORT
 // (not MAIN_IMPORT) and gated on actual key="@recycle" usage in the module.
+// Ember NATIVE-layer symbols (EMBER_NATIVE compile flag): the template-function
+// brand and the non-defining member tap. Deliberately NOT in SYMBOLS (the
+// always-on barrel auto-import) so compat / standalone output stays
+// byte-identical; the module assembler (plugins/test.ts) imports them from
+// MAIN_IMPORT only when the flag is on.
+export const NATIVE_SYMBOLS: readonly string[] = ['$_tpl', '$__tag', '$__eachIn', '$_trustAttr'];
+
+// Ember `{{outlet}}` keyword (EMBER_OUTLET compile flag, G3). Same rule as
+// NATIVE_SYMBOLS: outside the always-on barrel import (flag-off output stays
+// byte-identical); the module assembler imports it only under the flag.
+export const OUTLET_SYMBOLS: readonly string[] = ['$_outlet'];
+
+// Ember property tags (EMBER_PROPERTY_TAGS, G8): member taps use `$__tag`
+// (also a NATIVE_SYMBOLS member). Ember template self (EMBER_SELF, G6): the
+// wrapper preamble `const $s = $_self(this)`. Same rule as NATIVE_SYMBOLS.
+export const PROPERTY_TAG_SYMBOLS: readonly string[] = ['$__tag'];
+export const SELF_SYMBOLS: readonly string[] = ['$_self'];
+
+// Ember loose-mode resolution (EMBER_LOOSE_COMPONENTS, G11): the ambiguous
+// append `$_looseAppend`. Same rule as NATIVE_SYMBOLS (imported only under the
+// flag; flag-off output stays byte-identical).
+// The loose wrapper preamble `$_looseBuiltins(this, [names])` (see
+// template-wrapper.ts looseBuiltinsPreamble) is part of the same set.
+export const LOOSE_BUILTINS_SYMBOL = '$_looseBuiltins';
+export const LOOSE_SYMBOLS: readonly string[] = ['$_looseAppend', LOOSE_BUILTINS_SYMBOL];
+
 export const RECYCLE_SYMBOLS: readonly string[] = [
   SYMBOLS.EACH_RECYCLED,
   SYMBOLS.EACH_SYNC_RECYCLED,

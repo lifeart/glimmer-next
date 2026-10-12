@@ -10,14 +10,14 @@ import { addWarning } from '../context';
 import type { HBSControlExpression, HBSChild, HBSNode, SerializedValue } from '../types';
 import { isHBSControlExpression, isHBSNode, isSerializedValue } from '../types';
 import { SYMBOLS } from './symbols';
-import { buildValue } from './value';
+import { buildValue, buildPathExpression } from './value';
 import {
   extractStaticBlock,
   buildStaticBlockDefExpr,
   buildStaticBlockValueExprs,
 } from './static-block';
 import { B, serializeJS, type JSExpression, type JSStatement } from '../builder';
-import { escapeReservedBindingName } from '../utils/js-utils';
+import { escapeBindingName } from '../utils/js-utils';
 
 // Sentinel each-key that opts a block into row recycling. Mirrors RECYCLE_KEY
 // in src/core/control-flow/list-recycle.ts (no cross-boundary import: plugins
@@ -108,7 +108,19 @@ function buildYield(
   const slotName = control.key || 'default';
 
   // Build the params getter: () => [param1, param2, ...]
-  const paramIdentifiers = control.blockParams.map(p => B.id(p));
+  // Ember native layer: params are values built against the enclosing render
+  // context (helper calls → `$_maybeHelper(…, ctxName, site)`, block-param
+  // member reads → `$__tag` taps). A path is a plain read (the param getter is
+  // already lazy); every other value is built as usual.
+  const paramIdentifiers = control.nativeBlockParams
+    ? control.nativeBlockParams.map((p) =>
+        typeof p === 'string'
+          ? B.id(p)
+          : p.kind === 'path'
+            ? buildPathExpression(ctx, p, false, ctxName)
+            : buildValue(ctx, p, ctxName)
+      )
+    : control.blockParams.map(p => B.id(p));
   const paramsGetter = B.arrow([], B.array(paramIdentifiers));
 
   // $_slot("name", paramsGetter, $slots, ctx)
@@ -224,8 +236,12 @@ function buildEach(
   // Build condition (iterable) expression
   const conditionExpr = buildValue(ctx, control.condition, ctxName);
 
-  // Ensure we have proper block params
-  const paramNames = normalizeEachParams(control.blockParams);
+  // Ensure we have proper block params. `{{#each-in}}` (EMBER_NATIVE, G5):
+  // the row item is a `[key, value]` pair destructured into eachInParams.
+  const eachInParams = control.eachInParams;
+  const paramNames = eachInParams !== undefined
+    ? ['$__entry', '$index']
+    : normalizeEachParams(control.blockParams);
   const paramRanges = control.blockParamRanges ?? [];
 
   // Validate and normalize key
@@ -283,8 +299,15 @@ function buildEach(
       ? SYMBOLS.EACH_SYNC
       : SYMBOLS.EACH;
 
-  // Check for stable children
-  const hasStable = hasStableChildsForControlNode(control.children);
+  // Check for stable children (rendered without a per-row
+  // UnstableChildWrapper). Under EMBER_NATIVE that includes static text around
+  // one stable child — Glimmer whitespace, see hasStableChildAmidStaticText —
+  // except for recycled rows, whose runtime renders the body as emitted.
+  const hasStable =
+    hasStableChildsForControlNode(control.children) ||
+    (ctx.flags.EMBER_NATIVE === true &&
+      !isRecycled &&
+      hasStableChildAmidStaticText(control.children));
 
   // Detect at compile time whether the body actually reads `index`. When
   // false, we can let the runtime skip allocating a per-row reactive
@@ -295,7 +318,7 @@ function buildEach(
 
   // Build the callback body with index replacement
   // Pass all param names so they can be tracked as known bindings during serialization
-  const bodyExpr = buildEachBody(ctx, control.children, newCtxName, paramNames, hasStable, isRecycled);
+  const bodyExpr = buildEachBody(ctx, control.children, newCtxName, paramNames, hasStable, isRecycled, eachInParams);
 
   // Static-block fast path (RESEARCH_LIST_TRACKING_OPTIMIZATION.md §2.A1/§4):
   // when the body is a single qualifying inline element, ALSO emit a
@@ -306,7 +329,7 @@ function buildEach(
   // code byte-identical to not having the fast path. `key="@recycle"` rows
   // render against per-row state objects, not raw items — keep them on the
   // compiled-callback path.
-  const staticBlockParts = isRecycled ? null : extractStaticBlock(control);
+  const staticBlockParts = isRecycled || eachInParams !== undefined ? null : extractStaticBlock(control);
   let blockDefExpr: JSExpression | null = null;
   let blockValuesExpr: JSExpression | null = null;
   if (staticBlockParts !== null) {
@@ -326,12 +349,12 @@ function buildEach(
       // References to a reserved-word index param are emitted escaped, so the
       // index→`.value` rewrite must target the escaped name.
       valueExprs = valueExprs.map((expr) =>
-        replaceIndexRefsInExpr(expr, escapeReservedBindingName(indexParamName))
+        replaceIndexRefsInExpr(expr, escapeBindingName(indexParamName, ctx.flags.EMBER_NATIVE))
       );
     }
     blockDefExpr = buildStaticBlockDefExpr(staticBlockParts);
     blockValuesExpr = B.arrow(
-      [...paramNames.map(escapeReservedBindingName), newCtxName],
+      [...paramNames.map((name) => escapeBindingName(name, ctx.flags.EMBER_NATIVE)), newCtxName],
       B.array(valueExprs)
     );
   }
@@ -343,7 +366,11 @@ function buildEach(
   // rename transparent. Non-reserved names pass through unchanged.
   const callbackParams = [
     ...paramNames.map((name, index) => {
-      const emitName = escapeReservedBindingName(name);
+      if (index === 0 && eachInParams !== undefined && eachInParams.length > 0) {
+        // `{{#each-in}}`: destructure the `[key, value]` pair.
+        return `[${eachInParams.map((param) => escapeBindingName(param, ctx.flags.EMBER_NATIVE)).join(', ')}]`;
+      }
+      const emitName = escapeBindingName(name, ctx.flags.EMBER_NATIVE);
       const range = paramRanges[index];
       return range ? B.id(emitName, range) : emitName;
     }),
@@ -440,7 +467,8 @@ function buildEachBody(
   ctxName: string,
   paramNames: string[],
   hasStable: boolean,
-  isRecycled = false
+  isRecycled = false,
+  eachInParams?: readonly string[]
 ): JSExpression {
   const indexParam = paramNames[1] ?? '$index';
   const usesIndex = childrenUseIndex(children, indexParam);
@@ -448,6 +476,10 @@ function buildEachBody(
   // Add block params in a dedicated scope frame so nested each/if blocks with
   // matching block-param names shadow rather than clobber outer bindings.
   ctx.scopeTracker.enterScope('control-block');
+  // `{{#each-in}}` key / value params: plain values destructured from the pair.
+  for (const param of eachInParams ?? []) {
+    ctx.scopeTracker.addBinding(param, { kind: 'block-param', name: param });
+  }
   paramNames.forEach((param, i) => {
     ctx.scopeTracker.addBinding(param, {
       kind: 'block-param',
@@ -469,7 +501,7 @@ function buildEachBody(
   ctx.scopeTracker.exitScope();
 
   const rewrittenExprs = usesIndex
-    ? childExprs.map((expr) => replaceIndexRefsInExpr(expr, escapeReservedBindingName(indexParam)))
+    ? childExprs.map((expr) => replaceIndexRefsInExpr(expr, escapeBindingName(indexParam, ctx.flags.EMBER_NATIVE)))
     : childExprs;
 
   const childArrayExpr = ctx.formatter.options.enabled && rewrittenExprs.length > 0
@@ -730,7 +762,15 @@ function buildIf(
   // IMPORTANT: Always use `this` (not ctxName) for this.X paths because `this`
   // refers to the component instance, while ctxName may refer to a nested
   // block context (e.g., inside {{#each}}) that doesn't have the property.
-  if (ctx.flags.IS_GLIMMER_COMPAT_MODE && ctx.flags.WITH_EMBER_INTEGRATION && control.condition.kind === 'path') {
+  // Not in the Ember native layer (EMBER_NATIVE): there is no compat bridge
+  // hook to consult, and the plain getter would bypass the self alias (G6) and
+  // the property-tag tap (G8) the condition path already carries.
+  if (
+    ctx.flags.IS_GLIMMER_COMPAT_MODE &&
+    ctx.flags.WITH_EMBER_INTEGRATION &&
+    !ctx.flags.EMBER_NATIVE &&
+    control.condition.kind === 'path'
+  ) {
     const expr = control.condition.expression;
     const thisMatch = expr.match(/^this\.([a-zA-Z_$][a-zA-Z0-9_$]*)$/);
     if (thisMatch) {
@@ -839,24 +879,39 @@ function buildLet(
 ): JSExpression {
   const bindings = control.letBindings ?? [];
 
-  // Collect non-primitive binding names (these are getters that need calling).
-  // Uses the ESCAPED emit name: reserved-word `{{#let … as |class|}}` bindings
-  // emit `let __bp_class = …` and references emit `__bp_class`, so the
-  // getter-ref → call rewrite (replaceLetGetterRefsInExpr) must match the
-  // escaped identifier. Non-reserved names are unchanged.
-  const getterNames = new Set<string>();
-  for (const binding of bindings) {
-    if (!binding.isPrimitive) {
-      getterNames.add(escapeReservedBindingName(binding.name));
-    }
-  }
+  // Build the value expressions first (in binding order — buildValue advances
+  // per-template counters such as the helper call-site index).
+  const valueExprs = bindings.map((binding) => buildValue(ctx, binding.value, ctxName));
 
-  // Build variable declarations. Reserved-word binding names (`if`, `class`, …)
-  // are escaped to a safe identifier at the declaration site; references emit
-  // the same escaped name (serializers/value.ts emitBindingRootName).
-  const varDecls: JSStatement[] = bindings.map((binding) => {
-    const emitName = escapeReservedBindingName(binding.name);
-    const valueExpr = buildValue(ctx, binding.value, ctxName);
+  // Emit names. Reserved-word binding names (`if`, `class`, …) are escaped to
+  // a safe identifier at the declaration site; references emit the same name
+  // (serializers/value.ts emitBindingRootName). Glimmer evaluates every let
+  // value in the OUTER scope, but a JS `let` is in scope (TDZ) for its whole
+  // block: a binding whose name occurs in one of this let's value expressions —
+  // `{{#let (hash a=1) as |hash|}}` with a lexical `hash` helper (the getter
+  // would call itself forever), a swap `{{#let b a as |a b|}}` — is declared
+  // under a fresh per-template name instead (BindingInfo.emitName). A let whose
+  // values don't mention its own names emits byte-identically.
+  const emitNames = bindings.map((binding) => {
+    const escaped = escapeBindingName(binding.name, ctx.flags.EMBER_NATIVE);
+    if (!valueExprs.some((expr) => readsIdentifier(expr, escaped))) return escaped;
+    return `${escaped}$${++ctx.letBlockCounter}`;
+  });
+
+  // Collect non-primitive binding names (these are getters that need calling).
+  // Uses the EMIT name (escaped / renamed), so the getter-ref → call rewrite
+  // (replaceLetGetterRefsInExpr) matches the declared identifier.
+  const getterNames = new Set<string>();
+  bindings.forEach((binding, index) => {
+    if (!binding.isPrimitive) {
+      getterNames.add(emitNames[index]!);
+    }
+  });
+
+  // Build variable declarations.
+  const varDecls: JSStatement[] = bindings.map((binding, index) => {
+    const emitName = emitNames[index]!;
+    const valueExpr = valueExprs[index]!;
     if (binding.isPrimitive) {
       return B.varDecl('let', emitName, valueExpr);
     } else {
@@ -871,9 +926,15 @@ function buildLet(
   // Add let bindings in a fresh scope frame so nested `{{#let}}` blocks
   // shadow rather than clobber the outer binding.
   ctx.scopeTracker.enterScope('let');
-  for (const binding of bindings) {
-    ctx.scopeTracker.addBinding(binding.name, { kind: 'let-binding', name: binding.name });
-  }
+  bindings.forEach((binding, index) => {
+    const emitName = emitNames[index]!;
+    ctx.scopeTracker.addBinding(
+      binding.name,
+      emitName === escapeBindingName(binding.name, ctx.flags.EMBER_NATIVE)
+        ? { kind: 'let-binding', name: binding.name }
+        : { kind: 'let-binding', name: binding.name, emitName },
+    );
+  });
 
   // Build children as JSExpressions
   const childExprs = buildChildrenExprs(ctx, control.children, ctxName);
@@ -900,6 +961,34 @@ function buildLet(
 
   const arrowFn = B.arrowBlock([], body, control.sourceRange);
   return B.spread(B.call(arrowFn, [], control.sourceRange));
+}
+
+/**
+ * Whether a built JS expression READS the identifier `name`: an identifier, the
+ * root of a runtime reference (`name.x`, `name?.[…]`), or a word in raw code.
+ * String literals, member property names and object keys are not reads.
+ */
+function readsIdentifier(node: unknown, name: string): boolean {
+  if (node === null || typeof node !== 'object') return false;
+  if (Array.isArray(node)) return node.some((item) => readsIdentifier(item, name));
+  const n = node as Record<string, unknown>;
+  switch (n.type) {
+    case 'literal':
+      return false;
+    case 'identifier':
+      return n.name === name;
+    case 'runtimeRef':
+      return String(n.symbol).split(/[?.[]/)[0] === name;
+    case 'raw':
+      return new RegExp(
+        `(^|[^\\w$.'"])${name.replace(/[$]/g, '\\$&')}(?![\\w$'"])`,
+      ).test(String(n.code));
+  }
+  for (const key in n) {
+    if (key === 'sourceRange' || key === 'type') continue;
+    if (readsIdentifier(n[key], name)) return true;
+  }
+  return false;
 }
 
 /**
@@ -1077,6 +1166,31 @@ function replaceLetGetterRefsInStmt(stmt: JSStatement, getterNames: Set<string>)
 // ============================================================================
 // Stability Detection
 // ============================================================================
+
+/**
+ * EMBER_NATIVE: static text around exactly ONE stable child (see
+ * hasStableChildsForControlNode). The native build keeps Glimmer's template
+ * whitespace, so this is the common `{{#each}}` row shape (`\n  <tr>…</tr>\n`).
+ * Static text is inert — a text node created once per row, never re-rendered —
+ * so such a body needs no per-row UnstableChildWrapper either: it is emitted as
+ * a plain array, which the list's native row path owns (list.ts buildNativeRow).
+ */
+function hasStableChildAmidStaticText(children: readonly HBSChild[] | null): boolean {
+  if (!children) return false;
+  let stableChild: NonNullable<HBSChild> | null = null;
+  let hasText = false;
+  for (const child of children) {
+    if (child === null) continue;
+    if (typeof child === 'string') {
+      hasText = true;
+    } else if (stableChild === null) {
+      stableChild = child;
+    } else {
+      return false;
+    }
+  }
+  return hasText && stableChild !== null && hasStableChildsForControlNode([stableChild]);
+}
 
 /**
  * Check if children are stable for control nodes.

@@ -7,6 +7,7 @@
 
 import type { ASTv1 } from '@glimmer/syntax';
 import type { CompilerContext } from '../context';
+import { recordLooseBuiltin } from '../context';
 import type { SerializedValue, SourceRange, PathPart } from '../types';
 import { SYMBOLS, INTERNAL_HELPERS, getBuiltInHelperSymbol } from '../serializers/symbols';
 import { B, serializeJS, type JSExpression } from '../builder';
@@ -94,6 +95,23 @@ function lineColumnToOffset(source: string, line: number, column: number): numbe
 
   const lineStart = cachedLineOffsets[lineIndex];
   return lineStart + column;
+}
+
+/**
+ * True when `name` resolves to a genuine binding (lexical scope / `scope`
+ * entry / block param), NOT the synthetic `compat-component` binding that
+ * block.ts registers for a curly `{{#link-to}}` → `LinkTo` conversion. That
+ * synthetic entry is never removed from its scope frame, so a later
+ * `<LinkTo>` in the same template must still get the registry (kebab)
+ * mapping — mirroring the serializer's `isSyntheticCompatBinding` rule.
+ *
+ * Shared by every keyword rewrite a genuine binding must shadow: the compat
+ * PascalCase→kebab tag mapping (element.ts, G2) and the EMBER_OUTLET
+ * `{{outlet}}` keyword (mustache.ts, G3).
+ */
+export function hasRealBinding(ctx: CompilerContext, name: string): boolean {
+  const binding = ctx.scopeTracker.resolve(name);
+  return binding !== undefined && binding.kind !== 'compat-component';
 }
 
 /**
@@ -644,6 +662,9 @@ function serializeHelperCall(value: SerializedValue & { kind: 'helper' }, ctx?: 
   }
 
   // Use symbol for built-in helpers
+  if (ctx && !ctx.scopeTracker.hasBinding(helperName)) {
+    recordLooseBuiltin(ctx, helperName);
+  }
   const symbolName = getBuiltInHelperSymbol(helperName) ?? helperName;
 
   // Special handling for hash helper - wrap values in getters for lazy evaluation

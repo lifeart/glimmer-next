@@ -1,16 +1,28 @@
-import { type Plugin, type TransformResult as ViteTransformResult } from 'vite';
+import { type Plugin, type Rollup } from 'vite';
 import { Preprocessor } from 'content-tag';
 import { transform } from './test';
 import { type Flags, defaultFlags } from './flags.ts';
 import { HMR, fixExportsForHMR, shouldHotReloadFile } from './hmr.ts';
 
-export { stripGXTDebug } from './babel.ts';
+import { stripGXTDebug as stripGXTDebugPlugin } from './babel.ts';
 export type { TransformResult } from './test';
 
-// Helper to cast our TransformResult to Vite's expected type
-// The types are compatible at runtime but TS is strict about sourcesContent nullability
-function toViteResult(result: ReturnType<typeof transform>): ViteTransformResult | undefined {
-  return result as ViteTransformResult | undefined;
+/**
+ * Babel plugin that strips gxt debug-only code. Re-exported with a plain
+ * plugin-factory type so the published `./compiler` types do not need
+ * `@types/babel__core` (`@babel/core` ships no types of its own).
+ */
+export const stripGXTDebug: (babel: { types: any }) => {
+  name: string;
+  visitor: Record<string, unknown>;
+} = stripGXTDebugPlugin;
+
+// Helper to cast our TransformResult to the `transform` hook's return type.
+// Use Rollup's hook type, not Vite's dev-server `TransformResult`: the latter
+// carries Rollup's `SourceMap`, whose `sourcesContent` became
+// `(string | null)[]` in rollup 4.62.3 and no longer fits the hook's map type.
+function toViteResult(result: ReturnType<typeof transform>): Rollup.TransformResult {
+  return result as Rollup.TransformResult;
 }
 
 const p = new Preprocessor();
@@ -28,6 +40,16 @@ const p = new Preprocessor();
  */
 export function hasHbsTaggedTemplate(code: string): boolean {
   return /(?<![.\w'"`])hbs\s*`/.test(code);
+}
+
+/**
+ * G10 pre-filter (EMBER_NATIVE): a script module that MAY call Ember's
+ * `precompileTemplate` (imports `@ember/template-compilation` and mentions the
+ * name). Only gates whether the module is parsed — the babel pass then
+ * identifies the calls through the import binding (plugins/babel.ts).
+ */
+export function mayCallPrecompileTemplate(code: string): boolean {
+  return code.includes('@ember/template-compilation') && code.includes('precompileTemplate');
 }
 
 const extensionsToResolve = [
@@ -126,8 +148,27 @@ export function compiler(mode: string, options: Options = {}): Plugin {
       // Files that merely import from @lifeart/gxt don't need the babel transform
       // (which injects symbol imports that may conflict with existing declarations).
       const hasHbsTemplate = hasHbsTaggedTemplate(code);
-      if (!hasHbsTemplate) {
+      // G10 (EMBER_NATIVE): Ember `precompileTemplate(…)` calls compile at
+      // build time too.
+      const hasPrecompileTemplate =
+        flags.EMBER_NATIVE === true && mayCallPrecompileTemplate(code);
+      if (!hasHbsTemplate && !hasPrecompileTemplate) {
         return;
+      }
+      if (scriptFileRegex.test(file) && !hasHbsTemplate) {
+        // A precompileTemplate-only module: compile errors must surface (a
+        // skipped module would leave the string to fail at runtime with a
+        // misleading "not compiled at build time").
+        const result = transform(
+          code, file,
+          mode as 'development' | 'production',
+          false, flags, code,
+          { precompileOnly: true },
+        );
+        if (result && typeof (result as Promise<unknown>).then === 'function') {
+          return (result as Promise<any>).then((r) => toViteResult(r));
+        }
+        return toViteResult(result as any);
       }
       if (scriptFileRegex.test(file)) {
         try {

@@ -57,6 +57,39 @@ const COMBOS: Array<[string, Record<string, unknown>]> = [
       EMBER_ATTR_CONCAT: true,
     },
   ],
+  // The Ember native layer's emission-affecting flags ($__tag taps, G3
+  // `$_outlet`) — every shape must keep the report invariant under them too.
+  [
+    'ember-native',
+    {
+      IS_GLIMMER_COMPAT_MODE: true,
+      WITH_EMBER_INTEGRATION: true,
+      FORCE_SYNC_LIST: true,
+      EMBER_ATTR_CONCAT: true,
+      EMBER_NATIVE: true,
+      EMBER_OUTLET: true,
+    },
+  ],
+  // The full Ember native-layer flag set (with the helper / modifier managers):
+  // G4 `$_maybeHelper(ref, args, named, ctx, site)`, literal-or-thunk
+  // arguments, G9 curry sites, `$_maybeModifier(…, ctx)`, unbound `{{on}}`
+  // as the Ember built-in modifier, `<@comp />` → `$_dc`, yield params built
+  // against the block context.
+  [
+    'ember-native-managers',
+    {
+      IS_GLIMMER_COMPAT_MODE: true,
+      WITH_EMBER_INTEGRATION: true,
+      WITH_HELPER_MANAGER: true,
+      WITH_MODIFIER_MANAGER: true,
+      FORCE_SYNC_LIST: true,
+      EMBER_ATTR_CONCAT: true,
+      EMBER_IN_ELEMENT: true,
+      EMBER_TRUSTED_HTML: true,
+      EMBER_NATIVE: true,
+      EMBER_OUTLET: true,
+    },
+  ],
 ];
 
 function compileWith(
@@ -315,6 +348,28 @@ const CORPUS: Array<[string, string, string[]]> = [
   ['yield-hasblock-named', '<div>{{if (has-block "body") "y" "n"}}</div>', []],
   ['yield-hasblock-params', '<div>{{if (has-block-params) "y" "n"}}</div>', []],
 
+  // --- outlet (G3: `$_outlet(ctx)` under EMBER_OUTLET, `$_slot` otherwise) ---
+  ['outlet', '<main>{{outlet}}</main>', []],
+  ['outlet-in-block', '<Layout>{{outlet}}</Layout>', ['Layout']],
+  ['outlet-in-if', '{{#if this.a}}{{outlet}}{{/if}}', []],
+  ['outlet-shadowed', '{{#let this.x as |outlet|}}<p>{{outlet}}</p>{{/let}}{{outlet}}', []],
+
+  // --- Ember native-layer invocations (G4 / G9 / G-kw) ---
+  ['native-helper-named', '<p>{{fmt this.a 2 k=this.b}}</p>', ['fmt']],
+  ['native-helper-nested', '{{fmt (concat "a" this.b) (fmt this.c)}}', ['fmt', 'concat']],
+  ['native-helper-unbound-kw', '{{neq this.a this.b}}{{(and this.a this.b)}}{{if (not this.c) "x"}}', []],
+  ['native-modifier-args', '<div {{tagIt this.a (concat "x" this.b) k=this.c}}></div>', ['tagIt', 'concat']],
+  ['native-on-imported', '<button {{on "click" (fn this.go 1)}}></button>', ['on', 'fn']],
+  ['native-on-unbound', '<button {{on "click" this.go passive=true}}></button>', []],
+  ['native-dynamic-modifier', '<div {{(if this.c (modifier tagIt 1)) this.x}}></div>', ['tagIt']],
+  [
+    'native-curry',
+    '{{#let (component Cmp a=this.x) (helper fmt 1) (modifier tagIt) as |C H M|}}<C @b={{H 2}} {{M}} />{{/let}}',
+    ['Cmp', 'fmt', 'tagIt'],
+  ],
+  ['native-yield-curry', '{{yield (hash title=(component Cmp a=this.y) v=(fmt this.z))}}', ['Cmp', 'fmt']],
+  ['native-arg-component', '<@comp @a={{this.x}} />{{component @other b=1}}', []],
+
   // --- splattributes ---
   ['splat', '<div ...attributes>x</div>', []],
   ['splat-with-attr', '<div class="x" ...attributes>{{yield}}</div>', []],
@@ -419,6 +474,36 @@ const CORPUS: Array<[string, string, string[]]> = [
   ],
 ];
 
+// Ember loose-mode templates (G11: EMBER_LOOSE_COMPONENTS + `strictMode:
+// false`): by-name components (`$_c("foo-bar", …)`), the ambiguous append
+// (`$_looseAppend`), helper / modifier names — the report must keep the
+// invariant for them too.
+const LOOSE_CORPUS: ReadonlyArray<readonly [string, string, string[]]> = [
+  ['loose-angle', '<FooBar @a={{this.x}} class="c">t</FooBar><Foo::Bar />', []],
+  ['loose-block', '{{#foo-bar a=1 as |v|}}{{v}}{{/foo-bar}}', []],
+  ['loose-append', '<p>{{foo-bar}}{{foo-bar 1 k=this.v}}{{name}}</p>', []],
+  ['loose-component-name', '{{component "foo-bar" a=1}}{{#let (component "x-y") as |C|}}<C />{{/let}}', []],
+  ['loose-helper-positions', '<p title={{fmt this.a}} data-x="[{{fmt this.b}}]">{{if (fmt this.c) "y"}}</p>', []],
+  ['loose-modifier', '<div {{my-mod this.a k=1}}></div>', []],
+  ['loose-mixed-lexical', '<Lex @x={{1}} /><Free />{{lexHelper 1}}{{freeHelper 1}}', ['Lex', 'lexHelper']],
+];
+
+describe('emission-report: Ember loose mode (G11)', () => {
+  const [, nativeFlags] = COMBOS[COMBOS.length - 1]!;
+  const looseFlags = { ...nativeFlags, EMBER_LOOSE_COMPONENTS: true };
+  for (const [name, tpl, bindings] of LOOSE_CORPUS) {
+    test(`${name} [ember-native-loose]`, () => {
+      const r = compile(tpl, {
+        flags: looseFlags as any,
+        bindings: new Set(bindings),
+        strictMode: false,
+      });
+      expect(r.errors).toHaveLength(0);
+      assertReportInvariant('ember-native-loose', tpl, r);
+    });
+  }
+});
+
 describe('emission-report anti-regression corpus', () => {
   test(`corpus size is substantial (>= 60 shapes)`, () => {
     expect(CORPUS.length).toBeGreaterThanOrEqual(60);
@@ -488,11 +573,23 @@ describe('emission-report anti-regression corpus', () => {
       expect(on.code).toContain('$_qStr(');
     });
 
+    test('EMBER_OUTLET reaches the adapter → $_outlet (not $_slot)', () => {
+      const tpl = '<main>{{outlet}}</main>';
+      const off = templateToTypescript(tpl, flags({ EMBER_OUTLET: false }), new Set());
+      const on = templateToTypescript(tpl, flags({ EMBER_OUTLET: true }), new Set());
+      expect(off.errors).toHaveLength(0);
+      expect(on.errors).toHaveLength(0);
+      expect(off.code).not.toContain('$_outlet(');
+      expect(on.code).toContain('$_outlet(this)');
+      expect(on.code).not.toContain('$_slot(');
+    });
+
     test('adapter code matches compile() code for the same flags', () => {
       const cases: Array<[string, Partial<Flags>]> = [
         ['{{#each this.items as |it|}}<li>{{it.n}}</li>{{/each}}', { FORCE_SYNC_LIST: true }],
         ['<div class="a {{this.b}} c"></div>', { EMBER_ATTR_CONCAT: true }],
         ['<div>{{unbound this.x}}</div>', {}],
+        ['<main>{{outlet}}</main>', { EMBER_OUTLET: true }],
       ];
       for (const [tpl, extra] of cases) {
         const f = flags(extra);

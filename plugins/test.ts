@@ -7,12 +7,19 @@ import {
   transformAsync,
   type BabelFileResult,
 } from '@babel/core';
+import { createRequire } from 'node:module';
 import { Preprocessor } from 'content-tag';
 import { processTemplate, type ResolvedHBS } from './babel';
 import { compile, formatErrorForDisplay, generateSourceMap, type MappingTreeNode, type SourceMapV3 } from './compiler/index';
 import { resolveTemplateTypeHintsWithChecker, mergeTypeHints } from './type-checker-hints';
 
-import { SYMBOLS, RECYCLE_IMPORT, RECYCLE_SYMBOLS } from './symbols';
+import { SYMBOLS, RECYCLE_IMPORT, RECYCLE_SYMBOLS, MAIN_IMPORT } from './symbols';
+import {
+  buildPrecompileTemplateMaker,
+  buildTemplateTagFunction,
+  nativeTemplateSymbols,
+  selfPreamble,
+} from './template-wrapper';
 import { defaultFlags, type Flags } from './flags';
 
 // The opt-in row-recycling entry points ($_eachRecycled / $_eachSyncRecycled)
@@ -43,6 +50,17 @@ function withRecycleImport(moduleCode: string, usedRecycle: boolean): string {
   if (!usedRecycle) return moduleCode;
   if (RECYCLE_IMPORT_FROM_RE.test(moduleCode)) return moduleCode;
   return `${RECYCLE_IMPORT_STATEMENT}\n${moduleCode}`;
+}
+
+// EMBER_NATIVE / EMBER_OUTLET: the native-layer symbols ($_tpl brand, $__tag
+// tap, $_outlet) are not part of the always-on barrel auto-import (babel.ts
+// imports Object.values(SYMBOLS)), so flag-off output stays byte-identical.
+// Under a flag the assembler imports its symbols explicitly (unused named
+// imports are tree-shaken).
+function withNativeImport(moduleCode: string, flags: Flags): string {
+  const symbols = nativeTemplateSymbols(flags);
+  if (symbols.length === 0) return moduleCode;
+  return `import { ${symbols.join(', ')} } from '${MAIN_IMPORT}';\n${moduleCode}`;
 }
 
 function buildLineOffsets(source: string): number[] {
@@ -118,6 +136,10 @@ interface ProcessedTemplate {
   usedArgsAlias: boolean;
   usedSlots: boolean;
   usedFw: boolean;
+  /** EMBER_SELF (G6): the body reads the self alias `$s`. */
+  usedSelf: boolean;
+  /** EMBER_LOOSE_COMPONENTS (G11): free built-ins Glimmer resolves by name. */
+  looseBuiltins: readonly string[];
 }
 
 /**
@@ -348,6 +370,9 @@ function processTransformedFiles(
       bindings,
       filename: fileName,
       lexicalScope: content.lexicalScope,
+      // G10: a `precompileTemplate(…)` template carries its own strict/loose
+      // mode (EMBER_LOOSE_COMPONENTS applies to the loose ones).
+      strictMode: templateFlags.precompile?.strictMode,
       flags: {
         ...globalFlags,
         IS_GLIMMER_COMPAT_MODE: globalFlags.IS_GLIMMER_COMPAT_MODE ?? true,
@@ -384,6 +409,8 @@ function processTransformedFiles(
       usedArgsAlias: result.usedArgsAlias,
       usedSlots: result.usedSlots,
       usedFw: result.usedFw,
+      usedSelf: result.usedSelf,
+      looseBuiltins: result.looseBuiltins,
     });
   });
 
@@ -394,6 +421,8 @@ function processTransformedFiles(
 
     let result = '';
     const finContext = template.flags.hasThisAccess ? 'this' : 'this';
+    // EMBER_SELF (G6): `const $s = $_self(this);` iff the body reads `$s`.
+    const maybeSelf = selfPreamble(template);
     // Ground truth from the compiler (see ProcessedTemplate): inject each
     // preamble local iff the compiled body actually emitted a free reference to
     // it. Replaces the old substring scans — `code.includes('$fw')` matched a
@@ -410,18 +439,23 @@ function processTransformedFiles(
     const declareRoots = `const roots = ${template.code};`;
     const declareReturn = `return ${SYMBOLS.FINALIZE_COMPONENT}(roots, ${finContext});`;
 
-    if (isTemplateTag) {
-      result = `function () {
-      ${maybeFw}
-      ${SYMBOLS.$_GET_ARGS}(this, arguments);
-      ${maybeArgsAlias}
-      ${maybeSlots}
-      ${declareRoots}
-      ${declareReturn}
-    }`;
+    if (template.flags.precompile !== undefined) {
+      // G10: the template maker replacing a `precompileTemplate` string.
+      result = buildPrecompileTemplateMaker(
+        template,
+        globalFlags,
+        template.flags.precompile.scopeKeys,
+      );
+    } else if (isTemplateTag) {
+      // Shared with the runtime compiler (plugins/template-wrapper.ts) so AOT
+      // and runtime-compiled templates are emitted identically.
+      result = buildTemplateTagFunction(template, globalFlags, {
+        isClassTemplate: template.flags.isClassTemplate,
+        templateName: template.flags.templateName,
+      });
     } else {
       result = isClass
-        ? `() => {
+        ? `() => {${maybeSelf === '' ? '' : `\n      ${maybeSelf}`}
       ${maybeSlots}
       ${maybeFw}
       ${hasArgs ? `const $a = this[${SYMBOLS.$args}];` : ''}
@@ -429,7 +463,7 @@ function processTransformedFiles(
       ${declareReturn}
     }`
         : `(() => {
-      ${SYMBOLS.$_GET_ARGS}(this, arguments);
+      ${SYMBOLS.$_GET_ARGS}(this, arguments);${maybeSelf === '' ? '' : `\n      ${maybeSelf}`}
       ${maybeArgsAlias}
       ${maybeSlots}
       ${maybeFw}
@@ -449,7 +483,7 @@ function processTransformedFiles(
   const anyRecycle = processedTemplates.some((template) => template.usedRecycle);
 
   // Build final code by replacing $placeholder markers
-  let src = withRecycleImport(txt ?? '', anyRecycle);
+  let src = withNativeImport(withRecycleImport(txt ?? '', anyRecycle), globalFlags);
   const templateInsertPositions: { start: number; end: number; templateIndex: number }[] = [];
 
   programResults.forEach((result, index) => {
@@ -605,6 +639,49 @@ function processTransformedFiles(
   return { code, map };
 }
 
+/**
+ * The babel pass below is HERMETIC (G1). It exists only to strip TypeScript,
+ * lower decorators and let `processTemplate` read each `<template>`'s lexical
+ * scope, so it must not see the host project's babel setup:
+ *
+ * - No root `babel.config.*`, no `.babelrc*`, no browserslist lookup. A host
+ *   `@babel/plugin-transform-typescript` (default `onlyRemoveTypeImports:
+ *   false`) elides every import referenced only inside a `<template>` before
+ *   `processTemplate` reads the scope — `<Counter />` then silently degrades
+ *   from `$_c(Counter, …)` to a by-name `$_tag('Counter', …)` and the import
+ *   vanishes. Host plugins also made the output depend on host env vars (e.g.
+ *   a classic template-compilation plugin compiling the template first).
+ * - `@babel/preset-typescript` and `decorator-transforms` (gxt `dependencies`)
+ *   resolve from gxt's OWN location. Bare names resolve relative to
+ *   `process.cwd()`, which only worked when a package-manager shim happened to
+ *   put them on NODE_PATH.
+ *
+ * Resolved lazily (first transform) and memoized; `import.meta.url` is this
+ * module (plugins/test.ts in-repo, dist/gxt.compiler.es.js when published).
+ */
+let gxtBabelDeps: { presetTypescript: string; decoratorTransforms: string } | undefined;
+function resolveGxtBabelDeps(): { presetTypescript: string; decoratorTransforms: string } {
+  if (gxtBabelDeps === undefined) {
+    const gxtRequire = createRequire(import.meta.url);
+    gxtBabelDeps = {
+      presetTypescript: gxtRequire.resolve('@babel/preset-typescript'),
+      decoratorTransforms: gxtRequire.resolve('decorator-transforms'),
+    };
+  }
+  return gxtBabelDeps;
+}
+
+export interface TransformOptions {
+  /**
+   * G10 (EMBER_NATIVE): the module is a plain script whose only gxt work is
+   * its Ember `precompileTemplate(…)` calls. The babel pass then ONLY rewrites
+   * those calls (and imports the runtime symbols): no decorator lowering, no
+   * TypeScript stripping of `.js` files, none of the gxt `template()` / `hbs` /
+   * class-body conventions — the host's own pipeline still owns the rest.
+   */
+  precompileOnly?: boolean;
+}
+
 export function transform(
   source: string,
   fileName: string,
@@ -612,28 +689,48 @@ export function transform(
   isLibBuild: boolean = false,
   flags: Flags = defaultFlags(),
   originalGtsSource?: string,
+  options: TransformOptions = {},
 ): TransformResult | Promise<TransformResult> {
   const rawTxt: string = source;
   const hbsToProcess: ResolvedHBS[] = [];
   const programResults: string[] = [];
   const isAsync = flags.ASYNC_COMPILE_TRANSFORMS;
+  const precompileOnly = options.precompileOnly === true;
 
-  const plugins: PluginItem[] = [processTemplate(hbsToProcess, mode)];
-  if (!isLibBuild) {
-    plugins.push('module:decorator-transforms');
+  const babelDeps = resolveGxtBabelDeps();
+  const plugins: PluginItem[] = [
+    processTemplate(hbsToProcess, mode, {
+      // G10 is Ember-native-layer behaviour: off unless EMBER_NATIVE.
+      precompileTemplate: flags.EMBER_NATIVE === true,
+      precompileOnly,
+    }),
+  ];
+  if (!isLibBuild && !precompileOnly) {
+    plugins.push(babelDeps.decoratorTransforms);
   }
   const replacedFileName = fileName
     .replace('.gts', '.ts')
     .replace('.gjs', '.js');
+  const isTypeScript = /\.(ts|gts|mts|cts)$/.test(fileName);
   const babelConfig = {
+    // Hermetic: never inherit the host's babel setup (see resolveGxtBabelDeps).
+    configFile: false,
+    babelrc: false,
+    browserslistConfigFile: false,
     plugins,
     filename: replacedFileName,
-    presets: [
-      [
-        '@babel/preset-typescript',
-        { allExtensions: true, onlyRemoveTypeImports: true, allowDeclareFields: true },
-      ],
-    ],
+    presets:
+      precompileOnly && !isTypeScript
+        ? []
+        : [
+            [
+              babelDeps.presetTypescript,
+              { allExtensions: true, onlyRemoveTypeImports: true, allowDeclareFields: true },
+            ],
+          ],
+    // precompileOnly leaves decorators for the host pipeline: parse them only
+    // (the legacy syntax decorator-transforms itself enables).
+    ...(precompileOnly ? { parserOpts: { plugins: ['decorators-legacy' as const] } } : {}),
     // Enable source maps
     sourceMaps: true,
     sourceFileName: fileName,

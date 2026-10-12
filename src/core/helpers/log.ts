@@ -40,6 +40,11 @@ export function $__log(...args: unknown[]) {
     }
     __logSiteSignatures.set(siteId, signature);
   }
-  console.log(...unwrapped);
+  // Logging IS this helper's behaviour (not a debug statement): call it
+  // through `globalThis.console` so the lib build's `console.*(...)`
+  // statement strip (vite.config.mts stripDebugSafe) keeps it — a plain
+  // `console.log(...)` statement here was removed from the published dist,
+  // so `{{log}}` silently logged nothing.
+  globalThis.console.log(...unwrapped);
   return '';
 }

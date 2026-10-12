@@ -18,6 +18,19 @@ export {
   type CachedCell,
 } from '@/core/reactive';
 
+// Host tag primitives: Glimmer tag protocol on gxt cells (one reactive system
+// for hosts such as Ember's native layer). See src/core/tags.ts.
+export {
+  tagFor,
+  tagMetaFor,
+  peekTagFor,
+  dirtyCell,
+  currentRevision,
+  entangleSubscribers,
+  UNSET,
+  type TagMeta,
+} from '@/core/tags';
+
 // Keyed selector primitive (O(2) fan-out for `selected === key` bindings)
 export { keyedSelector, type KeyedSelector } from '@/core/selector';
 
@@ -65,7 +78,26 @@ export {
 
 export * from '@/core/helpers/index';
 export { $template, $args, $fwProp } from '@/core/shared';
-export { syncDom, takeRenderingControl } from '@/core/runtime';
+export { syncDom, takeRenderingControl, flushRevalidation } from '@/core/runtime';
+// Template-function brand (G14): compiler-emitted `$_tpl` + host-side check.
+export { $_tpl, isTemplateFn } from '@/core/template-fn';
+// Template self (G6): compiler-emitted `$_self` + the host-side `$SELF` key.
+export { $_self, $SELF } from '@/core/self';
+export {
+  getCurried,
+  isCurried,
+  resolveCurried,
+  CURRIED_COMPONENT,
+  CURRIED_HELPER,
+  CURRIED_MODIFIER,
+  type CurriedKind,
+  type CurriedState,
+  type ResolvedCurried,
+} from '@/core/curried';
+// Component-tree id allocator: a host manager that constructs a component
+// instance itself (not a gxt `Component`) gives it a tree identity before gxt
+// adds it to the render tree.
+export { cId } from '@/core/tree';
 export {
   registerHostHooks,
   type HostHooks,
@@ -137,6 +169,11 @@ export {
 
 // DOM API exports for custom rendering contexts
 export { HTMLBrowserDOMApi, type DOMApi } from '@/core/dom-api';
+
+// Insert a rendered value (component / nodes / text) before an anchor and
+// register it with its render context — for host-managed render regions (the
+// Ember native outlet swaps route components between its own anchors).
+export { renderElement } from '@/core/render-core';
 
 // Symbol exports for Ember integration
 export {

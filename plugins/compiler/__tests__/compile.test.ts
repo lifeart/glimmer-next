@@ -4866,6 +4866,79 @@ describe('Compat mode AST transforms', () => {
       expect(result.errors).toHaveLength(0);
     });
 
+    // G2: the PascalCase→kebab compat mapping is a by-name registry lookup and
+    // must never shadow a lexical binding (strict-mode import / scope entry /
+    // block param).
+    describe('G2: kebab mapping skips lexically bound tags', () => {
+      test('imported <LinkTo> (binding) stays lexical: $_c(LinkTo, …) in compat mode', () => {
+        const result = compile('<LinkTo @route="home">Go</LinkTo>', {
+          flags: compatFlags,
+          bindings: new Set(['LinkTo']),
+        });
+        expect(result.code).toMatch(/\$_c\(\s*LinkTo\b/);
+        expect(result.code).not.toContain("'link-to'");
+        expect(result.code).not.toMatch(/\$_tag\(\s*['"]link-to['"]/);
+        expect(result.errors).toHaveLength(0);
+      });
+
+      test('lexicalScope-resolved <LinkTo> stays lexical in compat mode', () => {
+        const result = compile('<LinkTo @route="home">Go</LinkTo>', {
+          flags: compatFlags,
+          lexicalScope: (name: string) => name === 'LinkTo',
+        });
+        expect(result.code).toMatch(/\$_c\(\s*LinkTo\b/);
+        expect(result.code).not.toContain("'link-to'");
+        expect(result.errors).toHaveLength(0);
+      });
+
+      test('imported <Outlet> (binding) stays lexical in compat mode', () => {
+        const result = compile('<Outlet />', {
+          flags: compatFlags,
+          bindings: new Set(['Outlet']),
+        });
+        expect(result.code).toMatch(/\$_c\(\s*Outlet\b/);
+        expect(result.code).not.toContain("'outlet'");
+        expect(result.errors).toHaveLength(0);
+      });
+
+      test('a block param named LinkTo shadows the mapping', () => {
+        const result = compile('{{#let @comp as |LinkTo|}}<LinkTo @route="home" />{{/let}}', {
+          flags: compatFlags,
+        });
+        expect(result.code).not.toContain("'link-to'");
+        expect(result.code).toContain('LinkTo');
+        expect(result.errors).toHaveLength(0);
+      });
+
+      test('an unrelated binding does not disable the mapping', () => {
+        const result = compile('<LinkTo @route="home">Go</LinkTo>', {
+          flags: compatFlags,
+          bindings: new Set(['Counter']),
+        });
+        expect(result.code).toContain("'link-to'");
+        expect(result.code).not.toMatch(/\$_c\(\s*LinkTo\b/);
+        expect(result.errors).toHaveLength(0);
+      });
+
+      test('the synthetic binding from a curly {{#link-to}} does not disable the mapping for a later <LinkTo>', () => {
+        const result = compile('{{#link-to "a"}}x{{/link-to}}<LinkTo @route="b">y</LinkTo>', {
+          flags: compatFlags,
+        });
+        // The <LinkTo> element still takes the registry path.
+        expect(result.code).toMatch(/\$_tag\(\s*['"]link-to['"]/);
+        expect(result.errors).toHaveLength(0);
+      });
+
+      test('non-compat mode: a bound <LinkTo> is a plain component', () => {
+        const result = compile('<LinkTo @route="home">Go</LinkTo>', {
+          flags: defaultFlags,
+          bindings: new Set(['LinkTo']),
+        });
+        expect(result.code).toMatch(/\$_c\(\s*LinkTo\b/);
+        expect(result.errors).toHaveLength(0);
+      });
+    });
+
     test('{{component "foo-bar"}} is transformed to <FooBar /> in compat mode', () => {
       const result = compile('{{component "foo-bar"}}', { flags: compatFlags });
       expect(result.code).toContain('FooBar');

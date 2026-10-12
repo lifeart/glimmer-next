@@ -16,8 +16,9 @@ import type {
   SourceRange,
 } from '../types';
 import { literal, helper, getter, isSerializedValue, runtimeTag } from '../types';
-import { getNodeRange, serializeValueToString, getAttributeNameRange, getPathExpressionString, getElementBlockParamRanges } from './utils';
+import { getNodeRange, serializeValueToString, getAttributeNameRange, getPathExpressionString, getElementBlockParamRanges, hasRealBinding } from './utils';
 import { withElementContext, addWarning } from '../context';
+import { looseComponentTagName } from './loose';
 import { SYMBOLS, INTERNAL_HELPERS } from '../serializers/symbols';
 
 /**
@@ -197,15 +198,27 @@ export function visitElement(
   const range = getNodeRange(node);
   let actualTag = node.tag;
 
+  // Ember loose mode (G11, EMBER_LOOSE_COMPONENTS + a `strictMode: false`
+  // template): an unbound uppercase-first / `::` tag is a component the host
+  // resolves BY NAME — `$_c("foo-bar", …)` with Ember's dasherized registry
+  // name. Replaces the compat by-name stand-ins below (`Foo::Bar` →
+  // `foo--bar`, `LinkTo` → `link-to` elements).
+  const looseName = looseComponentTagName(ctx, actualTag, range);
+
   // In compat mode, transform Foo::Bar namespaced components to foo--bar kebab-case.
   // The Glimmer parser preserves :: in tag names, so we convert here.
-  if (ctx.flags.IS_GLIMMER_COMPAT_MODE && actualTag.indexOf('::') !== -1) {
+  if (looseName === null && ctx.flags.IS_GLIMMER_COMPAT_MODE && actualTag.indexOf('::') !== -1) {
     actualTag = transformNamespacedTag(actualTag);
   }
 
   // In compat mode, transform known PascalCase built-in component names to kebab-case.
   // e.g. <LinkTo> → <link-to>, <Outlet> → <outlet>
-  if (ctx.flags.IS_GLIMMER_COMPAT_MODE) {
+  // Only for UNBOUND names (G2): the mapping stands in for a by-name registry
+  // lookup, so it must never shadow a lexical binding. A strict-mode
+  // `import { LinkTo } from '@ember/routing'` (or a block param / `scope`
+  // entry named `LinkTo`) must stay `$_c(LinkTo, …)`, not `$_tag('link-to')`.
+  // (`Foo::Bar` above needs no such guard: `::` names cannot be JS bindings.)
+  if (looseName === null && ctx.flags.IS_GLIMMER_COMPAT_MODE && !hasRealBinding(ctx, actualTag)) {
     actualTag = transformPascalToKebab(actualTag);
     // Mutate node.tag so downstream processing (namespace checks, etc.) sees the kebab name
     (node as any).tag = actualTag;
@@ -213,7 +226,17 @@ export function visitElement(
 
   // In compat mode, add @__hasBlock__="default" to empty component invocations.
   // <Foo></Foo> gets the marker; self-closing <Foo /> does not.
-  if (ctx.flags.IS_GLIMMER_COMPAT_MODE && !node.selfClosing && node.children.length === 0) {
+  // Not under EMBER_NATIVE: the marker is read only by the compat bridge, and
+  // natively it would be an extra `this.args` key (or, on `<foo-bar></foo-bar>`,
+  // a stray attribute), which Glimmer never has. A non-self-closing component
+  // already gets an empty default slot from the serializer, so `has-block`
+  // stays true without it.
+  if (
+    ctx.flags.IS_GLIMMER_COMPAT_MODE &&
+    !ctx.flags.EMBER_NATIVE &&
+    !node.selfClosing &&
+    node.children.length === 0
+  ) {
     if (isComponentName(actualTag) || actualTag.includes('-')) {
       const hasMarker = node.attributes.some(a => a.name === '@__hasBlock__');
       if (!hasMarker) {
@@ -232,7 +255,7 @@ export function visitElement(
   }
 
   // Manual component name customization for traceability
-  if (ctx.customizeComponentName && isComponentName(actualTag)) {
+  if (looseName === null && ctx.customizeComponentName && isComponentName(actualTag)) {
     actualTag = ctx.customizeComponentName(actualTag);
   }
 
@@ -289,8 +312,13 @@ export function visitElement(
   const properties = processProperties(ctx, regularAttrs, hasSplatAttrs);
   const baseEvents = processEvents(ctx, node, styleEvents);
 
-  // Optimize text children (pure function)
-  const { children: optimizedChildren, additionalEvents } = optimizeTextChild(actualTag, children);
+  // Optimize text children (pure function). (A by-name component keeps its
+  // uppercase source tag here, which optimizeTextChild never folds.)
+  const { children: optimizedChildren, additionalEvents } = optimizeTextChild(
+    actualTag,
+    children,
+    ctx.flags.EMBER_NATIVE === true
+  );
   const events = [...baseEvents, ...additionalEvents];
 
   // Compute tag name source range: starts after '<', spans ORIGINAL tag name length
@@ -301,13 +329,14 @@ export function visitElement(
   } : undefined;
 
   // Manual component name customization for traceability
-  if (ctx.customizeComponentName && isComponentName(actualTag)) {
+  if (looseName === null && ctx.customizeComponentName && isComponentName(actualTag)) {
     actualTag = ctx.customizeComponentName(actualTag);
   }
 
   const hbsNode: HBSNode = {
     _nodeType: 'element',
-    tag: actualTag,
+    tag: looseName ?? actualTag,
+    ...(looseName !== null ? { byName: true } : {}),
     selfClosing: node.selfClosing,
     blockParams: node.blockParams,
     blockParamRanges: blockParamRanges ?? undefined,
@@ -456,7 +485,11 @@ function visitElementInner(
   const baseEvents = processEvents(ctx, node, styleEvents);
 
   // Optimize text children (pure function)
-  const { children: optimizedChildren, additionalEvents } = optimizeTextChild(actualTag, children);
+  const { children: optimizedChildren, additionalEvents } = optimizeTextChild(
+    actualTag,
+    children,
+    ctx.flags.EMBER_NATIVE === true
+  );
   const events = [...baseEvents, ...additionalEvents];
 
   // Compute tag name source range for the original tag (handles wrapped names)
@@ -548,7 +581,7 @@ function processAttributes(
 ): AttributeTuple[] {
   return attrs
     .filter((attr) => {
-      if (!isAttribute(attr.name)) return false;
+      if (!isAttribute(attr.name) && !isNativeStaticStyle(ctx, attr)) return false;
       // When splat attrs present, class goes through properties for merging
       if (hasSplatAttrs && attr.name === 'class') return false;
       return true;
@@ -558,6 +591,17 @@ function processAttributes(
       const nameRange = getAttributeNameRange(attr);
       return [attr.name, value, getNodeRange(attr), nameRange] as const;
     });
+}
+
+/**
+ * EMBER_NATIVE: a static `style="…"` is an attribute, written verbatim like
+ * every static attribute in Glimmer — never through the `style` property
+ * (which re-serializes the CSS text), and never seen by the host's DEV
+ * untrusted-style warning, which Glimmer gives dynamic `style` bindings only
+ * (they stay properties: see visitNativeStyleValue).
+ */
+function isNativeStaticStyle(ctx: CompilerContext, attr: ASTv1.AttrNode): boolean {
+  return !!ctx.flags.EMBER_NATIVE && attr.name === 'style' && attr.value.type === 'TextNode';
 }
 
 /**
@@ -588,11 +632,18 @@ function processProperties(
     }
 
     // Skip attributes and event attributes
-    if (isAttribute(attr.name) || isEventAttribute(attr.name)) {
+    if (
+      isAttribute(attr.name) ||
+      isEventAttribute(attr.name) ||
+      isNativeStaticStyle(ctx, attr)
+    ) {
       continue;
     }
 
-    const value = visitAttributeValue(ctx, attr.value);
+    const value =
+      ctx.flags.EMBER_NATIVE && attr.name === 'style'
+        ? visitNativeStyleValue(ctx, attr.value)
+        : visitAttributeValue(ctx, attr.value);
 
     // Handle boolean attributes
     if (
@@ -610,6 +661,38 @@ function processProperties(
   }
 
   return result;
+}
+
+/**
+ * EMBER_NATIVE: the value of an element's `style` attribute, with Ember's
+ * semantics for it:
+ *   - `style="{{x}}"` (one mustache, quoted) is `style={{x}}` — Ember's
+ *     `transform-quoted-bindings-into-just-bindings` AST plugin — so the value
+ *     is bound as is (an `htmlSafe` string stays one) instead of being
+ *     concatenated into a plain string;
+ *   - a trusting `style={{{x}}}` (Glimmer's TrustingDynamicAttribute) is marked
+ *     `$_trustAttr(x)`: Glimmer's DEV warning about binding `style` to a value
+ *     that is not `htmlSafe` (DebugStyleAttributeManager, emitted by the host's
+ *     `normalizeAttrValue` hook) applies to non-trusting bindings only.
+ */
+function visitNativeStyleValue(
+  ctx: CompilerContext,
+  value: ASTv1.AttrValue
+): SerializedValue {
+  let bound = value;
+  if (
+    bound.type === 'ConcatStatement' &&
+    bound.parts.length === 1 &&
+    bound.parts[0]!.type === 'MustacheStatement'
+  ) {
+    bound = bound.parts[0] as ASTv1.MustacheStatement;
+  }
+  const result = visitAttributeValue(ctx, bound);
+  if (bound.type !== 'MustacheStatement' || bound.escaped !== false) {
+    return result;
+  }
+  const range = getNodeRange(bound);
+  return getter(helper(INTERNAL_HELPERS.TRUSTED_ATTR, [result], new Map(), range), range);
 }
 
 /**
@@ -661,7 +744,14 @@ function visitAttributeValue(
   }
 
   if (value.type === 'ConcatStatement') {
-    const result = getVisit(ctx)(ctx, value, false);
+    const _prevInConcat = ctx.inAttributeConcat;
+    ctx.inAttributeConcat = true;
+    let result: ReturnType<ReturnType<typeof getVisit>>;
+    try {
+      result = getVisit(ctx)(ctx, value, false);
+    } finally {
+      ctx.inAttributeConcat = _prevInConcat;
+    }
     if (result !== null && isSerializedValue(result)) {
       return result;
     }
@@ -792,7 +882,12 @@ function processEvents(
     // scope: () => ({ on })), the user's modifier must take effect — fall through to
     // the generic custom-modifier path which respects scope bindings.
     const isShadowedOn = modName === 'on' && ctx.scopeTracker.hasBinding('on');
-    if (modName === 'on' && !isShadowedOn) {
+    // Ember native layer: an unbound `{{on}}` is Ember's built-in `on`
+    // modifier (strict-mode auto-import parity) — it takes the generic modifier
+    // path below and is emitted as `$_maybeModifier("on", …)`, which the host
+    // modifier manager resolves (Glimmer `on` semantics: listener re-added only
+    // when its inputs change, once/passive/capture, argument asserts).
+    if (modName === 'on' && !isShadowedOn && !ctx.flags.EMBER_NATIVE) {
       // Native event handler
       const eventName = mod.params[0];
       if (eventName?.type === 'StringLiteral') {
@@ -864,23 +959,40 @@ interface TextChildOptimization {
  */
 function optimizeTextChild(
   tag: string,
-  children: HBSChild[]
+  children: HBSChild[],
+  emberNative = false
 ): TextChildOptimization {
   const noChange = { children, additionalEvents: [] };
+
+  // Ember native layer: a lowercase PATH tag (`<card.title>Hello</card.title>`,
+  // `<@comp>text</@comp>`) is a dynamic component — its text child is the
+  // component's default block, not a `textContent` binding (which would land
+  // in the forwarded attributes and drop the block).
+  if (emberNative && (tag.includes('.') || tag.startsWith('@'))) return noChange;
 
   if (children.length !== 1) return noChange;
 
   const child = children[0];
   if (typeof child !== 'string' && !isSerializedValue(child)) return noChange;
 
+  // Ember native layer (G15): a dynamic `{{value}}` child is Glimmer dynamic
+  // CONTENT — it may be (or later become) a SafeString (trusted HTML), a DOM
+  // node or a component, which a `textContent` binding would stringify. Only
+  // static text folds.
+  if (emberNative && typeof child !== 'string') return noChange;
+
   // A trusting mustache (`{{{expr}}}` → `helper(TRUSTED_HTML, …)`, lowered to
   // `$_html(…)`) is a NODE-producing helper — it returns a live DOM range, not a
   // string — so it must stay a child in the children array. Folding it into a
   // `@textContent` binding would stringify the carrier (`[object Object]`).
+  // The same holds for the Ember `{{outlet}}` marker (`$_outlet(…)`, G3): it
+  // renders a component.
   if (
     isSerializedValue(child) &&
     child.kind === 'helper' &&
-    child.name === INTERNAL_HELPERS.TRUSTED_HTML
+    (child.name === INTERNAL_HELPERS.TRUSTED_HTML ||
+      child.name === INTERNAL_HELPERS.OUTLET ||
+      child.name === INTERNAL_HELPERS.LOOSE_APPEND)
   ) {
     return noChange;
   }

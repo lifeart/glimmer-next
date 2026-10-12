@@ -22,8 +22,9 @@ import {
   type DOMApi,
 } from './types';
 import { TREE, CHILD, PARENT, cId } from './tree';
-import { isPrimitive, isEmpty } from './shared';
+import { isPrimitive, isEmpty, isArray } from './shared';
 import { provideContext, ROOT_CONTEXT } from './context';
+import { nativeContentBinding, nativeDeepFnValue, stashInitialContent } from './native-content';
 
 type RenderableType = Node | string | number | { [RENDERED_NODES_PROPERTY]: unknown[] };
 
@@ -66,6 +67,17 @@ export function createRoot(document?: Document): Root {
 }
 
 /**
+ * A non-text content value the native dynamic-content binding renders: not a
+ * primitive / nullish, and not a gxt renderable (a component instance or a
+ * renderable array, which keep their historic static rendering).
+ */
+function isNativeContentValue(value: unknown): boolean {
+  if (isPrimitive(value) || isEmpty(value) || isArray(value)) return false;
+  if (typeof value === 'object' && RENDERED_NODES_PROPERTY in (value as object)) return false;
+  return true;
+}
+
+/**
  * Resolve a renderable function to its value, creating a reactive formula if needed.
  * This is used to unwrap function-based templates into their actual renderable content.
  */
@@ -73,7 +85,13 @@ export function resolveRenderable(
   child: Function,
   debugName = 'resolveRenderable',
 ): RenderableType | MergedCell | Cell {
-  const f = formula(() => deepFnValue(child), debugName);
+  // EMBER_NATIVE dynamic content (G15, native-content.ts): a content value
+  // may be — or become — a node, trusted HTML or a component; it stays a
+  // reactive binding whatever its first value is.
+  const native = nativeContentBinding() !== null;
+  const f = native
+    ? formula(() => nativeDeepFnValue(child), debugName)
+    : formula(() => deepFnValue(child), debugName);
   let componentProps: RenderableType = '';
   checkOpcode(f, (value) => {
     componentProps = value as unknown as RenderableType;
@@ -99,13 +117,25 @@ export function resolveRenderable(
       f2.destroy();
       return componentProps;
     }
+    if (native && isNativeContentValue(componentProps)) {
+      // A constant node / SafeString / component definition: rendered by the
+      // dynamic-content binding, from the value read above.
+      stashInitialContent(f, componentProps);
+      return f;
+    }
     f.destroy();
     return componentProps;
   } else {
-    if (isPrimitive(componentProps) || isEmpty(componentProps)) {
+    if (
+      isPrimitive(componentProps) ||
+      isEmpty(componentProps) ||
+      (native && isNativeContentValue(componentProps))
+    ) {
       // Register leaf-object owners so a nested-property `set()` on a held
       // object dirties this cell.
       registerLeafOwnersForFormula(f);
+      // Native: the binding applies the value read above (one create read).
+      if (native) stashInitialContent(f, componentProps);
       return f;
     } else {
       // looks like a component

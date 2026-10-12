@@ -1,18 +1,58 @@
-import * as ts from 'typescript';
+import { createRequire } from 'node:module';
+import type * as TS from 'typescript';
 import type { PropertyTypeHint, TypeHints } from './compiler/types';
+
+// `typescript` is an OPTIONAL peer dependency of @lifeart/gxt. Only the opt-in
+// `WITH_TYPE_CHECKER_HINTS` compiler flag (off by default) runs the TypeScript
+// checker, and this module is part of the published compiler entry
+// (`@lifeart/gxt/compiler`, via plugins/test.ts). A static `import * as ts`
+// made loading the compiler — every `.gts`/`.gjs` build — fail with
+// ERR_MODULE_NOT_FOUND in any project without `typescript`. So it is loaded on
+// first use instead, synchronously: `transform()` has a sync path, which rules
+// out a dynamic `import()`. Resolved from gxt's own location
+// (`import.meta.url` = plugins/type-checker-hints.ts in-repo,
+// dist/gxt.compiler.es.js when published), where a package manager links an
+// installed peer.
+let ts: typeof TS;
+
+function loadTypeScript(): typeof TS {
+  if (ts === undefined) {
+    try {
+      ts = createRequire(import.meta.url)('typescript') as typeof TS;
+    } catch (error) {
+      const err = error as { code?: unknown; message?: unknown };
+      if (
+        err?.code === 'MODULE_NOT_FOUND' &&
+        typeof err.message === 'string' &&
+        err.message.startsWith("Cannot find module 'typescript'")
+      ) {
+        throw Object.assign(
+          new Error(
+            '@lifeart/gxt: the WITH_TYPE_CHECKER_HINTS compiler flag needs the "typescript" package, ' +
+              'which is not installed (it is an optional peer dependency of @lifeart/gxt). ' +
+              'Install it (e.g. `npm install --save-dev typescript`) or turn WITH_TYPE_CHECKER_HINTS off.',
+          ),
+          { code: 'GXT_TYPESCRIPT_MISSING', cause: error },
+        );
+      }
+      throw error;
+    }
+  }
+  return ts;
+}
 
 type MaybeTypeHints = TypeHints | undefined;
 type HintKind = PropertyTypeHint['kind'];
 
 const HINT_CACHE = new Map<string, readonly MaybeTypeHints[]>();
-let cachedCompilerOptions: ts.CompilerOptions | undefined;
+let cachedCompilerOptions: TS.CompilerOptions | undefined;
 
 function normalizePath(filePath: string): string {
   const normalized = filePath.replace(/\\/g, '/');
   return ts.sys.useCaseSensitiveFileNames ? normalized : normalized.toLowerCase();
 }
 
-function getCompilerOptions(): ts.CompilerOptions {
+function getCompilerOptions(): TS.CompilerOptions {
   if (cachedCompilerOptions) {
     return cachedCompilerOptions;
   }
@@ -43,7 +83,7 @@ function getCompilerOptions(): ts.CompilerOptions {
   return cachedCompilerOptions;
 }
 
-function resolveSymbolName(symbol: ts.Symbol | undefined, checker: ts.TypeChecker): string | undefined {
+function resolveSymbolName(symbol: TS.Symbol | undefined, checker: TS.TypeChecker): string | undefined {
   if (!symbol) {
     return undefined;
   }
@@ -55,8 +95,8 @@ function resolveSymbolName(symbol: ts.Symbol | undefined, checker: ts.TypeChecke
 }
 
 function isTrackedDecoratorExpression(
-  expression: ts.Expression,
-  checker: ts.TypeChecker
+  expression: TS.Expression,
+  checker: TS.TypeChecker
 ): boolean {
   if (ts.isIdentifier(expression)) {
     if (expression.text === 'tracked') {
@@ -80,7 +120,7 @@ function isTrackedDecoratorExpression(
   return false;
 }
 
-function hasTrackedDecorator(node: ts.Node, checker: ts.TypeChecker): boolean {
+function hasTrackedDecorator(node: TS.Node, checker: TS.TypeChecker): boolean {
   if (!ts.canHaveDecorators(node)) {
     return false;
   }
@@ -91,17 +131,17 @@ function hasTrackedDecorator(node: ts.Node, checker: ts.TypeChecker): boolean {
   return decorators.some((decorator) => isTrackedDecoratorExpression(decorator.expression, checker));
 }
 
-function isReadonlyNode(node: ts.Node): boolean {
+function isReadonlyNode(node: TS.Node): boolean {
   return ts.canHaveModifiers(node)
     && (ts.getModifiers(node)?.some((m) => m.kind === ts.SyntaxKind.ReadonlyKeyword) ?? false);
 }
 
-function getLiteralValue(type: ts.Type): string | number | boolean | undefined {
+function getLiteralValue(type: TS.Type): string | number | boolean | undefined {
   if ((type.flags & ts.TypeFlags.StringLiteral) !== 0) {
-    return (type as ts.StringLiteralType).value;
+    return (type as TS.StringLiteralType).value;
   }
   if ((type.flags & ts.TypeFlags.NumberLiteral) !== 0) {
-    return (type as ts.NumberLiteralType).value;
+    return (type as TS.NumberLiteralType).value;
   }
   if ((type.flags & ts.TypeFlags.BooleanLiteral) !== 0) {
     return (type as any).intrinsicName === 'true';
@@ -120,7 +160,7 @@ function mergeUnionKinds(kinds: HintKind[]): HintKind {
   return 'unknown';
 }
 
-function isCellLikeType(type: ts.Type, checker: ts.TypeChecker): boolean {
+function isCellLikeType(type: TS.Type, checker: TS.TypeChecker): boolean {
   const symbolName = resolveSymbolName(type.aliasSymbol ?? type.getSymbol(), checker);
   if (symbolName === 'Cell' || symbolName === 'MergedCell') {
     return true;
@@ -134,7 +174,7 @@ function isCellLikeType(type: ts.Type, checker: ts.TypeChecker): boolean {
   return text.includes('Cell<') || text.includes('MergedCell<') || text === 'Cell' || text === 'MergedCell';
 }
 
-function classifyType(type: ts.Type, checker: ts.TypeChecker): { kind: HintKind; literalValue?: string | number | boolean } {
+function classifyType(type: TS.Type, checker: TS.TypeChecker): { kind: HintKind; literalValue?: string | number | boolean } {
   if (type.isUnion()) {
     const classified = type.types.map((part) => classifyType(part, checker));
     const kind = mergeUnionKinds(classified.map((c) => c.kind));
@@ -190,7 +230,7 @@ function toHint(
   };
 }
 
-function getMemberName(name: ts.PropertyName | ts.PrivateIdentifier | undefined): string | undefined {
+function getMemberName(name: TS.PropertyName | TS.PrivateIdentifier | undefined): string | undefined {
   if (!name) return undefined;
   if (ts.isIdentifier(name) || ts.isPrivateIdentifier(name)) {
     return name.text;
@@ -202,8 +242,8 @@ function getMemberName(name: ts.PropertyName | ts.PrivateIdentifier | undefined)
 }
 
 function collectPropertyHints(
-  classNode: ts.ClassLikeDeclaration,
-  checker: ts.TypeChecker
+  classNode: TS.ClassLikeDeclaration,
+  checker: TS.TypeChecker
 ): Record<string, PropertyTypeHint> | undefined {
   const hints: Record<string, PropertyTypeHint> = {};
 
@@ -246,8 +286,8 @@ function collectPropertyHints(
 }
 
 function collectArgsHints(
-  classNode: ts.ClassLikeDeclaration,
-  checker: ts.TypeChecker
+  classNode: TS.ClassLikeDeclaration,
+  checker: TS.TypeChecker
 ): Record<string, PropertyTypeHint> | undefined {
   const heritage = classNode.heritageClauses?.find(
     (clause) => clause.token === ts.SyntaxKind.ExtendsKeyword
@@ -285,11 +325,11 @@ function collectArgsHints(
   return Object.keys(hints).length > 0 ? hints : undefined;
 }
 
-function isTemplateFunctionCall(node: ts.CallExpression, templateFunctionNames: ReadonlySet<string>): boolean {
+function isTemplateFunctionCall(node: TS.CallExpression, templateFunctionNames: ReadonlySet<string>): boolean {
   return ts.isIdentifier(node.expression) && templateFunctionNames.has(node.expression.text);
 }
 
-function collectTemplateFunctionNames(sourceFile: ts.SourceFile): Set<string> {
+function collectTemplateFunctionNames(sourceFile: TS.SourceFile): Set<string> {
   const names = new Set<string>();
 
   for (const statement of sourceFile.statements) {
@@ -316,8 +356,8 @@ function collectTemplateFunctionNames(sourceFile: ts.SourceFile): Set<string> {
   return names;
 }
 
-function findEnclosingClass(node: ts.Node): ts.ClassLikeDeclaration | undefined {
-  let current: ts.Node | undefined = node.parent;
+function findEnclosingClass(node: TS.Node): TS.ClassLikeDeclaration | undefined {
+  let current: TS.Node | undefined = node.parent;
   while (current) {
     if (ts.isClassDeclaration(current) || ts.isClassExpression(current)) {
       return current;
@@ -327,7 +367,7 @@ function findEnclosingClass(node: ts.Node): ts.ClassLikeDeclaration | undefined 
   return undefined;
 }
 
-function buildClassTypeHints(classNode: ts.ClassLikeDeclaration, checker: ts.TypeChecker): TypeHints | undefined {
+function buildClassTypeHints(classNode: TS.ClassLikeDeclaration, checker: TS.TypeChecker): TypeHints | undefined {
   const properties = collectPropertyHints(classNode, checker);
   const args = collectArgsHints(classNode, checker);
 
@@ -341,7 +381,7 @@ function buildClassTypeHints(classNode: ts.ClassLikeDeclaration, checker: ts.Typ
   };
 }
 
-function createProgramForVirtualFile(source: string, fileName: string): ts.Program {
+function createProgramForVirtualFile(source: string, fileName: string): TS.Program {
   const options = getCompilerOptions();
   const host = ts.createCompilerHost(options, true);
   const virtualPath = normalizePath(fileName);
@@ -385,6 +425,9 @@ export function resolveTemplateTypeHintsWithChecker(
   source: string,
   fileName: string
 ): readonly MaybeTypeHints[] {
+  // Outside the try below: a missing `typescript` must surface, not degrade
+  // into "no hints".
+  loadTypeScript();
   const cacheKey = hashKey(fileName, source);
   const cached = HINT_CACHE.get(cacheKey);
   if (cached) {
@@ -409,9 +452,9 @@ export function resolveTemplateTypeHintsWithChecker(
     }
 
     const hints: MaybeTypeHints[] = [];
-    const classHintsCache = new Map<ts.ClassLikeDeclaration, MaybeTypeHints>();
+    const classHintsCache = new Map<TS.ClassLikeDeclaration, MaybeTypeHints>();
 
-    const visit = (node: ts.Node) => {
+    const visit = (node: TS.Node) => {
       if (ts.isCallExpression(node) && isTemplateFunctionCall(node, templateFunctionNames)) {
         const classNode = findEnclosingClass(node);
         if (!classNode) {

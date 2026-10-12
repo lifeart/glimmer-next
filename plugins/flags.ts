@@ -46,6 +46,82 @@ export type Flags = {
   // retires the bridge's `<EmberHtmlRaw>` transform + `$_tag`-wrapper
   // special-case + out-of-band contextual-reparse pass.
   EMBER_TRUSTED_HTML: boolean;
+  // Ember NATIVE layer dialect (the Ember build that runs on gxt without the
+  // Glimmer VM and without the compat bridge). Compile-time only, emission-
+  // affecting, default off (standalone and compat output are byte-identical):
+  //   - template-only templates (`const X = <template>…</template>`,
+  //     `export default <template>…</template>`) are wrapped in `$_tpl(...)`,
+  //     the template-function brand the host checks with `isTemplateFn` (G14);
+  //   - block-param member taps emit the non-defining `$__tag(obj, 'k')`
+  //     instead of `$__cellFor(obj, 'k')` (which installs an own accessor that
+  //     would shadow Ember `@tracked` prototype accessors);
+  //   - `$_tpl` / `$__tag` are auto-imported only under this flag;
+  //   - helper / modifier / curry call sites (G4 / G9): literal-or-thunk
+  //     arguments, `$_maybeHelper(ref, [args], {named}, ctx, site)`,
+  //     `$_maybeModifier(ref, $n, [args], {named}, ctx)`, an unbound `{{on}}` is
+  //     Ember's built-in modifier, `<@comp />` is a dynamic component, yield
+  //     params are built against the enclosing render context.
+  // Also a RUNTIME build constant (inlined by the consumer's `define`, like the
+  // WITH_* flags): the Ember-only runtime branches — the host helper manager
+  // owning every helper value (G4), curried values (G9), Ember keyword-helper
+  // semantics (G-kw), `$_dc` nullish / definition-object handling, list-tag
+  // entanglement with Ember tracked collections — fold away when false.
+  EMBER_NATIVE: boolean;
+  // Ember `{{outlet}}` keyword (G3; the Ember native layer). Compile-time only,
+  // emission-affecting, default off: `{{outlet}}` emits `$_outlet(ctx)` — the
+  // runtime renders the host's outlet component (`registerHostHooks({
+  // outletComponent })`) as a child of the enclosing template context —
+  // instead of the historic `$_slot("default")` (which renders nothing in
+  // Ember). A genuine binding named `outlet` (block param / lexical scope)
+  // shadows the keyword. `$_outlet` is auto-imported only under this flag, so
+  // standalone and compat output are byte-identical.
+  EMBER_OUTLET: boolean;
+  // Ember property tags (G8; the Ember native layer). Compile-time only,
+  // emission-affecting, default off: every MEMBER segment of a `this.*`,
+  // `@arg.*`, block-param or let-binding path is read through the non-defining
+  // tap `$__tag(obj, "key")` instead of a plain `obj?.key` read. The tap returns
+  // the property value AND consumes the per-(obj, key) property tag (through the
+  // host `getProp` hook when one is registered — Ember: `_getProp`, which also
+  // honours `unknownProperty` and array `[]` tags), so a `set()` /
+  // `notifyPropertyChange()` on an UNTRACKED property (controllers, POJOs, test
+  // contexts, query params) re-renders exactly the bindings that read it —
+  // Glimmer's global-context `getProp` parity. `$__tag` is auto-imported only
+  // under this flag (or EMBER_NATIVE), so standalone and compat output are
+  // byte-identical.
+  EMBER_PROPERTY_TAGS: boolean;
+  // Ember template self (G6; the Ember native layer). Compile-time only,
+  // emission-affecting, default off: a template reads its `this` (the Ember
+  // "self") through `const $s = $_self(this)` — `this.x` emits `$s.x`, `{{this}}`
+  // emits `$s` — while `this` stays the RENDER NODE (the ctx passed to `$_tag` /
+  // `$_c` / helpers / slots). `$_self(node)` returns `node[$SELF]` when the host
+  // set one (a loose route template whose self is its controller, a test
+  // context), else the node itself (components: self === node). The render node
+  // is never the host object, so gxt never writes `args` / tree ids / rendered
+  // nodes onto a controller or a test context. `$_self` is auto-imported only
+  // under this flag; standalone and compat output are byte-identical.
+  EMBER_SELF: boolean;
+  // Ember loose-mode (resolver) resolution (G11; the Ember native layer).
+  // Compile-time only, emission-affecting, default off. Applies ONLY to
+  // templates compiled with `strictMode: false` (CompileOptions.strictMode — a
+  // build-time `precompileTemplate(…, { strictMode: false })` (G10), a host's
+  // runtime-compiled loose template); strict templates (`<template>`, the
+  // default) are unchanged. In a loose template a free name the template has
+  // no lexical binding for is resolved BY NAME by the host, with Glimmer's
+  // syntax rules:
+  //   - `<FooBar>` / `<Foo::Bar>` (uppercase-first or `::`) is a component:
+  //     `$_c("foo-bar", …)` / `$_c("foo/bar", …)` (Ember's component-name
+  //     dasherization); a lowercase tag stays an element;
+  //   - `{{#foo-bar}}…{{/foo-bar}}` and `{{component "foo-bar"}}` are
+  //     components: `$_c("foo-bar", …)`;
+  //   - `{{foo-bar …}}` in content position is a component OR a helper:
+  //     `$_looseAppend("foo-bar", [args], {named}, ctx, site, optional)` asks the
+  //     host (`resolveComponentOrHelper`) once per render; `optional` (no
+  //     arguments) renders nothing when neither exists;
+  //   - helper (sub-expression / attribute) and modifier positions already
+  //     pass the name string to the host managers.
+  // `$_looseAppend` is auto-imported only under this flag; standalone and
+  // compat output are byte-identical.
+  EMBER_LOOSE_COMPONENTS: boolean;
 };
 
 export function defaultFlags() {
@@ -66,5 +142,10 @@ export function defaultFlags() {
     EMBER_ATTR_CONCAT: false,
     EMBER_IN_ELEMENT: false,
     EMBER_TRUSTED_HTML: false,
+    EMBER_NATIVE: false,
+    EMBER_OUTLET: false,
+    EMBER_PROPERTY_TAGS: false,
+    EMBER_SELF: false,
+    EMBER_LOOSE_COMPONENTS: false,
   } as Flags;
 }

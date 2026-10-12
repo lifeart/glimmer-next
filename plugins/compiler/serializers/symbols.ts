@@ -68,6 +68,12 @@ export const SYMBOLS = {
   // Short alias for this[$args] in compiled output
   ARGS_ALIAS: '$a',
 
+  // EMBER_SELF (G6): the template's self, declared by the wrapper preamble as
+  // `const $s = $_self(this)`; `this` path heads read it. `$_self` itself is
+  // emitted only in the preamble (module assembler / runtime compiler).
+  SELF_ALIAS: '$s',
+  SELF: '$_self',
+
   // Built-in helpers
   COMPONENT_HELPER: '$_componentHelper',
   MODIFIER_HELPER: '$_modifierHelper',
@@ -95,6 +101,9 @@ export const SYMBOLS = {
   // serializer for a member read whose head is a block param, gated by
   // WITH_EMBER_INTEGRATION + IS_GLIMMER_COMPAT_MODE.
   CELL_FOR: '$__cellFor',
+  // Ember NATIVE-layer twin of CELL_FOR (EMBER_NATIVE flag): a non-defining
+  // tag-consuming member read (src/core/helpers/tag.ts).
+  TAG_TAP: '$__tag',
   // Ember-dialect quoted-attribute concat. Emitted by the concat serializer for
   // interpolated quoted attribute values (`class="a {{b}} c"`) instead of
   // `[...].join('')`, gated by the EMBER_ATTR_CONCAT flag. Applies Ember string
@@ -116,6 +125,27 @@ export const SYMBOLS = {
   // `<EmberHtmlRaw @value={{expr}} />` transform + `$_tag`-wrapper special-case +
   // out-of-band reparse pass. Auto-reportable (in emittedSymbols) via SYMBOLS.
   HTML: '$_html',
+  // Ember `{{outlet}}` keyword (EMBER_OUTLET flag, G3). The mustache visitor
+  // emits the internal `$__outlet` marker below; buildHelper lowers it to
+  // `$_outlet(ctx)`, which renders the host outlet component as a child of the
+  // enclosing template context. Auto-reportable (in emittedSymbols) via SYMBOLS.
+  OUTLET: '$_outlet',
+  // Ember loose-mode ambiguous append (EMBER_LOOSE_COMPONENTS flag, G11). The
+  // mustache visitor emits the internal `$__looseAppend` marker below for a
+  // content-position `{{name …}}` with no lexical binding in a loose template;
+  // buildHelper lowers it to `$_looseAppend("name", [args], {named}, ctx, site,
+  // optional)` — the runtime asks the host whether `name` is a component or a
+  // helper. Auto-reportable (in emittedSymbols) via SYMBOLS.
+  LOOSE_APPEND: '$_looseAppend',
+  // Ember `{{#each-in}}` (EMBER_NATIVE, G5): the iteration source of the
+  // lowered `each` — `$__eachIn(obj)` returns the object's entries as stable
+  // `[key, value]` pairs. Auto-reportable (in emittedSymbols) via SYMBOLS.
+  EACH_IN: '$__eachIn',
+  // Ember trusting attribute value (EMBER_NATIVE): a trusting `style={{{x}}}`
+  // emits `$_trustAttr(x)` (via the internal `$__trusted_attr` marker below) so
+  // the host skips its DEV untrusted-style warning (Glimmer's
+  // TrustingDynamicAttribute). Auto-reportable (in emittedSymbols) via SYMBOLS.
+  TRUST_ATTR: '$_trustAttr',
 
   // Unstable child wrapper
   UCW: '$_ucw',
@@ -151,6 +181,7 @@ const NON_REPORTED_SYMBOL_VALUES: ReadonlySet<string> = new Set<string>([
   SYMBOLS.LOCAL_NODE,
   SYMBOLS.ARGS_PROPERTY,
   SYMBOLS.ARGS_ALIAS,
+  SYMBOLS.SELF_ALIAS,
   SYMBOLS.SCOPE_KEY,
   SYMBOLS.EVAL_KEY,
   SYMBOLS.TEMPLATE,
@@ -275,6 +306,28 @@ export const INTERNAL_HELPERS = {
   // intercepts this name and emits `$_html(() => inner, ctx)` (SYMBOLS.HTML).
   // Never a real runtime import — purely a compile-time routing sentinel.
   TRUSTED_HTML: '$__html',
+  // Marker for an Ember `{{outlet}}` (EMBER_OUTLET flag, G3) in content
+  // position. buildHelper lowers it to `$_outlet(ctx)` (SYMBOLS.OUTLET); like
+  // TRUSTED_HTML it produces DOM (a component), so the element visitor keeps it
+  // a child instead of folding it into a `@textContent` binding. Never a real
+  // runtime import — purely a compile-time routing sentinel.
+  OUTLET: '$__outlet',
+  // Marker for an Ember loose-mode ambiguous append (EMBER_LOOSE_COMPONENTS
+  // flag, G11): positional[0] = the name literal, positional[1] = the
+  // `optional` literal, then the call's positional arguments. buildHelper
+  // lowers it to `$_looseAppend(…)` (SYMBOLS.LOOSE_APPEND); it may render a
+  // component, so (like OUTLET) the element visitor keeps it a child. Never a
+  // real runtime import — purely a compile-time routing sentinel.
+  LOOSE_APPEND: '$__looseAppend',
+  // Marker for the `{{#each-in}}` iteration source (EMBER_NATIVE, G5):
+  // positional[0] = the iterated object. buildHelper lowers it to
+  // `$__eachIn(obj)` (SYMBOLS.EACH_IN). Never a real runtime import.
+  EACH_IN: '$__each_in',
+  // Marker for a trusting `style` attribute value (EMBER_NATIVE):
+  // positional[0] = the value. buildHelper lowers it to `$_trustAttr(value)`
+  // (SYMBOLS.TRUST_ATTR), read in place inside the attribute getter. Never a
+  // real runtime import.
+  TRUSTED_ATTR: '$__trusted_attr',
 } as const;
 
 /**

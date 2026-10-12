@@ -36,7 +36,7 @@ import {
   materializeAbsentPathCell,
   registerLeafOwnersForFormula,
 } from '@/core/reactive';
-import { opcodeFor, checkOpcode } from '@/core/vm';
+import { opcodeFor, opcodeForValue, checkOpcode } from '@/core/vm';
 import {
   SyncListComponent,
   AsyncListComponent,
@@ -72,6 +72,20 @@ import { isRehydrationScheduled } from './ssr/rehydration-state';
 import { createHotReload } from './hmr';
 import { CONSTANTS } from '../../plugins/symbols';
 import { initDOM, provideContext, RENDERING_CONTEXT, cleanupFastContext } from './context';
+import {
+  CONTENT_COMPONENT,
+  CONTENT_HELPER,
+  CONTENT_HTML,
+  CONTENT_TEXT,
+  nativeContentKind,
+  nativeContentText,
+  NO_INITIAL,
+  isContentComponent,
+  isNativeRuntime,
+  setNativeContentBinding,
+  takeInitialContent,
+  type ContentKind,
+} from './native-content';
 import { SVGProvider, HTMLProvider, MathMLProvider } from './provider';
 import { IfCondition, type IfFunction } from './control-flow/if';
 
@@ -84,6 +98,7 @@ import {
 } from './tracking';
 import {
   HOST_HOOKS,
+  hostAssertFailed,
   hostNormalizeAttrValue,
   isHostFunctionalHelper,
   markHostFunctionalHelper,
@@ -138,6 +153,13 @@ let unstableWrapperId: number = 0;
 
 // Import and re-export $_MANAGERS from manager-integration
 import { $_MANAGERS } from './manager-integration';
+import {
+  $_curry,
+  CURRIED_COMPONENT,
+  CURRIED_HELPER,
+  CURRIED_MODIFIER,
+} from './curried';
+import { splatLocalPlan } from './splat-local';
 export { $_MANAGERS };
 
 export function $_TO_VALUE(reference: unknown) {
@@ -166,7 +188,12 @@ export function $_unwrapHelperArg(value: unknown): unknown {
  * Component helper - curries a component with pre-bound args.
  * Handles both class/function components and string component names.
  */
-export function $_componentHelper(params: any[], hash: Record<string, unknown>) {
+export function $_componentHelper(params: any[], hash: Record<string, unknown>, ctx?: unknown) {
+  if (EMBER_NATIVE) {
+    // Ember native layer (G9): a curried component value, resolved by the host
+    // component manager when `$_c` / `$_dc` render it.
+    return $_curry(CURRIED_COMPONENT, params, hash, ctx) as never;
+  }
   const componentFn = $_unwrapHelperArg(params[0]);
 
   // For string component names, return a special wrapper that will be resolved at render time
@@ -202,7 +229,12 @@ export function $_componentHelper(params: any[], hash: Record<string, unknown>) 
 /**
  * Modifier helper - curries a modifier with pre-bound args.
  */
-export function $_modifierHelper(params: any[], hash: Record<string, unknown>) {
+export function $_modifierHelper(params: any[], hash: Record<string, unknown>, ctx?: unknown) {
+  if (EMBER_NATIVE) {
+    // Ember native layer (G9): a curried modifier value, resolved by the host
+    // modifier manager when `$_maybeModifier` installs it.
+    return $_curry(CURRIED_MODIFIER, params, hash, ctx) as never;
+  }
   const modifierFn = $_unwrapHelperArg(params[0]) as Function;
   const boundParams = params.slice(1);
 
@@ -229,7 +261,12 @@ export function $_modifierHelper(params: any[], hash: Record<string, unknown>) {
 /**
  * Helper helper - curries a helper with pre-bound args.
  */
-export function $_helperHelper(params: any[], hash: Record<string, unknown>) {
+export function $_helperHelper(params: any[], hash: Record<string, unknown>, ctx?: unknown) {
+  if (EMBER_NATIVE) {
+    // Ember native layer (G9): a curried helper value, resolved by the host
+    // helper manager when `$_maybeHelper` invokes it.
+    return $_curry(CURRIED_HELPER, params, hash, ctx) as never;
+  }
   const helperFn = $_unwrapHelperArg(params[0]) as Function;
   const boundParams = params.slice(1);
 
@@ -319,6 +356,13 @@ export function $prop(
   value: unknown,
   destructors: DestructorFn[],
 ) {
+  // EMBER_NATIVE: Glimmer's normalizeProperty — a name the element has no
+  // property for (a custom element's `some-attr`, any attribute unknown to
+  // the element) is written as an attribute, never as an expando property.
+  if (EMBER_NATIVE && !(key in element)) {
+    $attr(api, element as HTMLElement, key, value, destructors);
+    return;
+  }
   const { result, isReactive } = resolveBindingValue(value, `${key}-prop`);
 
   if (isEmpty(result)) {
@@ -376,6 +420,98 @@ export function $prop(
   }
 }
 
+/**
+ * EMBER_NATIVE: an element's `class` with Glimmer's attribute semantics.
+ *   - ONE class value is a plain dynamic attribute (the host's
+ *     normalizeAttrValue = Glimmer normalizeValue): `null` / `undefined` /
+ *     `false` remove the attribute, `''` keeps `class=""`, `true` is `""`.
+ *   - SEVERAL (the element's own class and the classes `...attributes`
+ *     forwards, in source order) merge like Glimmer's createClassListRef: the
+ *     non-empty string values (normalizeStringValue: `null` / `undefined` /
+ *     no `toString` are empty) joined by a space — no attribute at all when
+ *     every value is empty.
+ * The className property path below sets `class=""` (or `"undefined"`) for an
+ * empty value instead, and joins empty values into stray spaces.
+ */
+function nativeClassAttribute(
+  api: DOMApi,
+  element: HTMLElement,
+  classNameModifiers: Attr[],
+  destructors: Destructors,
+) {
+  if (classNameModifiers.length === 1) {
+    $nativeClass(api, element, classNameModifiers[0], destructors);
+    return;
+  }
+  $nativeClass(
+    api,
+    element,
+    () => {
+      let list = '';
+      for (let i = 0; i < classNameModifiers.length; i++) {
+        const part = classListPart(classNameModifiers[i]);
+        if (part !== '') list = list === '' ? part : `${list} ${part}`;
+      }
+      return list === '' ? null : list;
+    },
+    destructors,
+  );
+}
+
+const NOT_APPLIED = Symbol('not-applied');
+
+/**
+ * EMBER_NATIVE `class` binding (also the static-block row path's class slot):
+ * `$attr`'s write — normalized by the host, `undefined` removes — except that a
+ * reactive re-apply whose normalized value is unchanged writes nothing (the
+ * className property path it replaces had the same check). A row's
+ * `class={{if (isSelected row) "x"}}` re-evaluates on every selection change;
+ * only the rows whose class actually changes touch the DOM.
+ */
+export function $nativeClass(
+  api: DOMApi,
+  element: HTMLElement,
+  value: unknown,
+  destructors: Destructors,
+) {
+  const { result, isReactive } = resolveBindingValue(value, 'class-attr');
+  if (!isReactive) {
+    $attr(api, element, 'class', result, destructors);
+    return;
+  }
+  let applied: unknown = NOT_APPLIED;
+  destructors.push(
+    opcodeFor(result as AnyCell, (resolvedValue) => {
+      const hook = WITH_EMBER_INTEGRATION ? hostNormalizeAttrValue : null;
+      const normalized =
+        hook === null ? resolvedValue : hook('class', resolvedValue, element, false);
+      if (normalized === applied) return;
+      applied = normalized;
+      if (normalized === undefined) {
+        element.removeAttribute('class');
+      } else {
+        // @ts-expect-error type casting
+        api.attr(element, 'class', normalized);
+      }
+    }),
+  );
+}
+
+function classListPart(modifier: Attr): string {
+  let value: unknown = isFn(modifier) ? deepFnValue(modifier) : modifier;
+  if (value !== null && value !== undefined && isTagLike(value)) {
+    value = (value as AnyCell).value;
+  }
+  if (
+    value === null ||
+    value === undefined ||
+    typeof (value as { toString?: unknown }).toString !== 'function'
+  ) {
+    return '';
+  }
+  return String(value);
+}
+
 function mergeClassModifiers(
   api: DOMApi,
   element: Node,
@@ -383,6 +519,10 @@ function mergeClassModifiers(
   destructors: Destructors,
 ) {
   if (classNameModifiers.length === 0) {
+    return;
+  }
+  if (EMBER_NATIVE) {
+    nativeClassAttribute(api, element as HTMLElement, classNameModifiers, destructors);
     return;
   }
   if (IS_DEV_MODE) {
@@ -888,6 +1028,30 @@ function _DOM(
     // signals "no dedup needed" to the inner loops, removing both the
     // Set allocation and the per-key has/add calls.
     const seenKeys: Set<string> | null = hasSplatAttrs ? new Set<string>() : null;
+    // EMBER_NATIVE: Glimmer `...attributes` precedence (splat-local.ts) — the
+    // local attributes written AFTER `...attributes` are applied first and claim
+    // their keys; class values keep source order (reordered below).
+    let classAfterSplat = true;
+    let forwardedClasses = 0;
+    if (EMBER_NATIVE && hasSplatAttrs === true) {
+      const plan = splatLocalPlan(tagProps[0], tagProps[1]);
+      classAfterSplat = plan !== undefined && plan.classAfterSplat;
+      if (plan !== undefined) {
+        for (let i = 0; i < plan.keys.length; i++) {
+          seenKeys!.add(plan.keys[i]!);
+        }
+        addAttrs(api, plan.attrs as TagAttr[], element, null, destructors);
+        addProperties(
+          api,
+          plan.props as TagProp[],
+          element,
+          null,
+          destructors,
+          classNameModifiers,
+          setShadowNode,
+        );
+      }
+    }
 
     if (hasSplatAttrs === true) {
       for (let i = 0; i < tagProps[3]![2].length; i++) {
@@ -920,6 +1084,9 @@ function _DOM(
         classNameModifiers,
         setShadowNode,
       );
+      if (EMBER_NATIVE) {
+        forwardedClasses = classNameModifiers.length;
+      }
     }
     addProperties(
       api,
@@ -930,6 +1097,10 @@ function _DOM(
       classNameModifiers,
       setShadowNode,
     );
+    if (EMBER_NATIVE && !classAfterSplat && forwardedClasses !== 0) {
+      // A class written before `...attributes` precedes the forwarded classes.
+      classNameModifiers.push(...classNameModifiers.splice(0, forwardedClasses));
+    }
   }
 
   mergeClassModifiers(api, element, classNameModifiers, destructors);
@@ -1005,13 +1176,24 @@ export function $_inElement(
   // rendering (mirrors the classic Glimmer build-time assert). Dev throws the
   // parity message; production degrades to the default clear/replace.
   if (typeof mode === 'string') {
-    if (IS_DEV_MODE) {
-      throw new Error(
-        `Can only pass null to insertBefore in in-element, received: ${mode}`,
-      );
+    const message = `Can only pass null to insertBefore in in-element, received: ${mode}`;
+    if (HOST_HOOKS.assert !== undefined) {
+      // The host owns its assertion policy (Ember: `@ember/debug` assert —
+      // throws in DEBUG builds, stripped in production).
+      HOST_HOOKS.assert(message);
+    } else if (IS_DEV_MODE) {
+      throw new Error(message);
     }
     mode = IN_ELEMENT_CLEAR;
   }
+  // Ember native runtime: the destination is resolved — and the block
+  // rendered — when the in-element is MOUNTED (renderElement's mount hook),
+  // in document order like Glimmer's append-as-you-go builder, not when the
+  // enclosing template function builds its nodes: a destination created by
+  // the same render (`document.getElementById(…)`, the root element itself)
+  // exists and is in place by then, and content appended to the root element
+  // lands after the content rendered before the in-element.
+  const deferToMount = isNativeRuntime();
   const api = initDOM(ctx);
   return component(
     function UnstableChildWrapper(this: Component<any>) {
@@ -1031,28 +1213,53 @@ export function $_inElement(
         // @ts-ignore $_eval may exist on ctx
         if (ctx?.$_eval) { this.$_eval = ctx.$_eval; }
       }
+      if (deferToMount) {
+        // @ts-expect-error symbol index
+        this[MOUNT_REPARSE_HOOK] = () => {
+          // @ts-expect-error symbol index
+          this[MOUNT_REPARSE_HOOK] = undefined;
+          renderInElementBody();
+        };
+        return $_fin([], this);
+      }
+      renderInElementBody();
+      return $_fin([], this);
+    } as unknown as Component<any>,
+    {},
+    ctx,
+  );
+
+  function renderInElementBody() {
       let appendRef!: HTMLElement;
       if (isFn(elementRef)) {
         let result = elementRef();
         if (isFn(result)) {
           result = result();
         }
-        if (isTagLike(result)) {
+        if (result !== null && result !== undefined && isTagLike(result)) {
           appendRef = result.value;
         } else {
           appendRef = result;
         }
-      } else if (isTagLike(elementRef)) {
+      } else if (elementRef !== null && elementRef !== undefined && isTagLike(elementRef)) {
         appendRef = elementRef.value;
       } else {
         appendRef = elementRef;
       }
       if (!appendRef) {
+        if (deferToMount) {
+          // Glimmer / Ember: a nullish destination is an assertion (a host
+          // whose assert returns — a production build — renders nothing).
+          const message = 'You cannot pass a null or undefined destination element to in-element';
+          if (HOST_HOOKS.assert !== undefined) HOST_HOOKS.assert(message);
+          else hostAssertFailed(message);
+          return;
+        }
         if (IS_DEV_MODE) {
           const errMsg = `in-element: target element is null or undefined. isFn: ${isFn(elementRef)}, isTagLike: ${isTagLike(elementRef)}, fnResult: ${isFn(elementRef) ? String(elementRef()) : 'N/A'}`;
           console.error(errMsg);
         }
-        return $_fin([], this);
+        return;
       }
       // Clear/replace mode (Glimmer/Ember default): remove the target's
       // existing children before rendering our block body.
@@ -1083,11 +1290,7 @@ export function $_inElement(
           appendRef.innerHTML = '';
         }
       });
-      return $_fin([], this);
-    } as unknown as Component<any>,
-    {},
-    ctx,
-  );
+  }
 }
 
 export function $_ucw(
@@ -1318,6 +1521,7 @@ export const $_maybeHelper = (
   args: any[],
   _hashOrCtx?: Record<string, unknown> | any, // Hash object for known bindings, context for unknown, or undefined
   _maybeCtx?: any, // Optional 4th arg: context when 3rd arg is hash for unknown bindings
+  _site?: number, // EMBER_NATIVE: per-template call-site index (host per-call-site state)
 ) => {
   // Determine context and hash based on arguments:
   // - 4 args: _hashOrCtx is hash, _maybeCtx is context (unknown binding with named args)
@@ -1333,6 +1537,27 @@ export const $_maybeHelper = (
   const _ctx = _maybeCtx ?? (isCtxIn3rd ? _hashOrCtx : undefined);
   // Default _hash to empty object when not provided
   const _hash = _maybeCtx ? _hashOrCtx : (isCtxIn3rd ? {} : (_hashOrCtx ?? {}));
+  if (EMBER_NATIVE) {
+    // Ember native layer (G4): the host helper manager owns EVERY helper value
+    // it claims — plain functions (Ember's default helper manager: positional
+    // arguments + the named hash as a trailing argument), setHelperManager /
+    // class-based helpers, curried helpers and built-in keyword names. The
+    // compiler passes literal-or-thunk arguments, the render context and the
+    // call-site index (`$_maybeHelper(ref, [args], {named}, ctx, site)`).
+    // An argument-less `{{Comp}}` whose value is a COMPONENT (Glimmer's
+    // ambiguous append, G15): the value itself — the content binding renders
+    // it as a component instead of invoking it as a helper.
+    if (
+      args.length === 0 &&
+      Object.keys(_hash).length === 0 &&
+      isContentComponent(value)
+    ) {
+      return value;
+    }
+    if ($_MANAGERS.helper.canHandle(value)) {
+      return $_MANAGERS.helper.handle(value, args, _hash, _ctx, _site);
+    }
+  }
   if (typeof value === 'function') {
     if (value.helperType === 'ember') {
       // @ts-expect-error amount of args
@@ -2184,6 +2409,13 @@ export function applyDynamicManagerFwSplit(
   return fw;
 }
 
+// `$_dc` (EMBER_NATIVE): what a nullish dynamic component renders — nothing.
+function DC_EMPTY(this: Component<any>) {
+  // eslint-disable-next-line prefer-rest-params
+  $_GET_ARGS(this, arguments);
+  return $_fin([], this);
+}
+
 export function $_dc(
   comp: () => ComponentReturnType | Component,
   args: Record<string, unknown>,
@@ -2209,7 +2441,18 @@ export function $_dc(
   // whole branch away.
   let splatSplitDone = false;
   const destructor = opcodeFor(_cmp, (value: any) => {
-    if (typeof value !== 'function') {
+    if (EMBER_NATIVE && (value === null || value === undefined)) {
+      // Ember native layer: a nullish dynamic component renders nothing
+      // (Glimmer) — and stays swappable for a later real definition.
+      value = DC_EMPTY;
+    }
+    if (
+      typeof value !== 'function' &&
+      // Ember native layer: a definition object the host component manager
+      // claims (`templateOnly()`, …) is a component to render, not an
+      // already-rendered instance.
+      !(EMBER_NATIVE && $_MANAGERS.component.canHandle(value))
+    ) {
       result = value;
       // @ts-expect-error typings error
       addToTree(ctx, result, 'from Dynamic component opcode');
@@ -2242,6 +2485,11 @@ export function $_dc(
       api.insert(parent, newTarget, target);
       unregisterFromParent(result);
       destroyElementSync(result, false, api);
+      if (EMBER_NATIVE) {
+        // The outgoing placeholder was popped off the destroyed result, so its
+        // teardown left it in the DOM — one stray anchor per swap. Remove it.
+        api.destroy(target!);
+      }
       result = component(value, args, ctx);
       result![RENDERED_NODES_PROPERTY].push(newTarget!);
       renderElement(api, ctx, parent, result, newTarget!);
@@ -2293,10 +2541,13 @@ export const $_maybeModifier = (
   element: HTMLElement,
   props: any[],
   hashArgs: () => Record<string, unknown>,
+  // EMBER_NATIVE: the enclosing render context (owner / interactivity of the
+  // render tree). Never passed by compat / standalone emission.
+  ctx?: unknown,
 ) => {
   if (WITH_EMBER_INTEGRATION) {
     if ($_MANAGERS.modifier.canHandle(modifier)) {
-      return $_MANAGERS.modifier.handle(modifier, element, props, hashArgs);
+      return $_MANAGERS.modifier.handle(modifier, element, props, hashArgs, ctx);
     }
   }
 
@@ -2610,6 +2861,214 @@ export function $_html(getter: unknown, ctx: any): any {
   return carrier;
 }
 
+/**
+ * Ember `{{outlet}}` (G3): the compiler emits `$_outlet(ctx)` for `{{outlet}}`
+ * under the EMBER_OUTLET flag. gxt has no routing of its own — the host owns
+ * what an outlet renders. This renders the host's outlet component
+ * (`registerHostHooks({ outletComponent })`) through the regular component
+ * machinery (`$_c`, no args) with `ctx` — the enclosing template context, or
+ * the block context inside a block — as its render-tree parent, so the host
+ * component can read its outlet state from that context chain (`getContext`).
+ */
+export function $_outlet(ctx: Component<any>): ComponentReturnType {
+  const outlet = HOST_HOOKS.outletComponent;
+  if (outlet === undefined) {
+    throw new Error(
+      '`{{outlet}}` has no host outlet component: register one with `registerHostHooks({ outletComponent })`.',
+    );
+  }
+  return component(
+    outlet as typeof Component,
+    $_args({}, false, $_edp as unknown as FwType),
+    ctx,
+  ) as ComponentReturnType;
+}
+
+/**
+ * Ember loose-mode built-ins (G11): the wrapper preamble of a LOOSE template
+ * that lowered free `array` / `fn` / `hash` / `unique-id` to gxt built-ins —
+ * hands the names to `HOST_HOOKS.looseBuiltins` (the host's resolution-time
+ * checks) on every render of the template.
+ */
+export function $_looseBuiltins(ctx: object, names: readonly string[]): void {
+  const hook = HOST_HOOKS.looseBuiltins;
+  if (hook !== undefined) hook(ctx, names);
+}
+
+/**
+ * Ember loose-mode ambiguous append (G11): the compiler emits
+ * `$_looseAppend("name", [args], {named}, ctx, site, optional)` for a
+ * content-position `{{name …}}` in a LOOSE template (EMBER_LOOSE_COMPONENTS +
+ * `strictMode: false`) whose callee has no lexical binding. Whether `name` is a
+ * component or a helper is registry knowledge only the host has, so it asks
+ * `HOST_HOOKS.resolveComponentOrHelper` once per render of the call site
+ * (Glimmer resolves it once per template + owner):
+ *   - `'component'`: rendered through the component machinery as a child of
+ *     `ctx` — `$_c(name, $_args(named))`; positional arguments curry it
+ *     (`$_curry`), so the host receives them as the component's positional
+ *     arguments;
+ *   - `'helper'`: a reactive helper binding, exactly what a helper mustache
+ *     compiles to (`() => $_maybeHelper(name, args, named, ctx, site)`);
+ *   - `null`: nothing (an `optional` — argument-less — miss).
+ * Arguments follow the literal-or-thunk convention of `$_maybeHelper` /
+ * component args.
+ */
+export function $_looseAppend(
+  name: string,
+  positional: unknown[],
+  named: Record<string, unknown>,
+  ctx: Component<any>,
+  site: number,
+  optional: boolean,
+): unknown {
+  const resolve = HOST_HOOKS.resolveComponentOrHelper;
+  if (resolve === undefined) {
+    throw new Error(
+      `\`{{${name}}}\` in a loose-mode template has no host resolver: register one with \`registerHostHooks({ resolveComponentOrHelper })\`.`,
+    );
+  }
+  const kind = resolve(name, ctx, optional);
+  if (kind === 'component') {
+    const definition =
+      positional.length === 0
+        ? name
+        : $_curry(CURRIED_COMPONENT, [name, ...positional], {});
+    return component(
+      definition as unknown as typeof Component,
+      $_args(named, {}, $_edp as unknown as FwType),
+      ctx,
+    );
+  }
+  if (kind === 'helper') {
+    return () => $_maybeHelper(name, positional, named, ctx, site);
+  }
+  return '';
+}
+
+/**
+ * Glimmer dynamic content (G15; the EMBER_NATIVE runtime registers this as the
+ * native-content binding, see native-content.ts). Binds the reactive content
+ * formula `f` to the already-inserted `textNode`:
+ *   - a TEXT value writes the text node (the historic binding);
+ *   - a NODE / trusted HTML / COMPONENT / HELPER value renders a content unit —
+ *     a render-tree child of `treeParent` holding the rendered nodes — before
+ *     the text node (left empty as its anchor), spliced into `owner`'s rendered
+ *     nodes just before it so moves, first-node lookups and teardown include it;
+ *   - a change of kind or of the rendered value (node / HTML string /
+ *     definition identity) destroys the unit and renders the new value; a
+ *     helper unit's own result stays reactive inside it.
+ */
+export function bindNativeContent(
+  api: DOMApi,
+  treeParent: ComponentLike,
+  owner: ComponentLike | null,
+  textNode: Node,
+  f: MergedCell,
+): () => void {
+  let kind: ContentKind = CONTENT_TEXT;
+  let rendered: unknown = undefined;
+  let unit: ComponentLike | null = null;
+
+  // The unit REPLACES the text node in the owner's rendered nodes (in place:
+  // the list may be mid-iteration by renderElement) and holds the text node as
+  // its last node, so moves / first-node lookups / teardown see the content.
+  const swapInOwner = (from: unknown, to: unknown) => {
+    if (owner === null) return;
+    const nodes = owner[RENDERED_NODES_PROPERTY] as unknown[];
+    const index = nodes.indexOf(from);
+    if (index !== -1) nodes[index] = to;
+  };
+
+  const removeUnit = () => {
+    if (unit === null) return;
+    const current = unit;
+    unit = null;
+    swapInOwner(current, textNode);
+    // The anchor text node stays: only the unit's content is torn down.
+    const nodes = current[RENDERED_NODES_PROPERTY] as unknown[];
+    const anchorIndex = nodes.lastIndexOf(textNode);
+    if (anchorIndex !== -1) nodes.splice(anchorIndex, 1);
+    destroyElementSync(current, false, api);
+  };
+
+  const renderUnit = (next: ContentKind, value: unknown) => {
+    const parent = api.parent(textNode) as Node | null;
+    const created: ComponentLike = {
+      [$args]: {},
+      [COMPONENT_ID_PROPERTY]: cId(),
+      [RENDERED_NODES_PROPERTY]: [],
+      [RENDERING_CONTEXT_PROPERTY]: null,
+    } as unknown as ComponentLike;
+    addToTree(treeParent, created);
+    unit = created;
+    swapInOwner(textNode, created);
+    if (parent !== null) {
+      if (next === CONTENT_COMPONENT) {
+        const instance = component(
+          value as typeof Component,
+          $_args({}, false, $_edp as unknown as FwType),
+          created as Component<any>,
+        );
+        created[RENDERED_NODES_PROPERTY].push(instance as never);
+        renderElement(api, created, parent, instance as never, textNode, true);
+      } else {
+        let content: unknown;
+        if (next === CONTENT_HTML) {
+          content = parseTrustedHtml(api, rendered as string, parent as Element);
+        } else if (next === CONTENT_HELPER) {
+          content = () => $_maybeHelper(value, [], {}, created, 0);
+        } else if ((value as Node).nodeType === 11) {
+          // A DocumentFragment: its children are the content (it empties on insert).
+          content = Array.from((value as DocumentFragment).childNodes);
+        } else {
+          content = value;
+        }
+        renderElement(api, created, parent, content as never, textNode);
+      }
+    }
+    created[RENDERED_NODES_PROPERTY].push(textNode as never);
+  };
+
+  const apply = (value: unknown) => {
+    const next = nativeContentKind(api, value);
+    if (next === CONTENT_TEXT) {
+      if (kind !== CONTENT_TEXT) {
+        removeUnit();
+        kind = CONTENT_TEXT;
+        rendered = undefined;
+      }
+      api.textContent(textNode, nativeContentText(value));
+      registerLeafOwnersForFormula(f);
+      return;
+    }
+    const identity =
+      next === CONTENT_HTML ? resolveTrustedHtml(value) : value;
+    if (next === kind && identity === rendered) return;
+    removeUnit();
+    if (kind === CONTENT_TEXT) api.textContent(textNode, '');
+    kind = next;
+    rendered = identity;
+    renderUnit(next, value);
+  };
+  // Creation applies the value `resolveRenderable` already read (one read per
+  // create, Glimmer parity); a formula bound without one is evaluated here.
+  const initial = takeInitialContent(f);
+  const opDestructor =
+    initial === NO_INITIAL ? opcodeFor(f, apply) : opcodeForValue(f, apply, initial);
+
+  return () => {
+    opDestructor();
+    removeUnit();
+  };
+}
+
+// Module-level: the `typeof` guard keeps importing the published dist safe for
+// a consumer that does not define the EMBER_NATIVE build constant (it is left
+// to the consumer's `define`, like the WITH_* flags).
+if (typeof EMBER_NATIVE !== 'undefined' && EMBER_NATIVE) {
+  setNativeContentBinding(bindNativeContent);
+}
+
 export const $_api = (ctx: any) => initDOM(ctx);
 
 export function $_fin(
@@ -2653,6 +3112,13 @@ export function renderComponent(
     owner?: Root;
     args?: Record<string, unknown>;
     element?: ComponentRenderTarget;
+    /**
+     * Insert the rendered nodes before this child of the target (`null`:
+     * append). Omitted: before the target's current last child (historic).
+     * Rendering straight into the live target, in document order, lets a
+     * template find elements it rendered earlier in the same render.
+     */
+    nextSibling?: Node | null;
   } = {},
 ): ComponentReturnType {
   const appRoot = params.owner ?? createRoot();
@@ -2684,7 +3150,7 @@ export function renderComponent(
     instance,
     targetElement as unknown as HTMLElement,
     instance as any,
-    targetElement.lastChild,
+    'nextSibling' in params ? (params.nextSibling ?? null) : targetElement.lastChild,
   );
 
   return instance;

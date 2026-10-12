@@ -8,8 +8,10 @@ import type { ASTv1 } from '@glimmer/syntax';
 import type { CompilerContext, VisitFn } from '../context';
 import type { SerializedValue, HBSControlExpression, HBSNode, SourceRange } from '../types';
 import { literal, path, helper, getter, raw, isSerializedValue } from '../types';
-import { getNodeRange, resolvePath, serializeValueToString, getPathPartRanges, getPathExpressionString } from './utils';
+import { getNodeRange, resolvePath, serializeValueToString, getPathPartRanges, getPathExpressionString, hasRealBinding } from './utils';
 import { INTERNAL_HELPERS } from '../serializers/symbols';
+import { addError, addWarning } from '../context';
+import { isLooseAppend, looseFreePathError } from './loose';
 
 /**
  * Get the visit function from context.
@@ -59,8 +61,15 @@ export function visitMustache(
 
   const pathName = getPathExpressionString(node.path);
 
+  // Ember native layer: a genuine binding (`{{#let … as |mount|}}`, a block
+  // param, a lexical name) shadows the `mount` / `component` / `input` /
+  // `textarea` keyword rewrites below, as it shadows any keyword in Glimmer —
+  // `{{component}}` then reads the binding. Without the flag the rewrites are
+  // unconditional (historic compat output).
+  const shadowsKeyword = !!ctx.flags.EMBER_NATIVE && hasRealBinding(ctx, pathName);
+
   // In compat mode, transform {{mount "engine-name" model=expr}} to <ember-mount> element
-  if (pathName === 'mount' && ctx.flags.IS_GLIMMER_COMPAT_MODE) {
+  if (pathName === 'mount' && ctx.flags.IS_GLIMMER_COMPAT_MODE && !shadowsKeyword) {
     return createMountElement(ctx, node, range);
   }
 
@@ -68,7 +77,7 @@ export function visitMustache(
   // to an HBSNode (angle-bracket component element).
   // Skip when the first param is a SubExpression (e.g., {{component (component "-looked-up") arg=val}})
   // — let it fall through to normal helper processing so $_componentHelper handles chaining.
-  if (pathName === 'component' && ctx.flags.IS_GLIMMER_COMPAT_MODE) {
+  if (pathName === 'component' && ctx.flags.IS_GLIMMER_COMPAT_MODE && !shadowsKeyword) {
     const firstParam = node.params[0];
     if (firstParam && firstParam.type === 'SubExpression') {
       // Fall through to helper processing — $_componentHelper will handle the chained call
@@ -139,7 +148,13 @@ export function visitMustache(
 
   // In compat mode, transform bare {{this}} to {{this.__gxtSelfString__}}
   // Ember's {{this}} calls toString() on the component instance.
-  if (ctx.flags.IS_GLIMMER_COMPAT_MODE && node.path.type === 'PathExpression') {
+  // (EMBER_SELF, G6: `{{this}}` is the template self `$s`, rendered as text by
+  // the runtime — no compat-bridge property.)
+  if (
+    ctx.flags.IS_GLIMMER_COMPAT_MODE &&
+    !ctx.flags.EMBER_SELF &&
+    node.path.type === 'PathExpression'
+  ) {
     const head = node.path.head;
     if (head.type === 'ThisHead' && node.path.tail.length === 0 && node.params.length === 0 && node.hash.pairs.length === 0) {
       const resolved = resolvePath(ctx, 'this.__gxtSelfString__');
@@ -149,8 +164,42 @@ export function visitMustache(
   }
 
   // In compat mode, transform {{input ...}} / {{textarea ...}} to <Input /> / <Textarea />
-  if ((pathName === 'input' || pathName === 'textarea') && ctx.flags.IS_GLIMMER_COMPAT_MODE) {
+  if (
+    (pathName === 'input' || pathName === 'textarea') &&
+    ctx.flags.IS_GLIMMER_COMPAT_MODE &&
+    !shadowsKeyword
+  ) {
     return createInputTextareaElement(ctx, node, pathName, range);
+  }
+
+  // Ember loose mode (G11): `{{free.path}}` (a free head with members) is
+  // Glimmer's compile-time error.
+  if (
+    !ctx.inAttributeValue &&
+    !ctx.inAttributeConcat &&
+    node.path.head.type === 'VarHead' &&
+    node.path.tail.length > 0
+  ) {
+    const message = looseFreePathError(ctx, node.path.head.name, pathName, 'append');
+    if (message !== null) {
+      addError(ctx, message, 'E002', range);
+      return literal('');
+    }
+  }
+
+  // Ember loose mode (G11): a content-position `{{name …}}` whose callee has
+  // no lexical binding is a component OR a helper, resolved by name at render
+  // time (Glimmer's append syntax context) — replaces the compat inline-curly
+  // guess below. A trusting `{{{name}}}` stays a helper.
+  if (
+    node.escaped !== false &&
+    isLooseAppend(
+      ctx,
+      pathName,
+      node.path.head.type === 'VarHead' && node.path.tail.length === 0
+    )
+  ) {
+    return createLooseAppend(ctx, node, pathName, range);
   }
 
   // In compat mode, transform inline curly components: {{foo-bar arg=val}} → HBSNode
@@ -173,8 +222,18 @@ export function visitMustache(
     }
   }
 
-  // Handle yield/outlet
-  if (pathName === 'yield' || pathName === 'outlet') {
+  // Ember `{{outlet}}` keyword (EMBER_OUTLET, G3): emit the internal OUTLET
+  // marker (lowered to `$_outlet(ctx)` by buildHelper). A genuine binding named
+  // `outlet` (`{{#let … as |outlet|}}`, `{{#each … as |outlet|}}`, a lexical
+  // `outlet`) shadows the keyword (Ember block-param semantics) and falls
+  // through to the ordinary path below. Without the flag the historic
+  // `$_slot("default")` lowering is unchanged (byte-identical compat output).
+  if (pathName === 'outlet' && ctx.flags.EMBER_OUTLET) {
+    if (!hasRealBinding(ctx, 'outlet')) {
+      return helper(INTERNAL_HELPERS.OUTLET, [], new Map(), range);
+    }
+  } else if (pathName === 'yield' || pathName === 'outlet') {
+    // Handle yield/outlet
     return createYieldExpression(ctx, node, range);
   }
 
@@ -284,6 +343,31 @@ function createYieldExpression(
         slotName = serializeValueToString(result, ctx);
       }
     }
+  }
+
+  // Ember native layer: keep the yield params as values; the yield
+  // serializer builds them with the enclosing render context (see
+  // HBSControlExpression.nativeBlockParams).
+  if (ctx.flags.EMBER_NATIVE === true) {
+    const nativeBlockParams = node.params.map((p) => {
+      const result = getVisit(ctx)(ctx, p, false);
+      if (result !== null && (typeof result === 'string' || isSerializedValue(result))) {
+        return result;
+      }
+      return '';
+    });
+    return {
+      _nodeType: 'control',
+      type: 'yield',
+      condition: literal(''),
+      blockParams: [],
+      nativeBlockParams,
+      children: [],
+      inverse: null,
+      key: slotName,
+      isSync: true,
+      sourceRange: range,
+    };
   }
 
   // Collect yield params
@@ -411,6 +495,12 @@ function createComponentElement(
   let tag: string;
   let isStaticName = false;
 
+  // Ember loose mode (G11): `{{component "foo-bar" a=1}}` invokes the
+  // component registered as `foo-bar` (resolved by the host by name).
+  if (ctx.looseMode && firstParam.type === 'StringLiteral') {
+    return createLooseNamedComponent(ctx, node, firstParam.value, range);
+  }
+
   if (firstParam.type === 'StringLiteral') {
     // Static name: {{component "foo-bar"}} → <FooBar>
     tag = toPascalCase(firstParam.value);
@@ -465,6 +555,66 @@ function createComponentElement(
     children: [],
     sourceRange: range,
   };
+}
+
+/**
+ * Ember loose mode (G11): `{{component "foo-bar" a=1}}` → a by-name component
+ * node (`$_c("foo-bar", $_args({ a: … }))`). Positional arguments after the
+ * name are not supported (a W005 warning, like curly block components).
+ */
+function createLooseNamedComponent(
+  ctx: CompilerContext,
+  node: ASTv1.MustacheStatement,
+  name: string,
+  range?: SourceRange
+): HBSNode {
+  if (node.params.length > 1) {
+    addWarning(
+      ctx,
+      `Positional parameters are not supported on component invocation "{{component "${name}"}}" and will be ignored`,
+      'W005'
+    );
+  }
+  const attributes: Array<[string, SerializedValue]> = [];
+  for (const pair of node.hash.pairs) {
+    const value = getVisit(ctx)(ctx, pair.value, false);
+    if (value !== null && isSerializedValue(value)) {
+      attributes.push([`@${pair.key}`, getter(value, range)]);
+    }
+  }
+  return { ...createSelfClosingComponentNode(name, attributes, range), byName: true };
+}
+
+/**
+ * Ember loose mode (G11): a content-position `{{name …}}` — a component or a
+ * helper, decided by the host at render time. Lowered by buildHelper to
+ * `$_looseAppend("name", [args], {named}, ctx, site, optional)`; `optional`
+ * (no arguments at all) renders nothing when `name` is neither (Glimmer's
+ * ResolveOptionalComponentOrHelper), otherwise the host throws.
+ */
+function createLooseAppend(
+  ctx: CompilerContext,
+  node: ASTv1.MustacheStatement,
+  pathName: string,
+  range?: SourceRange
+): SerializedValue {
+  const positional = node.params.map((param) => {
+    const result = getVisit(ctx)(ctx, param, false);
+    if (result === null) return literal(null);
+    if (typeof result === 'string') return literal(result);
+    if (isSerializedValue(result)) return result;
+    return raw(JSON.stringify(result));
+  });
+  const hashArgs = collectHashArgs(ctx, node.hash.pairs);
+  const optional = node.params.length === 0 && node.hash.pairs.length === 0;
+  const pathRange = getNodeRange(node.path);
+  return helper(
+    INTERNAL_HELPERS.LOOSE_APPEND,
+    [literal(pathName), literal(optional), ...positional],
+    hashArgs,
+    range,
+    pathRange
+  );
 }
 
 /**

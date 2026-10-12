@@ -34,6 +34,10 @@ jobs:
       - uses: wyvox/action-setup-pnpm@v3
         with:
           node-version: "24"
+          # Pin pnpm to the lockfile's major (lockfileVersion 9.0): the action's
+          # default pnpm (8) cannot read it, silently IGNORES the lockfile and
+          # resolves fresh latest deps (rollup 4.62.3+ then fails `tsc`).
+          pnpm-version: 10
 
       - name: RUN
         run: pnpm run benchmark

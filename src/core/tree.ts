@@ -82,6 +82,36 @@ export function releaseId(id: number): void {
  * Add a component node to the tree under a parent context.
  * Registers a destructor to clean up tree entries when the node is destroyed.
  */
+/**
+ * Ember native layer (EMBER_NATIVE): the render-tree parent of a control-flow
+ * node (`{{#if}}` / `{{#each}}`) the compiler passed `ctx` for (the component's
+ * `this`). The ACTIVE parent context wins when it is `ctx` or a descendant of
+ * it — a block wrapper inside the component (a nested block, whose teardown
+ * must cascade) — but NOT when it is an ancestor: while a component's template
+ * body runs, the active parent is still the INVOKER (`component()` pushed it),
+ * and adopting it would hang the component's top-level blocks off its caller
+ * (the debug render tree would show them as the caller's children, and they
+ * would outlive the component).
+ */
+export function nativeTreeParent(
+  active: ComponentLike | null | undefined,
+  ctx: ComponentLike,
+): ComponentLike {
+  if (!active || active === ctx) return ctx;
+  const target = ctx[COMPONENT_ID_PROPERTY];
+  let id: number | undefined = active[COMPONENT_ID_PROPERTY];
+  while (id !== undefined && id !== null) {
+    if (id === target) return active;
+    id = PARENT.get(id);
+  }
+  return ctx;
+}
+
+// EMBER_NATIVE: bumped whenever a tree node is torn down (its id is released
+// for reuse; the node may be re-added elsewhere) — invalidates context.ts'
+// memoized context lookups.
+export let treeEpoch = 0;
+
 export function addToTree(
   ctx: ComponentLike,
   node: ComponentLike,
@@ -170,6 +200,7 @@ export function addToTree(
       TREE.delete(ID);
       // Recycle the ID for reuse
       releaseId(ID);
+      if (EMBER_NATIVE) treeEpoch++;
     }
   });
 }

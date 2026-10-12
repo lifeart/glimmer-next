@@ -7,9 +7,11 @@
 import type { ASTv1 } from '@glimmer/syntax';
 import type { CompilerContext, VisitFn } from '../context';
 import type { SerializedValue, HBSControlExpression, HBSChild, HBSNode, AttributeTuple, SourceRange, LetBinding, InElementMode } from '../types';
-import { literal, getter, isSerializedValue, isHBSNode } from '../types';
+import { literal, getter, helper, isSerializedValue, isHBSNode } from '../types';
+import { INTERNAL_HELPERS } from '../serializers/symbols';
 import { getNodeRange, serializeValueToString, getBlockParamRanges, getPathExpressionString } from './utils';
 import { addWarning } from '../context';
+import { isLooseBlockComponent } from './loose';
 
 /**
  * Get the visit function from context.
@@ -63,6 +65,8 @@ function isComponentBlock(ctx: CompilerContext, node: ASTv1.BlockStatement): boo
   // `{{#if}}` resolves to the user-provided `if` component when present.
   if (ctx.scopeTracker.hasBinding(name)) return true;
   if (BUILTIN_BLOCK_KEYWORDS.has(name)) return false;
+  // `{{#each-in}}` is a keyword in the Ember native layer (G5).
+  if (name === 'each-in' && ctx.flags.EMBER_NATIVE === true) return false;
   // Dotted path
   if (name.includes('.')) return true;
   // In compat mode, hyphenated names are component invocations (Ember convention).
@@ -78,7 +82,10 @@ function isComponentBlock(ctx: CompilerContext, node: ASTv1.BlockStatement): boo
 function convertComponentBlock(
   ctx: CompilerContext,
   node: ASTv1.BlockStatement,
-  range?: SourceRange
+  range?: SourceRange,
+  // Ember loose mode (G11): the block name is a component the host resolves
+  // BY NAME (`$_c("foo-bar", …)`) — no compat PascalCase / synthetic binding.
+  byName = false
 ): HBSNode {
   // isComponentBlock already verified node.path.type === 'PathExpression'
   const pathExpr = node.path as ASTv1.PathExpression;
@@ -91,10 +98,9 @@ function convertComponentBlock(
   // Also register the PascalCase tag as a temporary binding so the serializer's
   // isComponentTag() recognizes it and uses $_c (component call) with proper slots
   // instead of $_tag (element call) with flat children.
-  const tag = (ctx.flags.IS_GLIMMER_COMPAT_MODE && rawTag.includes('-'))
-    ? toPascalCase(rawTag)
-    : rawTag;
-  const needsTagBinding = ctx.flags.IS_GLIMMER_COMPAT_MODE && rawTag.includes('-') && !ctx.scopeTracker.hasBinding(tag);
+  const compatCurly = !byName && ctx.flags.IS_GLIMMER_COMPAT_MODE && rawTag.includes('-');
+  const tag = compatCurly ? toPascalCase(rawTag) : rawTag;
+  const needsTagBinding = compatCurly && !ctx.scopeTracker.hasBinding(tag);
   if (needsTagBinding) {
     ctx.scopeTracker.addBinding(tag, { kind: 'compat-component', name: tag });
   }
@@ -112,9 +118,7 @@ function convertComponentBlock(
   //      binding (e.g. `{{#if some.thing}}` where `if` is in scope). The
   //      condition/item/etc. would otherwise be silently dropped.
   const isShadowedKeyword = BUILTIN_BLOCK_KEYWORDS.has(rawTag);
-  const forwardPositional =
-    (ctx.flags.IS_GLIMMER_COMPAT_MODE && rawTag.includes('-')) ||
-    isShadowedKeyword;
+  const forwardPositional = !byName && (compatCurly || isShadowedKeyword);
   if (forwardPositional && node.params.length > 0) {
     for (let i = 0; i < node.params.length; i++) {
       const param = node.params[i];
@@ -221,6 +225,7 @@ function convertComponentBlock(
     hasStableChild: hasStable,
     sourceRange: range,
     tagRange,
+    ...(byName ? { byName: true } : {}),
   };
 }
 
@@ -245,8 +250,13 @@ function convertComponentHelperBlock(
 ): HBSNode | null {
   const firstParam = node.params[0];
   let tag: string;
+  // Ember loose mode (G11): `{{#component "foo-bar"}}` resolves `foo-bar` by
+  // name through the host (`$_c("foo-bar", …)`).
+  const byName = ctx.looseMode && firstParam.type === 'StringLiteral';
 
-  if (firstParam.type === 'StringLiteral') {
+  if (byName) {
+    tag = (firstParam as ASTv1.StringLiteral).value;
+  } else if (firstParam.type === 'StringLiteral') {
     tag = toPascalCase(firstParam.value);
   } else if (firstParam.type === 'PathExpression') {
     tag = getPathExpressionString(firstParam);
@@ -262,7 +272,14 @@ function convertComponentHelperBlock(
   });
 
   // Remaining positional params (after the component name)
-  const positionalParams = node.params.slice(1);
+  const positionalParams = byName ? [] : node.params.slice(1);
+  if (byName && node.params.length > 1) {
+    addWarning(
+      ctx,
+      `Positional parameters are not supported on component block "{{#component "${tag}"}}" and will be ignored`,
+      'W005'
+    );
+  }
   for (let i = 0; i < positionalParams.length; i++) {
     const param = positionalParams[i];
     const value = getVisit(ctx)(ctx, param, false);
@@ -307,6 +324,7 @@ function convertComponentHelperBlock(
     selfClosing: false,
     hasStableChild: hasStable,
     sourceRange: range,
+    ...(byName ? { byName: true } : {}),
   };
 }
 
@@ -321,6 +339,20 @@ export function visitBlock(
   node: ASTv1.BlockStatement
 ): HBSControlExpression | SerializedValue | HBSNode | null {
   const range = getNodeRange(node);
+
+  // Ember loose mode (G11): `{{#foo-bar …}}…{{/foo-bar}}` with no lexical
+  // binding for `foo-bar` is a component resolved by name (Glimmer's block
+  // syntax context), whatever its spelling.
+  if (
+    node.path.type === 'PathExpression' &&
+    isLooseBlockComponent(
+      ctx,
+      getPathExpressionString(node.path),
+      node.path.head.type === 'VarHead' && node.path.tail.length === 0
+    )
+  ) {
+    return convertComponentBlock(ctx, node, range, true);
+  }
 
   // Detect component block invocations before checking params
   if (isComponentBlock(ctx, node)) {
@@ -405,6 +437,31 @@ export function visitBlock(
       return createUnlessBlock(
         ctx,
         node,
+        childElements,
+        inverseElements,
+        blockParams,
+        blockParamRanges,
+        keyValue,
+        syncValue,
+        range
+      );
+
+    case 'each-in':
+      if (ctx.flags.EMBER_NATIVE === true) {
+        return createEachInBlock(
+          ctx,
+          node,
+          childElements,
+          inverseElements,
+          blockParams,
+          keyValue,
+          range
+        );
+      }
+      return createControlBlock(
+        ctx,
+        node,
+        name,
         childElements,
         inverseElements,
         blockParams,
@@ -570,6 +627,39 @@ function describeInsertBeforeValue(value: ASTv1.Expression): string {
     default:
       return value.type;
   }
+}
+
+/**
+ * Ember `{{#each-in obj as |key value|}}…{{else}}…{{/each-in}}` (G5, the Ember
+ * native layer): an `each` over `$__eachIn(obj)` — the object's entries as
+ * STABLE `[key, value]` pairs (Glimmer `@identity` keying: a row is kept while
+ * its key's value is unchanged) — whose row callback destructures each pair
+ * into the block params. Children were visited with `key` / `value` in scope
+ * as plain block params.
+ */
+function createEachInBlock(
+  ctx: CompilerContext,
+  node: ASTv1.BlockStatement,
+  children: HBSChild[],
+  inverse: HBSChild[] | null,
+  blockParams: string[],
+  keyValue: string | null,
+  range?: SourceRange
+): HBSControlExpression {
+  const source = getVisit(ctx)(ctx, node.params[0], false);
+  const sourceValue = source !== null && isSerializedValue(source) ? source : literal(null);
+  return {
+    _nodeType: 'control',
+    type: 'each',
+    condition: getter(helper(INTERNAL_HELPERS.EACH_IN, [sourceValue], new Map(), range), range),
+    blockParams: [],
+    children,
+    inverse,
+    key: keyValue ?? '@identity',
+    isSync: true,
+    sourceRange: range,
+    eachInParams: blockParams.slice(0, 2),
+  };
 }
 
 /**

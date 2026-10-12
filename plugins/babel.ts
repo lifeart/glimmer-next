@@ -10,6 +10,31 @@ export type ResolvedHBS = {
   template: string;
   flags: {
     hasThisAccess: boolean;
+    /**
+     * The template is a class-body template (`[$template] = hbs\`…\``): the
+     * class carries it, so it is not a standalone template-only template.
+     */
+    isClassTemplate?: boolean;
+    /**
+     * The binding a template-only template initializes (`const Foo =
+     * <template>…</template>`), so a wrapped template function can keep the
+     * name JS would otherwise infer from the declarator.
+     */
+    templateName?: string;
+    /**
+     * G10 (Ember native layer): the template is the string argument of an
+     * Ember `precompileTemplate(…)` call (`@ember/template-compilation`),
+     * compiled at build time. `strictMode` is the call's `strictMode` option
+     * (Ember's default: `false` = loose); `scopeKeys` the names its
+     * `scope: () => ({…})` option binds — the template's ONLY lexical names.
+     * The call's first argument becomes a template MAKER:
+     * `(scope) => { const {…scopeKeys} = scope; return $_tpl(function () {…}); }`
+     * (plugins/template-wrapper.ts `buildPrecompileTemplateMaker`).
+     */
+    precompile?: {
+      strictMode: boolean;
+      scopeKeys: readonly string[];
+    };
   };
   bindings: Set<string>;
   /** CALLBACK to determine if a variable is in the lexical scope */
@@ -823,10 +848,135 @@ function inferPropertyHint(
   return undefined;
 }
 
+const PRECOMPILE_TEMPLATE_SOURCE = '@ember/template-compilation';
+const VALID_SCOPE_KEY = /^[A-Za-z_$][\w$]*$/;
+
+/**
+ * G10: the callee of `path` is the `precompileTemplate` import of
+ * `@ember/template-compilation` (resolved through babel's scope — a local
+ * function of the same name, or an import from elsewhere, is not it).
+ */
+function isEmberPrecompileTemplateCall(path: Babel.NodePath<Babel.types.CallExpression>): boolean {
+  const callee = path.node.callee;
+  if (callee.type !== 'Identifier') return false;
+  const binding = path.scope.getBinding(callee.name);
+  if (!binding || binding.kind !== 'module') return false;
+  const specifier = binding.path.node;
+  if (specifier.type !== 'ImportSpecifier') return false;
+  const imported =
+    specifier.imported.type === 'Identifier' ? specifier.imported.name : specifier.imported.value;
+  const declaration = binding.path.parentPath?.node;
+  return (
+    imported === 'precompileTemplate' &&
+    declaration !== undefined &&
+    declaration.type === 'ImportDeclaration' &&
+    declaration.source.value === PRECOMPILE_TEMPLATE_SOURCE
+  );
+}
+
+/** The object literal a `scope` option returns, or `null` when not static. */
+function scopeObjectOf(
+  value: Babel.types.Node,
+): Babel.types.ObjectExpression | null {
+  let body: Babel.types.Node | null | undefined = null;
+  if (value.type === 'ArrowFunctionExpression' || value.type === 'FunctionExpression' || value.type === 'ObjectMethod') {
+    body = value.body;
+  }
+  if (!body) return null;
+  if (body.type === 'BlockStatement') {
+    if (body.body.length !== 1 || body.body[0].type !== 'ReturnStatement') return null;
+    body = body.body[0].argument;
+  }
+  return body && body.type === 'ObjectExpression' ? body : null;
+}
+
+/**
+ * G10: read a `precompileTemplate(template, options)` call statically —
+ * the template string, the `strictMode` option (default `false`, Ember's
+ * default) and the keys of the `scope: () => ({…})` option. `null` when any of
+ * them is not statically known (the call is then left untouched and the
+ * host's runtime `precompileTemplate` reports it).
+ */
+function readPrecompileTemplateCall(
+  node: Babel.types.CallExpression,
+): { template: string; strictMode: boolean; scopeKeys: string[]; loc: Babel.types.SourceLocation | null | undefined; start?: number | null; end?: number | null } | null {
+  const [templateArg, optionsArg] = node.arguments;
+  let template: string;
+  if (!templateArg) return null;
+  if (templateArg.type === 'StringLiteral') {
+    template = templateArg.value;
+  } else if (templateArg.type === 'TemplateLiteral' && templateArg.expressions.length === 0) {
+    const cooked = templateArg.quasis[0].value.cooked;
+    if (typeof cooked !== 'string') return null;
+    template = cooked;
+  } else {
+    return null;
+  }
+  let strictMode = false;
+  const scopeKeys: string[] = [];
+  if (optionsArg !== undefined) {
+    if (optionsArg.type !== 'ObjectExpression') return null;
+    for (const property of optionsArg.properties) {
+      if (property.type === 'SpreadElement') return null;
+      if (property.computed) return null;
+      const key =
+        property.key.type === 'Identifier'
+          ? property.key.name
+          : property.key.type === 'StringLiteral'
+            ? property.key.value
+            : null;
+      if (key === null) return null;
+      if (key === 'strictMode') {
+        if (property.type !== 'ObjectProperty' || property.value.type !== 'BooleanLiteral') return null;
+        strictMode = property.value.value;
+      } else if (key === 'scope') {
+        const scopeObject = scopeObjectOf(property.type === 'ObjectMethod' ? property : property.value);
+        if (scopeObject === null) return null;
+        for (const entry of scopeObject.properties) {
+          if (entry.type !== 'ObjectProperty' || entry.computed) return null;
+          const name =
+            entry.key.type === 'Identifier'
+              ? entry.key.name
+              : entry.key.type === 'StringLiteral'
+                ? entry.key.value
+                : null;
+          if (name === null || !VALID_SCOPE_KEY.test(name) || name === 'this') return null;
+          scopeKeys.push(name);
+        }
+      }
+    }
+  }
+  return {
+    template,
+    strictMode,
+    scopeKeys,
+    loc: templateArg.loc,
+    start: templateArg.start,
+    end: templateArg.end,
+  };
+}
+
+export interface ProcessTemplateOptions {
+  /**
+   * G10 (EMBER_NATIVE): compile Ember `precompileTemplate(…)` calls from
+   * `@ember/template-compilation` at build time.
+   */
+  precompileTemplate?: boolean;
+  /**
+   * Only the G10 `precompileTemplate` rewrite (+ the runtime-symbol import):
+   * for script modules that contain no gxt template syntax of their own — their
+   * `template(…)` / `hbs` / class-body conventions are left alone.
+   */
+  precompileOnly?: boolean;
+}
+
 export function processTemplate(
   hbsToProcess: ResolvedHBS[],
   mode: 'development' | 'production',
+  options: ProcessTemplateOptions = {},
 ) {
+  const precompileEnabled = options.precompileTemplate === true || options.precompileOnly === true;
+  const precompileOnly = options.precompileOnly === true;
   return function babelPlugin(babel: { types: typeof Babel.types }) {
     const { types: t } = babel;
     const getTemplateFunctionNames = (path: Babel.NodePath<any>) => {
@@ -965,6 +1115,7 @@ export function processTemplate(
           }
         },
         ClassMethod(path: Babel.NodePath<Babel.types.ClassMethod>) {
+          if (precompileOnly) return;
           if (path.node.key.type === 'Identifier' && path.node.key.name === '$static') {
             path.replaceWith(
               t.classProperty(
@@ -986,6 +1137,7 @@ export function processTemplate(
         // Converts: static { template(`...`, {...}) }
         // To: [$template] = hbs`...`
         StaticBlock(path: Babel.NodePath<Babel.types.StaticBlock>) {
+          if (precompileOnly) return;
           // Check if the static block contains a single template() call or hbs``
           const body = path.node.body;
           if (body.length === 1 && body[0].type === 'ExpressionStatement') {
@@ -1033,6 +1185,36 @@ export function processTemplate(
           }
         },
         CallExpression(path: Babel.NodePath<Babel.types.CallExpression>) {
+          // G10 (EMBER_NATIVE): `precompileTemplate(\`…\`, { strictMode, scope })`
+          // → `precompileTemplate(<template maker>, { strictMode, scope })`.
+          // The host's runtime `precompileTemplate` receives the compiled maker
+          // instead of the string (and keeps owning the factory shape, the
+          // loose/strict marking and when `scope` is evaluated).
+          if (precompileEnabled && isEmberPrecompileTemplateCall(path)) {
+            const call = readPrecompileTemplateCall(path.node);
+            if (call !== null) {
+              const scopeKeySet = new Set(call.scopeKeys);
+              hbsToProcess.push({
+                template: call.template,
+                flags: {
+                  hasThisAccess: true,
+                  precompile: { strictMode: call.strictMode, scopeKeys: call.scopeKeys },
+                },
+                bindings: scopeKeySet,
+                loc: call.loc
+                  ? {
+                      start: { line: call.loc.start.line, column: call.loc.start.column, offset: call.start ?? undefined },
+                      end: { line: call.loc.end.line, column: call.loc.end.column, offset: call.end ?? undefined },
+                    }
+                  : undefined,
+              });
+              path.node.arguments[0] = t.identifier('$placeholder');
+            }
+            return;
+          }
+          if (precompileOnly) {
+            return;
+          }
           if (path.node.callee && path.node.callee.type === 'Identifier') {
             if (path.node.callee.name === 'scope') {
               path.remove();
@@ -1067,7 +1249,7 @@ export function processTemplate(
         },
         ImportDeclaration(path: Babel.NodePath<Babel.types.ImportDeclaration>, context: TemplateTransformContext) {
           registerImportHints(path.node, getImportHintState(context));
-          if (path.node.source.value === '@ember/template-compiler') {
+          if (!precompileOnly && path.node.source.value === '@ember/template-compiler') {
             const templateFunctionNames = getTemplateFunctionNames(path);
             templateFunctionNames.add('template');
             path.node.source.value = MAIN_IMPORT;
@@ -1135,7 +1317,7 @@ export function processTemplate(
           },
         },
         TaggedTemplateExpression(path: Babel.NodePath<Babel.types.TaggedTemplateExpression>, context: TemplateTransformContext) {
-          if (path.node.tag.type === 'Identifier' && path.node.tag.name === 'hbs') {
+          if (!precompileOnly && path.node.tag.type === 'Identifier' && path.node.tag.name === 'hbs') {
             const template = path.node.quasi.quasis[0].value.raw as string;
             const isInsideClassBody = context.isInsideClassBody === true;
             const hasThisInTemplate = template.includes('this');
@@ -1153,6 +1335,12 @@ export function processTemplate(
               template,
               flags: {
                 hasThisAccess: hasThisAccess,
+                isClassTemplate: path.parentPath?.isClassProperty() === true,
+                templateName:
+                  path.parentPath?.isVariableDeclarator() &&
+                  t.isIdentifier(path.parentPath.node.id)
+                    ? path.parentPath.node.id.name
+                    : undefined,
               },
               bindings: getScopeBindings(path),
               lexicalScope: (name: string) => path.scope.hasBinding(name),

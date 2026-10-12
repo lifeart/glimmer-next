@@ -1407,3 +1407,139 @@ export class HostComp extends Component {
     expect(result.code).not.toContain('$_maybeHelper(Custom');
   });
 });
+
+describe('G2 end-to-end: strict-mode imported <LinkTo> through transform()', () => {
+  // The scope bindings reach the compiler from babel's view of the module
+  // scope (processTemplate). An imported `LinkTo` must compile to a lexical
+  // component call in compat mode, not the by-name `$_tag('link-to')` the
+  // PascalCase→kebab mapping produces for unbound tags.
+  const source = `import { LinkTo } from '@ember/routing';
+
+<template>
+  <nav><LinkTo @route="index">Home</LinkTo></nav>
+</template>
+`;
+  const unboundSource = `<template>
+  <nav><LinkTo @route="index">Home</LinkTo></nav>
+</template>
+`;
+  const flags = { ...defaultFlags(), ASYNC_COMPILE_TRANSFORMS: false, IS_GLIMMER_COMPAT_MODE: true };
+
+  test('imported LinkTo keeps its import and emits $_c(LinkTo, …)', () => {
+    const result = transform(preprocess(source, 'application.gjs'), 'application.gjs', 'production', false, flags, source) as TransformResult;
+    expect(result.code).toMatch(/import \{ LinkTo \} from ['"]@ember\/routing['"]/);
+    expect(result.code).toMatch(/\$_c\(\s*LinkTo\b/);
+    expect(result.code).not.toMatch(/\$_tag\(\s*['"]link-to['"]/);
+  });
+
+  test('negative control: an unbound <LinkTo> still takes the kebab registry path', () => {
+    const result = transform(preprocess(unboundSource, 'application.gjs'), 'application.gjs', 'production', false, flags, unboundSource) as TransformResult;
+    expect(result.code).toMatch(/\$_tag\(\s*['"]link-to['"]/);
+  });
+});
+
+describe('EMBER_OUTLET end-to-end through transform() (G3 {{outlet}})', () => {
+  // The Ember native layer compiles route templates with EMBER_OUTLET:
+  // `{{outlet}}` emits `$_outlet(ctx)` and the module imports `$_outlet` from
+  // @lifeart/gxt (outside the always-on barrel import). Flag off must be
+  // byte-identical to the historic `$_slot("default")` output.
+  const source = `import Layout from './layout.gjs';
+
+export default <template><main>{{outlet}}</main><Layout>{{outlet}}</Layout></template>;
+`;
+  const emberFlags = {
+    ...defaultFlags(),
+    ASYNC_COMPILE_TRANSFORMS: false,
+    IS_GLIMMER_COMPAT_MODE: true,
+    WITH_EMBER_INTEGRATION: true,
+    WITH_HELPER_MANAGER: true,
+    WITH_MODIFIER_MANAGER: true,
+  };
+  const compileWith = (flags: typeof emberFlags) =>
+    (transform(preprocess(source, 'application.gjs'), 'application.gjs', 'production', false, flags, source) as TransformResult).code;
+
+  test('flag on: {{outlet}} emits $_outlet(ctx) and $_outlet is imported from @lifeart/gxt', () => {
+    const code = compileWith({ ...emberFlags, EMBER_OUTLET: true });
+    expect(code).toContain('$_outlet(this)');
+    expect(code).toMatch(/\$_outlet\(ctx\d+\)/);
+    expect(code).toMatch(/import \{ \$_outlet \} from ['"]@lifeart\/gxt['"]/);
+    expect(code).not.toContain('$_slot(');
+  });
+
+  test('flag on together with EMBER_NATIVE: one import carries $_tpl, $__tag, $__eachIn, $_trustAttr and $_outlet', () => {
+    const code = compileWith({ ...emberFlags, EMBER_NATIVE: true, EMBER_OUTLET: true });
+    expect(code).toMatch(/import \{ \$_tpl, \$__tag, \$__eachIn, \$_trustAttr, \$_outlet \} from ['"]@lifeart\/gxt['"]/);
+    expect(code).toMatch(/export default \$_tpl\(function \(\)/);
+  });
+
+  test('flag off: no $_outlet anywhere — the historic $_slot("default") lowering, byte-identical', () => {
+    const off = compileWith(emberFlags);
+    expect(off).not.toContain('$_outlet');
+    expect(off).toContain('$_slot("default"');
+    expect(compileWith({ ...emberFlags, EMBER_OUTLET: false })).toBe(off);
+  });
+});
+
+describe('EMBER_NATIVE end-to-end through transform() (G14 brand + $__tag taps)', () => {
+  // The Ember native layer compiles with EMBER_NATIVE: template-only templates
+  // get the `$_tpl` brand (host `isTemplateFn`), class-body templates do not,
+  // and block-param member taps use the non-defining `$__tag`. Flag off must be
+  // byte-identical to the historic output (compat / standalone).
+  const source = `import Component from '@glimmer/component';
+
+export const Row = <template>{{#each @items as |item|}}<li>{{item.label}}</li>{{/each}}</template>;
+
+export default class List extends Component {
+  <template><Row @items={{@items}} />{{yield this}}</template>
+}
+
+export const Yielder = <template><Row @items={{@items}} as |r|>{{r.name}}</Row></template>;
+`;
+  const emberFlags = {
+    ...defaultFlags(),
+    ASYNC_COMPILE_TRANSFORMS: false,
+    IS_GLIMMER_COMPAT_MODE: true,
+    WITH_EMBER_INTEGRATION: true,
+    WITH_HELPER_MANAGER: true,
+    WITH_MODIFIER_MANAGER: true,
+  };
+  const compileWith = (flags: typeof emberFlags) =>
+    (transform(preprocess(source, 'list.gjs'), 'list.gjs', 'production', false, flags, source) as TransformResult).code;
+
+  test('flag on: template-only templates are $_tpl-branded, the class template is not', () => {
+    const code = compileWith({ ...emberFlags, EMBER_NATIVE: true });
+    // named after the binding (the call wrapper would defeat name inference)
+    expect(code).toMatch(/const Row = \$_tpl\(function Row\(\)/);
+    expect(code).toMatch(/const Yielder = \$_tpl\(function Yielder\(\)/);
+    expect(code).toMatch(/\[?\$?template\]? = function \(\)/);
+    expect(code).not.toMatch(/template\]? = \$_tpl\(/);
+    expect(code.match(/\$_tpl\(/g)).toHaveLength(2);
+  });
+
+  test('flag on: block-param member reads use the non-defining $__tag (each row AND yielded param)', () => {
+    const code = compileWith({ ...emberFlags, EMBER_NATIVE: true });
+    expect(code).toContain('$__tag(item, "label")');
+    expect(code).toContain('$__tag(r, "name")');
+    expect(code).not.toContain('$__cellFor(');
+  });
+
+  test('flag on: an anonymous default-export template is branded and stays anonymous', () => {
+    const src = `<template>hi</template>\n`;
+    const code = (transform(preprocess(src, 'route.gjs'), 'route.gjs', 'production', false, { ...emberFlags, EMBER_NATIVE: true }, src) as TransformResult).code;
+    expect(code).toMatch(/export default \$_tpl\(function \(\)/);
+  });
+
+  test('flag on: $_tpl, $__tag, $__eachIn and $_trustAttr are imported from @lifeart/gxt', () => {
+    const code = compileWith({ ...emberFlags, EMBER_NATIVE: true });
+    expect(code).toMatch(/import \{ \$_tpl, \$__tag, \$__eachIn, \$_trustAttr \} from ['"]@lifeart\/gxt['"]/);
+  });
+
+  test('flag off: no brand, no $__tag, no extra import — the historic $__cellFor tap', () => {
+    const off = compileWith(emberFlags);
+    expect(off).not.toContain('$_tpl');
+    expect(off).not.toContain('$__tag');
+    expect(off).toContain('$__cellFor(item, "label")');
+    // byte-identical with an explicit EMBER_NATIVE: false
+    expect(compileWith({ ...emberFlags, EMBER_NATIVE: false })).toBe(off);
+  });
+});

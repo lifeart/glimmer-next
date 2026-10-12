@@ -111,6 +111,47 @@ export interface CompilerFlags {
    * (the Ember bridge). See plugins/flags.ts.
    */
   readonly EMBER_TRUSTED_HTML?: boolean;
+  /**
+   * Ember NATIVE layer dialect. When true, block-param member taps emit the
+   * non-defining `$__tag(obj, 'k')` instead of `$__cellFor(obj, 'k')` (the
+   * template-function `$_tpl` brand is applied by the module assembler,
+   * plugins/test.ts). Off (default) keeps compat/standalone output
+   * byte-identical. See plugins/flags.ts.
+   */
+  readonly EMBER_NATIVE?: boolean;
+  /**
+   * Ember `{{outlet}}` keyword (G3). When true, `{{outlet}}` — unless `outlet`
+   * is a genuine binding (block param / lexical scope) — emits `$_outlet(ctx)`
+   * (renders the host outlet component) instead of `$_slot("default")`. Off
+   * (default) keeps compat/standalone output byte-identical. See
+   * plugins/flags.ts.
+   */
+  readonly EMBER_OUTLET?: boolean;
+  /**
+   * Ember property tags (G8). When true, every member segment of a `this.*`,
+   * `@arg.*`, block-param or let-binding path emits the non-defining tap
+   * `$__tag(obj, "key")` (consumes the property tag via the host `getProp`
+   * hook, returns the value) instead of a plain member read. Off (default)
+   * keeps compat/standalone output byte-identical. See plugins/flags.ts.
+   */
+  readonly EMBER_PROPERTY_TAGS?: boolean;
+  /**
+   * Ember template self (G6). When true, `this` path heads emit `$s` (declared
+   * by the template wrapper as `const $s = $_self(this)`), separating the
+   * template's self from its render node. Off (default) keeps compat/standalone
+   * output byte-identical. See plugins/flags.ts.
+   */
+  readonly EMBER_SELF?: boolean;
+  /**
+   * Ember loose-mode resolution (G11). When true, a template compiled with
+   * `strictMode: false` (CompileOptions.strictMode) resolves free component /
+   * component-or-helper names through the host by name: `<FooBar>` /
+   * `<Foo::Bar>` / `{{#foo-bar}}` / `{{component "foo-bar"}}` emit
+   * `$_c("foo-bar", …)`, a content-position `{{foo-bar …}}` emits
+   * `$_looseAppend(…)`. Off (default) — or a strict template — keeps
+   * compat/standalone output byte-identical. See plugins/flags.ts.
+   */
+  readonly EMBER_LOOSE_COMPONENTS?: boolean;
 }
 
 /**
@@ -138,6 +179,11 @@ export const DEFAULT_FLAGS: CompilerFlags = Object.freeze({
   EMBER_ATTR_CONCAT: false, // $_qStr ember-dialect quoted-attr concat (host opt-in)
   EMBER_IN_ELEMENT: false, // $_inElement insertBefore mode arg (host opt-in)
   EMBER_TRUSTED_HTML: false, // $_html trusted-HTML node helper for {{{...}}} (host opt-in)
+  EMBER_NATIVE: false, // Ember native layer: $__tag taps + $_tpl brand (host opt-in)
+  EMBER_OUTLET: false, // {{outlet}} -> $_outlet(ctx) host outlet component (host opt-in)
+  EMBER_PROPERTY_TAGS: false, // $__tag(obj, "k") member taps on this/@arg/block-param paths (host opt-in)
+  EMBER_SELF: false, // `this` path heads read `$s = $_self(this)` (host opt-in)
+  EMBER_LOOSE_COMPONENTS: false, // loose templates resolve free names by name (host opt-in)
 });
 
 /**
@@ -188,6 +234,16 @@ export interface BindingInfo {
    * swap channel, so recycled-row params are excluded from the row-item tap.
    */
   readonly recycledRow?: boolean;
+  /**
+   * The JS identifier a `{{#let}}` binding is DECLARED and REFERENCED under,
+   * when it differs from its (reserved-word-escaped) template name. Set only
+   * when the binding's name occurs in one of the let's own value expressions
+   * (`{{#let (hash a=1) as |hash|}}`, `{{#let b a as |a b|}}`): Glimmer
+   * evaluates let values in the OUTER scope, but a JS `let` is in scope for its
+   * whole block, so keeping the name would make the value read the binding
+   * itself (infinite recursion / TDZ). See serializers/control.ts buildLet.
+   */
+  readonly emitName?: string;
 }
 
 // ============================================================================
@@ -347,6 +403,12 @@ export interface HBSNode {
   readonly sourceRange?: SourceRange;
   /** Source range of just the tag name (for component source mapping) */
   readonly tagRange?: SourceRange;
+  /**
+   * Ember loose mode (G11, EMBER_LOOSE_COMPONENTS): `tag` is a component NAME
+   * the host resolves at runtime (`$_c("foo-bar", …)` →
+   * `$_MANAGERS.component`), not a lexical binding or an HTML element.
+   */
+  readonly byName?: boolean;
 }
 
 /**
@@ -400,6 +462,21 @@ export interface HBSControlExpression {
    * EMBER_IN_ELEMENT flag is on). Absent → emit the historic 3-arg call.
    */
   readonly inElementMode?: InElementMode;
+  /**
+   * `{{#each-in obj as |key value|}}` (G5, EMBER_NATIVE): an `each` over the
+   * `$__eachIn(obj)` entry pairs whose row callback destructures each pair
+   * into these block params (`([key, value], $index, ctx) => …`).
+   */
+  readonly eachInParams?: readonly string[];
+  /**
+   * `{{yield …}}` params as VALUES (only under the EMBER_NATIVE flag). The
+   * yield serializer builds them with the JSExpression serializer and the
+   * enclosing render context, so helper calls in yield params go through
+   * `$_maybeHelper` (host helper manager, call-site keyed on the block ctx)
+   * instead of the string serializer's direct calls. A plain string entry is
+   * raw code (a visitor result that was already a string).
+   */
+  readonly nativeBlockParams?: ReadonlyArray<SerializedValue | string>;
 }
 
 /**
@@ -498,6 +575,19 @@ export interface CompileResult {
   readonly usedArgsAlias: boolean;
   readonly usedSlots: boolean;
   readonly usedFw: boolean;
+  /**
+   * EMBER_SELF (G6): `true` when the output references the self alias `$s`, so
+   * the wrapper must declare `const $s = $_self(this)`. Always `false` with the
+   * flag off.
+   */
+  readonly usedSelf: boolean;
+  /**
+   * EMBER_LOOSE_COMPONENTS (G11): the free built-in helper names (`array`,
+   * `fn`, `hash`, `unique-id`; sorted) a LOOSE template lowered to gxt
+   * built-ins — Glimmer resolves them through the host resolver. Empty for a
+   * strict template or with the flag off.
+   */
+  readonly looseBuiltins: readonly string[];
   /**
    * Ground-truth "the template declares block params" flag. `true` when the
    * compile registered any `as |…|` block param — a component/element block, a
@@ -696,6 +786,13 @@ export interface CompileOptions {
   readonly customizeComponentName?: (input: string) => string;
   /** CALLBACK to determine if a variable is in the lexical scope of the template. */
   readonly lexicalScope?: (variable: string) => boolean;
+  /**
+   * Ember template mode. `false` = a LOOSE (resolver-mode) template: under the
+   * EMBER_LOOSE_COMPONENTS flag its free component / component-or-helper names
+   * are resolved by name through the host (G11). `true` / omitted = strict
+   * (the historic behaviour; `<template>` tags are always strict).
+   */
+  readonly strictMode?: boolean;
   /** Type hints for type-directed optimization. Only used when WITH_TYPE_OPTIMIZATION is true. */
   readonly typeHints?: TypeHints;
   /**

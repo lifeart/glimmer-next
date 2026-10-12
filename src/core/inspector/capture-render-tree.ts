@@ -38,6 +38,7 @@ import {
 import { IfCondition } from '../control-flow/if';
 import { AsyncListComponent, SyncListComponent } from '../control-flow/list';
 import { HOST_HOOKS } from '../host-hooks';
+import { isNativeRuntime } from '../native-content';
 
 const ELEMENT_NODE = 1;
 
@@ -111,8 +112,17 @@ function boundsFor(component: ComponentLike): CapturedRenderNodeBounds | null {
   if (possibleBounds.length === 0) {
     return null;
   }
-  const firstNode = possibleBounds[0]!;
-  const lastNode = possibleBounds[possibleBounds.length - 1]!;
+  let firstNode = possibleBounds[0]!;
+  let lastNode = possibleBounds[possibleBounds.length - 1]!;
+  if (isNativeRuntime()) {
+    // The rendered list may start / end with a nested COMPONENT (a route
+    // template under an outlet, a content unit): its first / last DOM node.
+    const first = edgeDomNode(possibleBounds, true);
+    const last = edgeDomNode(possibleBounds, false);
+    if (first === null || last === null) return null;
+    firstNode = first as HTMLElement | Comment;
+    lastNode = last as HTMLElement | Comment;
+  }
   // Prefer the nearest real element ancestor (interface: `parentElement` is a
   // `SimpleElement`); fall back to the immediate parent (fragment / document)
   // so a component with attached-but-non-element-parented nodes still yields
@@ -122,6 +132,25 @@ function boundsFor(component: ComponentLike): CapturedRenderNodeBounds | null {
     return null;
   }
   return { firstNode, lastNode, parentElement };
+}
+
+/**
+ * The first (`fromStart`) / last DOM node of a rendered-nodes list, descending
+ * into nested components' rendered nodes; `null` when it holds no DOM node.
+ */
+function edgeDomNode(items: ReadonlyArray<unknown>, fromStart: boolean): Node | null {
+  const length = items.length;
+  for (let i = 0; i < length; i++) {
+    const item = items[fromStart ? i : length - 1 - i] as Record<PropertyKey, unknown> | null;
+    if (item === null || typeof item !== 'object') continue;
+    if (typeof (item as unknown as Node).nodeType === 'number') return item as unknown as Node;
+    const nested = item[RENDERED_NODES_PROPERTY];
+    if (Array.isArray(nested)) {
+      const found = edgeDomNode(nested, fromStart);
+      if (found !== null) return found;
+    }
+  }
+  return null;
 }
 
 /**
