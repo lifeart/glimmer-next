@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@tracerbench/core@8.0.1':
+    hash: 7e74adbc9b35a132239306d145c3cbce300adb1cbce6da45f33526dd6848198b
+    path: patches/@tracerbench__core@8.0.1.patch
+
 importers:
 
   .:
@@ -4617,7 +4622,7 @@ snapshots:
 
   '@sinclair/typebox@0.27.8': {}
 
-  '@tracerbench/core@8.0.1':
+  '@tracerbench/core@8.0.1(patch_hash=7e74adbc9b35a132239306d145c3cbce300adb1cbce6da45f33526dd6848198b)':
     dependencies:
       '@tracerbench/har': 8.0.0
       '@tracerbench/trace-event': 8.0.0
@@ -7291,7 +7296,7 @@ snapshots:
       '@oclif/parser': 3.8.17
       '@oclif/plugin-help': 5.2.20(@types/node@25.0.8)(typescript@5.9.3)
       '@oclif/plugin-warn-if-update-available': 2.1.1(@types/node@25.0.8)(typescript@5.9.3)
-      '@tracerbench/core': 8.0.1
+      '@tracerbench/core': 8.0.1(patch_hash=7e74adbc9b35a132239306d145c3cbce300adb1cbce6da45f33526dd6848198b)
       '@tracerbench/stats': 8.0.1
       '@tracerbench/trace-event': 8.0.0
       archiver: 5.3.2

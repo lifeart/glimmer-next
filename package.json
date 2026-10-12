@@ -155,5 +155,10 @@
   },
   "volta": {
     "node": "22.22.0"
+  },
+  "pnpm": {
+    "patchedDependencies": {
+      "@tracerbench/core@8.0.1": "patches/@tracerbench__core@8.0.1.patch"
+    }
   }
 }
