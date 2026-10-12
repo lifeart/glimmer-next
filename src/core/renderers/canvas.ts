@@ -8,7 +8,7 @@ import {
 } from '@/core/dom';
 import { Component, type ComponentReturnType } from '@/core/component';
 import { initDOM, provideContext, RENDERING_CONTEXT } from '@/core/context';
-import { ComponentReturn } from '@glint/template/-private/integration';
+import type { ComponentInvokeReturn } from '../types';
 import {
   addToTree,
   cId,
@@ -137,7 +137,7 @@ export class CanvasLineElement extends CanvasBaseElement {
   }
 }
 
-export function CanvasRenderer(): ComponentReturn<
+export function CanvasRenderer(): ComponentInvokeReturn<
   {
     default: [];
   },

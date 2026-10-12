@@ -5,13 +5,7 @@
  * Imports from Level 0-3 only.
  */
 
-import type {
-  TemplateContext,
-  Context,
-  Invoke,
-  ComponentReturn,
-} from '@glint/template/-private/integration';
-import type { DOMApi } from './types';
+import type { DOMApi, ComponentInvokeReturn } from './types';
 import {
   RENDERING_CONTEXT_PROPERTY,
   RENDERED_NODES_PROPERTY,
@@ -28,21 +22,16 @@ type Get<T, K, Otherwise = {}> = K extends keyof T
 
 /**
  * Base Component class for building UI components.
+ *
+ * Glint's `[Context]` / `[Invoke]` keys are added by the opt-in
+ * `@lifeart/gxt/glint` types entry (`./glint.ts`), so these published types
+ * do not need `@glint/template`.
  */
 export class Component<T extends Props = any> {
   args!: Get<T, 'Args'>;
   [RENDERING_CONTEXT_PROPERTY]: undefined | DOMApi = undefined;
   [COMPONENT_ID_PROPERTY] = cId();
   declare [RENDERED_NODES_PROPERTY]: Array<Node>;
-  declare [Context]: TemplateContext<
-    this,
-    Get<T, 'Args'>,
-    Get<T, 'Blocks'>,
-    Get<T, 'Element', null>
-  >;
-  declare [Invoke]: (
-    args?: Get<T, 'Args'>,
-  ) => ComponentReturn<Get<T, 'Blocks'>, Get<T, 'Element', null>>;
   nodes!: Node[];
   $fw: unknown;
 
@@ -64,4 +53,4 @@ export type ComponentReturnType = Component<any>;
  */
 export type TOC<S extends Props = {}> = (
   args?: Get<S, 'Args'>,
-) => ComponentReturn<Get<S, 'Blocks'>, Get<S, 'Element', null>>;
+) => ComponentInvokeReturn<Get<S, 'Blocks'>, Get<S, 'Element', null>>;

@@ -46,7 +46,9 @@
   },
   "files": [
     "dist/src",
-    "dist/plugins/compiler.d.ts",
+    "dist/plugins/**/*.d.ts",
+    "!dist/plugins/**/*.test.d.ts",
+    "!dist/plugins/__tests__",
     "dist/*.js",
     "dist/*.d.ts",
     "compiler.d.ts"
@@ -91,6 +93,9 @@
     "./recycle": {
       "import": "./dist/gxt.recycle.es.js",
       "types": "./dist/recycle.d.ts"
+    },
+    "./glint": {
+      "types": "./dist/glint.d.ts"
     }
   },
   "devDependencies": {
@@ -137,9 +142,13 @@
     "decorator-transforms": "2.0.0"
   },
   "peerDependencies": {
+    "@glint/template": "^1.3.0",
     "typescript": ">=5.0.0"
   },
   "peerDependenciesMeta": {
+    "@glint/template": {
+      "optional": true
+    },
     "typescript": {
       "optional": true
     }

@@ -520,3 +520,11 @@ GXT includes a Glint environment for full template type-checking. Add to your `t
 ```
 
 This enables type-safe templates with autocompletion and error checking in your IDE.
+
+Then load GXT's Glint types once, from any `.d.ts` file in the project:
+
+```ts
+/// <reference types="@lifeart/gxt/glint" />
+```
+
+`@lifeart/gxt/glint` gives `Component` the Glint keys it needs. It requires `@glint/template` (an optional peer dependency). The rest of the published types are self-contained and do not need it.

@@ -4,8 +4,18 @@ import { transform } from './test';
 import { type Flags, defaultFlags } from './flags.ts';
 import { HMR, fixExportsForHMR, shouldHotReloadFile } from './hmr.ts';
 
-export { stripGXTDebug } from './babel.ts';
+import { stripGXTDebug as stripGXTDebugPlugin } from './babel.ts';
 export type { TransformResult } from './test';
+
+/**
+ * Babel plugin that strips gxt debug-only code. Re-exported with a plain
+ * plugin-factory type so the published `./compiler` types do not need
+ * `@types/babel__core` (`@babel/core` ships no types of its own).
+ */
+export const stripGXTDebug: (babel: { types: any }) => {
+  name: string;
+  visitor: Record<string, unknown>;
+} = stripGXTDebugPlugin;
 
 // Helper to cast our TransformResult to Vite's expected type
 // The types are compatible at runtime but TS is strict about sourcesContent nullability

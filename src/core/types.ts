@@ -5,13 +5,6 @@
  * It has NO imports from other utils modules to serve as the foundation.
  */
 
-import type {
-  TemplateContext,
-  Context,
-  Invoke,
-  ComponentReturn,
-} from '@glint/template/-private/integration';
-
 // ============================================
 // Symbols
 // ============================================
@@ -119,7 +112,7 @@ export interface DOMApi {
 }
 
 // ============================================
-// Component Class Types (for glint integration)
+// Component Class Types
 // ============================================
 
 export type Props = Record<string, unknown>;
@@ -129,22 +122,30 @@ type Get<T, K, Otherwise = {}> = K extends keyof T
   : Otherwise;
 
 /**
- * Base component interface with glint template context
+ * Template type-checker hook. Empty here, so the published types need no
+ * other package. The opt-in `@lifeart/gxt/glint` types entry (`./glint.ts`)
+ * adds `componentReturn: ComponentReturn<Blocks, El>` from `@glint/template`.
+ */
+export interface TemplateTypeRegistry<Blocks, El> {}
+
+/**
+ * What invoking a component yields for a template type-checker: Glint's
+ * `ComponentReturn` once `@lifeart/gxt/glint` is loaded, `unknown` otherwise.
+ */
+export type ComponentInvokeReturn<Blocks, El> =
+  TemplateTypeRegistry<Blocks, El> extends { componentReturn: infer R }
+    ? R
+    : unknown;
+
+/**
+ * Base component interface. `@lifeart/gxt/glint` gives the `Component` class
+ * Glint's `[Context]` / `[Invoke]` keys.
  */
 export interface ComponentBase<T extends Props = any> {
   args: Get<T, 'Args'>;
   [RENDERING_CONTEXT_PROPERTY]: DOMApi | undefined;
   [COMPONENT_ID_PROPERTY]: number;
   [RENDERED_NODES_PROPERTY]: Array<Node>;
-  [Context]: TemplateContext<
-    this,
-    Get<T, 'Args'>,
-    Get<T, 'Blocks'>,
-    Get<T, 'Element', null>
-  >;
-  [Invoke]: (
-    args?: Get<T, 'Args'>,
-  ) => ComponentReturn<Get<T, 'Blocks'>, Get<T, 'Element', null>>;
   nodes: Node[];
   $fw: unknown;
 }
@@ -154,4 +155,4 @@ export interface ComponentBase<T extends Props = any> {
  */
 export type TOC<S extends Props = {}> = (
   args?: Get<S, 'Args'>,
-) => ComponentReturn<Get<S, 'Blocks'>, Get<S, 'Element', null>>;
+) => ComponentInvokeReturn<Get<S, 'Blocks'>, Get<S, 'Element', null>>;

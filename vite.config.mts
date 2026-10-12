@@ -1,5 +1,6 @@
 import { PluginOption, defineConfig } from "vite";
 import path from "node:path";
+import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { compiler } from "./plugins/compiler.ts";
 // import circleDependency from "vite-plugin-circular-dependency";
@@ -150,6 +151,16 @@ if (isLibBuild) {
   plugins.push(
     dts({
       insertTypesEntry: true,
+      // `@lifeart/gxt/glint` is a types-only entry (opt-in Glint keys,
+      // src/core/glint.ts). Write its root `.d.ts` like the lib entries' ones
+      // without adding a lib entry: an empty entry chunk would still renumber
+      // the shared chunks' export names.
+      afterBuild: () => {
+        writeFileSync(
+          path.join(currentPath, "dist", "glint.d.ts"),
+          "export * from './src/core/glint'\n",
+        );
+      },
       exclude: [
         "src/components/**/*",
         "src/index.ts",
