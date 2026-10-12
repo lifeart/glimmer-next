@@ -141,6 +141,11 @@ export const SYMBOLS = {
   // lowered `each` — `$__eachIn(obj)` returns the object's entries as stable
   // `[key, value]` pairs. Auto-reportable (in emittedSymbols) via SYMBOLS.
   EACH_IN: '$__eachIn',
+  // Ember trusting attribute value (EMBER_NATIVE): a trusting `style={{{x}}}`
+  // emits `$_trustAttr(x)` (via the internal `$__trusted_attr` marker below) so
+  // the host skips its DEV untrusted-style warning (Glimmer's
+  // TrustingDynamicAttribute). Auto-reportable (in emittedSymbols) via SYMBOLS.
+  TRUST_ATTR: '$_trustAttr',
 
   // Unstable child wrapper
   UCW: '$_ucw',
@@ -318,6 +323,11 @@ export const INTERNAL_HELPERS = {
   // positional[0] = the iterated object. buildHelper lowers it to
   // `$__eachIn(obj)` (SYMBOLS.EACH_IN). Never a real runtime import.
   EACH_IN: '$__each_in',
+  // Marker for a trusting `style` attribute value (EMBER_NATIVE):
+  // positional[0] = the value. buildHelper lowers it to `$_trustAttr(value)`
+  // (SYMBOLS.TRUST_ATTR), read in place inside the attribute getter. Never a
+  // real runtime import.
+  TRUSTED_ATTR: '$__trusted_attr',
 } as const;
 
 /**

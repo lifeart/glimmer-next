@@ -108,6 +108,7 @@ describe('template scope names (the runtime host binds them from the main entry)
       '$_tpl',
       '$__tag',
       '$__eachIn',
+      '$_trustAttr',
       '$_outlet',
     ]);
     expect(nativeTemplateSymbols({ EMBER_PROPERTY_TAGS: true, EMBER_SELF: true })).toEqual([

@@ -17,7 +17,7 @@ import {
   buildStaticBlockValueExprs,
 } from './static-block';
 import { B, serializeJS, type JSExpression, type JSStatement } from '../builder';
-import { escapeReservedBindingName } from '../utils/js-utils';
+import { escapeBindingName } from '../utils/js-utils';
 
 // Sentinel each-key that opts a block into row recycling. Mirrors RECYCLE_KEY
 // in src/core/control-flow/list-recycle.ts (no cross-boundary import: plugins
@@ -349,12 +349,12 @@ function buildEach(
       // References to a reserved-word index param are emitted escaped, so the
       // index→`.value` rewrite must target the escaped name.
       valueExprs = valueExprs.map((expr) =>
-        replaceIndexRefsInExpr(expr, escapeReservedBindingName(indexParamName))
+        replaceIndexRefsInExpr(expr, escapeBindingName(indexParamName, ctx.flags.EMBER_NATIVE))
       );
     }
     blockDefExpr = buildStaticBlockDefExpr(staticBlockParts);
     blockValuesExpr = B.arrow(
-      [...paramNames.map(escapeReservedBindingName), newCtxName],
+      [...paramNames.map((name) => escapeBindingName(name, ctx.flags.EMBER_NATIVE)), newCtxName],
       B.array(valueExprs)
     );
   }
@@ -368,9 +368,9 @@ function buildEach(
     ...paramNames.map((name, index) => {
       if (index === 0 && eachInParams !== undefined && eachInParams.length > 0) {
         // `{{#each-in}}`: destructure the `[key, value]` pair.
-        return `[${eachInParams.map(escapeReservedBindingName).join(', ')}]`;
+        return `[${eachInParams.map((param) => escapeBindingName(param, ctx.flags.EMBER_NATIVE)).join(', ')}]`;
       }
-      const emitName = escapeReservedBindingName(name);
+      const emitName = escapeBindingName(name, ctx.flags.EMBER_NATIVE);
       const range = paramRanges[index];
       return range ? B.id(emitName, range) : emitName;
     }),
@@ -501,7 +501,7 @@ function buildEachBody(
   ctx.scopeTracker.exitScope();
 
   const rewrittenExprs = usesIndex
-    ? childExprs.map((expr) => replaceIndexRefsInExpr(expr, escapeReservedBindingName(indexParam)))
+    ? childExprs.map((expr) => replaceIndexRefsInExpr(expr, escapeBindingName(indexParam, ctx.flags.EMBER_NATIVE)))
     : childExprs;
 
   const childArrayExpr = ctx.formatter.options.enabled && rewrittenExprs.length > 0
@@ -893,7 +893,7 @@ function buildLet(
   // under a fresh per-template name instead (BindingInfo.emitName). A let whose
   // values don't mention its own names emits byte-identically.
   const emitNames = bindings.map((binding) => {
-    const escaped = escapeReservedBindingName(binding.name);
+    const escaped = escapeBindingName(binding.name, ctx.flags.EMBER_NATIVE);
     if (!valueExprs.some((expr) => readsIdentifier(expr, escaped))) return escaped;
     return `${escaped}$${++ctx.letBlockCounter}`;
   });
@@ -930,7 +930,7 @@ function buildLet(
     const emitName = emitNames[index]!;
     ctx.scopeTracker.addBinding(
       binding.name,
-      emitName === escapeReservedBindingName(binding.name)
+      emitName === escapeBindingName(binding.name, ctx.flags.EMBER_NATIVE)
         ? { kind: 'let-binding', name: binding.name }
         : { kind: 'let-binding', name: binding.name, emitName },
     );

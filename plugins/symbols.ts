@@ -115,7 +115,7 @@ export const RECYCLE_IMPORT = '@lifeart/gxt/recycle';
 // always-on barrel auto-import) so compat / standalone output stays
 // byte-identical; the module assembler (plugins/test.ts) imports them from
 // MAIN_IMPORT only when the flag is on.
-export const NATIVE_SYMBOLS: readonly string[] = ['$_tpl', '$__tag', '$__eachIn'];
+export const NATIVE_SYMBOLS: readonly string[] = ['$_tpl', '$__tag', '$__eachIn', '$_trustAttr'];
 
 // Ember `{{outlet}}` keyword (EMBER_OUTLET compile flag, G3). Same rule as
 // NATIVE_SYMBOLS: outside the always-on barrel import (flag-off output stays

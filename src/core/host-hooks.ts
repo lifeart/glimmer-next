@@ -375,6 +375,17 @@ export interface HostHooks {
    * Without the hook gxt iterates own enumerable keys.
    */
   eachInEntries?: (obj: object) => ReadonlyArray<[unknown, unknown]> | null | undefined;
+  /**
+   * A TRUSTING attribute value (the Ember native layer; the EMBER_NATIVE
+   * compiler emits `$_trustAttr(value)` for a trusting `style={{{value}}}`,
+   * Glimmer's TrustingDynamicAttribute). The hook returns the value to bind
+   * instead — e.g. a host-private wrapper its `normalizeAttrValue` hook unwraps
+   * — so the host can tell a trusting binding from a non-trusting one (Ember:
+   * the development-only warning about binding `style` to a value that is not
+   * `htmlSafe` applies to non-trusting bindings only). Without the hook:
+   * the value itself.
+   */
+  trustedAttrValue?: (value: unknown) => unknown;
 }
 
 /**

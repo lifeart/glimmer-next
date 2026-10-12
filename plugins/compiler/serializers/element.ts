@@ -20,7 +20,7 @@ import { isSerializedValue, isRuntimeTag } from '../types';
 import { SYMBOLS, EVENT_TYPE, INTERNAL_HELPERS } from './symbols';
 import { buildValue, buildPathExpression, buildNativeArg, selfHeadedName, emittedRootName } from './value';
 import { B, serializeJS, type JSExpression, type JSProperty } from '../builder';
-import { escapeReservedBindingName } from '../utils/js-utils';
+import { escapeBindingName } from '../utils/js-utils';
 
 // Forward declarations - set from index.ts to avoid circular dependency
 let buildChildrenExprs: (ctx: CompilerContext, children: readonly HBSChild[], ctxName: string) => JSExpression[];
@@ -855,7 +855,7 @@ function buildSlots(
     const params = [
       sContext,
       ...blockParams.map((name, index) => {
-        const emitName = escapeReservedBindingName(name);
+        const emitName = escapeBindingName(name, ctx.flags.EMBER_NATIVE);
         const range = blockParamRanges[index];
         return range ? B.id(emitName, range) : emitName;
       }),

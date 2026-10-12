@@ -61,8 +61,15 @@ export function visitMustache(
 
   const pathName = getPathExpressionString(node.path);
 
+  // Ember native layer: a genuine binding (`{{#let … as |mount|}}`, a block
+  // param, a lexical name) shadows the `mount` / `component` / `input` /
+  // `textarea` keyword rewrites below, as it shadows any keyword in Glimmer —
+  // `{{component}}` then reads the binding. Without the flag the rewrites are
+  // unconditional (historic compat output).
+  const shadowsKeyword = !!ctx.flags.EMBER_NATIVE && hasRealBinding(ctx, pathName);
+
   // In compat mode, transform {{mount "engine-name" model=expr}} to <ember-mount> element
-  if (pathName === 'mount' && ctx.flags.IS_GLIMMER_COMPAT_MODE) {
+  if (pathName === 'mount' && ctx.flags.IS_GLIMMER_COMPAT_MODE && !shadowsKeyword) {
     return createMountElement(ctx, node, range);
   }
 
@@ -70,7 +77,7 @@ export function visitMustache(
   // to an HBSNode (angle-bracket component element).
   // Skip when the first param is a SubExpression (e.g., {{component (component "-looked-up") arg=val}})
   // — let it fall through to normal helper processing so $_componentHelper handles chaining.
-  if (pathName === 'component' && ctx.flags.IS_GLIMMER_COMPAT_MODE) {
+  if (pathName === 'component' && ctx.flags.IS_GLIMMER_COMPAT_MODE && !shadowsKeyword) {
     const firstParam = node.params[0];
     if (firstParam && firstParam.type === 'SubExpression') {
       // Fall through to helper processing — $_componentHelper will handle the chained call
@@ -157,7 +164,11 @@ export function visitMustache(
   }
 
   // In compat mode, transform {{input ...}} / {{textarea ...}} to <Input /> / <Textarea />
-  if ((pathName === 'input' || pathName === 'textarea') && ctx.flags.IS_GLIMMER_COMPAT_MODE) {
+  if (
+    (pathName === 'input' || pathName === 'textarea') &&
+    ctx.flags.IS_GLIMMER_COMPAT_MODE &&
+    !shadowsKeyword
+  ) {
     return createInputTextareaElement(ctx, node, pathName, range);
   }
 

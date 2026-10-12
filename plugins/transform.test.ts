@@ -1466,9 +1466,9 @@ export default <template><main>{{outlet}}</main><Layout>{{outlet}}</Layout></tem
     expect(code).not.toContain('$_slot(');
   });
 
-  test('flag on together with EMBER_NATIVE: one import carries $_tpl, $__tag, $__eachIn and $_outlet', () => {
+  test('flag on together with EMBER_NATIVE: one import carries $_tpl, $__tag, $__eachIn, $_trustAttr and $_outlet', () => {
     const code = compileWith({ ...emberFlags, EMBER_NATIVE: true, EMBER_OUTLET: true });
-    expect(code).toMatch(/import \{ \$_tpl, \$__tag, \$__eachIn, \$_outlet \} from ['"]@lifeart\/gxt['"]/);
+    expect(code).toMatch(/import \{ \$_tpl, \$__tag, \$__eachIn, \$_trustAttr, \$_outlet \} from ['"]@lifeart\/gxt['"]/);
     expect(code).toMatch(/export default \$_tpl\(function \(\)/);
   });
 
@@ -1529,9 +1529,9 @@ export const Yielder = <template><Row @items={{@items}} as |r|>{{r.name}}</Row><
     expect(code).toMatch(/export default \$_tpl\(function \(\)/);
   });
 
-  test('flag on: $_tpl, $__tag and $__eachIn are imported from @lifeart/gxt', () => {
+  test('flag on: $_tpl, $__tag, $__eachIn and $_trustAttr are imported from @lifeart/gxt', () => {
     const code = compileWith({ ...emberFlags, EMBER_NATIVE: true });
-    expect(code).toMatch(/import \{ \$_tpl, \$__tag, \$__eachIn \} from ['"]@lifeart\/gxt['"]/);
+    expect(code).toMatch(/import \{ \$_tpl, \$__tag, \$__eachIn, \$_trustAttr \} from ['"]@lifeart\/gxt['"]/);
   });
 
   test('flag off: no brand, no $__tag, no extra import — the historic $__cellFor tap', () => {

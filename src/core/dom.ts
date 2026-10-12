@@ -356,6 +356,13 @@ export function $prop(
   value: unknown,
   destructors: DestructorFn[],
 ) {
+  // EMBER_NATIVE: Glimmer's normalizeProperty — a name the element has no
+  // property for (a custom element's `some-attr`, any attribute unknown to
+  // the element) is written as an attribute, never as an expando property.
+  if (EMBER_NATIVE && !(key in element)) {
+    $attr(api, element as HTMLElement, key, value, destructors);
+    return;
+  }
   const { result, isReactive } = resolveBindingValue(value, `${key}-prop`);
 
   if (isEmpty(result)) {

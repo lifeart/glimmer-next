@@ -19,7 +19,7 @@ import {
   shouldAccessCellValue,
   shouldSkipGetterWrapper,
 } from '../type-hints';
-import { escapeReservedBindingName } from '../utils/js-utils';
+import { escapeBindingName } from '../utils/js-utils';
 
 /**
  * When `rootName` refers to a block-param / let-binding whose name is a JS
@@ -39,7 +39,7 @@ function emitBindingRootName(
   ) {
     // A `{{#let}}` binding renamed because it shadows a name its own value
     // reads (BindingInfo.emitName) is referenced under that fresh name.
-    return binding.emitName ?? escapeReservedBindingName(rootName);
+    return binding.emitName ?? escapeBindingName(rootName, ctx.flags.EMBER_NATIVE);
   }
   return rootName;
 }
@@ -578,7 +578,7 @@ function buildBlockParamCellTap(
 
   // $__cellFor($__cellFor(item, "v"), "x")
   let expr: JSExpression = B.runtimeRef(
-    binding.emitName ?? escapeReservedBindingName(head),
+    binding.emitName ?? escapeBindingName(head, ctx.flags.EMBER_NATIVE),
     segs[0].range ?? value.rootRange ?? value.sourceRange
   );
   // EMBER_NATIVE: the non-defining tap (never installs an own accessor that
@@ -803,6 +803,20 @@ function buildHelper(
       B.num(ctx.helperSiteCounter++),
       B.bool(optional),
     ], sourceRange);
+  }
+  // A trusting `style` attribute value (EMBER_NATIVE): `$_trustAttr(value)`,
+  // read in place — the call already runs inside the attribute's getter.
+  if (name === INTERNAL_HELPERS.TRUSTED_ATTR) {
+    const value = positional[0];
+    const valueExpr =
+      value === undefined
+        ? B.nil()
+        : value.kind === 'path'
+          ? buildPathExpression(ctx, value, false, ctxName)
+          : value.kind === 'getter'
+            ? buildValueNoGetter(ctx, value.value, ctxName)
+            : buildValue(ctx, value, ctxName);
+    return B.call(SYMBOLS.TRUST_ATTR, [valueExpr], sourceRange);
   }
   // `{{#each-in}}` iteration source (EMBER_NATIVE, G5): `$__eachIn(obj)`.
   if (name === INTERNAL_HELPERS.EACH_IN) {

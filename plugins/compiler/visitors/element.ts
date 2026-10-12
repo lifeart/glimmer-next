@@ -571,7 +571,7 @@ function processAttributes(
 ): AttributeTuple[] {
   return attrs
     .filter((attr) => {
-      if (!isAttribute(attr.name)) return false;
+      if (!isAttribute(attr.name) && !isNativeStaticStyle(ctx, attr)) return false;
       // When splat attrs present, class goes through properties for merging
       if (hasSplatAttrs && attr.name === 'class') return false;
       return true;
@@ -581,6 +581,17 @@ function processAttributes(
       const nameRange = getAttributeNameRange(attr);
       return [attr.name, value, getNodeRange(attr), nameRange] as const;
     });
+}
+
+/**
+ * EMBER_NATIVE: a static `style="…"` is an attribute, written verbatim like
+ * every static attribute in Glimmer — never through the `style` property
+ * (which re-serializes the CSS text), and never seen by the host's DEV
+ * untrusted-style warning, which Glimmer gives dynamic `style` bindings only
+ * (they stay properties: see visitNativeStyleValue).
+ */
+function isNativeStaticStyle(ctx: CompilerContext, attr: ASTv1.AttrNode): boolean {
+  return !!ctx.flags.EMBER_NATIVE && attr.name === 'style' && attr.value.type === 'TextNode';
 }
 
 /**
@@ -611,11 +622,18 @@ function processProperties(
     }
 
     // Skip attributes and event attributes
-    if (isAttribute(attr.name) || isEventAttribute(attr.name)) {
+    if (
+      isAttribute(attr.name) ||
+      isEventAttribute(attr.name) ||
+      isNativeStaticStyle(ctx, attr)
+    ) {
       continue;
     }
 
-    const value = visitAttributeValue(ctx, attr.value);
+    const value =
+      ctx.flags.EMBER_NATIVE && attr.name === 'style'
+        ? visitNativeStyleValue(ctx, attr.value)
+        : visitAttributeValue(ctx, attr.value);
 
     // Handle boolean attributes
     if (
@@ -633,6 +651,38 @@ function processProperties(
   }
 
   return result;
+}
+
+/**
+ * EMBER_NATIVE: the value of an element's `style` attribute, with Ember's
+ * semantics for it:
+ *   - `style="{{x}}"` (one mustache, quoted) is `style={{x}}` — Ember's
+ *     `transform-quoted-bindings-into-just-bindings` AST plugin — so the value
+ *     is bound as is (an `htmlSafe` string stays one) instead of being
+ *     concatenated into a plain string;
+ *   - a trusting `style={{{x}}}` (Glimmer's TrustingDynamicAttribute) is marked
+ *     `$_trustAttr(x)`: Glimmer's DEV warning about binding `style` to a value
+ *     that is not `htmlSafe` (DebugStyleAttributeManager, emitted by the host's
+ *     `normalizeAttrValue` hook) applies to non-trusting bindings only.
+ */
+function visitNativeStyleValue(
+  ctx: CompilerContext,
+  value: ASTv1.AttrValue
+): SerializedValue {
+  let bound = value;
+  if (
+    bound.type === 'ConcatStatement' &&
+    bound.parts.length === 1 &&
+    bound.parts[0]!.type === 'MustacheStatement'
+  ) {
+    bound = bound.parts[0] as ASTv1.MustacheStatement;
+  }
+  const result = visitAttributeValue(ctx, bound);
+  if (bound.type !== 'MustacheStatement' || bound.escaped !== false) {
+    return result;
+  }
+  const range = getNodeRange(bound);
+  return getter(helper(INTERNAL_HELPERS.TRUSTED_ATTR, [result], new Map(), range), range);
 }
 
 /**
