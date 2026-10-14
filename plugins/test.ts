@@ -671,6 +671,39 @@ function resolveGxtBabelDeps(): { presetTypescript: string; decoratorTransforms:
   return gxtBabelDeps;
 }
 
+/**
+ * Where decorators lowered by the babel pass get their runtime functions
+ * (decorator-transforms' `runtime` option): `'globals'` calls
+ * `dt7948.<fn>(…)` on a global the app installs (`decorator-transforms/globals`);
+ * `{ import }` makes each compiled module import them from that module.
+ */
+export type DecoratorRuntime = 'globals' | { import: string };
+
+/**
+ * The runtime decorators import in Ember mode: the shape of an Ember app's own
+ * babel pass (Embroider / Vite: decorator-transforms with
+ * `runtime: { import: 'decorator-transforms/runtime' }`). The specifier is
+ * resolved from the compiled module like its other imports, so the app's
+ * plain-module babel pass and gxt-compiled modules share one runtime module.
+ */
+export const EMBER_DECORATOR_RUNTIME: DecoratorRuntime = {
+  import: 'decorator-transforms/runtime',
+};
+
+/**
+ * The decorator runtime for a compile: the explicit option, else Ember's
+ * import runtime under WITH_EMBER_INTEGRATION (nothing in an Ember app
+ * installs the `dt7948` global), else decorator-transforms' default
+ * (`undefined` = globals; standalone output is unchanged).
+ */
+export function resolveDecoratorRuntime(
+  flags: Pick<Flags, 'WITH_EMBER_INTEGRATION'>,
+  option: DecoratorRuntime | undefined,
+): DecoratorRuntime | undefined {
+  if (option !== undefined) return option;
+  return flags.WITH_EMBER_INTEGRATION === true ? EMBER_DECORATOR_RUNTIME : undefined;
+}
+
 export interface TransformOptions {
   /**
    * G10 (EMBER_NATIVE): the module is a plain script whose only gxt work is
@@ -680,6 +713,11 @@ export interface TransformOptions {
    * class-body conventions — the host's own pipeline still owns the rest.
    */
   precompileOnly?: boolean;
+  /**
+   * The runtime of the decorators the babel pass lowers (see
+   * `resolveDecoratorRuntime` for the default).
+   */
+  decoratorRuntime?: DecoratorRuntime;
 }
 
 export function transform(
@@ -706,7 +744,12 @@ export function transform(
     }),
   ];
   if (!isLibBuild && !precompileOnly) {
-    plugins.push(babelDeps.decoratorTransforms);
+    const decoratorRuntime = resolveDecoratorRuntime(flags, options.decoratorRuntime);
+    plugins.push(
+      decoratorRuntime === undefined
+        ? babelDeps.decoratorTransforms
+        : [babelDeps.decoratorTransforms, { runtime: decoratorRuntime }],
+    );
   }
   const replacedFileName = fileName
     .replace('.gts', '.ts')

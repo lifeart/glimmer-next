@@ -1,11 +1,11 @@
 import { type Plugin, type Rollup } from 'vite';
 import { Preprocessor } from 'content-tag';
-import { transform } from './test';
+import { transform, type DecoratorRuntime } from './test';
 import { type Flags, defaultFlags } from './flags.ts';
 import { HMR, fixExportsForHMR, shouldHotReloadFile } from './hmr.ts';
 
 import { stripGXTDebug as stripGXTDebugPlugin } from './babel.ts';
-export type { TransformResult } from './test';
+export type { TransformResult, DecoratorRuntime } from './test';
 
 /**
  * Babel plugin that strips gxt debug-only code. Re-exported with a plain
@@ -70,11 +70,21 @@ type Options = {
   authorMode?: boolean;
   disableHMR?: boolean;
   flags?: Partial<Flags>;
+  /**
+   * The runtime of the decorators lowered in compiled modules: `'globals'`
+   * (`dt7948.<fn>(…)`, the app imports `decorator-transforms/globals`) or
+   * `{ import: '<module>' }`. Default: `{ import: 'decorator-transforms/runtime' }`
+   * under WITH_EMBER_INTEGRATION (as an Ember app's own babel pass does),
+   * else `'globals'`.
+   */
+  decoratorRuntime?: DecoratorRuntime;
 };
 
 export function compiler(mode: string, options: Options = {}): Plugin {
   let isLibBuild = false;
   let flags = defaultFlags();
+  const transformOptions =
+    options.decoratorRuntime === undefined ? {} : { decoratorRuntime: options.decoratorRuntime };
   return {
     enforce: 'pre',
     name: 'glimmer-next',
@@ -132,6 +142,7 @@ export function compiler(mode: string, options: Options = {}): Plugin {
             isLibBuild,
             flags,
             code, // Pass original source for source maps
+            transformOptions,
           ));
         } else {
           return toViteResult(transform(
@@ -141,6 +152,7 @@ export function compiler(mode: string, options: Options = {}): Plugin {
             isLibBuild,
             flags,
             code, // Pass original source for source maps
+            transformOptions,
           ));
         }
       }
@@ -163,7 +175,7 @@ export function compiler(mode: string, options: Options = {}): Plugin {
           code, file,
           mode as 'development' | 'production',
           false, flags, code,
-          { precompileOnly: true },
+          { ...transformOptions, precompileOnly: true },
         );
         if (result && typeof (result as Promise<unknown>).then === 'function') {
           return (result as Promise<any>).then((r) => toViteResult(r));
@@ -176,6 +188,7 @@ export function compiler(mode: string, options: Options = {}): Plugin {
             code, file,
             mode as 'development' | 'production',
             false, flags, code,
+            transformOptions,
           );
           // Handle async transform (returns Promise on parse error)
           if (result && typeof (result as any).then === 'function') {
