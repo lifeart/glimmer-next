@@ -1,5 +1,5 @@
-// Ember NATIVE layer (EMBER_NATIVE runtime constant): Glimmer's `...attributes`
-// precedence on an element.
+// Ember (EMBER_NATIVE or WITH_EMBER_INTEGRATION runtime constant): Glimmer's
+// `...attributes` precedence on an element.
 //
 // Glimmer applies an element's attributes in SOURCE order with `...attributes`
 // expanded in place: an attribute written AFTER `...attributes` overrides the
@@ -11,9 +11,11 @@
 // (forwarded always wins) and puts forwarded classes first. The compiler
 // (Glimmer compat mode) lists the attribute names written after `...attributes`
 // in a `__splatLocal__` marker attribute (`__class__` for a class after it).
-// Compat Ember consumes the marker in its own `$_tag` wrapper; for the native
-// layer `_DOM` consumes it through `splatLocalPlan`: the listed LOCAL entries are
-// applied before the forwarded ones and claim their keys.
+// Compat Ember's runtime-template `$_tag` wrapper resolves the marker itself
+// and strips it; everywhere else (the native layer, and compat build-time
+// templates, whose `$_tag` is gxt's) `_DOM` consumes it through
+// `splatLocalPlan`: the listed LOCAL entries are applied before the forwarded
+// ones and claim their keys.
 //
 // Deliberately NOT re-exported from the package index (`export * from dom`):
 // compat consumers import the runtime as a namespace and would retain it.

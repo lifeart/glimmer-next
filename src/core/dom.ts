@@ -1028,12 +1028,15 @@ function _DOM(
     // signals "no dedup needed" to the inner loops, removing both the
     // Set allocation and the per-key has/add calls.
     const seenKeys: Set<string> | null = hasSplatAttrs ? new Set<string>() : null;
-    // EMBER_NATIVE: Glimmer `...attributes` precedence (splat-local.ts) — the
-    // local attributes written AFTER `...attributes` are applied first and claim
-    // their keys; class values keep source order (reordered below).
+    // Ember (native and compat): Glimmer `...attributes` precedence
+    // (splat-local.ts) — the local attributes written AFTER `...attributes` are
+    // applied first and claim their keys; class values keep source order
+    // (reordered below). Compat Ember's runtime-template wrapper resolves the
+    // marker itself and strips it; a build-time template's `$_tag` is this one.
+    const emberSplat = EMBER_NATIVE || WITH_EMBER_INTEGRATION;
     let classAfterSplat = true;
     let forwardedClasses = 0;
-    if (EMBER_NATIVE && hasSplatAttrs === true) {
+    if (emberSplat && hasSplatAttrs === true) {
       const plan = splatLocalPlan(tagProps[0], tagProps[1]);
       classAfterSplat = plan !== undefined && plan.classAfterSplat;
       if (plan !== undefined) {
@@ -1084,7 +1087,7 @@ function _DOM(
         classNameModifiers,
         setShadowNode,
       );
-      if (EMBER_NATIVE) {
+      if (emberSplat) {
         forwardedClasses = classNameModifiers.length;
       }
     }
@@ -1097,7 +1100,7 @@ function _DOM(
       classNameModifiers,
       setShadowNode,
     );
-    if (EMBER_NATIVE && !classAfterSplat && forwardedClasses !== 0) {
+    if (emberSplat && !classAfterSplat && forwardedClasses !== 0) {
       // A class written before `...attributes` precedes the forwarded classes.
       classNameModifiers.push(...classNameModifiers.splice(0, forwardedClasses));
     }
