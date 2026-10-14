@@ -187,8 +187,8 @@ export function getPathPartRanges(node: ASTv1.PathExpression): { parts: PathPart
   const end = lineColumnToOffset(cachedSource, node.loc.end.line, node.loc.end.column);
   const text = cachedSource.slice(start, end);
 
-  // Skip complex paths with bracket notation or parent scope paths for now
-  if (text.includes('[') || text.includes(']') || text.includes('/')) return null;
+  // Skip parent scope paths for now
+  if (text.includes('/')) return null;
 
   const head = node.head;
   const isAtHead = head.type === 'AtHead';
@@ -200,6 +200,11 @@ export function getPathPartRanges(node: ASTv1.PathExpression): { parts: PathPart
   const parts: PathPart[] = tokens.map((token, index) => ({
     name: index === 0 && isAtHead ? token.replace(/^@/, '') : token,
   }));
+
+  // Literal segments (`this.[1]`, `this.[foo.bar]`): the segments are the
+  // parsed tail (a member read by key each); the dotted path string cannot
+  // carry them. No per-segment source ranges.
+  if (text.includes('[') || text.includes(']')) return { parts };
 
   let searchIndex = 0;
   let rootRange: SourceRange | undefined;
