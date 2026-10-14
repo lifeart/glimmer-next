@@ -17,7 +17,7 @@ import type {
 } from '../types';
 import { literal, helper, getter, isSerializedValue, runtimeTag } from '../types';
 import { getNodeRange, serializeValueToString, getAttributeNameRange, getPathExpressionString, getElementBlockParamRanges, hasRealBinding } from './utils';
-import { withElementContext, addWarning } from '../context';
+import { withElementContext, addWarning, isArgComponentTag } from '../context';
 import { looseComponentTagName } from './loose';
 import { SYMBOLS, INTERNAL_HELPERS } from '../serializers/symbols';
 
@@ -317,7 +317,8 @@ export function visitElement(
   const { children: optimizedChildren, additionalEvents } = optimizeTextChild(
     actualTag,
     children,
-    ctx.flags.EMBER_NATIVE === true
+    ctx.flags.EMBER_NATIVE === true,
+    isArgComponentTag(ctx, actualTag)
   );
   const events = [...baseEvents, ...additionalEvents];
 
@@ -488,7 +489,8 @@ function visitElementInner(
   const { children: optimizedChildren, additionalEvents } = optimizeTextChild(
     actualTag,
     children,
-    ctx.flags.EMBER_NATIVE === true
+    ctx.flags.EMBER_NATIVE === true,
+    isArgComponentTag(ctx, actualTag)
   );
   const events = [...baseEvents, ...additionalEvents];
 
@@ -960,15 +962,17 @@ interface TextChildOptimization {
 function optimizeTextChild(
   tag: string,
   children: HBSChild[],
-  emberNative = false
+  emberNative = false,
+  argComponent = false
 ): TextChildOptimization {
   const noChange = { children, additionalEvents: [] };
 
-  // Ember native layer: a lowercase PATH tag (`<card.title>Hello</card.title>`,
-  // `<@comp>text</@comp>`) is a dynamic component — its text child is the
-  // component's default block, not a `textContent` binding (which would land
-  // in the forwarded attributes and drop the block).
-  if (emberNative && (tag.includes('.') || tag.startsWith('@'))) return noChange;
+  // Ember: a lowercase PATH tag (`<card.title>Hello</card.title>`, native) or
+  // an `@`-headed tag (`<@comp>text</@comp>`, native and compat) is a dynamic
+  // component — its text child is the component's default block, not a
+  // `textContent` binding (which would land in the forwarded attributes and
+  // drop the block).
+  if (argComponent || (emberNative && tag.includes('.'))) return noChange;
 
   if (children.length !== 1) return noChange;
 

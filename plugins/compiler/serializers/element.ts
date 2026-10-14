@@ -6,6 +6,7 @@
  */
 
 import type { CompilerContext } from '../context';
+import { isArgComponentTag } from '../context';
 import type {
   HBSNode,
   HBSChild,
@@ -194,7 +195,7 @@ export function buildComponent(
   const isDynamicComponent =
     node.byName !== true &&
     typeof node.tag === 'string' &&
-    (node.tag.includes('.') || (ctx.flags.EMBER_NATIVE === true && node.tag.startsWith('@')));
+    (node.tag.includes('.') || isArgComponentTag(ctx, node.tag));
   const dynamicSplat = isDynamicComponent && hasSplatAttrs;
 
   // Separate @ args from regular attributes
@@ -900,10 +901,9 @@ function buildComponentCall(
   }
 
   // Check for dynamic component (dotted path like context.V or this.Component)
-  // Ember native layer: an `@`-headed tag (`<@comp />`) is a dynamic
-  // component too (isComponentTag routes it here).
-  const isDynamic =
-    tag.includes('.') || (ctx.flags.EMBER_NATIVE === true && tag.startsWith('@'));
+  // Ember: an `@`-headed tag (`<@comp />`) is a dynamic component too
+  // (isComponentTag routes it here).
+  const isDynamic = tag.includes('.') || isArgComponentTag(ctx, tag);
 
   if (isDynamic) {
     // Wrap in reactive getter for dynamic component paths

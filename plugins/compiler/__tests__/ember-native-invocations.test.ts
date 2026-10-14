@@ -192,6 +192,9 @@ describe('EMBER_NATIVE off: historic output', () => {
     expect(code('{{fmt (concat "a" this.b)}}', COMPAT, ['fmt', 'concat'])).toContain(
       '$_maybeHelper(fmt, [$_maybeHelper(concat, ["a", () => this.b], {})], {})'
     );
-    expect(code('<@comp />', COMPAT)).toContain("$_tag('@comp'");
+    // `<@comp />` is a dynamic component in Ember compat too (dynamic-at-tag.test.ts);
+    // standalone gxt keeps the historic element form.
+    expect(code('<@comp />', COMPAT)).toContain('$_dc(() => $a.comp');
+    expect(code('<@comp />', { IS_GLIMMER_COMPAT_MODE: true })).toContain("$_tag('@comp'");
   });
 });
