@@ -345,6 +345,9 @@ export function getElementBlockParamRanges(node: ASTv1.ElementNode): SourceRange
   return ranges;
 }
 
+/** A dotted path of plain identifiers, optionally spread (`...a.b.c`). */
+const MEMBER_PATH = /^(?:\.\.\.)?[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/;
+
 /**
  * Convert a path to use optional chaining for safety (3+ segments).
  * e.g., foo.bar.baz -> foo?.bar?.baz
@@ -355,8 +358,11 @@ export function toOptionalChaining(str: string): string {
   // Don't modify quoted strings
   if (str.includes("'") || str.includes('"')) return str;
 
-  // Don't modify runtime symbols
-  if (str.includes('$_')) return str;
+  // Don't modify runtime-symbol expressions (`$_maybeHelper(…).a.b`,
+  // `this[$_x].a`). A plain member path through a `$_`-named identifier
+  // (Ember's rewritten angle-bracket block params, `this.$_bp0.foo.bar`) is
+  // read null-safely like any other path.
+  if (str.includes('$_') && !MEMBER_PATH.test(str)) return str;
 
   // Already has optional chaining
   if (str.includes('?.')) return str;
