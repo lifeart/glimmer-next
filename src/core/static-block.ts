@@ -164,8 +164,9 @@ class StaticBlock implements StaticBlockDef {
         // same code path as `_DOM`'s sole-child text optimization
         $ev(api, node, EVENT_TYPE.TEXT_CONTENT, value as never, destructors);
       } else if (kind === 'class') {
-        // EMBER_NATIVE: Glimmer's class attribute (dom.ts nativeClassAttribute).
-        if (EMBER_NATIVE) $nativeClass(api, node, value, destructors);
+        // Ember (native and compat): Glimmer's class attribute (dom.ts
+        // nativeClassAttribute).
+        if (EMBER_NATIVE || WITH_EMBER_INTEGRATION) $nativeClass(api, node, value, destructors);
         else $prop(api, node, 'className', value, destructors);
       } else if (kind === 'attr') {
         $attr(api, node, slot.n!, value, destructors);

@@ -15,74 +15,16 @@
  * The runtime build constants are vitest globals, turned on per test as the
  * Ember compat build defines them.
  */
-import { describe, test, expect, beforeEach, afterEach } from 'vitest';
-import * as main from './index';
-import { Component } from './component';
-import { RENDERED_NODES_PROPERTY, COMPONENT_ID_PROPERTY, addToTree, $template } from './shared';
-import { cId } from './tree';
-import { $_c, $_args, $_edp } from './dom';
-import { createDOMFixture, type DOMFixture } from './__test-utils__';
-import { renderElement } from './render-core';
-import { compileTemplateSource } from '../../plugins/runtime-compiler';
-
-export const COMPAT_FLAGS = {
-  WITH_EMBER_INTEGRATION: true,
-  WITH_HELPER_MANAGER: true,
-  WITH_MODIFIER_MANAGER: true,
-  TRY_CATCH_ERROR_HANDLING: false,
-  EMBER_PROPERTY_TAGS: false,
-};
-
-type RuntimeConstants = { EMBER_NATIVE: boolean; WITH_EMBER_INTEGRATION: boolean };
-const runtime = globalThis as unknown as RuntimeConstants;
-
-function compileCompat(tpl: string, bindings: Record<string, unknown> = {}) {
-  const { source, scopeNames, errors } = compileTemplateSource(tpl, {
-    flags: COMPAT_FLAGS,
-    bindings: new Set(Object.keys(bindings)),
-  });
-  expect(errors).toHaveLength(0);
-  const exported = main as unknown as Record<string, unknown>;
-  const names = Object.keys(bindings);
-  // eslint-disable-next-line no-new-func
-  return new Function(...scopeNames, ...names, `"use strict"; return ${source};`)(
-    ...scopeNames.map((name) => exported[name]),
-    ...names.map((name) => bindings[name]),
-  ) as (...args: unknown[]) => unknown;
-}
+import { describe, test, expect } from 'vitest';
+import { compileCompat, useEmberCompatRuntime } from './__test-utils__/ember-compat';
 
 describe('Ember compat: `...attributes` precedence in gxt `_DOM`', () => {
-  let fixture: DOMFixture;
-  let saved: RuntimeConstants;
-
-  beforeEach(() => {
-    saved = {
-      EMBER_NATIVE: runtime.EMBER_NATIVE,
-      WITH_EMBER_INTEGRATION: runtime.WITH_EMBER_INTEGRATION,
-    };
-    runtime.EMBER_NATIVE = false;
-    runtime.WITH_EMBER_INTEGRATION = true;
-    fixture = createDOMFixture();
-  });
-
-  afterEach(() => {
-    fixture.cleanup();
-    runtime.EMBER_NATIVE = saved.EMBER_NATIVE;
-    runtime.WITH_EMBER_INTEGRATION = saved.WITH_EMBER_INTEGRATION;
-  });
+  const compat = useEmberCompatRuntime();
 
   function render(inner: string, outer: string) {
     const Inner = compileCompat(inner);
-    const Outer = compileCompat(outer, { Inner });
-    const parent = new Component({});
-    parent[RENDERED_NODES_PROPERTY] = [];
-    addToTree(fixture.root, parent);
-    const Host = function Host() {
-      return { [COMPONENT_ID_PROPERTY]: cId(), [$template]: Outer };
-    };
-    const instance = $_c(Host as any, $_args({}, false, $_edp as any), parent);
-    renderElement(fixture.api, parent, fixture.container, instance);
-    return fixture.container.querySelector('div')!;
+    compat.render(compileCompat(outer, { Inner }));
+    return compat.fixture.container.querySelector('div')!;
   }
 
   test('own attributes and class written before `...attributes`: forwarded attribute wins, own class first', () => {

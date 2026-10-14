@@ -421,7 +421,8 @@ export function $prop(
 }
 
 /**
- * EMBER_NATIVE: an element's `class` with Glimmer's attribute semantics.
+ * Ember (EMBER_NATIVE or WITH_EMBER_INTEGRATION): an element's `class` with
+ * Glimmer's attribute semantics.
  *   - ONE class value is a plain dynamic attribute (the host's
  *     normalizeAttrValue = Glimmer normalizeValue): `null` / `undefined` /
  *     `false` remove the attribute, `''` keeps `class=""`, `true` is `""`.
@@ -521,7 +522,9 @@ function mergeClassModifiers(
   if (classNameModifiers.length === 0) {
     return;
   }
-  if (EMBER_NATIVE) {
+  // Ember (native and compat): `class` is a Glimmer attribute, never the
+  // `className` property.
+  if (EMBER_NATIVE || WITH_EMBER_INTEGRATION) {
     nativeClassAttribute(api, element as HTMLElement, classNameModifiers, destructors);
     return;
   }
