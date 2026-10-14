@@ -39,7 +39,7 @@ function emitBindingRootName(
   ) {
     // A `{{#let}}` binding renamed because it shadows a name its own value
     // reads (BindingInfo.emitName) is referenced under that fresh name.
-    return binding.emitName ?? escapeBindingName(rootName, ctx.flags.EMBER_NATIVE);
+    return binding.emitName ?? escapeBindingName(rootName);
   }
   return rootName;
 }
@@ -578,7 +578,7 @@ function buildBlockParamCellTap(
 
   // $__cellFor($__cellFor(item, "v"), "x")
   let expr: JSExpression = B.runtimeRef(
-    binding.emitName ?? escapeBindingName(head, ctx.flags.EMBER_NATIVE),
+    binding.emitName ?? escapeBindingName(head),
     segs[0].range ?? value.rootRange ?? value.sourceRange
   );
   // EMBER_NATIVE: the non-defining tap (never installs an own accessor that

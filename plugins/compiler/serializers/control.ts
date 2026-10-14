@@ -349,12 +349,12 @@ function buildEach(
       // References to a reserved-word index param are emitted escaped, so the
       // index→`.value` rewrite must target the escaped name.
       valueExprs = valueExprs.map((expr) =>
-        replaceIndexRefsInExpr(expr, escapeBindingName(indexParamName, ctx.flags.EMBER_NATIVE))
+        replaceIndexRefsInExpr(expr, escapeBindingName(indexParamName))
       );
     }
     blockDefExpr = buildStaticBlockDefExpr(staticBlockParts);
     blockValuesExpr = B.arrow(
-      [...paramNames.map((name) => escapeBindingName(name, ctx.flags.EMBER_NATIVE)), newCtxName],
+      [...paramNames.map((name) => escapeBindingName(name)), newCtxName],
       B.array(valueExprs)
     );
   }
@@ -368,9 +368,9 @@ function buildEach(
     ...paramNames.map((name, index) => {
       if (index === 0 && eachInParams !== undefined && eachInParams.length > 0) {
         // `{{#each-in}}`: destructure the `[key, value]` pair.
-        return `[${eachInParams.map((param) => escapeBindingName(param, ctx.flags.EMBER_NATIVE)).join(', ')}]`;
+        return `[${eachInParams.map((param) => escapeBindingName(param)).join(', ')}]`;
       }
-      const emitName = escapeBindingName(name, ctx.flags.EMBER_NATIVE);
+      const emitName = escapeBindingName(name);
       const range = paramRanges[index];
       return range ? B.id(emitName, range) : emitName;
     }),
@@ -501,7 +501,7 @@ function buildEachBody(
   ctx.scopeTracker.exitScope();
 
   const rewrittenExprs = usesIndex
-    ? childExprs.map((expr) => replaceIndexRefsInExpr(expr, escapeBindingName(indexParam, ctx.flags.EMBER_NATIVE)))
+    ? childExprs.map((expr) => replaceIndexRefsInExpr(expr, escapeBindingName(indexParam)))
     : childExprs;
 
   const childArrayExpr = ctx.formatter.options.enabled && rewrittenExprs.length > 0
@@ -893,7 +893,7 @@ function buildLet(
   // under a fresh per-template name instead (BindingInfo.emitName). A let whose
   // values don't mention its own names emits byte-identically.
   const emitNames = bindings.map((binding) => {
-    const escaped = escapeBindingName(binding.name, ctx.flags.EMBER_NATIVE);
+    const escaped = escapeBindingName(binding.name);
     if (!valueExprs.some((expr) => readsIdentifier(expr, escaped))) return escaped;
     return `${escaped}$${++ctx.letBlockCounter}`;
   });
@@ -930,7 +930,7 @@ function buildLet(
     const emitName = emitNames[index]!;
     ctx.scopeTracker.addBinding(
       binding.name,
-      emitName === escapeBindingName(binding.name, ctx.flags.EMBER_NATIVE)
+      emitName === escapeBindingName(binding.name)
         ? { kind: 'let-binding', name: binding.name }
         : { kind: 'let-binding', name: binding.name, emitName },
     );

@@ -65,9 +65,8 @@ const JS_IDENTIFIER_PART = /^[\p{ID_Continue}]$/u;
 /**
  * The JS identifier a block-param / let-binding name is declared and
  * referenced under. Reserved words are escaped as by
- * {@link escapeReservedBindingName}. Under the Ember native layer
- * (`nativeNames`, the EMBER_NATIVE flag) a name that is not a JS identifier at
- * all is escaped too: Glimmer accepts any block-param name its parser reads
+ * {@link escapeReservedBindingName}. A name that is not a JS identifier at all
+ * is escaped too: Glimmer accepts any block-param name its parser reads
  * (`{{#let x as |-in-element|}}`, `as |foo-bar|`), which would otherwise be
  * emitted verbatim (`let -in-element = …`, a SyntaxError). Every character that
  * cannot continue a JS identifier becomes `$<hex code point>$` after the
@@ -75,8 +74,8 @@ const JS_IDENTIFIER_PART = /^[\p{ID_Continue}]$/u;
  * stay distinct. Pure and deterministic like the reserved-word escape: the
  * declaration and reference sites derive the same identifier independently.
  */
-export function escapeBindingName(name: string, nativeNames?: boolean): string {
-  if (nativeNames === true && !JS_IDENTIFIER.test(name)) {
+export function escapeBindingName(name: string): string {
+  if (!JS_IDENTIFIER.test(name)) {
     let escaped = '__bp_';
     for (const char of name) {
       escaped += JS_IDENTIFIER_PART.test(char) ? char : `$${char.codePointAt(0)!.toString(16)}$`;

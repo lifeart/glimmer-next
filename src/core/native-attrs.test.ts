@@ -145,9 +145,11 @@ describe('compiler: EMBER_NATIVE block params', () => {
     }
   });
 
-  test('flag off: historic output', () => {
-    expect(source('{{#let this.v as |-in-element|}}{{-in-element}}{{/let}}', COMPAT_FLAGS)).toContain('let -in-element');
-    expect(source('{{#let this.v as |input|}}{{input}}{{/let}}', COMPAT_FLAGS)).toContain("$_tag('Input'");
+  test('compat (flag off) escapes and shadows the same way (keyword-named-block-params.test.ts)', () => {
+    expect(source('{{#let this.v as |-in-element|}}{{-in-element}}{{/let}}', COMPAT_FLAGS)).toContain(
+      'let __bp_$2d$in$2d$element = () => this.v',
+    );
+    expect(source('{{#let this.v as |input|}}{{input}}{{/let}}', COMPAT_FLAGS)).toContain('return [() => input()]');
   });
 });
 

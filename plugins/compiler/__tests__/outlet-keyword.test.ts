@@ -90,12 +90,16 @@ describe('G3: {{outlet}} under EMBER_OUTLET', () => {
       '{{outlet}}',
       '<main>{{outlet}}</main>',
       '{{#if this.show}}{{outlet}}{{/if}}',
-      '{{#let this.x as |outlet|}}{{outlet}}{{/let}}',
     ]) {
       const off = code(tpl, EMBER);
       expect(off.code).not.toContain('$_outlet');
       expect(off.code).toContain('$_slot("default"');
       expect(code(tpl, { ...EMBER, EMBER_OUTLET: false }).code).toBe(off.code);
     }
+    // A binding named `outlet` shadows the keyword in Ember compat too
+    // (keyword-named-block-params.test.ts).
+    const shadowed = code('{{#let this.x as |outlet|}}{{outlet}}{{/let}}', EMBER).code;
+    expect(shadowed).not.toContain('$_slot("default"');
+    expect(shadowed).toContain('() => outlet()');
   });
 });

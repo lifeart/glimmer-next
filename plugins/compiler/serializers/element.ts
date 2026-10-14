@@ -861,7 +861,7 @@ function buildSlots(
     const params = [
       sContext,
       ...blockParams.map((name, index) => {
-        const emitName = escapeBindingName(name, ctx.flags.EMBER_NATIVE);
+        const emitName = escapeBindingName(name);
         const range = blockParamRanges[index];
         return range ? B.id(emitName, range) : emitName;
       }),

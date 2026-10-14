@@ -66,12 +66,14 @@ export function visitMustache(
 
   const pathName = getPathExpressionString(node.path);
 
-  // Ember native layer: a genuine binding (`{{#let … as |mount|}}`, a block
-  // param, a lexical name) shadows the `mount` / `component` / `input` /
-  // `textarea` keyword rewrites below, as it shadows any keyword in Glimmer —
-  // `{{component}}` then reads the binding. Without the flag the rewrites are
-  // unconditional (historic compat output).
-  const shadowsKeyword = !!ctx.flags.EMBER_NATIVE && hasRealBinding(ctx, pathName);
+  // Ember (native and compat): a genuine binding (`{{#let … as |mount|}}`, a
+  // block param, a lexical name) shadows the `mount` / `component` / `input` /
+  // `textarea` / `outlet` keyword rewrites below, as it shadows any keyword in
+  // Glimmer — `{{component}}` then reads the binding. Standalone the rewrites
+  // are unconditional (historic output).
+  const shadowsKeyword =
+    (!!ctx.flags.EMBER_NATIVE || !!ctx.flags.WITH_EMBER_INTEGRATION) &&
+    hasRealBinding(ctx, pathName);
 
   // In compat mode, transform {{mount "engine-name" model=expr}} to <ember-mount> element
   if (pathName === 'mount' && ctx.flags.IS_GLIMMER_COMPAT_MODE && !shadowsKeyword) {
@@ -246,7 +248,7 @@ export function visitMustache(
     if (!hasRealBinding(ctx, 'outlet')) {
       return helper(INTERNAL_HELPERS.OUTLET, [], new Map(), range);
     }
-  } else if (pathName === 'yield' || pathName === 'outlet') {
+  } else if (pathName === 'yield' || (pathName === 'outlet' && !shadowsKeyword)) {
     // Handle yield/outlet
     return createYieldExpression(ctx, node, range);
   }
