@@ -80,6 +80,17 @@ type Options = {
   decoratorRuntime?: DecoratorRuntime;
 };
 
+/**
+ * Defaults an Ember consumer (WITH_EMBER_INTEGRATION) gets without setting
+ * them: EMBER_PROPERTY_TAGS — every member read of a template path consumes
+ * that property's tag (Glimmer's `getProp`), so `set()` /
+ * `notifyPropertyChange()` on an untracked property re-renders what read it.
+ * An explicit flag value always wins.
+ */
+function emberDefaultFlags(flags: Partial<Flags> | undefined): Partial<Flags> {
+  return flags?.WITH_EMBER_INTEGRATION === true ? { EMBER_PROPERTY_TAGS: true } : {};
+}
+
 export function compiler(mode: string, options: Options = {}): Plugin {
   let isLibBuild = false;
   let flags = defaultFlags();
@@ -92,7 +103,7 @@ export function compiler(mode: string, options: Options = {}): Plugin {
       if (options.authorMode === true) {
         isLibBuild = config.build?.lib !== undefined;
       }
-      flags = { ...flags, ...(options.flags ?? {}) };
+      flags = { ...flags, ...emberDefaultFlags(options.flags), ...(options.flags ?? {}) };
       let defineValues: Record<string, boolean> = flags;
       if (!isLibBuild) {
         defineValues['IS_DEV_MODE'] = mode.mode === 'development';
