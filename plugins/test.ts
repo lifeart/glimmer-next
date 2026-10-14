@@ -672,10 +672,11 @@ function resolveGxtBabelDeps(): { presetTypescript: string; decoratorTransforms:
 }
 
 /**
- * Where decorators lowered by the babel pass get their runtime functions
- * (decorator-transforms' `runtime` option): `'globals'` calls
- * `dt7948.<fn>(…)` on a global the app installs (`decorator-transforms/globals`);
- * `{ import }` makes each compiled module import them from that module.
+ * Where decorators lowered by the babel pass get their runtime functions:
+ * `'globals'` calls `dt7948.<fn>(…)` on a global the app installs
+ * (`decorator-transforms/globals`); `{ import }` makes each compiled module
+ * import them from that module, as one namespace
+ * (`import * as dt7948 from '<module>'`).
  */
 export type DecoratorRuntime = 'globals' | { import: string };
 
@@ -744,13 +745,18 @@ export function transform(
       classBodyTemplateBrand: flags.WITH_EMBER_INTEGRATION === true,
     }),
   ];
+  // decorator-transforms always runs with its globals runtime (`dt7948.<fn>(…)`):
+  // a named runtime import (`import { g, i } from …`) would put `g` / `i` in the
+  // module scope that each `<template>`'s lexical scope is read from in this same
+  // pass, turning `<i>` into a component invocation. An `{ import }` runtime is
+  // bound afterwards instead, as one module-scoped `dt7948` namespace
+  // (`withDecoratorRuntimeImport`).
+  const decoratorRuntime =
+    !isLibBuild && !precompileOnly
+      ? resolveDecoratorRuntime(flags, options.decoratorRuntime)
+      : undefined;
   if (!isLibBuild && !precompileOnly) {
-    const decoratorRuntime = resolveDecoratorRuntime(flags, options.decoratorRuntime);
-    plugins.push(
-      decoratorRuntime === undefined
-        ? babelDeps.decoratorTransforms
-        : [babelDeps.decoratorTransforms, { runtime: decoratorRuntime }],
-    );
+    plugins.push(babelDeps.decoratorTransforms);
   }
   const replacedFileName = fileName
     .replace('.gts', '.ts')
@@ -796,7 +802,7 @@ export function transform(
           hbsToProcess[i].typeHints = mergeTypeHints(checkerTypeHints[i], hbsToProcess[i].typeHints);
         }
       }
-      return processTransformedFiles(
+      return withDecoratorRuntimeImport(decoratorRuntime, processTransformedFiles(
         babelResult,
         hbsToProcess,
         flags,
@@ -804,7 +810,7 @@ export function transform(
         programResults,
         sourceForMaps,
         mode === 'development', // Enable formatting in dev mode
-      );
+      ));
     });
   } else {
     const babelResult = transformSync(intermediate, babelConfig);
@@ -813,7 +819,7 @@ export function transform(
         hbsToProcess[i].typeHints = mergeTypeHints(checkerTypeHints[i], hbsToProcess[i].typeHints);
       }
     }
-    return processTransformedFiles(
+    return withDecoratorRuntimeImport(decoratorRuntime, processTransformedFiles(
       babelResult,
       hbsToProcess,
       flags,
@@ -821,6 +827,35 @@ export function transform(
       programResults,
       sourceForMaps,
       mode === 'development', // Enable formatting in dev mode
-    );
+    ));
   }
+}
+
+// decorator-transforms' globals-runtime identifier: every call it emits is
+// `dt7948.<fn>(…)`.
+const DECORATOR_GLOBAL = 'dt7948';
+const DECLARES_DECORATOR_GLOBAL =
+  /\b(?:import\s*\*\s*as|const|let|var|function|class)\s+dt7948\b|[{,]\s*(?:\w+\s+as\s+)?dt7948\s*[,}]/;
+
+/**
+ * Bind the decorator runtime of an `{ import }` runtime: a module whose
+ * lowered decorators call `dt7948.<fn>(…)` gets
+ * `import * as dt7948 from '<module>';`, so the calls read the module's
+ * exports (exactly the functions the global holds) instead of a global. The
+ * import is appended: declarations are hoisted and every existing line keeps
+ * its source-map mapping. A module that declares `dt7948` itself is left as is.
+ */
+function withDecoratorRuntimeImport(
+  runtime: DecoratorRuntime | undefined,
+  result: TransformResult,
+): TransformResult {
+  if (runtime === undefined || runtime === 'globals') return result;
+  const code = result.code;
+  if (!code.includes(`${DECORATOR_GLOBAL}.`) || DECLARES_DECORATOR_GLOBAL.test(code)) {
+    return result;
+  }
+  return {
+    ...result,
+    code: `${code}\nimport * as ${DECORATOR_GLOBAL} from ${JSON.stringify(runtime.import)};\n`,
+  };
 }

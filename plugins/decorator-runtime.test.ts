@@ -56,13 +56,14 @@ async function compile(
   return result.code;
 }
 
-const RUNTIME_IMPORT = /import\s*\{[^}]*\}\s*from\s*["']decorator-transforms\/runtime["']/;
+const RUNTIME_IMPORT = /import \* as dt7948 from "decorator-transforms\/runtime";/;
 
 describe('decorator runtime of the template-tag transform', () => {
   test('Ember mode: decorators import decorator-transforms/runtime, no dt7948 global', async () => {
     const code = await compile(emberFlags());
     expect(code).toMatch(RUNTIME_IMPORT);
-    expect(code).not.toContain('dt7948');
+    // the calls read the module-scoped namespace, not a global
+    expect(code).toContain('dt7948.g(');
     // the field decorator and its deferred initializer, and the method decorator
     expect(code).not.toMatch(/^\s*@tracked/m);
     expect(code).not.toMatch(/^\s*@action/m);
@@ -71,7 +72,6 @@ describe('decorator runtime of the template-tag transform', () => {
   test('Ember mode, async transform: the same runtime import', async () => {
     const code = await compile({ ...emberFlags(), ASYNC_COMPILE_TRANSFORMS: true });
     expect(code).toMatch(RUNTIME_IMPORT);
-    expect(code).not.toContain('dt7948');
   });
 
   test('standalone gxt keeps the globals runtime (output unchanged)', async () => {
@@ -88,8 +88,7 @@ describe('decorator runtime of the template-tag transform', () => {
     const custom = await compile(standaloneFlags(), {
       decoratorRuntime: { import: 'my-app/decorator-runtime' },
     });
-    expect(custom).toMatch(/from\s*["']my-app\/decorator-runtime["']/);
-    expect(custom).not.toContain('dt7948');
+    expect(custom).toContain('import * as dt7948 from "my-app/decorator-runtime";');
   });
 
   test('the Vite plugin forwards its decoratorRuntime option and Ember flags', async () => {
@@ -105,12 +104,38 @@ describe('decorator runtime of the template-tag transform', () => {
     };
     const ember = await run({ flags: { WITH_EMBER_INTEGRATION: true } });
     expect(ember).toMatch(RUNTIME_IMPORT);
-    expect(ember).not.toContain('dt7948');
 
     const forced = await run({ flags: { WITH_EMBER_INTEGRATION: true }, decoratorRuntime: 'globals' });
     expect(forced).toContain('dt7948.');
 
     const standalone = await run({});
     expect(standalone).toContain('dt7948.');
+  });
+
+  test('the runtime adds no binding a template could resolve (`<i>` stays an element)', async () => {
+    // A named import (`import { g, i } from …`) would put `i` in the module
+    // scope the template's lexical scope is read from, turning `<i>` into a
+    // component invocation of the decorator runtime function.
+    const source = `import Component from '@glimmer/component';
+import { tracked } from '@glimmer/tracking';
+export default class Counter extends Component {
+  @tracked count = 0;
+  <template><i>{{this.count}}</i><g>{{this.count}}</g></template>
+}
+`;
+    const result = (await transform(source, '/app/c.gjs', 'production', false, emberFlags())) as TransformResult;
+    expect(result.code).toContain("$_tag('i'");
+    expect(result.code).toContain("$_tag('g'");
+    expect(result.code).not.toMatch(/\$_c\(\s*[gi]\b/);
+    expect(result.code).toMatch(RUNTIME_IMPORT);
+  });
+
+  test('a module that declares dt7948 itself gets no second binding', async () => {
+    const source = `import * as dt7948 from 'decorator-transforms/runtime';
+import { tracked } from '@glimmer/tracking';
+export default class Counter { @tracked count = 0; <template>{{this.count}}</template> }
+`;
+    const result = (await transform(source, '/app/c.gjs', 'production', false, emberFlags())) as TransformResult;
+    expect(result.code.match(/as dt7948/g)).toHaveLength(1);
   });
 });
