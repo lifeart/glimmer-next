@@ -45,9 +45,14 @@ export function visitMustache(
   // value below and wrap it in the internal `$__html` marker at the value-return
   // sites; `buildHelper` lowers the marker to the `$_html` call. Attribute
   // position (`<div style={{{x}}}>`) has no trusted-attribute channel, so it is
-  // left to the historic escaped path (gxt has no XSS-warning to preserve).
+  // left to the historic escaped path (gxt has no XSS-warning to preserve). A
+  // part of a quoted attribute (`title="a {{{x}}} b"`) is a concat part, which
+  // Glimmer stringifies whatever its trusting flag.
   const isTrustedHtml =
-    node.escaped === false && !!ctx.flags.EMBER_TRUSTED_HTML && !ctx.inAttributeValue;
+    node.escaped === false &&
+    !!ctx.flags.EMBER_TRUSTED_HTML &&
+    !ctx.inAttributeValue &&
+    !ctx.inAttributeConcat;
   const wrapTrustedHtml = (value: SerializedValue): SerializedValue =>
     isTrustedHtml ? helper(INTERNAL_HELPERS.TRUSTED_HTML, [value], new Map(), range) : value;
 
