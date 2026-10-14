@@ -766,6 +766,7 @@ function addAttrs(
   element: HTMLElement,
   seenKeys: Set<string> | null,
   destructors: Destructors,
+  deferred: TagAttr[] | null = null,
 ) {
   for (let i = 0; i < arr.length; i++) {
     const key = arr[i][0];
@@ -774,6 +775,10 @@ function addAttrs(
         continue;
       }
       seenKeys.add(key);
+    }
+    if (deferred !== null && key === 'type') {
+      deferred.push(arr[i]);
+      continue;
     }
     if (IS_DEV_MODE) {
       $DEBUG_REACTIVE_CONTEXTS.push(`[${key}]`);
@@ -1022,6 +1027,14 @@ function _DOM(
     hasShadowMode = value;
   };
 
+  // Ember (native and compat): Glimmer applies an element's `type` attribute
+  // after its other attributes and properties (a range input's `value` would
+  // otherwise be clamped to the default min/max before `min` / `max` are set).
+  // Only an `<input>`'s value depends on its type, so other elements skip the
+  // bookkeeping.
+  const deferredType: TagAttr[] | null =
+    (EMBER_NATIVE || WITH_EMBER_INTEGRATION) && resolvedTag === 'input' ? [] : null;
+
   if ($_edp !== tagProps) {
     const hasSplatAttrs = typeof tagProps[3] === 'object';
     // `seenKeys` only deduplicates between statically-emitted props/attrs
@@ -1046,7 +1059,7 @@ function _DOM(
         for (let i = 0; i < plan.keys.length; i++) {
           seenKeys!.add(plan.keys[i]!);
         }
-        addAttrs(api, plan.attrs as TagAttr[], element, null, destructors);
+        addAttrs(api, plan.attrs as TagAttr[], element, null, destructors, deferredType);
         addProperties(
           api,
           plan.props as TagProp[],
@@ -1076,9 +1089,9 @@ function _DOM(
     }
 
     if (hasSplatAttrs === true) {
-      addAttrs(api, tagProps[3]![1], element, seenKeys, destructors);
+      addAttrs(api, tagProps[3]![1], element, seenKeys, destructors, deferredType);
     }
-    addAttrs(api, tagProps[1], element, seenKeys, destructors);
+    addAttrs(api, tagProps[1], element, seenKeys, destructors, deferredType);
 
     if (hasSplatAttrs === true) {
       addProperties(
@@ -1110,6 +1123,10 @@ function _DOM(
   }
 
   mergeClassModifiers(api, element, classNameModifiers, destructors);
+
+  if (deferredType !== null && deferredType.length !== 0) {
+    addAttrs(api, deferredType, element, null, destructors);
+  }
 
   if (SUPPORT_SHADOW_DOM) {
     let appendRef =
