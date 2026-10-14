@@ -394,8 +394,18 @@ export function $prop(
     return;
   }
 
+  // Ember (GH#19219, Glimmer's InputValueDynamicAttribute): a browser does not
+  // turn `input.value = ''` into a value attribute when the input's type is set
+  // afterwards (Ember applies `type` last) to radio / checkbox, so an
+  // `<input>`'s first write of '' also writes the attribute.
+  const emptyInputValueAttr =
+    (EMBER_NATIVE || WITH_EMBER_INTEGRATION) &&
+    key === 'value' &&
+    (element as Element).tagName === 'INPUT';
+
   if (isReactive) {
     let prevPropValue: any = undefined;
+    let firstWrite = emptyInputValueAttr;
     destructors.push(
       opcodeFor(result as AnyCell, (resolvedValue) => {
         // Host normalize seam, prop side (isProp=true). Unregistered =>
@@ -430,6 +440,12 @@ export function $prop(
           return;
         }
         prevPropValue = api.prop(element, key, val);
+        if (firstWrite) {
+          firstWrite = false;
+          if (resolvedValue === '') {
+            api.attr(element as HTMLElement, 'value', '');
+          }
+        }
       }),
     );
   } else {
@@ -442,6 +458,9 @@ export function $prop(
     const normalized =
       hook === null ? result : hook(key, result, element as Element, true);
     api.prop(element, key, normalized);
+    if (emptyInputValueAttr && result === '') {
+      api.attr(element as HTMLElement, 'value', '');
+    }
   }
 }
 

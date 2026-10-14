@@ -11,6 +11,7 @@
  */
 import { describe, test, expect } from 'vitest';
 import { compileCompat, useEmberCompatRuntime } from './__test-utils__/ember-compat';
+import { cell } from './reactive';
 
 describe('Ember: `type` is applied last', () => {
   const compat = useEmberCompatRuntime();
@@ -40,5 +41,21 @@ describe('Ember: `type` is applied last', () => {
     compat.render(compileCompat('<Inner type="range" @v={{this.v}} />', { Inner }), { v: '-2' });
     expect(input().getAttribute('type')).toBe('range');
     expect(input().value).toBe('-2');
+  });
+
+  // GH#19219 (Glimmer's InputValueDynamicAttribute): a browser does not turn
+  // `input.value = ''` into a value attribute when the type is set afterwards
+  // to radio / checkbox, so the first write of '' also writes the attribute.
+  test('an empty value bound on a radio input is rendered as an attribute', () => {
+    compat.render(compileCompat('<input type="radio" value={{this.v}} />'), { v: '' });
+    expect(input().getAttribute('type')).toBe('radio');
+    expect(input().getAttribute('value')).toBe('');
+    expect(input().value).toBe('');
+  });
+
+  test('a reactive empty value on a checkbox input is rendered as an attribute', () => {
+    const v = cell('');
+    compat.render(compileCompat('<input type="checkbox" value={{this.v.value}} />'), { v });
+    expect(input().getAttribute('value')).toBe('');
   });
 });
