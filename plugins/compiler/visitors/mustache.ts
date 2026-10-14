@@ -77,7 +77,16 @@ export function visitMustache(
   // to an HBSNode (angle-bracket component element).
   // Skip when the first param is a SubExpression (e.g., {{component (component "-looked-up") arg=val}})
   // — let it fall through to normal helper processing so $_componentHelper handles chaining.
-  if (pathName === 'component' && ctx.flags.IS_GLIMMER_COMPAT_MODE && !shadowsKeyword) {
+  // In a value position (`@comp={{component "foo"}}`, `data-x={{component Foo}}`)
+  // the keyword is the curried component, exactly as the sub-expression
+  // `(component …)` is: fall through to the helper path (`$_componentHelper`).
+  // An element there would be dropped as `null` by `visitAttributeValue`.
+  if (
+    pathName === 'component' &&
+    ctx.flags.IS_GLIMMER_COMPAT_MODE &&
+    !shadowsKeyword &&
+    !ctx.inAttributeValue
+  ) {
     const firstParam = node.params[0];
     if (firstParam && firstParam.type === 'SubExpression') {
       // Fall through to helper processing — $_componentHelper will handle the chained call
