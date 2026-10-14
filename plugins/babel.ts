@@ -968,6 +968,13 @@ export interface ProcessTemplateOptions {
    * `template(…)` / `hbs` / class-body conventions are left alone.
    */
   precompileOnly?: boolean;
+  /**
+   * Ember mode (WITH_EMBER_INTEGRATION): brand a class that declares a
+   * class-body `<template>` with an own static
+   * `[Symbol.for('gxt-class-body-template')] = true`, so the host can tell
+   * which class in a prototype chain declared it.
+   */
+  classBodyTemplateBrand?: boolean;
 }
 
 export function processTemplate(
@@ -977,8 +984,22 @@ export function processTemplate(
 ) {
   const precompileEnabled = options.precompileTemplate === true || options.precompileOnly === true;
   const precompileOnly = options.precompileOnly === true;
+  const classBodyTemplateBrand = options.classBodyTemplateBrand === true;
   return function babelPlugin(babel: { types: typeof Babel.types }) {
     const { types: t } = babel;
+    // `static [Symbol.for('gxt-class-body-template')] = true;` (see
+    // `classBodyTemplateBrand`; shared.ts CLASS_BODY_TEMPLATE).
+    const classBodyBrand = () =>
+      t.classProperty(
+        t.callExpression(t.memberExpression(t.identifier('Symbol'), t.identifier('for')), [
+          t.stringLiteral('gxt-class-body-template'),
+        ]),
+        t.booleanLiteral(true),
+        null,
+        null,
+        true,
+        true,
+      );
     const getTemplateFunctionNames = (path: Babel.NodePath<any>) => {
       const state = (path.state ??= {}) as { templateFunctionNames?: Set<string> };
       if (!state.templateFunctionNames) {
@@ -1153,18 +1174,21 @@ export function processTemplate(
                 || templateFnNames.has(expr.callee.name);
               if (isTemplateCall) {
                 // Convert to [$template] = hbs`...` property
-                path.replaceWith(
-                  t.classProperty(
-                    t.identifier(SYMBOLS.$template),
-                    t.taggedTemplateExpression(
-                      t.identifier('hbs'),
-                      expr.arguments[0] as Babel.types.TemplateLiteral,
-                    ),
-                    null,
-                    null,
-                    true,
+                const templateProperty = t.classProperty(
+                  t.identifier(SYMBOLS.$template),
+                  t.taggedTemplateExpression(
+                    t.identifier('hbs'),
+                    expr.arguments[0] as Babel.types.TemplateLiteral,
                   ),
+                  null,
+                  null,
+                  true,
                 );
+                if (classBodyTemplateBrand) {
+                  path.replaceWithMultiple([templateProperty, classBodyBrand()]);
+                } else {
+                  path.replaceWith(templateProperty);
+                }
               }
             }
             // Check for hbs`` (already transformed)

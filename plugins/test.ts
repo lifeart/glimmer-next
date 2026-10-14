@@ -741,6 +741,7 @@ export function transform(
       // G10 is Ember-native-layer behaviour: off unless EMBER_NATIVE.
       precompileTemplate: flags.EMBER_NATIVE === true,
       precompileOnly,
+      classBodyTemplateBrand: flags.WITH_EMBER_INTEGRATION === true,
     }),
   ];
   if (!isLibBuild && !precompileOnly) {

@@ -43,6 +43,13 @@ import { registerDestructor } from './glimmer/destroyable';
 // ============================================
 
 export const $template = 'template' as const;
+/**
+ * Ember mode (WITH_EMBER_INTEGRATION): the own static property the compiler
+ * puts on a class that declares a class-body `<template>` (the template itself
+ * is an instance field, so the declaring class is not known from an instance).
+ * A host walks the prototype chain and finds the nearest template.
+ */
+export const CLASS_BODY_TEMPLATE = Symbol.for('gxt-class-body-template');
 export const $args = 'args' as const;
 export const $_debug_args = '_debug_args' as const;
 export const $fwProp = '$fw' as const;

@@ -77,7 +77,7 @@ export {
 } from '@/core/ssr/rehydration';
 
 export * from '@/core/helpers/index';
-export { $template, $args, $fwProp } from '@/core/shared';
+export { $template, $args, $fwProp, CLASS_BODY_TEMPLATE } from '@/core/shared';
 export { syncDom, takeRenderingControl, flushRevalidation } from '@/core/runtime';
 // Template-function brand (G14): compiler-emitted `$_tpl` + host-side check.
 export { $_tpl, isTemplateFn } from '@/core/template-fn';
