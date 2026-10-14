@@ -625,11 +625,16 @@ function buildModifierExpr(
     // @-arg modifier reference resolves through $a (dot or bracket) → the
     // `const $a = this[$args]` preamble local is required.
     ctx.usedArgsAlias = true;
-    const argName = modName.slice(1);
+    // `{{@x.foo}}`: the head is the argument name, the rest are members.
+    const argPath = modName.slice(1);
+    const dot = argPath.indexOf('.');
+    const argName = dot === -1 ? argPath : argPath.slice(0, dot);
+    const members = dot === -1 ? '' : argPath.slice(dot);
     const needsBracket = !/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(argName);
-    modName = needsBracket
-      ? `${SYMBOLS.ARGS_ALIAS}["${argName}"]`
-      : `${SYMBOLS.ARGS_ALIAS}.${argName}`;
+    modName =
+      (needsBracket
+        ? `${SYMBOLS.ARGS_ALIAS}["${argName}"]`
+        : `${SYMBOLS.ARGS_ALIAS}.${argName}`) + members;
   } else {
     // EMBER_SELF (G6): a `this.modifier` reference reads the template self.
     modName = selfHeadedName(ctx, modName);

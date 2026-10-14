@@ -1001,6 +1001,12 @@ function replaceLetGetterRefsInExpr(expr: JSExpression, getterNames: Set<string>
       if (getterNames.has(expr.name)) {
         return B.call(expr, [], expr.sourceRange);
       }
+      // A dotted path identifier (a modifier callee `x.foo`): call the
+      // getter, then read the members.
+      const dotted = expr.name.split(/[?.\[]/)[0];
+      if (dotted !== expr.name && dotted && getterNames.has(dotted)) {
+        return B.raw(`${dotted}()${expr.name.slice(dotted.length)}`, expr.sourceRange);
+      }
       return expr;
     }
     case 'runtimeRef': {
