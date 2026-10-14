@@ -347,6 +347,29 @@ function resolveBindingValue(
   return { result, isReactive: false };
 }
 
+// Glimmer's ATTR_OVERRIDES (@glimmer/runtime lib/dom/props.ts): properties
+// written as attributes.
+const ATTR_OVERRIDES: Record<string, Record<string, true> | undefined> = {
+  INPUT: { form: true, autocorrect: true, list: true },
+  SELECT: { form: true },
+  OPTION: { form: true },
+  TEXTAREA: { form: true },
+  LABEL: { form: true },
+  FIELDSET: { form: true },
+  LEGEND: { form: true },
+  OBJECT: { form: true },
+  OUTPUT: { form: true },
+  BUTTON: { form: true },
+};
+
+function prefersAttribute(element: Node, key: string): boolean {
+  if (!(key in element)) return true;
+  const tagName = (element as Element).tagName;
+  if (tagName === undefined) return false;
+  const overrides = ATTR_OVERRIDES[tagName.toUpperCase()];
+  return overrides !== undefined && overrides[key.toLowerCase()] === true;
+}
+
 // Exported for the static-block fast path (src/core/static-block.ts), which
 // wires cloned-row slot bindings through the EXACT same helpers `_DOM` uses.
 export function $prop(
@@ -356,10 +379,12 @@ export function $prop(
   value: unknown,
   destructors: DestructorFn[],
 ) {
-  // EMBER_NATIVE: Glimmer's normalizeProperty — a name the element has no
-  // property for (a custom element's `some-attr`, any attribute unknown to
-  // the element) is written as an attribute, never as an expando property.
-  if (EMBER_NATIVE && !(key in element)) {
+  // Ember (native and compat): Glimmer's normalizeProperty — a name the
+  // element has no property for (a custom element's `some-attr`, any attribute
+  // unknown to the element) is written as an attribute, never as an expando
+  // property, and so is a name Glimmer's ATTR_OVERRIDES prefer as an attribute
+  // (`form` / `list` / `autocorrect`: getter-only or quirky properties).
+  if ((EMBER_NATIVE || WITH_EMBER_INTEGRATION) && prefersAttribute(element, key)) {
     $attr(api, element as HTMLElement, key, value, destructors);
     return;
   }

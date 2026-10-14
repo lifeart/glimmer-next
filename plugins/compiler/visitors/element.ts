@@ -583,7 +583,7 @@ function processAttributes(
 ): AttributeTuple[] {
   return attrs
     .filter((attr) => {
-      if (!isAttribute(attr.name) && !isNativeStaticStyle(ctx, attr)) return false;
+      if (!isAttribute(attr.name) && !isStaticAttribute(ctx, attr)) return false;
       // When splat attrs present, class goes through properties for merging
       if (hasSplatAttrs && attr.name === 'class') return false;
       return true;
@@ -604,6 +604,28 @@ function processAttributes(
  */
 function isNativeStaticStyle(ctx: CompilerContext, attr: ASTv1.AttrNode): boolean {
   return !!ctx.flags.EMBER_NATIVE && attr.name === 'style' && attr.value.type === 'TextNode';
+}
+
+/**
+ * Ember (compat and native): a static attribute (`form="f"`,
+ * `spellcheck="false"`, `<foo-bar some-attr="1">`) is an attribute, written
+ * with `setAttribute` as Glimmer writes every static attribute — never a DOM
+ * property write (which throws for a getter-only property such as `form` /
+ * `list`, turns `spellcheck="false"` into `true` and a custom element's
+ * attribute into an expando). Dynamic values keep the property / attribute
+ * split (the runtime applies Glimmer's normalizeProperty to properties).
+ */
+function isStaticAttribute(ctx: CompilerContext, attr: ASTv1.AttrNode): boolean {
+  if (isNativeStaticStyle(ctx, attr)) return true;
+  return (
+    !!ctx.flags.WITH_EMBER_INTEGRATION &&
+    attr.value.type === 'TextNode' &&
+    !attr.name.startsWith('@') &&
+    attr.name !== '...attributes' &&
+    // the compiler's own marker stays where its readers look for it
+    attr.name !== '__splatLocal__' &&
+    !isEventAttribute(attr.name)
+  );
 }
 
 /**
@@ -637,7 +659,7 @@ function processProperties(
     if (
       isAttribute(attr.name) ||
       isEventAttribute(attr.name) ||
-      isNativeStaticStyle(ctx, attr)
+      isStaticAttribute(ctx, attr)
     ) {
       continue;
     }

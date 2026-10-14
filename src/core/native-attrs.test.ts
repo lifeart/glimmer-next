@@ -122,7 +122,8 @@ describe('compiler: EMBER_NATIVE style attribute', () => {
   test('flag off: historic output', () => {
     expect(source('<div style={{{this.s}}}></div>', COMPAT_FLAGS)).toContain('[["style", () => this.s]]');
     expect(source('<div style="{{this.s}}"></div>', COMPAT_FLAGS)).toContain('[["style", () => $_qStr([this.s])]]');
-    expect(source('<div style="a: b"></div>', COMPAT_FLAGS)).toContain('[[["style", "a: b"]], [], []]');
+    // a static style is an attribute in Ember compat too (ember-static-attributes.test.ts)
+    expect(source('<div style="a: b"></div>', COMPAT_FLAGS)).toContain('[[], [["style", "a: b"]], []]');
   });
 });
 
@@ -291,12 +292,19 @@ describe('EMBER_NATIVE attribute writes', () => {
     expect(writes).toEqual([['value', 'x', true]]);
   });
 
-  test('flag off at runtime: an unknown name is still an expando property (historic)', () => {
+  test('flags off at runtime: an unknown name is still an expando property (historic)', () => {
     runtime.EMBER_NATIVE = false;
-    render(withSelf(compileNative('<foo-bar some-attr="123">a</foo-bar>'), {}));
+    runtime.WITH_EMBER_INTEGRATION = false;
+    render(withSelf(compileNative('<foo-bar some-attr={{this.v}}>a</foo-bar>'), { v: '123' }));
     const bar = fixture.container.querySelector('foo-bar')!;
     expect(bar.hasAttribute('some-attr')).toBe(false);
     expect((bar as unknown as Record<string, unknown>)['some-attr']).toBe('123');
+  });
+
+  test('compat at runtime (WITH_EMBER_INTEGRATION): an unknown name is an attribute', () => {
+    runtime.EMBER_NATIVE = false;
+    render(withSelf(compileNative('<foo-bar some-attr={{this.v}}>a</foo-bar>'), { v: '123' }));
+    expect(fixture.container.querySelector('foo-bar')!.getAttribute('some-attr')).toBe('123');
   });
 
   test('block params that are not identifiers or shadow keywords render their value', async () => {
