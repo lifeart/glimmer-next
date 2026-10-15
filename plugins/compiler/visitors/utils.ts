@@ -187,8 +187,8 @@ export function getPathPartRanges(node: ASTv1.PathExpression): { parts: PathPart
   const end = lineColumnToOffset(cachedSource, node.loc.end.line, node.loc.end.column);
   const text = cachedSource.slice(start, end);
 
-  // Skip complex paths with bracket notation or parent scope paths for now
-  if (text.includes('[') || text.includes(']') || text.includes('/')) return null;
+  // Skip parent scope paths for now
+  if (text.includes('/')) return null;
 
   const head = node.head;
   const isAtHead = head.type === 'AtHead';
@@ -200,6 +200,11 @@ export function getPathPartRanges(node: ASTv1.PathExpression): { parts: PathPart
   const parts: PathPart[] = tokens.map((token, index) => ({
     name: index === 0 && isAtHead ? token.replace(/^@/, '') : token,
   }));
+
+  // Literal segments (`this.[1]`, `this.[foo.bar]`): the segments are the
+  // parsed tail (a member read by key each); the dotted path string cannot
+  // carry them. No per-segment source ranges.
+  if (text.includes('[') || text.includes(']')) return { parts };
 
   let searchIndex = 0;
   let rootRange: SourceRange | undefined;
@@ -345,6 +350,9 @@ export function getElementBlockParamRanges(node: ASTv1.ElementNode): SourceRange
   return ranges;
 }
 
+/** A dotted path of plain identifiers, optionally spread (`...a.b.c`). */
+const MEMBER_PATH = /^(?:\.\.\.)?[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/;
+
 /**
  * Convert a path to use optional chaining for safety (3+ segments).
  * e.g., foo.bar.baz -> foo?.bar?.baz
@@ -355,8 +363,11 @@ export function toOptionalChaining(str: string): string {
   // Don't modify quoted strings
   if (str.includes("'") || str.includes('"')) return str;
 
-  // Don't modify runtime symbols
-  if (str.includes('$_')) return str;
+  // Don't modify runtime-symbol expressions (`$_maybeHelper(…).a.b`,
+  // `this[$_x].a`). A plain member path through a `$_`-named identifier
+  // (Ember's rewritten angle-bracket block params, `this.$_bp0.foo.bar`) is
+  // read null-safely like any other path.
+  if (str.includes('$_') && !MEMBER_PATH.test(str)) return str;
 
   // Already has optional chaining
   if (str.includes('?.')) return str;

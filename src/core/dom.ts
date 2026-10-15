@@ -347,6 +347,29 @@ function resolveBindingValue(
   return { result, isReactive: false };
 }
 
+// Glimmer's ATTR_OVERRIDES (@glimmer/runtime lib/dom/props.ts): properties
+// written as attributes.
+const ATTR_OVERRIDES: Record<string, Record<string, true> | undefined> = {
+  INPUT: { form: true, autocorrect: true, list: true },
+  SELECT: { form: true },
+  OPTION: { form: true },
+  TEXTAREA: { form: true },
+  LABEL: { form: true },
+  FIELDSET: { form: true },
+  LEGEND: { form: true },
+  OBJECT: { form: true },
+  OUTPUT: { form: true },
+  BUTTON: { form: true },
+};
+
+function prefersAttribute(element: Node, key: string): boolean {
+  if (!(key in element)) return true;
+  const tagName = (element as Element).tagName;
+  if (tagName === undefined) return false;
+  const overrides = ATTR_OVERRIDES[tagName.toUpperCase()];
+  return overrides !== undefined && overrides[key.toLowerCase()] === true;
+}
+
 // Exported for the static-block fast path (src/core/static-block.ts), which
 // wires cloned-row slot bindings through the EXACT same helpers `_DOM` uses.
 export function $prop(
@@ -356,10 +379,12 @@ export function $prop(
   value: unknown,
   destructors: DestructorFn[],
 ) {
-  // EMBER_NATIVE: Glimmer's normalizeProperty — a name the element has no
-  // property for (a custom element's `some-attr`, any attribute unknown to
-  // the element) is written as an attribute, never as an expando property.
-  if (EMBER_NATIVE && !(key in element)) {
+  // Ember (native and compat): Glimmer's normalizeProperty — a name the
+  // element has no property for (a custom element's `some-attr`, any attribute
+  // unknown to the element) is written as an attribute, never as an expando
+  // property, and so is a name Glimmer's ATTR_OVERRIDES prefer as an attribute
+  // (`form` / `list` / `autocorrect`: getter-only or quirky properties).
+  if ((EMBER_NATIVE || WITH_EMBER_INTEGRATION) && prefersAttribute(element, key)) {
     $attr(api, element as HTMLElement, key, value, destructors);
     return;
   }
@@ -369,8 +394,18 @@ export function $prop(
     return;
   }
 
+  // Ember (GH#19219, Glimmer's InputValueDynamicAttribute): a browser does not
+  // turn `input.value = ''` into a value attribute when the input's type is set
+  // afterwards (Ember applies `type` last) to radio / checkbox, so an
+  // `<input>`'s first write of '' also writes the attribute.
+  const emptyInputValueAttr =
+    (EMBER_NATIVE || WITH_EMBER_INTEGRATION) &&
+    key === 'value' &&
+    (element as Element).tagName === 'INPUT';
+
   if (isReactive) {
     let prevPropValue: any = undefined;
+    let firstWrite = emptyInputValueAttr;
     destructors.push(
       opcodeFor(result as AnyCell, (resolvedValue) => {
         // Host normalize seam, prop side (isProp=true). Unregistered =>
@@ -405,6 +440,12 @@ export function $prop(
           return;
         }
         prevPropValue = api.prop(element, key, val);
+        if (firstWrite) {
+          firstWrite = false;
+          if (resolvedValue === '') {
+            api.attr(element as HTMLElement, 'value', '');
+          }
+        }
       }),
     );
   } else {
@@ -417,11 +458,15 @@ export function $prop(
     const normalized =
       hook === null ? result : hook(key, result, element as Element, true);
     api.prop(element, key, normalized);
+    if (emptyInputValueAttr && result === '') {
+      api.attr(element as HTMLElement, 'value', '');
+    }
   }
 }
 
 /**
- * EMBER_NATIVE: an element's `class` with Glimmer's attribute semantics.
+ * Ember (EMBER_NATIVE or WITH_EMBER_INTEGRATION): an element's `class` with
+ * Glimmer's attribute semantics.
  *   - ONE class value is a plain dynamic attribute (the host's
  *     normalizeAttrValue = Glimmer normalizeValue): `null` / `undefined` /
  *     `false` remove the attribute, `''` keeps `class=""`, `true` is `""`.
@@ -521,7 +566,9 @@ function mergeClassModifiers(
   if (classNameModifiers.length === 0) {
     return;
   }
-  if (EMBER_NATIVE) {
+  // Ember (native and compat): `class` is a Glimmer attribute, never the
+  // `className` property.
+  if (EMBER_NATIVE || WITH_EMBER_INTEGRATION) {
     nativeClassAttribute(api, element as HTMLElement, classNameModifiers, destructors);
     return;
   }
@@ -763,6 +810,7 @@ function addAttrs(
   element: HTMLElement,
   seenKeys: Set<string> | null,
   destructors: Destructors,
+  deferred: TagAttr[] | null = null,
 ) {
   for (let i = 0; i < arr.length; i++) {
     const key = arr[i][0];
@@ -771,6 +819,10 @@ function addAttrs(
         continue;
       }
       seenKeys.add(key);
+    }
+    if (deferred !== null && key === 'type') {
+      deferred.push(arr[i]);
+      continue;
     }
     if (IS_DEV_MODE) {
       $DEBUG_REACTIVE_CONTEXTS.push(`[${key}]`);
@@ -1019,6 +1071,14 @@ function _DOM(
     hasShadowMode = value;
   };
 
+  // Ember (native and compat): Glimmer applies an element's `type` attribute
+  // after its other attributes and properties (a range input's `value` would
+  // otherwise be clamped to the default min/max before `min` / `max` are set).
+  // Only an `<input>`'s value depends on its type, so other elements skip the
+  // bookkeeping.
+  const deferredType: TagAttr[] | null =
+    (EMBER_NATIVE || WITH_EMBER_INTEGRATION) && resolvedTag === 'input' ? [] : null;
+
   if ($_edp !== tagProps) {
     const hasSplatAttrs = typeof tagProps[3] === 'object';
     // `seenKeys` only deduplicates between statically-emitted props/attrs
@@ -1028,19 +1088,22 @@ function _DOM(
     // signals "no dedup needed" to the inner loops, removing both the
     // Set allocation and the per-key has/add calls.
     const seenKeys: Set<string> | null = hasSplatAttrs ? new Set<string>() : null;
-    // EMBER_NATIVE: Glimmer `...attributes` precedence (splat-local.ts) — the
-    // local attributes written AFTER `...attributes` are applied first and claim
-    // their keys; class values keep source order (reordered below).
+    // Ember (native and compat): Glimmer `...attributes` precedence
+    // (splat-local.ts) — the local attributes written AFTER `...attributes` are
+    // applied first and claim their keys; class values keep source order
+    // (reordered below). Compat Ember's runtime-template wrapper resolves the
+    // marker itself and strips it; a build-time template's `$_tag` is this one.
+    const emberSplat = EMBER_NATIVE || WITH_EMBER_INTEGRATION;
     let classAfterSplat = true;
     let forwardedClasses = 0;
-    if (EMBER_NATIVE && hasSplatAttrs === true) {
+    if (emberSplat && hasSplatAttrs === true) {
       const plan = splatLocalPlan(tagProps[0], tagProps[1]);
       classAfterSplat = plan !== undefined && plan.classAfterSplat;
       if (plan !== undefined) {
         for (let i = 0; i < plan.keys.length; i++) {
           seenKeys!.add(plan.keys[i]!);
         }
-        addAttrs(api, plan.attrs as TagAttr[], element, null, destructors);
+        addAttrs(api, plan.attrs as TagAttr[], element, null, destructors, deferredType);
         addProperties(
           api,
           plan.props as TagProp[],
@@ -1070,9 +1133,9 @@ function _DOM(
     }
 
     if (hasSplatAttrs === true) {
-      addAttrs(api, tagProps[3]![1], element, seenKeys, destructors);
+      addAttrs(api, tagProps[3]![1], element, seenKeys, destructors, deferredType);
     }
-    addAttrs(api, tagProps[1], element, seenKeys, destructors);
+    addAttrs(api, tagProps[1], element, seenKeys, destructors, deferredType);
 
     if (hasSplatAttrs === true) {
       addProperties(
@@ -1084,7 +1147,7 @@ function _DOM(
         classNameModifiers,
         setShadowNode,
       );
-      if (EMBER_NATIVE) {
+      if (emberSplat) {
         forwardedClasses = classNameModifiers.length;
       }
     }
@@ -1097,13 +1160,17 @@ function _DOM(
       classNameModifiers,
       setShadowNode,
     );
-    if (EMBER_NATIVE && !classAfterSplat && forwardedClasses !== 0) {
+    if (emberSplat && !classAfterSplat && forwardedClasses !== 0) {
       // A class written before `...attributes` precedes the forwarded classes.
       classNameModifiers.push(...classNameModifiers.splice(0, forwardedClasses));
     }
   }
 
   mergeClassModifiers(api, element, classNameModifiers, destructors);
+
+  if (deferredType !== null && deferredType.length !== 0) {
+    addAttrs(api, deferredType, element, null, destructors);
+  }
 
   if (SUPPORT_SHADOW_DOM) {
     let appendRef =

@@ -45,9 +45,14 @@ export function visitMustache(
   // value below and wrap it in the internal `$__html` marker at the value-return
   // sites; `buildHelper` lowers the marker to the `$_html` call. Attribute
   // position (`<div style={{{x}}}>`) has no trusted-attribute channel, so it is
-  // left to the historic escaped path (gxt has no XSS-warning to preserve).
+  // left to the historic escaped path (gxt has no XSS-warning to preserve). A
+  // part of a quoted attribute (`title="a {{{x}}} b"`) is a concat part, which
+  // Glimmer stringifies whatever its trusting flag.
   const isTrustedHtml =
-    node.escaped === false && !!ctx.flags.EMBER_TRUSTED_HTML && !ctx.inAttributeValue;
+    node.escaped === false &&
+    !!ctx.flags.EMBER_TRUSTED_HTML &&
+    !ctx.inAttributeValue &&
+    !ctx.inAttributeConcat;
   const wrapTrustedHtml = (value: SerializedValue): SerializedValue =>
     isTrustedHtml ? helper(INTERNAL_HELPERS.TRUSTED_HTML, [value], new Map(), range) : value;
 
@@ -61,12 +66,14 @@ export function visitMustache(
 
   const pathName = getPathExpressionString(node.path);
 
-  // Ember native layer: a genuine binding (`{{#let … as |mount|}}`, a block
-  // param, a lexical name) shadows the `mount` / `component` / `input` /
-  // `textarea` keyword rewrites below, as it shadows any keyword in Glimmer —
-  // `{{component}}` then reads the binding. Without the flag the rewrites are
-  // unconditional (historic compat output).
-  const shadowsKeyword = !!ctx.flags.EMBER_NATIVE && hasRealBinding(ctx, pathName);
+  // Ember (native and compat): a genuine binding (`{{#let … as |mount|}}`, a
+  // block param, a lexical name) shadows the `mount` / `component` / `input` /
+  // `textarea` / `outlet` keyword rewrites below, as it shadows any keyword in
+  // Glimmer — `{{component}}` then reads the binding. Standalone the rewrites
+  // are unconditional (historic output).
+  const shadowsKeyword =
+    (!!ctx.flags.EMBER_NATIVE || !!ctx.flags.WITH_EMBER_INTEGRATION) &&
+    hasRealBinding(ctx, pathName);
 
   // In compat mode, transform {{mount "engine-name" model=expr}} to <ember-mount> element
   if (pathName === 'mount' && ctx.flags.IS_GLIMMER_COMPAT_MODE && !shadowsKeyword) {
@@ -77,7 +84,16 @@ export function visitMustache(
   // to an HBSNode (angle-bracket component element).
   // Skip when the first param is a SubExpression (e.g., {{component (component "-looked-up") arg=val}})
   // — let it fall through to normal helper processing so $_componentHelper handles chaining.
-  if (pathName === 'component' && ctx.flags.IS_GLIMMER_COMPAT_MODE && !shadowsKeyword) {
+  // In a value position (`@comp={{component "foo"}}`, `data-x={{component Foo}}`)
+  // the keyword is the curried component, exactly as the sub-expression
+  // `(component …)` is: fall through to the helper path (`$_componentHelper`).
+  // An element there would be dropped as `null` by `visitAttributeValue`.
+  if (
+    pathName === 'component' &&
+    ctx.flags.IS_GLIMMER_COMPAT_MODE &&
+    !shadowsKeyword &&
+    !ctx.inAttributeValue
+  ) {
     const firstParam = node.params[0];
     if (firstParam && firstParam.type === 'SubExpression') {
       // Fall through to helper processing — $_componentHelper will handle the chained call
@@ -232,7 +248,7 @@ export function visitMustache(
     if (!hasRealBinding(ctx, 'outlet')) {
       return helper(INTERNAL_HELPERS.OUTLET, [], new Map(), range);
     }
-  } else if (pathName === 'yield' || pathName === 'outlet') {
+  } else if (pathName === 'yield' || (pathName === 'outlet' && !shadowsKeyword)) {
     // Handle yield/outlet
     return createYieldExpression(ctx, node, range);
   }

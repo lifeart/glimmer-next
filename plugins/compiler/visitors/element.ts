@@ -17,7 +17,7 @@ import type {
 } from '../types';
 import { literal, helper, getter, isSerializedValue, runtimeTag } from '../types';
 import { getNodeRange, serializeValueToString, getAttributeNameRange, getPathExpressionString, getElementBlockParamRanges, hasRealBinding } from './utils';
-import { withElementContext, addWarning } from '../context';
+import { withElementContext, addWarning, isArgComponentTag } from '../context';
 import { looseComponentTagName } from './loose';
 import { SYMBOLS, INTERNAL_HELPERS } from '../serializers/symbols';
 
@@ -317,7 +317,8 @@ export function visitElement(
   const { children: optimizedChildren, additionalEvents } = optimizeTextChild(
     actualTag,
     children,
-    ctx.flags.EMBER_NATIVE === true
+    ctx.flags.EMBER_NATIVE === true,
+    isArgComponentTag(ctx, actualTag)
   );
   const events = [...baseEvents, ...additionalEvents];
 
@@ -488,7 +489,8 @@ function visitElementInner(
   const { children: optimizedChildren, additionalEvents } = optimizeTextChild(
     actualTag,
     children,
-    ctx.flags.EMBER_NATIVE === true
+    ctx.flags.EMBER_NATIVE === true,
+    isArgComponentTag(ctx, actualTag)
   );
   const events = [...baseEvents, ...additionalEvents];
 
@@ -581,7 +583,7 @@ function processAttributes(
 ): AttributeTuple[] {
   return attrs
     .filter((attr) => {
-      if (!isAttribute(attr.name) && !isNativeStaticStyle(ctx, attr)) return false;
+      if (!isAttribute(attr.name) && !isStaticAttribute(ctx, attr)) return false;
       // When splat attrs present, class goes through properties for merging
       if (hasSplatAttrs && attr.name === 'class') return false;
       return true;
@@ -602,6 +604,28 @@ function processAttributes(
  */
 function isNativeStaticStyle(ctx: CompilerContext, attr: ASTv1.AttrNode): boolean {
   return !!ctx.flags.EMBER_NATIVE && attr.name === 'style' && attr.value.type === 'TextNode';
+}
+
+/**
+ * Ember (compat and native): a static attribute (`form="f"`,
+ * `spellcheck="false"`, `<foo-bar some-attr="1">`) is an attribute, written
+ * with `setAttribute` as Glimmer writes every static attribute — never a DOM
+ * property write (which throws for a getter-only property such as `form` /
+ * `list`, turns `spellcheck="false"` into `true` and a custom element's
+ * attribute into an expando). Dynamic values keep the property / attribute
+ * split (the runtime applies Glimmer's normalizeProperty to properties).
+ */
+function isStaticAttribute(ctx: CompilerContext, attr: ASTv1.AttrNode): boolean {
+  if (isNativeStaticStyle(ctx, attr)) return true;
+  return (
+    !!ctx.flags.WITH_EMBER_INTEGRATION &&
+    attr.value.type === 'TextNode' &&
+    !attr.name.startsWith('@') &&
+    attr.name !== '...attributes' &&
+    // the compiler's own marker stays where its readers look for it
+    attr.name !== '__splatLocal__' &&
+    !isEventAttribute(attr.name)
+  );
 }
 
 /**
@@ -635,7 +659,7 @@ function processProperties(
     if (
       isAttribute(attr.name) ||
       isEventAttribute(attr.name) ||
-      isNativeStaticStyle(ctx, attr)
+      isStaticAttribute(ctx, attr)
     ) {
       continue;
     }
@@ -960,15 +984,17 @@ interface TextChildOptimization {
 function optimizeTextChild(
   tag: string,
   children: HBSChild[],
-  emberNative = false
+  emberNative = false,
+  argComponent = false
 ): TextChildOptimization {
   const noChange = { children, additionalEvents: [] };
 
-  // Ember native layer: a lowercase PATH tag (`<card.title>Hello</card.title>`,
-  // `<@comp>text</@comp>`) is a dynamic component — its text child is the
-  // component's default block, not a `textContent` binding (which would land
-  // in the forwarded attributes and drop the block).
-  if (emberNative && (tag.includes('.') || tag.startsWith('@'))) return noChange;
+  // Ember: a lowercase PATH tag (`<card.title>Hello</card.title>`, native) or
+  // an `@`-headed tag (`<@comp>text</@comp>`, native and compat) is a dynamic
+  // component — its text child is the component's default block, not a
+  // `textContent` binding (which would land in the forwarded attributes and
+  // drop the block).
+  if (argComponent || (emberNative && tag.includes('.'))) return noChange;
 
   if (children.length !== 1) return noChange;
 

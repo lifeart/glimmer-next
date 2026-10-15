@@ -1,7 +1,8 @@
 import { describe, test, expect } from 'vitest';
 import { splatLocalPlan, SPLAT_LOCAL_MARKER } from './splat-local';
 
-// `_DOM` consumes the plan under the EMBER_NATIVE runtime constant (folded to
+// `_DOM` consumes the plan under the EMBER_NATIVE / WITH_EMBER_INTEGRATION runtime
+// constants (ember-compat-splat.test.ts covers compat; folded to
 // false in this suite); the Ember native layer's QUnit modules cover the wiring
 // end to end (LinkTo `href` after `...attributes`, class order).
 describe('splatLocalPlan (EMBER_NATIVE `...attributes` precedence)', () => {

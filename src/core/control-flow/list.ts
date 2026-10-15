@@ -1028,7 +1028,9 @@ export class BasicListComponent<T extends { id: number }> {
     if (this.key === '@identity') {
       let cnt = 0;
       const map: WeakMap<T & object, string> = new WeakMap();
-      const primitiveByValue = (this.primitiveByValue = isNativeRuntime());
+      // Ember (native and compat): Glimmer keys a primitive by its value.
+      const primitiveByValue = (this.primitiveByValue =
+        isNativeRuntime() || WITH_EMBER_INTEGRATION);
       const baseKeyOf = (item: T, i: number): string => {
         if (isPrimitive(item) || isEmpty(item)) {
           return primitiveByValue

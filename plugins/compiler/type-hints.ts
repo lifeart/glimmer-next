@@ -127,6 +127,13 @@ export function shouldSkipGetterWrapper(
     return false;
   }
   const hint = lookupTypeHint(ctx, expression, isArg);
+  // Ember: any property can change through `set()` / `notifyPropertyChange()`,
+  // and Glimmer re-renders what read it. Only a `readonly` field (the author's
+  // promise that it never changes) stays static; a plain field keeps its
+  // reactive read.
+  if (ctx.flags.WITH_EMBER_INTEGRATION && hint !== undefined && hint.isReadonly !== true) {
+    return false;
+  }
   const reactivity = classifyReactivity(hint);
   return reactivity === 'static';
 }

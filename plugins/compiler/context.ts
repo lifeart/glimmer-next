@@ -565,6 +565,20 @@ export function withElementContext<T>(
 /**
  * Check if a name is a known binding (component, helper, etc.).
  */
+/**
+ * Ember (native, and compat with WITH_EMBER_INTEGRATION): an `@`-headed tag
+ * (`<@comp />`, `<@comp as |v|>…</@comp>`) invokes the component an argument
+ * holds — always a dynamic component (`$_dc`), never an HTML element, as in
+ * Glimmer. Its block, block params and named blocks are the component's.
+ */
+export function isArgComponentTag(ctx: CompilerContext, tag: string): boolean {
+  return (
+    tag.startsWith('@') &&
+    (ctx.flags.EMBER_NATIVE === true ||
+      (ctx.flags.WITH_EMBER_INTEGRATION === true && ctx.flags.IS_GLIMMER_COMPAT_MODE === true))
+  );
+}
+
 export function isKnownBinding(ctx: CompilerContext, name: string): boolean {
   return ctx.scopeTracker.hasBinding(name);
 }

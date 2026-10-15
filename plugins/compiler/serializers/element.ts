@@ -6,6 +6,7 @@
  */
 
 import type { CompilerContext } from '../context';
+import { isArgComponentTag } from '../context';
 import type {
   HBSNode,
   HBSChild,
@@ -194,7 +195,7 @@ export function buildComponent(
   const isDynamicComponent =
     node.byName !== true &&
     typeof node.tag === 'string' &&
-    (node.tag.includes('.') || (ctx.flags.EMBER_NATIVE === true && node.tag.startsWith('@')));
+    (node.tag.includes('.') || isArgComponentTag(ctx, node.tag));
   const dynamicSplat = isDynamicComponent && hasSplatAttrs;
 
   // Separate @ args from regular attributes
@@ -624,11 +625,16 @@ function buildModifierExpr(
     // @-arg modifier reference resolves through $a (dot or bracket) → the
     // `const $a = this[$args]` preamble local is required.
     ctx.usedArgsAlias = true;
-    const argName = modName.slice(1);
+    // `{{@x.foo}}`: the head is the argument name, the rest are members.
+    const argPath = modName.slice(1);
+    const dot = argPath.indexOf('.');
+    const argName = dot === -1 ? argPath : argPath.slice(0, dot);
+    const members = dot === -1 ? '' : argPath.slice(dot);
     const needsBracket = !/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(argName);
-    modName = needsBracket
-      ? `${SYMBOLS.ARGS_ALIAS}["${argName}"]`
-      : `${SYMBOLS.ARGS_ALIAS}.${argName}`;
+    modName =
+      (needsBracket
+        ? `${SYMBOLS.ARGS_ALIAS}["${argName}"]`
+        : `${SYMBOLS.ARGS_ALIAS}.${argName}`) + members;
   } else {
     // EMBER_SELF (G6): a `this.modifier` reference reads the template self.
     modName = selfHeadedName(ctx, modName);
@@ -855,7 +861,7 @@ function buildSlots(
     const params = [
       sContext,
       ...blockParams.map((name, index) => {
-        const emitName = escapeBindingName(name, ctx.flags.EMBER_NATIVE);
+        const emitName = escapeBindingName(name);
         const range = blockParamRanges[index];
         return range ? B.id(emitName, range) : emitName;
       }),
@@ -900,10 +906,9 @@ function buildComponentCall(
   }
 
   // Check for dynamic component (dotted path like context.V or this.Component)
-  // Ember native layer: an `@`-headed tag (`<@comp />`) is a dynamic
-  // component too (isComponentTag routes it here).
-  const isDynamic =
-    tag.includes('.') || (ctx.flags.EMBER_NATIVE === true && tag.startsWith('@'));
+  // Ember: an `@`-headed tag (`<@comp />`) is a dynamic component too
+  // (isComponentTag routes it here).
+  const isDynamic = tag.includes('.') || isArgComponentTag(ctx, tag);
 
   if (isDynamic) {
     // Wrap in reactive getter for dynamic component paths
