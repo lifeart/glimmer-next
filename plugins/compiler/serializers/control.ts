@@ -908,6 +908,14 @@ function buildLet(
     }
   });
 
+  // Ember compat (WITH_EMBER_INTEGRATION without EMBER_NATIVE, whose host
+  // helper manager keeps one helper instance per call site): the value of a
+  // helper call is a Glimmer reference, `$__ref(() => …)` — the helper runs
+  // when the block first reads the binding and again only when a cell it read
+  // changed, not on every read of the binding.
+  const compatReferences =
+    ctx.flags.WITH_EMBER_INTEGRATION === true && ctx.flags.EMBER_NATIVE !== true;
+
   // Build variable declarations.
   const varDecls: JSStatement[] = bindings.map((binding, index) => {
     const emitName = emitNames[index]!;
@@ -919,6 +927,9 @@ function buildLet(
       // use it directly — don't double-wrap with another arrow.
       const isAlreadyGetter = valueExpr.type === 'reactiveGetter' || valueExpr.type === 'arrow';
       const getterExpr = isAlreadyGetter ? valueExpr : B.arrow([], valueExpr);
+      if (compatReferences && binding.value.kind === 'helper') {
+        return B.varDecl('let', emitName, B.call(SYMBOLS.REF, [getterExpr], binding.value.sourceRange));
+      }
       return B.varDecl('let', emitName, getterExpr);
     }
   });

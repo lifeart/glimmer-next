@@ -1,4 +1,4 @@
-import { cachedHelper } from '../reactive';
+import { cachedHelper, cachedReference } from '../reactive';
 
 /**
  * `$__cached` — the compiler-emitted wrapper that memoizes the identity of a
@@ -15,4 +15,16 @@ import { cachedHelper } from '../reactive';
  */
 export function $__cached<T>(factory: () => T): () => T {
   return cachedHelper(factory);
+}
+
+/**
+ * `$__ref` — the Ember compat `{{#let}}` value of a helper call
+ * (`let x = $__ref(() => $_maybeHelper(…))`): a getter with Glimmer reference
+ * semantics, so the helper runs when the block first reads the binding and
+ * again only when a cell it read changed, however often the block reads it.
+ *
+ * See `cachedReference` in src/core/reactive.ts.
+ */
+export function $__ref<T>(factory: () => T): () => T {
+  return cachedReference(factory);
 }

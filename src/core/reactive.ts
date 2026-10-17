@@ -1204,6 +1204,62 @@ export function cachedHelper<T>(factory: () => T): () => T {
   };
 }
 
+/**
+ * `cachedReference(factory)` — a Glimmer compute reference over `factory`, as a
+ * getter (the Ember compat `{{#let}}` value of a helper call, `$__ref`).
+ *
+ * The first read evaluates `factory` in a tracking frame of its own and keeps
+ * the value with the cells it read and their revisions. A later read returns
+ * the kept value while none of those cells changed, and evaluates `factory`
+ * again otherwise; a factory that read no cell is constant. Every read adds
+ * the cells to the reading frame, so a consumer depends on what the factory
+ * read whether or not it ran.
+ *
+ * Unlike `cachedHelper` (the `(hash)` / `(array)` identity memo) there is no
+ * global-revision fallback and no identity gate: Glimmer recomputes a
+ * reference only when a tag it consumed changed, and the recomputed reference
+ * holds the new value. `{{#let (uniqueId) as |id|}}` keeps one id however
+ * often the block reads `id`.
+ */
+export function cachedReference<T>(factory: () => T): () => T {
+  // The cells the last evaluation read, with their revisions then; `null`
+  // until the first evaluation completes.
+  let deps: Map<Cell, number> | null = null;
+  let value: T;
+  return function cachedReferenceRead(): T {
+    if (deps !== null) {
+      // forEach, not for…of: the reactive-collections iterator patch would
+      // register this bookkeeping Map with the reading frame.
+      let current = true;
+      deps.forEach((revision, cell) => {
+        if (cell._revision !== revision) current = false;
+      });
+      if (current) {
+        const reader = currentTracker;
+        if (reader !== null) deps.forEach((_revision, cell) => reader.add(cell));
+        return value;
+      }
+    }
+    const outer = currentTracker;
+    const frame: Set<Cell> = new Set();
+    setTracker(frame);
+    let next: T;
+    try {
+      next = factory();
+    } finally {
+      setTracker(outer);
+    }
+    const nextDeps = new Map<Cell, number>();
+    frame.forEach((cell) => {
+      nextDeps.set(cell, cell._revision);
+      if (outer !== null) outer.add(cell);
+    });
+    value = next;
+    deps = nextDeps;
+    return value;
+  };
+}
+
 export function deepFnValue(fn: Function | Fn) {
   const cell = fn();
   if (isFn(cell)) {

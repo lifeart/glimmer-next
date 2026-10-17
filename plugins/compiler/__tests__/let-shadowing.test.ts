@@ -52,7 +52,11 @@ describe('{{#let}} self-shadowing bindings are renamed', () => {
       expect(names[0]).not.toBe('hash');
       expect(names[0]).toMatch(/^hash\$\d+$/);
       // the initializer calls the lexical helper, never the binding itself
-      expect(out).toContain(`let ${names[0]} = () => $_maybeHelper(hash,`);
+      // (in compat through the `{{#let}}` reference, `$__ref`)
+      const getter = `() => $_maybeHelper(hash,`;
+      expect(out).toContain(
+        `let ${names[0]} = ${label === 'compat' ? `$__ref(${getter}` : getter}`,
+      );
       // the body reads the renamed getter
       expect(out).toContain(`${names[0]}()`);
       expect(out).not.toMatch(/\bhash\(\)/);
