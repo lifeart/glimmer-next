@@ -8,6 +8,7 @@
 import type { CompilerContext } from '../context';
 import { addError, recordLooseBuiltin } from '../context';
 import type { SerializedValue, SourceRange, PathValue } from '../types';
+import { path } from '../types';
 import { SYMBOLS, INTERNAL_HELPERS, getBuiltInHelperSymbol } from './symbols';
 import {
   B,
@@ -1513,6 +1514,11 @@ function buildBuiltInHelper(
   // Special handling for debugger - prepend this and use .call
   if (symbol === SYMBOLS.DEBUGGER) {
     const callArgs = [B.id(ctxName), ...args];
+    // Ember (compat and native): `{{debugger}}` passes the scope it can
+    // inspect (`buildDebuggerScope`).
+    if (ctx.flags.WITH_EMBER_INTEGRATION === true && args.length === 0) {
+      callArgs.push(buildDebuggerScope(ctx, ctxName, sourceRange));
+    }
     const callTarget = typeof helperId === 'string' ? B.id(helperId) : helperId;
     return B.methodCall(callTarget, 'call', callArgs, sourceRange);
   }
@@ -1534,6 +1540,36 @@ function buildBuiltInHelper(
   }
 
   return B.call(helperId, args, sourceRange);
+}
+
+/**
+ * Ember `{{debugger}}`: the scope a debugger callback inspects, read lazily —
+ * `{ self: () => <template self>, locals: { name: () => <read>, … },
+ * args: () => $a }`. `self` is the template's self (compat: the template's
+ * `this`, native: `$s`), not the block render context the call runs on;
+ * `locals` are the block params and `{{#let}}` bindings visible at the
+ * statement (inner ones shadow outer ones), read as the template reads them;
+ * `args` is the component's named arguments (`get('@name')`). The runtime
+ * resolves a debugger `get(path)` over them (helpers/debugger.ts).
+ */
+function buildDebuggerScope(
+  ctx: CompilerContext,
+  ctxName: string,
+  sourceRange?: SourceRange
+): JSExpression {
+  const locals = [];
+  for (const [name, info] of ctx.scopeTracker.getAllBindings()) {
+    if (info.kind !== 'block-param' && info.kind !== 'let-binding') continue;
+    if (name.startsWith('$')) continue;
+    const read = buildPathExpression(ctx, path(name, false, sourceRange), false, ctxName);
+    locals.push(B.prop(name, B.arrow([], read)));
+  }
+  ctx.usedArgsAlias = true;
+  return B.object([
+    B.prop('self', B.arrow([], B.runtimeRef(selfRootName(ctx), sourceRange))),
+    B.prop('locals', locals.length > 0 ? B.object(locals) : B.emptyObject()),
+    B.prop('args', B.arrow([], B.runtimeRef(SYMBOLS.ARGS_ALIAS, sourceRange))),
+  ]);
 }
 
 /**

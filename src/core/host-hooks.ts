@@ -408,6 +408,14 @@ export interface HostHooks {
    * the value itself.
    */
   trustedAttrValue?: (value: unknown) => unknown;
+  /**
+   * `{{debugger}}` (Ember builds, Glimmer's debugger callback): called each
+   * time a `{{debugger}}` statement renders, untracked, with the template's
+   * self and Glimmer's `get(path)` — `this`, `@name` (a named argument), a
+   * block param or `{{#let}}` binding, else a path on the self. Without the
+   * hook the statement logs its context and hits a breakpoint.
+   */
+  debugger?: (self: unknown, get: (path: string) => unknown) => void;
 }
 
 /**
