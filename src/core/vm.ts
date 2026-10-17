@@ -1,15 +1,14 @@
 import {
-  opsForTag,
   type AnyCell,
   type tagOp,
   markOpcodeAsync,
   setIsRendering,
   isRendering,
   formula,
-  opsFor,
+  addOpcode,
+  removeOpcode,
   getTracker,
   setTracker,
-  releaseOpArray,
   MergedCell,
   type Cell,
 } from './reactive';
@@ -194,21 +193,8 @@ export function opcodeForValue(tag: AnyCell, op: tagOp, value: unknown) {
   } else {
     applyIsolated(op, value, previousTracker);
   }
-  const ops = opsFor(tag)!;
-  ops.push(op);
-  return () => {
-    const index = ops.indexOf(op);
-    if (index > -1) {
-      ops.splice(index, 1);
-    }
-    if (ops.length === 0) {
-      opsForTag.delete(tag.id);
-      releaseOpArray(ops);
-      if ('destroy' in tag) {
-        tag.destroy();
-      }
-    }
-  };
+  const ops = addOpcode(tag, op);
+  return () => removeOpcode(tag, ops, op);
 }
 
 /**
@@ -233,19 +219,6 @@ export function opcodeForCreatedContent(tag: AnyCell, op: tagOp) {
 
 export function opcodeFor(tag: AnyCell, op: tagOp) {
   evaluateOpcode(tag, op);
-  const ops = opsFor(tag)!;
-  ops.push(op);
-  return () => {
-    const index = ops.indexOf(op);
-    if (index > -1) {
-      ops.splice(index, 1);
-    }
-    if (ops.length === 0) {
-      opsForTag.delete(tag.id);
-      releaseOpArray(ops);
-      if ('destroy' in tag) {
-        tag.destroy();
-      }
-    }
-  };
+  const ops = addOpcode(tag, op);
+  return () => removeOpcode(tag, ops, op);
 }

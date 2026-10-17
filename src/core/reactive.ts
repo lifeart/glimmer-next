@@ -5,7 +5,6 @@
 */
 import { scheduleRevalidate } from '@/core/runtime';
 import { isFn, isTag, isTagLike, debugContext } from '@/core/shared';
-import { AdaptivePool, config } from '@/core/config';
 import { HOST_HOOKS } from '@/core/host-hooks';
 
 // Async opcode support — tree-shaken when ASYNC_COMPILE_TRANSFORMS is false
@@ -31,21 +30,6 @@ export const opsForTag: Map<
 export const tagsToRevalidate: Set<Cell> = new Set();
 // List of derived tags for each cell
 export const relatedTags: Map<number, Set<MergedCell>> = new Map();
-
-// Adaptive pool for ops arrays with automatic growth/shrink
-const opsPool = new AdaptivePool<Array<tagOp>>(
-  config.opsArrayPool,
-  () => [],
-  (arr) => { arr.length = 0; },
-);
-
-function getOpArray(): Array<tagOp> {
-  return opsPool.acquire();
-}
-
-export function releaseOpArray(arr: Array<tagOp>) {
-  opsPool.release(arr);
-}
 
 export const DEBUG_MERGED_CELLS = new Set<MergedCell>();
 export const DEBUG_CELLS = new Set<Cell>();
@@ -315,13 +299,42 @@ export function listDependentCells(cells: Array<AnyCell>, cell: MergedCell) {
   return msg.join(' ');
 }
 
-export function opsFor(cell: AnyCell) {
-  let ops = opsForTag.get(cell.id);
+/**
+ * Register `op` to run when `tag` changes. Returns the array `op` was added
+ * to; pass it to `removeOpcode`. A tag's first opcode gets a new one-element
+ * array: most tags only ever have one, and a pushed-to empty array would
+ * reserve room for 17.
+ */
+export function addOpcode(tag: AnyCell, op: tagOp): Array<tagOp> {
+  const ops = opsForTag.get(tag.id);
   if (ops === undefined) {
-    ops = getOpArray();
-    opsForTag.set(cell.id, ops);
+    const created = [op];
+    opsForTag.set(tag.id, created);
+    return created;
   }
+  ops.push(op);
   return ops;
+}
+
+/**
+ * Undo `addOpcode(tag, op)`, given the array it returned. When that array
+ * empties, the tag's entry is dropped — only while it is still that array, so
+ * a second or stale call never drops opcodes bound later — and a formula tag
+ * is destroyed.
+ */
+export function removeOpcode(tag: AnyCell, ops: Array<tagOp>, op: tagOp): void {
+  const index = ops.indexOf(op);
+  if (index > -1) {
+    ops.splice(index, 1);
+  }
+  if (ops.length === 0) {
+    if (opsForTag.get(tag.id) === ops) {
+      opsForTag.delete(tag.id);
+    }
+    if ('destroy' in tag) {
+      tag.destroy();
+    }
+  }
 }
 
 export function relatedTagsForCell(cell: Cell) {
