@@ -19,8 +19,12 @@
  *     spliced into the owner's rendered-nodes list just before the anchor, so
  *     row moves / first-node lookups / teardown see it; a change of kind or
  *     identity destroys it and renders the new value.
- * Without a registered binding (standalone gxt, the Ember compat bridge) every
- * check below is a single `null` comparison and behaviour is unchanged.
+ * The Ember compat build (WITH_EMBER_INTEGRATION without EMBER_NATIVE) can
+ * register a binding of the same shape as the `contentBinding` host hook
+ * (`contentBinding()` below), without the native runtime semantics.
+ * Without a registered binding (standalone gxt, a compat host that registers
+ * none) every check below is a single `null` comparison and behaviour is
+ * unchanged.
  *
  * This module holds only the registration slot and the pure classification
  * helpers (no imports from the render modules, so render-core / root.ts / dom.ts
@@ -70,9 +74,20 @@ export function isNativeRuntime(): boolean {
   return BINDING !== null;
 }
 
-/** The registered dynamic-content binding, or null (historic text binding). */
-export function nativeContentBinding(): NativeContentBinding | null {
-  return BINDING;
+/**
+ * The dynamic-content binding for a reactive content value gxt renders itself
+ * (render-core / root.ts): the EMBER_NATIVE runtime's, else — in an Ember
+ * compat build (WITH_EMBER_INTEGRATION) — the one the host registered as
+ * `contentBinding`, else null (historic text binding). A host binding does not
+ * make the runtime the native one (`isNativeRuntime()` stays false).
+ */
+export function contentBinding(): NativeContentBinding | null {
+  if (BINDING !== null) return BINDING;
+  if (WITH_EMBER_INTEGRATION) {
+    const hook = HOST_HOOKS.contentBinding;
+    if (hook !== undefined) return hook;
+  }
+  return null;
 }
 
 // The value `resolveRenderable`'s `checkOpcode` read computed for a content
