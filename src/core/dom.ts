@@ -153,6 +153,7 @@ let unstableWrapperId: number = 0;
 
 // Import and re-export $_MANAGERS from manager-integration
 import { $_MANAGERS, type ArgLabels } from './manager-integration';
+import { recordCreatedElement } from './control-flow/branch-journal';
 import {
   $_curry,
   CURRIED_COMPONENT,
@@ -1301,6 +1302,11 @@ function _DOM(
 
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.pop();
+  }
+  if (WITH_EMBER_INTEGRATION && !EMBER_NATIVE) {
+    // Ember compat: a branch that throws while it renders keeps the elements
+    // it built before the error (control-flow/branch-journal.ts).
+    recordCreatedElement(element);
   }
   return element;
 }

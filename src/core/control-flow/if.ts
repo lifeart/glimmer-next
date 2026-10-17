@@ -32,6 +32,7 @@ import { opcodeFor } from '@/core/vm';
 import { initDOM } from '@/core/context';
 import { setParentContext, getParentContext } from '../tracking';
 import { HOST_HOOKS } from '@/core/host-hooks';
+import { openBranchJournal, closeBranchJournal, detachedSince } from './branch-journal';
 
 export type IfFunction = () => boolean;
 
@@ -513,7 +514,10 @@ export class IfCondition {
     // context happened to be active before.
     try {
       setParentContext(this as unknown as ComponentLike);
-      this.prevComponent = nextBranch(this);
+      this.prevComponent =
+        WITH_EMBER_INTEGRATION && !EMBER_NATIVE
+          ? renderKeepingPartialBranch(this, nextBranch)
+          : nextBranch(this);
     } finally {
       setParentContext(null);
     }
@@ -602,6 +606,36 @@ export class IfCondition {
     } else {
       this.condition = maybeCondition;
     }
+  }
+}
+
+/**
+ * Ember compat (WITH_EMBER_INTEGRATION without EMBER_NATIVE): render `block`'s
+ * branch; when it throws, the elements it built before the error are inserted
+ * in front of the placeholder and become the block's branch nodes (removed
+ * with the branch), then the error propagates. Glimmer appends a block's nodes
+ * as it renders them, so they stay when a later component of the branch
+ * throws in its constructor. Elements only: text and nested blocks rendered
+ * before the error are not kept.
+ */
+function renderKeepingPartialBranch(
+  block: IfCondition,
+  nextBranch: (ifContext: IfCondition) => GenericReturnType,
+): GenericReturnType {
+  const mark = openBranchJournal();
+  try {
+    return nextBranch(block);
+  } catch (error) {
+    const { api, placeholder } = block;
+    const kept = detachedSince(mark, (node) => api.parent(node));
+    const parent = api.parent(placeholder) || block.target;
+    for (let i = 0; i < kept.length; i++) {
+      api.insert(parent, kept[i], placeholder);
+    }
+    block.branchDomNodes = kept;
+    throw error;
+  } finally {
+    closeBranchJournal(mark);
   }
 }
 
