@@ -29,6 +29,8 @@ import {
   AnyCell,
   Cell,
   MergedCell,
+  type tagOp,
+  removeOpcode,
   formula,
   deepFnValue,
   getTagId,
@@ -36,7 +38,7 @@ import {
   materializeAbsentPathCell,
   registerLeafOwnersForFormula,
 } from '@/core/reactive';
-import { opcodeFor, opcodeForValue, opcodeForCreatedContent, checkOpcode } from '@/core/vm';
+import { opcodeFor, opcodeForCreatedContent, checkOpcode, bindOpcode } from '@/core/vm';
 import {
   SyncListComponent,
   AsyncListComponent,
@@ -79,7 +81,6 @@ import {
   CONTENT_TEXT,
   nativeContentKind,
   nativeContentText,
-  NO_INITIAL,
   isContentComponent,
   isNativeRuntime,
   setNativeContentBinding,
@@ -3125,6 +3126,126 @@ export function $_looseAppend(
   return '';
 }
 
+// The state of one `bindNativeContent` binding.
+class NativeContent {
+  api: DOMApi;
+  treeParent: ComponentLike;
+  owner: ComponentLike | null;
+  textNode: Node;
+  f: MergedCell;
+  kind: ContentKind = CONTENT_TEXT;
+  rendered: unknown = undefined;
+  unit: ComponentLike | null = null;
+  // The opcode bound to `f`, and the array it was added to (for unbinding).
+  op: tagOp | null = null;
+  ops: Array<tagOp> | null = null;
+  constructor(
+    api: DOMApi,
+    treeParent: ComponentLike,
+    owner: ComponentLike | null,
+    textNode: Node,
+    f: MergedCell,
+  ) {
+    this.api = api;
+    this.treeParent = treeParent;
+    this.owner = owner;
+    this.textNode = textNode;
+    this.f = f;
+  }
+
+  // The unit REPLACES the text node in the owner's rendered nodes (in place:
+  // the list may be mid-iteration by renderElement) and holds the text node as
+  // its last node, so moves / first-node lookups / teardown see the content.
+  swapInOwner(from: unknown, to: unknown) {
+    const owner = this.owner;
+    if (owner === null) return;
+    const nodes = owner[RENDERED_NODES_PROPERTY] as unknown[];
+    const index = nodes.indexOf(from);
+    if (index !== -1) nodes[index] = to;
+  }
+
+  removeUnit() {
+    const current = this.unit;
+    if (current === null) return;
+    this.unit = null;
+    const textNode = this.textNode;
+    this.swapInOwner(current, textNode);
+    // The anchor text node stays: only the unit's content is torn down.
+    const nodes = current[RENDERED_NODES_PROPERTY] as unknown[];
+    const anchorIndex = nodes.lastIndexOf(textNode);
+    if (anchorIndex !== -1) nodes.splice(anchorIndex, 1);
+    destroyElementSync(current, false, this.api);
+  }
+
+  renderUnit(next: ContentKind, value: unknown) {
+    const api = this.api;
+    const textNode = this.textNode;
+    const parent = api.parent(textNode) as Node | null;
+    const created: ComponentLike = {
+      [$args]: {},
+      [COMPONENT_ID_PROPERTY]: cId(),
+      [RENDERED_NODES_PROPERTY]: [],
+      [RENDERING_CONTEXT_PROPERTY]: null,
+    } as unknown as ComponentLike;
+    addToTree(this.treeParent, created);
+    this.unit = created;
+    this.swapInOwner(textNode, created);
+    if (parent !== null) {
+      if (next === CONTENT_COMPONENT) {
+        const instance = component(
+          value as typeof Component,
+          $_args({}, false, $_edp as unknown as FwType),
+          created as Component<any>,
+        );
+        created[RENDERED_NODES_PROPERTY].push(instance as never);
+        renderElement(api, created, parent, instance as never, textNode, true);
+      } else {
+        let content: unknown;
+        if (next === CONTENT_HTML) {
+          content = parseTrustedHtml(api, this.rendered as string, parent as Element);
+        } else if (next === CONTENT_HELPER) {
+          content = () => $_maybeHelper(value, [], {}, created, 0);
+        } else if ((value as Node).nodeType === 11) {
+          // A DocumentFragment: its children are the content (it empties on insert).
+          content = Array.from((value as DocumentFragment).childNodes);
+        } else {
+          content = value;
+        }
+        renderElement(api, created, parent, content as never, textNode);
+      }
+    }
+    created[RENDERED_NODES_PROPERTY].push(textNode as never);
+  }
+
+  apply(value: unknown) {
+    const api = this.api;
+    const next = nativeContentKind(api, value);
+    if (next === CONTENT_TEXT) {
+      if (this.kind !== CONTENT_TEXT) {
+        this.removeUnit();
+        this.kind = CONTENT_TEXT;
+        this.rendered = undefined;
+      }
+      api.textContent(this.textNode, nativeContentText(value));
+      registerLeafOwnersForFormula(this.f);
+      return;
+    }
+    const identity =
+      next === CONTENT_HTML ? resolveTrustedHtml(value) : value;
+    if (next === this.kind && identity === this.rendered) return;
+    this.removeUnit();
+    if (this.kind === CONTENT_TEXT) api.textContent(this.textNode, '');
+    this.kind = next;
+    this.rendered = identity;
+    this.renderUnit(next, value);
+  }
+
+  destroy() {
+    removeOpcode(this.f, this.ops!, this.op!);
+    this.removeUnit();
+  }
+}
+
 /**
  * Glimmer dynamic content (G15; the EMBER_NATIVE runtime registers this as the
  * native-content binding, see native-content.ts). Binds the reactive content
@@ -3145,101 +3266,15 @@ export function bindNativeContent(
   textNode: Node,
   f: MergedCell,
 ): () => void {
-  let kind: ContentKind = CONTENT_TEXT;
-  let rendered: unknown = undefined;
-  let unit: ComponentLike | null = null;
-
-  // The unit REPLACES the text node in the owner's rendered nodes (in place:
-  // the list may be mid-iteration by renderElement) and holds the text node as
-  // its last node, so moves / first-node lookups / teardown see the content.
-  const swapInOwner = (from: unknown, to: unknown) => {
-    if (owner === null) return;
-    const nodes = owner[RENDERED_NODES_PROPERTY] as unknown[];
-    const index = nodes.indexOf(from);
-    if (index !== -1) nodes[index] = to;
-  };
-
-  const removeUnit = () => {
-    if (unit === null) return;
-    const current = unit;
-    unit = null;
-    swapInOwner(current, textNode);
-    // The anchor text node stays: only the unit's content is torn down.
-    const nodes = current[RENDERED_NODES_PROPERTY] as unknown[];
-    const anchorIndex = nodes.lastIndexOf(textNode);
-    if (anchorIndex !== -1) nodes.splice(anchorIndex, 1);
-    destroyElementSync(current, false, api);
-  };
-
-  const renderUnit = (next: ContentKind, value: unknown) => {
-    const parent = api.parent(textNode) as Node | null;
-    const created: ComponentLike = {
-      [$args]: {},
-      [COMPONENT_ID_PROPERTY]: cId(),
-      [RENDERED_NODES_PROPERTY]: [],
-      [RENDERING_CONTEXT_PROPERTY]: null,
-    } as unknown as ComponentLike;
-    addToTree(treeParent, created);
-    unit = created;
-    swapInOwner(textNode, created);
-    if (parent !== null) {
-      if (next === CONTENT_COMPONENT) {
-        const instance = component(
-          value as typeof Component,
-          $_args({}, false, $_edp as unknown as FwType),
-          created as Component<any>,
-        );
-        created[RENDERED_NODES_PROPERTY].push(instance as never);
-        renderElement(api, created, parent, instance as never, textNode, true);
-      } else {
-        let content: unknown;
-        if (next === CONTENT_HTML) {
-          content = parseTrustedHtml(api, rendered as string, parent as Element);
-        } else if (next === CONTENT_HELPER) {
-          content = () => $_maybeHelper(value, [], {}, created, 0);
-        } else if ((value as Node).nodeType === 11) {
-          // A DocumentFragment: its children are the content (it empties on insert).
-          content = Array.from((value as DocumentFragment).childNodes);
-        } else {
-          content = value;
-        }
-        renderElement(api, created, parent, content as never, textNode);
-      }
-    }
-    created[RENDERED_NODES_PROPERTY].push(textNode as never);
-  };
-
-  const apply = (value: unknown) => {
-    const next = nativeContentKind(api, value);
-    if (next === CONTENT_TEXT) {
-      if (kind !== CONTENT_TEXT) {
-        removeUnit();
-        kind = CONTENT_TEXT;
-        rendered = undefined;
-      }
-      api.textContent(textNode, nativeContentText(value));
-      registerLeafOwnersForFormula(f);
-      return;
-    }
-    const identity =
-      next === CONTENT_HTML ? resolveTrustedHtml(value) : value;
-    if (next === kind && identity === rendered) return;
-    removeUnit();
-    if (kind === CONTENT_TEXT) api.textContent(textNode, '');
-    kind = next;
-    rendered = identity;
-    renderUnit(next, value);
-  };
+  // One object per binding, and the two closures gxt needs (the opcode and
+  // the destructor) share a scope that holds only it.
+  const binding = new NativeContent(api, treeParent, owner, textNode, f);
+  const op: tagOp = (value) => binding.apply(value);
+  binding.op = op;
   // Creation applies the value `resolveRenderable` already read (one read per
   // create, Glimmer parity); a formula bound without one is evaluated here.
-  const initial = takeInitialContent(f);
-  const opDestructor =
-    initial === NO_INITIAL ? opcodeFor(f, apply) : opcodeForValue(f, apply, initial);
-
-  return () => {
-    opDestructor();
-    removeUnit();
-  };
+  binding.ops = bindOpcode(f, op, takeInitialContent(f));
+  return () => binding.destroy();
 }
 
 // Module-level: the `typeof` guard keeps importing the published dist safe for

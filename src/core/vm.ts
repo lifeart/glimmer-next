@@ -183,6 +183,12 @@ export const checkOpcode = evaluateOpcode;
  * side-effecting getter twice (Glimmer reads once).
  */
 export function opcodeForValue(tag: AnyCell, op: tagOp, value: unknown) {
+  applyOpcode(op, value);
+  const ops = addOpcode(tag, op);
+  return () => removeOpcode(tag, ops, op);
+}
+
+function applyOpcode(op: tagOp, value: unknown) {
   const previousTracker = getTracker();
   if (renderFrame !== null || (previousTracker !== null && isNativeRuntime())) {
     // the `checkOpcode` read already forwarded the tag's dependencies; what
@@ -193,8 +199,24 @@ export function opcodeForValue(tag: AnyCell, op: tagOp, value: unknown) {
   } else {
     applyIsolated(op, value, previousTracker);
   }
-  const ops = addOpcode(tag, op);
-  return () => removeOpcode(tag, ops, op);
+}
+
+/**
+ * `opcodeFor` (or, given the tag's current `value`, `opcodeForValue`) without
+ * the unbind closure, for a binding that keeps `op` and the returned array
+ * itself and unbinds with `removeOpcode(tag, ops, op)`.
+ */
+export function bindOpcode(
+  tag: AnyCell,
+  op: tagOp,
+  value: unknown = NO_INITIAL,
+): Array<tagOp> {
+  if (value === NO_INITIAL) {
+    evaluateOpcode(tag, op);
+  } else {
+    applyOpcode(op, value);
+  }
+  return addOpcode(tag, op);
 }
 
 /**
