@@ -402,10 +402,20 @@ export function $prop(
     (EMBER_NATIVE || WITH_EMBER_INTEGRATION) &&
     key === 'value' &&
     (element as Element).tagName === 'INPUT';
+  // Ember (Glimmer's InputValueDynamicAttribute): an update of the `value` of
+  // an `<input>` / `<textarea>` compares with the element's CURRENT value —
+  // the user may have typed since the last write — and writes when they
+  // differ, even when the binding's value did not change. Every other
+  // property compares with the value written last (DefaultDynamicProperty).
+  const liveInputValue =
+    (EMBER_NATIVE || WITH_EMBER_INTEGRATION) &&
+    key === 'value' &&
+    ((element as Element).tagName === 'INPUT' || (element as Element).tagName === 'TEXTAREA');
 
   if (isReactive) {
     let prevPropValue: any = undefined;
     let firstWrite = emptyInputValueAttr;
+    let written = false;
     destructors.push(
       opcodeFor(result as AnyCell, (resolvedValue) => {
         // Host normalize seam, prop side (isProp=true). Unregistered =>
@@ -419,9 +429,15 @@ export function $prop(
         const normalized =
           hook === null ? resolvedValue : hook(key, resolvedValue, element as Element, true);
         const val = normalized === null ? '' : normalized;
-        if (val === prevPropValue) {
+        if (liveInputValue && written) {
+          if ((element as HTMLInputElement).value === (val === undefined ? '' : String(val))) {
+            prevPropValue = val;
+            return;
+          }
+        } else if (val === prevPropValue) {
           return;
         }
+        written = true;
         // When a reactive `style` prop binding transitions to empty, setting
         // `element.style = ''` leaves a stale `style=""` attribute on the
         // in-place element. Ember removes the attribute entirely for empty
