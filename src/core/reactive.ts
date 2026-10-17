@@ -361,10 +361,9 @@ export function flushCellOpcodes(cell: Cell | MergedCell): void {
   const prevTracker = getTracker();
   if (prevTracker !== null) setTracker(null);
   try {
-    // Only execute the cell's own opcodes when it actually has some — for
-    // cells that exist purely as subscription targets (selector key cells,
-    // recycle holder cells) an unguarded executeTagSync would MATERIALIZE an
-    // empty pooled ops array into the global opsForTag map per flush.
+    // Only execute the cell's own opcodes when it actually has some — cells
+    // that exist purely as subscription targets (selector key cells, recycle
+    // holder cells) have none.
     const ownOps = opsForTag.get((cell as Cell).id);
     if (ownOps !== undefined && ownOps.length > 0) {
       try {
@@ -766,8 +765,20 @@ export function executeTag(tag: Cell | MergedCell, awaitAsync: true): Promise<vo
 export function executeTag(tag: Cell | MergedCell, awaitAsync: false): void;
 export function executeTag(tag: Cell | MergedCell, awaitAsync?: boolean): Promise<void> | void;
 export function executeTag(tag: Cell | MergedCell, awaitAsync = true): Promise<void> | void {
-  const ops = opsFor(tag);
+  let ops = opsForTag.get(tag.id);
+  // Read even when the tag has no opcodes: a formula re-subscribes to its
+  // cells on this read.
   const value = tag.value;
+  if (ops === undefined) {
+    // A tag without opcodes gets no `opsForTag` entry: a changed cell that
+    // only formulas read, or a formula a list destroyed earlier in this pass,
+    // would otherwise keep an empty entry for good. The read above may have
+    // bound the tag's first opcode.
+    ops = opsForTag.get(tag.id);
+    if (ops === undefined) {
+      return awaitAsync ? Promise.resolve() : undefined;
+    }
+  }
   if (awaitAsync) {
     return executeTagAsyncOps(tag, ops, value);
   }

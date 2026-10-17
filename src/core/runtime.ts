@@ -180,6 +180,9 @@ function syncDomSync() {
       const epoch = nextExecutionEpoch();
       for (; sharedDone < sharedTags.length; ) {
         const tag = sharedTags[sharedDone++];
+        // A formula destroyed earlier in this pass (a list that removed its
+        // rows) has nothing left to run.
+        if (tag.isDestroyed) continue;
         if (shouldExecuteSharedTag(tag, epoch)) {
           if (IS_DEV_MODE && (globalThis as any).__gxtDebugSync) {
             console.log('[SYNC] executeTag formula.id=' + tag.id + ' name=' + tag._debugName);
@@ -251,6 +254,7 @@ export function flushRevalidation(): boolean {
       const epoch = nextExecutionEpoch();
       for (; sharedDone < sharedTags.length; ) {
         const tag = sharedTags[sharedDone++];
+        if (tag.isDestroyed) continue;
         if (shouldExecuteSharedTag(tag, epoch)) {
           executeTag(tag, false);
         }
@@ -299,6 +303,7 @@ async function syncDomAsync() {
       const epoch = nextExecutionEpoch();
       for (; sharedDone < sharedTags.length; ) {
         const tag = sharedTags[sharedDone++];
+        if (tag.isDestroyed) continue;
         if (shouldExecuteSharedTag(tag, epoch)) {
           await executeTag(tag, true);
         }
