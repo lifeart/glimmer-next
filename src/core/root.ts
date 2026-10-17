@@ -134,8 +134,9 @@ export function resolveRenderable(
       // Register leaf-object owners so a nested-property `set()` on a held
       // object dirties this cell.
       registerLeafOwnersForFormula(f);
-      // Native: the binding applies the value read above (one create read).
-      if (native) stashInitialContent(f, componentProps);
+      // Ember (native and compat): the binding applies the value read above
+      // (one create read; `opcodeForCreatedContent`).
+      if (native || WITH_EMBER_INTEGRATION) stashInitialContent(f, componentProps);
       return f;
     } else {
       // looks like a component

@@ -22,7 +22,7 @@ import {
   isEmpty,
   isTagLike,
 } from './shared';
-import { opcodeFor } from './vm';
+import { opcodeFor, opcodeForCreatedContent } from './vm';
 import type { MergedCell } from './reactive';
 import { registerLeafOwnersForFormula } from './reactive';
 
@@ -101,7 +101,10 @@ export function renderElement(
   placeholder: Comment | Node | null = null,
   skipRegistration = false,
 ): void {
-  if (isFn(el)) {
+  // A binding `resolveRenderable` creates here is bound with the value it read
+  // (`opcodeForCreatedContent`); a tag handed in is evaluated by its opcode.
+  const resolvedHere = isFn(el);
+  if (resolvedHere) {
     // @ts-expect-error
     el = resolveRenderable(el);
   }
@@ -193,7 +196,8 @@ export function renderElement(
       for (let i = 0; i < len; i++) {
         let node: unknown = renderedNodes[i];
         // Resolve renderable if it's a function
-        if (isFn(node)) {
+        const nodeResolvedHere = isFn(node);
+        if (nodeResolvedHere) {
           node = resolveRenderable(node as () => unknown);
         }
         if (isEmpty(node) || node === '') {
@@ -232,9 +236,10 @@ export function renderElement(
             );
             continue;
           }
+          const bindText = nodeResolvedHere ? opcodeForCreatedContent : opcodeFor;
           registerDestructor(
             el as ComponentLike,
-            opcodeFor(node as MergedCell, (value) => {
+            bindText(node as MergedCell, (value) => {
               api.textContent(textNode, String(value ?? ''));
               // Re-register leaf-object owners each tick so a parent ref-swap of
               // the held object re-subscribes the reverse-lookup (see dom.ts $ev
@@ -277,9 +282,10 @@ export function renderElement(
       );
       return;
     }
+    const bindText = resolvedHere ? opcodeForCreatedContent : opcodeFor;
     registerDestructor(
       ctx,
-      opcodeFor(el, (value) => {
+      bindText(el, (value) => {
         api.textContent(node, String(value ?? ''));
         // Fine-grained GH#14332: re-register leaf-object owners each tick so a
         // parent ref-swap of the held object re-subscribes the reverse-lookup

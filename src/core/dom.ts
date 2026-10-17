@@ -36,7 +36,7 @@ import {
   materializeAbsentPathCell,
   registerLeafOwnersForFormula,
 } from '@/core/reactive';
-import { opcodeFor, opcodeForValue, checkOpcode } from '@/core/vm';
+import { opcodeFor, opcodeForValue, opcodeForCreatedContent, checkOpcode } from '@/core/vm';
 import {
   SyncListComponent,
   AsyncListComponent,
@@ -701,15 +701,17 @@ export function $ev(
   destructors: DestructorFn[],
 ) {
   if (eventName === EVENT_TYPE.TEXT_CONTENT) {
-    const result = $_TO_VALUE(fn);
+    const resolvedHere = isFn(fn);
+    const result = resolvedHere ? resolveRenderable(fn as Function) : fn;
     if (isEmpty(result)) {
       return;
     }
     if (isPrimitive(result)) {
       api.textContent(element, result as string);
     } else {
+      const bindText = resolvedHere ? opcodeForCreatedContent : opcodeFor;
       destructors.push(
-        opcodeFor(result as AnyCell, (value) => {
+        bindText(result as AnyCell, (value) => {
           api.textContent(element, String(value ?? ''));
           // Re-register leaf-object owners on every opcode tick.
           // `resolveRenderable` registered owners on first render, but when a

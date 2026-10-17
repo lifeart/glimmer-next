@@ -14,7 +14,7 @@ import {
   type Cell,
 } from './reactive';
 import { isFn } from './shared';
-import { isNativeRuntime } from './native-content';
+import { isNativeRuntime, takeInitialContent, NO_INITIAL } from './native-content';
 import { registerDestructor } from './glimmer/destroyable';
 
 type maybeDestructor = undefined | (() => void);
@@ -209,6 +209,26 @@ export function opcodeForValue(tag: AnyCell, op: tagOp, value: unknown) {
       }
     }
   };
+}
+
+/**
+ * `opcodeFor` for the content binding `resolveRenderable` has JUST returned
+ * (the caller resolved it itself, so the value is current). Under the Ember
+ * integration `resolveRenderable` keeps the value its `checkOpcode` read
+ * computed — that read ran in the opcode frame and subscribed the formula to
+ * its cells — and the opcode's first run applies it instead of evaluating the
+ * binding a second time (Glimmer computes a reference once per revision: a
+ * content mustache calling a helper calls it once on creation). Standalone gxt
+ * keeps the historic re-read.
+ */
+export function opcodeForCreatedContent(tag: AnyCell, op: tagOp) {
+  if (WITH_EMBER_INTEGRATION) {
+    const initial = takeInitialContent(tag);
+    if (initial !== NO_INITIAL) {
+      return opcodeForValue(tag, op, initial);
+    }
+  }
+  return opcodeFor(tag, op);
 }
 
 export function opcodeFor(tag: AnyCell, op: tagOp) {
