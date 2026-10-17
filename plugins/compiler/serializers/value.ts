@@ -8,6 +8,7 @@
 import type { CompilerContext } from '../context';
 import { addError, recordLooseBuiltin } from '../context';
 import type { SerializedValue, SourceRange, PathValue } from '../types';
+import { path } from '../types';
 import { SYMBOLS, INTERNAL_HELPERS, getBuiltInHelperSymbol } from './symbols';
 import {
   B,
@@ -274,6 +275,51 @@ function buildValueNoGetter(
   }
   // For non-path types, buildValue doesn't double-wrap
   return buildValue(ctx, value, ctxName);
+}
+
+// The source text of a path argument as the template wrote it (`this.foo`,
+// `@bar`, `item.name`): no whitespace, quotes, parentheses or braces.
+const ARG_LABEL_TEXT = /^[@A-Za-z_$][^\s'"(){}=]*$/;
+
+function argLabel(ctx: CompilerContext, value: SerializedValue): string | null {
+  if (value.kind !== 'path' || !value.sourceRange) return null;
+  const text = ctx.source.slice(value.sourceRange.start, value.sourceRange.end);
+  return ARG_LABEL_TEXT.test(text) ? text : null;
+}
+
+/**
+ * EMBER_ARG_LABELS: the labels argument of an Ember helper / modifier call
+ * site — `{ positional: [...], named: {...} }` with the source text of each
+ * path argument (`null` for a positional argument that is not a path; a named
+ * argument that is not a path is left out, and so is a part without labels).
+ * `null` when the flag is off, outside the Ember dialect
+ * (WITH_EMBER_INTEGRATION), or when no argument is a path: the call keeps its
+ * shape. The host gives the argument references these debug labels, as
+ * Glimmer labels a path reference with its path.
+ */
+export function buildArgLabels(
+  ctx: CompilerContext,
+  positional: readonly SerializedValue[],
+  named: ReadonlyMap<string, SerializedValue>
+): JSExpression | null {
+  if (ctx.flags.EMBER_ARG_LABELS !== true || ctx.flags.WITH_EMBER_INTEGRATION !== true) return null;
+  const positionalLabels = positional.map((arg) => argLabel(ctx, arg));
+  const namedLabels = [];
+  for (const [key, val] of named) {
+    const label = argLabel(ctx, val);
+    if (label !== null) namedLabels.push(B.prop(key, B.string(label)));
+  }
+  const parts = [];
+  if (positionalLabels.some((label) => label !== null)) {
+    parts.push(
+      B.prop(
+        'positional',
+        B.array(positionalLabels.map((label) => (label === null ? B.nil() : B.string(label))))
+      )
+    );
+  }
+  if (namedLabels.length > 0) parts.push(B.prop('named', B.object(namedLabels)));
+  return parts.length > 0 ? B.object(parts) : null;
 }
 
 /**
@@ -1131,14 +1177,34 @@ function buildMaybeHelper(
   // helper per call site per block instance, destroyed with the block). Like
   // `$_uid(ctx, N)`, a per-compilation index is enough — the ctx key keeps
   // templates / instances apart.
+  // EMBER_ARG_LABELS: the source paths of the arguments, after the context
+  // and the call-site index (`undefined` where the call has none).
+  const labels = buildArgLabels(ctx, positional, named);
   if (native) {
     const namedObj = namedProps.length > 0 ? B.object(namedProps) : B.emptyObject();
-    return B.call(SYMBOLS.MAYBE_HELPER, [
+    const nativeArgs: JSExpression[] = [
       helperRef,
       B.array(posArgs),
       namedObj,
       B.id(ctxName),
       B.num(ctx.helperSiteCounter++),
+    ];
+    if (labels !== null) nativeArgs.push(labels);
+    return B.call(SYMBOLS.MAYBE_HELPER, nativeArgs, sourceRange);
+  }
+
+  if (labels !== null) {
+    // One shape for known and unknown helpers: `(ref, [args], {named}, ctx,
+    // undefined, labels)`. A known binding passes no context, as without
+    // labels; the host reads the hash from the 3rd argument when there are 4
+    // or more.
+    return B.call(SYMBOLS.MAYBE_HELPER, [
+      helperRef,
+      B.array(posArgs),
+      namedProps.length > 0 ? B.object(namedProps) : B.emptyObject(),
+      resolvedRef ? B.undef() : B.id(ctxName),
+      B.undef(),
+      labels,
     ], sourceRange);
   }
 
@@ -1448,6 +1514,11 @@ function buildBuiltInHelper(
   // Special handling for debugger - prepend this and use .call
   if (symbol === SYMBOLS.DEBUGGER) {
     const callArgs = [B.id(ctxName), ...args];
+    // Ember (compat and native): `{{debugger}}` passes the scope it can
+    // inspect (`buildDebuggerScope`).
+    if (ctx.flags.WITH_EMBER_INTEGRATION === true && args.length === 0) {
+      callArgs.push(buildDebuggerScope(ctx, ctxName, sourceRange));
+    }
     const callTarget = typeof helperId === 'string' ? B.id(helperId) : helperId;
     return B.methodCall(callTarget, 'call', callArgs, sourceRange);
   }
@@ -1469,6 +1540,36 @@ function buildBuiltInHelper(
   }
 
   return B.call(helperId, args, sourceRange);
+}
+
+/**
+ * Ember `{{debugger}}`: the scope a debugger callback inspects, read lazily —
+ * `{ self: () => <template self>, locals: { name: () => <read>, … },
+ * args: () => $a }`. `self` is the template's self (compat: the template's
+ * `this`, native: `$s`), not the block render context the call runs on;
+ * `locals` are the block params and `{{#let}}` bindings visible at the
+ * statement (inner ones shadow outer ones), read as the template reads them;
+ * `args` is the component's named arguments (`get('@name')`). The runtime
+ * resolves a debugger `get(path)` over them (helpers/debugger.ts).
+ */
+function buildDebuggerScope(
+  ctx: CompilerContext,
+  ctxName: string,
+  sourceRange?: SourceRange
+): JSExpression {
+  const locals = [];
+  for (const [name, info] of ctx.scopeTracker.getAllBindings()) {
+    if (info.kind !== 'block-param' && info.kind !== 'let-binding') continue;
+    if (name.startsWith('$')) continue;
+    const read = buildPathExpression(ctx, path(name, false, sourceRange), false, ctxName);
+    locals.push(B.prop(name, B.arrow([], read)));
+  }
+  ctx.usedArgsAlias = true;
+  return B.object([
+    B.prop('self', B.arrow([], B.runtimeRef(selfRootName(ctx), sourceRange))),
+    B.prop('locals', locals.length > 0 ? B.object(locals) : B.emptyObject()),
+    B.prop('args', B.arrow([], B.runtimeRef(SYMBOLS.ARGS_ALIAS, sourceRange))),
+  ]);
 }
 
 /**

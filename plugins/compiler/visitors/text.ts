@@ -45,18 +45,29 @@ export function isWhitespaceOnly(str: string): boolean {
 }
 
 /**
+ * Whether the template's text is Glimmer's: the Ember native layer
+ * (EMBER_NATIVE) and Ember compat's opt-in (EMBER_WHITESPACE). The template is
+ * then parsed as Glimmer parses it (compile.ts: Handlebars standalone-line and
+ * `~` whitespace control, entities decoded by the tokenizer) and every
+ * whitespace-only text node is kept (`dropsWhitespaceText`).
+ */
+export function usesGlimmerText(ctx: CompilerContext): boolean {
+  return ctx.flags.EMBER_NATIVE === true || ctx.flags.EMBER_WHITESPACE === true;
+}
+
+/**
  * Whether a whitespace-only text node is DROPPED as formatting whitespace.
  *
  * gxt's own dialect drops whitespace-only text that spans lines or has more
  * than one character (`isWhitespaceOnly`). Glimmer keeps every text node the
  * parser produced (Handlebars' standalone-line stripping and `~` already ran),
  * so `{{a}}⏎  {{b}}` renders "a⏎  b" and `<p></p>⏎<p></p>` keeps the newline.
- * Under the Ember native layer (EMBER_NATIVE) gxt follows Glimmer; whitespace
+ * With Glimmer's text (`usesGlimmerText`) gxt follows Glimmer; whitespace
  * between named blocks is still ignored by the slot builder, as in Glimmer.
- * Standalone and compat output are unchanged.
+ * Standalone output, and compat output without EMBER_WHITESPACE, are unchanged.
  */
 export function dropsWhitespaceText(ctx: CompilerContext, str: string): boolean {
-  return ctx.flags.EMBER_NATIVE !== true && isWhitespaceOnly(str);
+  return !usesGlimmerText(ctx) && isWhitespaceOnly(str);
 }
 
 /**
@@ -74,11 +85,11 @@ export function visitText(
   const chars = node.chars;
 
   // Filter out whitespace-only text nodes that span multiple lines
-  // or have multiple whitespace characters (not under EMBER_NATIVE)
+  // or have multiple whitespace characters (not with Glimmer's text)
   if (dropsWhitespaceText(_ctx, chars)) {
     return null;
   }
 
-  // Decode HTML entities (the EMBER_NATIVE parse already decoded them)
-  return _ctx.flags.EMBER_NATIVE === true ? chars : decodeHtmlEntities(chars);
+  // Decode HTML entities (Glimmer's parse already decoded them)
+  return usesGlimmerText(_ctx) ? chars : decodeHtmlEntities(chars);
 }

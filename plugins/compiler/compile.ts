@@ -102,6 +102,7 @@ function parseModuleName(msg: string): string | null {
 import type { AstTransform, CompileOptions, CompileResult, HBSChild, SourceMapV3, SourceMapOptions } from './types';
 import { createContext, initializeVisitors, setSerializeChildFunction, type CompilerContext } from './context';
 import { visit, visitChildren, setSourceForRanges } from './visitors';
+import { usesGlimmerText } from './visitors/text';
 import { serialize, build, B, serializeJS } from './serializers';
 import { generateSourceMap, appendInlineSourceMap } from './sourcemap';
 import { enrichError, lineColumnToOffset, determineErrorCode, type ParseError } from './errors';
@@ -140,12 +141,13 @@ export function compile(
   try {
     // Parse the template
     const ast = preprocess(template, {
-      // Ember native layer: Glimmer's own parse (Handlebars standalone-line and
-      // `~` whitespace control, HTML entities decoded by the tokenizer), so the
-      // text nodes match Glimmer's — EMBER_NATIVE keeps every whitespace text
-      // node (visitors/text.ts dropsWhitespaceText). Otherwise the historic
+      // Ember native layer, and Ember compat with EMBER_WHITESPACE: Glimmer's
+      // own parse (Handlebars standalone-line and `~` whitespace control, HTML
+      // entities decoded by the tokenizer), so the text nodes match Glimmer's —
+      // every whitespace text node is then kept (visitors/text.ts
+      // usesGlimmerText / dropsWhitespaceText). Otherwise the historic
       // source-preserving parse.
-      mode: ctx.flags.EMBER_NATIVE === true ? 'precompile' : 'codemod',
+      mode: usesGlimmerText(ctx) ? 'precompile' : 'codemod',
       meta: {
         moduleName: options.filename,
       },

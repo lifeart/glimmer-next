@@ -6,6 +6,7 @@ import {
   hasAsyncOpcodes,
   tagsToRevalidate,
   relatedTags,
+  relatedTagsForCell,
 } from '@/core/reactive';
 import { isRehydrationScheduled } from './ssr/rehydration-state';
 import { HOST_HOOKS } from '@/core/host-hooks';
@@ -111,56 +112,92 @@ function sortSharedTags(sharedTags: MergedCell[]) {
 const _sharedTagsScratch: MergedCell[] = [];
 
 /**
+ * A pass takes a changed cell's dependent formulas out of `relatedTags`; a
+ * formula subscribes again when it re-evaluates. When a binding aborts the
+ * pass, the formulas it took but did not reach would stay unsubscribed for
+ * good: subscribe them to the cells they last read, so their next change
+ * renders them.
+ */
+function resubscribeUnreachedTags(sharedTags: MergedCell[], from: number) {
+  for (let i = from; i < sharedTags.length; i++) {
+    const tag = sharedTags[i];
+    if (tag.isDestroyed || tag.relatedCells === null) {
+      continue;
+    }
+    for (const cell of tag.relatedCells) {
+      relatedTagsForCell(cell).add(tag);
+    }
+  }
+}
+
+/**
  * Fully synchronous DOM sync — no Promise allocation, no async/await overhead.
+ *
+ * The pass ends in a `finally`: a binding that throws aborts it, and the
+ * aborted pass still empties the queue of changed cells and leaves rendering
+ * state. Otherwise the failing binding would stay queued and run again in
+ * every later sync. Like a failed Glimmer revalidation, the bindings the pass
+ * did not reach render again only after a new change.
  */
 function syncDomSync() {
   let sharedTags: MergedCell[] | null = null;
+  // Shared tags this pass took from `relatedTags` and executed (or started).
+  let sharedDone = 0;
+  let completed = false;
   setIsRendering(true);
-  // Process primary cells in creation (id) order so that parent opcodes
-  // run before child opcodes. Without this, when two cells are dirtied
-  // in the same batch (e.g., outer each source + inner each source),
-  // iteration order follows insertion order, which can cause a child
-  // effect (e.g., a nested {{#each}}'s syncList) to create items just
-  // before its parent tears it down. Sorting by tag.id gives parent-first
-  // ordering because parent cells are allocated first during render.
-  const primaryCells =
-    tagsToRevalidate.size > 1
-      ? Array.from(tagsToRevalidate).sort((a, b) => a.id - b.id)
-      : tagsToRevalidate;
-  for (const cell of primaryCells) {
-    executeTag(cell, false);
-    const subTags = relatedTags.get(cell.id);
-    if (subTags !== undefined) {
-      if (IS_DEV_MODE && (globalThis as any).__gxtDebugSync) {
-        const names: string[] = [];
-        subTags.forEach(t => names.push(t._debugName || '?'));
-        console.log('[SYNC] cell.id=' + cell.id + ' DELETE relatedTags, had: [' + names.join(',') + ']');
-      }
-      relatedTags.delete(cell.id);
-      // P8: reuse the module-level scratch buffer instead of allocating.
-      if (sharedTags === null) { sharedTags = _sharedTagsScratch; sharedTags.length = 0; }
-      for (const tag of subTags) sharedTags.push(tag);
-      subTags.clear();
-    } else if (IS_DEV_MODE && (globalThis as any).__gxtDebugSync) {
-      console.log('[SYNC] cell.id=' + cell.id + ' no relatedTags');
-    }
-  }
-  if (sharedTags !== null) {
-    sortSharedTags(sharedTags);
-    const epoch = nextExecutionEpoch();
-    for (const tag of sharedTags) {
-      if (shouldExecuteSharedTag(tag, epoch)) {
+  try {
+    // Process primary cells in creation (id) order so that parent opcodes
+    // run before child opcodes. Without this, when two cells are dirtied
+    // in the same batch (e.g., outer each source + inner each source),
+    // iteration order follows insertion order, which can cause a child
+    // effect (e.g., a nested {{#each}}'s syncList) to create items just
+    // before its parent tears it down. Sorting by tag.id gives parent-first
+    // ordering because parent cells are allocated first during render.
+    const primaryCells =
+      tagsToRevalidate.size > 1
+        ? Array.from(tagsToRevalidate).sort((a, b) => a.id - b.id)
+        : tagsToRevalidate;
+    for (const cell of primaryCells) {
+      executeTag(cell, false);
+      const subTags = relatedTags.get(cell.id);
+      if (subTags !== undefined) {
         if (IS_DEV_MODE && (globalThis as any).__gxtDebugSync) {
-          console.log('[SYNC] executeTag formula.id=' + tag.id + ' name=' + tag._debugName);
+          const names: string[] = [];
+          subTags.forEach(t => names.push(t._debugName || '?'));
+          console.log('[SYNC] cell.id=' + cell.id + ' DELETE relatedTags, had: [' + names.join(',') + ']');
         }
-        executeTag(tag, false);
+        relatedTags.delete(cell.id);
+        // P8: reuse the module-level scratch buffer instead of allocating.
+        if (sharedTags === null) { sharedTags = _sharedTagsScratch; sharedTags.length = 0; }
+        for (const tag of subTags) sharedTags.push(tag);
+        subTags.clear();
+      } else if (IS_DEV_MODE && (globalThis as any).__gxtDebugSync) {
+        console.log('[SYNC] cell.id=' + cell.id + ' no relatedTags');
       }
+    }
+    if (sharedTags !== null) {
+      sortSharedTags(sharedTags);
+      const epoch = nextExecutionEpoch();
+      for (; sharedDone < sharedTags.length; ) {
+        const tag = sharedTags[sharedDone++];
+        if (shouldExecuteSharedTag(tag, epoch)) {
+          if (IS_DEV_MODE && (globalThis as any).__gxtDebugSync) {
+            console.log('[SYNC] executeTag formula.id=' + tag.id + ' name=' + tag._debugName);
+          }
+          executeTag(tag, false);
+        }
+      }
+    }
+    completed = true;
+  } finally {
+    if (!completed && sharedTags !== null) {
+      resubscribeUnreachedTags(sharedTags, sharedDone);
     }
     // Release MergedCell refs so the scratch doesn't retain them across ticks.
-    sharedTags.length = 0;
+    if (sharedTags !== null) sharedTags.length = 0;
+    tagsToRevalidate.clear();
+    setIsRendering(false);
   }
-  tagsToRevalidate.clear();
-  setIsRendering(false);
 }
 
 /**
@@ -177,7 +214,8 @@ function syncDomSync() {
  * never re-runs within a pass); hosts that loop must not lose them.
  *
  * The rendering flag is restored even when an opcode throws (e.g. a host
- * backtracking assertion), so the host can recover and re-throw.
+ * backtracking assertion), so the host can recover and re-throw; the formulas
+ * the aborted pass took but did not reach stay subscribed to their cells.
  *
  * Synchronous only: hosts using it compile with ASYNC_COMPILE_TRANSFORMS off.
  *
@@ -193,6 +231,8 @@ export function flushRevalidation(): boolean {
     primaryCells.sort((a, b) => a.id - b.id);
   }
   let sharedTags: MergedCell[] | null = null;
+  let sharedDone = 0;
+  let completed = false;
   const wasRendering = isRendering();
   setIsRendering(true);
   try {
@@ -209,13 +249,18 @@ export function flushRevalidation(): boolean {
     if (sharedTags !== null) {
       sortSharedTags(sharedTags);
       const epoch = nextExecutionEpoch();
-      for (const tag of sharedTags) {
+      for (; sharedDone < sharedTags.length; ) {
+        const tag = sharedTags[sharedDone++];
         if (shouldExecuteSharedTag(tag, epoch)) {
           executeTag(tag, false);
         }
       }
     }
+    completed = true;
   } finally {
+    if (!completed && sharedTags !== null) {
+      resubscribeUnreachedTags(sharedTags, sharedDone);
+    }
     setIsRendering(wasRendering);
   }
   return tagsToRevalidate.size > 0;
@@ -224,36 +269,49 @@ export function flushRevalidation(): boolean {
 /**
  * Async DOM sync — tree-shaken when ASYNC_COMPILE_TRANSFORMS is false
  * because the only call site is gated by the flag.
+ *
+ * Ends in a `finally` like `syncDomSync`, so a binding that throws does not
+ * leave its cell queued or the rendering flag set.
  */
 async function syncDomAsync() {
   let sharedTags: MergedCell[] | null = null;
+  let sharedDone = 0;
+  let completed = false;
   setIsRendering(true);
-  // See syncDomSync for rationale: parent-first ordering by tag.id.
-  const primaryCells =
-    tagsToRevalidate.size > 1
-      ? Array.from(tagsToRevalidate).sort((a, b) => a.id - b.id)
-      : tagsToRevalidate;
-  for (const cell of primaryCells) {
-    await executeTag(cell, true);
-    const subTags = relatedTags.get(cell.id);
-    if (subTags !== undefined) {
-      relatedTags.delete(cell.id);
-      if (sharedTags === null) sharedTags = [];
-      for (const tag of subTags) sharedTags.push(tag);
-      subTags.clear();
-    }
-  }
-  if (sharedTags !== null) {
-    sortSharedTags(sharedTags);
-    const epoch = nextExecutionEpoch();
-    for (const tag of sharedTags) {
-      if (shouldExecuteSharedTag(tag, epoch)) {
-        await executeTag(tag, true);
+  try {
+    // See syncDomSync for rationale: parent-first ordering by tag.id.
+    const primaryCells =
+      tagsToRevalidate.size > 1
+        ? Array.from(tagsToRevalidate).sort((a, b) => a.id - b.id)
+        : tagsToRevalidate;
+    for (const cell of primaryCells) {
+      await executeTag(cell, true);
+      const subTags = relatedTags.get(cell.id);
+      if (subTags !== undefined) {
+        relatedTags.delete(cell.id);
+        if (sharedTags === null) sharedTags = [];
+        for (const tag of subTags) sharedTags.push(tag);
+        subTags.clear();
       }
     }
+    if (sharedTags !== null) {
+      sortSharedTags(sharedTags);
+      const epoch = nextExecutionEpoch();
+      for (; sharedDone < sharedTags.length; ) {
+        const tag = sharedTags[sharedDone++];
+        if (shouldExecuteSharedTag(tag, epoch)) {
+          await executeTag(tag, true);
+        }
+      }
+    }
+    completed = true;
+  } finally {
+    if (!completed && sharedTags !== null) {
+      resubscribeUnreachedTags(sharedTags, sharedDone);
+    }
+    tagsToRevalidate.clear();
+    setIsRendering(false);
   }
-  tagsToRevalidate.clear();
-  setIsRendering(false);
 }
 
 /**

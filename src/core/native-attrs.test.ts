@@ -245,7 +245,8 @@ describe('EMBER_NATIVE attribute writes', () => {
       ['style', value, true],
       ['style', value, true],
     ]);
-    expect(fixture.container.querySelector('p')!.getAttribute('style')).toBe('width: 1px;');
+    // Written as the style attribute, as is (not re-serialized by the CSSOM).
+    expect(fixture.container.querySelector('p')!.getAttribute('style')).toBe('width: 1px');
     writes = [];
     await set(self, 's', 'height: 2px');
     expect(writes).toEqual([
@@ -258,7 +259,7 @@ describe('EMBER_NATIVE attribute writes', () => {
     registerHostHooks({ trustedAttrValue: (value) => ({ trusted: value }) });
     render(withSelf(compileNative('<p style={{{this.s}}}></p>'), { s: 'width: 1px' }));
     expect(writes).toEqual([['style', { trusted: 'width: 1px' }, true]]);
-    expect(fixture.container.querySelector('p')!.getAttribute('style')).toBe('width: 1px;');
+    expect(fixture.container.querySelector('p')!.getAttribute('style')).toBe('width: 1px');
   });
 
   test('a static style is an attribute written verbatim', () => {

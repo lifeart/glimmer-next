@@ -79,4 +79,28 @@ describe('flushRevalidation (host-driven passes)', () => {
     expect(isRendering()).toBe(false);
     d();
   });
+
+  test('a formula the aborted pass did not reach renders on its next change', () => {
+    const c = cell(0, 'c');
+    // Created first, so it runs first in the pass.
+    const thrower = formula(() => {
+      if (c.value === 1) throw new Error('boom');
+      return c.value;
+    }, 'thrower');
+    const reader = formula(() => c.value, 'reader');
+    const seen: unknown[] = [];
+    const d1 = opcodeFor(thrower, () => {});
+    const d2 = opcodeFor(reader, (v) => {
+      seen.push(v);
+    });
+    tagsToRevalidate.clear();
+    c.update(1);
+    expect(() => flushRevalidation()).toThrow('boom');
+    expect(seen).toEqual([0]);
+    c.update(2);
+    expect(flushRevalidation()).toBe(false);
+    expect(seen).toEqual([0, 2]);
+    d1();
+    d2();
+  });
 });

@@ -152,7 +152,8 @@ const $_className = 'className';
 let unstableWrapperId: number = 0;
 
 // Import and re-export $_MANAGERS from manager-integration
-import { $_MANAGERS } from './manager-integration';
+import { $_MANAGERS, type ArgLabels } from './manager-integration';
+import { recordCreatedElement } from './control-flow/branch-journal';
 import {
   $_curry,
   CURRIED_COMPONENT,
@@ -362,6 +363,18 @@ const ATTR_OVERRIDES: Record<string, Record<string, true> | undefined> = {
   BUTTON: { form: true },
 };
 
+// Ember (native and compat): the text of a bound `style` attribute —
+// Glimmer's normalizeValue (null, undefined, false, a function or a value
+// without `toString` remove the attribute; `true` is ""), except that an empty
+// string removes it too, as gxt's property path always did.
+function styleAttributeText(value: unknown): string | null {
+  if (value === null || value === undefined || value === false || value === '') return null;
+  if (value === true) return '';
+  if (typeof value === 'function') return null;
+  if (typeof (value as { toString?: unknown }).toString !== 'function') return null;
+  return String(value);
+}
+
 function prefersAttribute(element: Node, key: string): boolean {
   if (!(key in element)) return true;
   const tagName = (element as Element).tagName;
@@ -393,6 +406,14 @@ export function $prop(
   if (isEmpty(result)) {
     return;
   }
+
+  // Ember (native and compat): Glimmer's normalizeProperty maps `style` to an
+  // attribute although the element has a `style` property, so a bound style's
+  // text is set as it is (the property would re-serialize it through the
+  // CSSOM: `display:flex` → `display: flex;`). The host still normalizes it on
+  // its property side (`isProp`): the Ember native host gives Glimmer's DEV
+  // style warning there, which a static `style="…"` (an attribute) never gets.
+  const styleAttribute = (EMBER_NATIVE || WITH_EMBER_INTEGRATION) && key === 'style';
 
   // Ember (GH#19219, Glimmer's InputValueDynamicAttribute): a browser does not
   // turn `input.value = ''` into a value attribute when the input's type is set
@@ -428,6 +449,18 @@ export function $prop(
         const hook = WITH_EMBER_INTEGRATION ? hostNormalizeAttrValue : null;
         const normalized =
           hook === null ? resolvedValue : hook(key, resolvedValue, element as Element, true);
+        if (styleAttribute) {
+          const text = styleAttributeText(normalized);
+          if (written && text === prevPropValue) return;
+          written = true;
+          prevPropValue = text;
+          if (text === null) {
+            (element as HTMLElement).removeAttribute('style');
+          } else {
+            api.attr(element as HTMLElement, 'style', text);
+          }
+          return;
+        }
         const val = normalized === null ? '' : normalized;
         if (liveInputValue && written) {
           if ((element as HTMLInputElement).value === (val === undefined ? '' : String(val))) {
@@ -473,6 +506,11 @@ export function $prop(
     const hook = WITH_EMBER_INTEGRATION ? hostNormalizeAttrValue : null;
     const normalized =
       hook === null ? result : hook(key, result, element as Element, true);
+    if (styleAttribute) {
+      const text = styleAttributeText(normalized);
+      if (text !== null) api.attr(element as HTMLElement, 'style', text);
+      return;
+    }
     api.prop(element, key, normalized);
     if (emptyInputValueAttr && result === '') {
       api.attr(element as HTMLElement, 'value', '');
@@ -822,14 +860,20 @@ export function $_hasBlockParams(
   return slots[`${slotName}_`];
 }
 
+/**
+ * Applies the attributes `arr` (skipping the keys `seenKeys` already holds,
+ * and claiming the others). With `deferType`, a `type` attribute is not
+ * applied but returned, for the caller to apply last (Ember); else null.
+ */
 function addAttrs(
   api: DOMApi,
   arr: TagAttr[],
   element: HTMLElement,
   seenKeys: Set<string> | null,
   destructors: Destructors,
-  deferred: TagAttr[] | null = null,
-) {
+  deferType = false,
+): TagAttr | null {
+  let deferred: TagAttr | null = null;
   for (let i = 0; i < arr.length; i++) {
     const key = arr[i][0];
     if (seenKeys !== null) {
@@ -838,8 +882,8 @@ function addAttrs(
       }
       seenKeys.add(key);
     }
-    if (deferred !== null && key === 'type') {
-      deferred.push(arr[i]);
+    if (deferType && key === 'type') {
+      deferred = arr[i];
       continue;
     }
     if (IS_DEV_MODE) {
@@ -850,6 +894,7 @@ function addAttrs(
       $DEBUG_REACTIVE_CONTEXTS.pop();
     }
   }
+  return deferred;
 }
 
 function addProperties(
@@ -1110,12 +1155,15 @@ function _DOM(
   };
 
   // Ember (native and compat): Glimmer applies an element's `type` attribute
-  // after its other attributes and properties (a range input's `value` would
-  // otherwise be clamped to the default min/max before `min` / `max` are set).
-  // Only an `<input>`'s value depends on its type, so other elements skip the
-  // bookkeeping.
-  const deferredType: TagAttr[] | null =
-    (EMBER_NATIVE || WITH_EMBER_INTEGRATION) && resolvedTag === 'input' ? [] : null;
+  // after its other attributes and properties, on every element (at compile
+  // time without `...attributes`, in `ComponentElementOperations.flush` with
+  // them): a range input's `value` would otherwise be clamped to the default
+  // min/max before `min` / `max` are set, and the attribute order shows in the
+  // element's HTML (`<button id="action" type="button">`). Keys are claimed
+  // once (`seenKeys`, and the compiler's unique own attributes), so at most one
+  // `type` is deferred.
+  const deferType = EMBER_NATIVE || WITH_EMBER_INTEGRATION;
+  let deferredType: TagAttr | null = null;
 
   if ($_edp !== tagProps) {
     const hasSplatAttrs = typeof tagProps[3] === 'object';
@@ -1141,7 +1189,9 @@ function _DOM(
         for (let i = 0; i < plan.keys.length; i++) {
           seenKeys!.add(plan.keys[i]!);
         }
-        addAttrs(api, plan.attrs as TagAttr[], element, null, destructors, deferredType);
+        deferredType =
+          addAttrs(api, plan.attrs as TagAttr[], element, null, destructors, deferType) ??
+          deferredType;
         addProperties(
           api,
           plan.props as TagProp[],
@@ -1161,9 +1211,12 @@ function _DOM(
     }
 
     if (hasSplatAttrs === true) {
-      addAttrs(api, tagProps[3]![1], element, seenKeys, destructors, deferredType);
+      deferredType =
+        addAttrs(api, tagProps[3]![1], element, seenKeys, destructors, deferType) ??
+        deferredType;
     }
-    addAttrs(api, tagProps[1], element, seenKeys, destructors, deferredType);
+    deferredType =
+      addAttrs(api, tagProps[1], element, seenKeys, destructors, deferType) ?? deferredType;
 
     if (hasSplatAttrs === true) {
       addProperties(
@@ -1196,8 +1249,14 @@ function _DOM(
 
   mergeClassModifiers(api, element, classNameModifiers, destructors);
 
-  if (deferredType !== null && deferredType.length !== 0) {
-    addAttrs(api, deferredType, element, null, destructors);
+  if (deferredType !== null) {
+    if (IS_DEV_MODE) {
+      $DEBUG_REACTIVE_CONTEXTS.push('[type]');
+    }
+    $attr(api, element, 'type', deferredType[1], destructors);
+    if (IS_DEV_MODE) {
+      $DEBUG_REACTIVE_CONTEXTS.pop();
+    }
   }
 
   // Ember (native and compat): Glimmer installs an element's modifiers after
@@ -1243,6 +1302,11 @@ function _DOM(
 
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.pop();
+  }
+  if (WITH_EMBER_INTEGRATION && !EMBER_NATIVE) {
+    // Ember compat: a branch that throws while it renders keeps the elements
+    // it built before the error (control-flow/branch-journal.ts).
+    recordCreatedElement(element);
   }
   return element;
 }
@@ -1625,6 +1689,7 @@ export const $_maybeHelper = (
   _hashOrCtx?: Record<string, unknown> | any, // Hash object for known bindings, context for unknown, or undefined
   _maybeCtx?: any, // Optional 4th arg: context when 3rd arg is hash for unknown bindings
   _site?: number, // EMBER_NATIVE: per-template call-site index (host per-call-site state)
+  _labels?: ArgLabels, // EMBER_ARG_LABELS: the source paths of the arguments
 ) => {
   // Determine context and hash based on arguments:
   // - 4 args: _hashOrCtx is hash, _maybeCtx is context (unknown binding with named args)
@@ -1658,7 +1723,7 @@ export const $_maybeHelper = (
       return value;
     }
     if ($_MANAGERS.helper.canHandle(value)) {
-      return $_MANAGERS.helper.handle(value, args, _hash, _ctx, _site);
+      return $_MANAGERS.helper.handle(value, args, _hash, _ctx, _site, _labels);
     }
   }
   if (typeof value === 'function') {
@@ -2651,10 +2716,12 @@ export const $_maybeModifier = (
   // EMBER_NATIVE: the enclosing render context (owner / interactivity of the
   // render tree). Never passed by compat / standalone emission.
   ctx?: unknown,
+  // EMBER_ARG_LABELS: the source paths of the arguments (compat and native).
+  labels?: ArgLabels,
 ) => {
   if (WITH_EMBER_INTEGRATION) {
     if ($_MANAGERS.modifier.canHandle(modifier)) {
-      return $_MANAGERS.modifier.handle(modifier, element, props, hashArgs, ctx);
+      return $_MANAGERS.modifier.handle(modifier, element, props, hashArgs, ctx, labels);
     }
   }
 

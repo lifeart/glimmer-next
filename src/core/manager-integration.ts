@@ -14,6 +14,18 @@
 import type { Component, ComponentReturnType } from './component-class';
 
 /**
+ * The source text of a helper / modifier call site's path arguments (the
+ * EMBER_ARG_LABELS compile flag): `positional[i]` for the i-th argument
+ * (`null` when it is not a path), `named[key]` for a named one. A part
+ * without labels is absent. A host gives the argument references these
+ * debug labels, as Glimmer labels a path reference with its path.
+ */
+export interface ArgLabels {
+  readonly positional?: readonly (string | null)[];
+  readonly named?: Readonly<Record<string, string>>;
+}
+
+/**
  * Extensibility point for custom managers.
  *
  * External code can override these methods to intercept component, helper,
@@ -72,6 +84,8 @@ export const $_MANAGERS = {
       _hashArgs: () => Record<string, unknown>,
       // EMBER_NATIVE emission only: the enclosing render context.
       _ctx?: unknown,
+      // EMBER_ARG_LABELS emission only: the source paths of the arguments.
+      _labels?: ArgLabels,
     ): unknown {
       return undefined;
     },
@@ -96,6 +110,8 @@ export const $_MANAGERS = {
       // call-site index (`$_maybeHelper(ref, args, named, ctx, site)`).
       _ctx?: unknown,
       _site?: number,
+      // EMBER_ARG_LABELS emission only: the source paths of the arguments.
+      _labels?: ArgLabels,
     ): unknown {
       return undefined;
     },
