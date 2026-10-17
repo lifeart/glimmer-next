@@ -152,7 +152,7 @@ const $_className = 'className';
 let unstableWrapperId: number = 0;
 
 // Import and re-export $_MANAGERS from manager-integration
-import { $_MANAGERS } from './manager-integration';
+import { $_MANAGERS, type ArgLabels } from './manager-integration';
 import {
   $_curry,
   CURRIED_COMPONENT,
@@ -1683,6 +1683,7 @@ export const $_maybeHelper = (
   _hashOrCtx?: Record<string, unknown> | any, // Hash object for known bindings, context for unknown, or undefined
   _maybeCtx?: any, // Optional 4th arg: context when 3rd arg is hash for unknown bindings
   _site?: number, // EMBER_NATIVE: per-template call-site index (host per-call-site state)
+  _labels?: ArgLabels, // EMBER_ARG_LABELS: the source paths of the arguments
 ) => {
   // Determine context and hash based on arguments:
   // - 4 args: _hashOrCtx is hash, _maybeCtx is context (unknown binding with named args)
@@ -1716,7 +1717,7 @@ export const $_maybeHelper = (
       return value;
     }
     if ($_MANAGERS.helper.canHandle(value)) {
-      return $_MANAGERS.helper.handle(value, args, _hash, _ctx, _site);
+      return $_MANAGERS.helper.handle(value, args, _hash, _ctx, _site, _labels);
     }
   }
   if (typeof value === 'function') {
@@ -2709,10 +2710,12 @@ export const $_maybeModifier = (
   // EMBER_NATIVE: the enclosing render context (owner / interactivity of the
   // render tree). Never passed by compat / standalone emission.
   ctx?: unknown,
+  // EMBER_ARG_LABELS: the source paths of the arguments (compat and native).
+  labels?: ArgLabels,
 ) => {
   if (WITH_EMBER_INTEGRATION) {
     if ($_MANAGERS.modifier.canHandle(modifier)) {
-      return $_MANAGERS.modifier.handle(modifier, element, props, hashArgs, ctx);
+      return $_MANAGERS.modifier.handle(modifier, element, props, hashArgs, ctx, labels);
     }
   }
 

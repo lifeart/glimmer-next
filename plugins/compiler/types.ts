@@ -160,6 +160,16 @@ export interface CompilerFlags {
    * standalone output byte-identical. See plugins/flags.ts.
    */
   readonly EMBER_WHITESPACE?: boolean;
+  /**
+   * Ember argument labels (a debug build's opt-in). When true, an Ember
+   * helper / modifier call site (`$_maybeHelper` / `$_maybeModifier`) whose
+   * arguments include a path passes the source text of those paths as a
+   * trailing labels argument (`{ positional: [...], named: {...} }`), so the
+   * host can give each argument reference Glimmer's debug label (`this.foo`).
+   * Off (default) keeps compat, native and standalone output byte-identical.
+   * See plugins/flags.ts.
+   */
+  readonly EMBER_ARG_LABELS?: boolean;
 }
 
 /**
@@ -193,6 +203,7 @@ export const DEFAULT_FLAGS: CompilerFlags = Object.freeze({
   EMBER_SELF: false, // `this` path heads read `$s = $_self(this)` (host opt-in)
   EMBER_LOOSE_COMPONENTS: false, // loose templates resolve free names by name (host opt-in)
   EMBER_WHITESPACE: false, // Glimmer's parse and whitespace text nodes (host opt-in)
+  EMBER_ARG_LABELS: false, // source paths of helper / modifier arguments (host opt-in, debug)
 });
 
 /**

@@ -121,6 +121,7 @@ export {
 export {
   registerHostManagers,
   type HostManagers,
+  type ArgLabels,
 } from '@/core/manager-integration';
 export { setIsRendering, isRendering } from '@/core/reactive';
 export { flushCellOpcodes } from '@/core/reactive';

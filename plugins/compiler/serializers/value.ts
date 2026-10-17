@@ -276,6 +276,51 @@ function buildValueNoGetter(
   return buildValue(ctx, value, ctxName);
 }
 
+// The source text of a path argument as the template wrote it (`this.foo`,
+// `@bar`, `item.name`): no whitespace, quotes, parentheses or braces.
+const ARG_LABEL_TEXT = /^[@A-Za-z_$][^\s'"(){}=]*$/;
+
+function argLabel(ctx: CompilerContext, value: SerializedValue): string | null {
+  if (value.kind !== 'path' || !value.sourceRange) return null;
+  const text = ctx.source.slice(value.sourceRange.start, value.sourceRange.end);
+  return ARG_LABEL_TEXT.test(text) ? text : null;
+}
+
+/**
+ * EMBER_ARG_LABELS: the labels argument of an Ember helper / modifier call
+ * site — `{ positional: [...], named: {...} }` with the source text of each
+ * path argument (`null` for a positional argument that is not a path; a named
+ * argument that is not a path is left out, and so is a part without labels).
+ * `null` when the flag is off, outside the Ember dialect
+ * (WITH_EMBER_INTEGRATION), or when no argument is a path: the call keeps its
+ * shape. The host gives the argument references these debug labels, as
+ * Glimmer labels a path reference with its path.
+ */
+export function buildArgLabels(
+  ctx: CompilerContext,
+  positional: readonly SerializedValue[],
+  named: ReadonlyMap<string, SerializedValue>
+): JSExpression | null {
+  if (ctx.flags.EMBER_ARG_LABELS !== true || ctx.flags.WITH_EMBER_INTEGRATION !== true) return null;
+  const positionalLabels = positional.map((arg) => argLabel(ctx, arg));
+  const namedLabels = [];
+  for (const [key, val] of named) {
+    const label = argLabel(ctx, val);
+    if (label !== null) namedLabels.push(B.prop(key, B.string(label)));
+  }
+  const parts = [];
+  if (positionalLabels.some((label) => label !== null)) {
+    parts.push(
+      B.prop(
+        'positional',
+        B.array(positionalLabels.map((label) => (label === null ? B.nil() : B.string(label))))
+      )
+    );
+  }
+  if (namedLabels.length > 0) parts.push(B.prop('named', B.object(namedLabels)));
+  return parts.length > 0 ? B.object(parts) : null;
+}
+
 /**
  * EMBER_NATIVE argument convention (Ember native layer, G4/G9): every argument
  * of a helper / modifier / curry call site is either a primitive LITERAL or a
@@ -1131,14 +1176,34 @@ function buildMaybeHelper(
   // helper per call site per block instance, destroyed with the block). Like
   // `$_uid(ctx, N)`, a per-compilation index is enough — the ctx key keeps
   // templates / instances apart.
+  // EMBER_ARG_LABELS: the source paths of the arguments, after the context
+  // and the call-site index (`undefined` where the call has none).
+  const labels = buildArgLabels(ctx, positional, named);
   if (native) {
     const namedObj = namedProps.length > 0 ? B.object(namedProps) : B.emptyObject();
-    return B.call(SYMBOLS.MAYBE_HELPER, [
+    const nativeArgs: JSExpression[] = [
       helperRef,
       B.array(posArgs),
       namedObj,
       B.id(ctxName),
       B.num(ctx.helperSiteCounter++),
+    ];
+    if (labels !== null) nativeArgs.push(labels);
+    return B.call(SYMBOLS.MAYBE_HELPER, nativeArgs, sourceRange);
+  }
+
+  if (labels !== null) {
+    // One shape for known and unknown helpers: `(ref, [args], {named}, ctx,
+    // undefined, labels)`. A known binding passes no context, as without
+    // labels; the host reads the hash from the 3rd argument when there are 4
+    // or more.
+    return B.call(SYMBOLS.MAYBE_HELPER, [
+      helperRef,
+      B.array(posArgs),
+      namedProps.length > 0 ? B.object(namedProps) : B.emptyObject(),
+      resolvedRef ? B.undef() : B.id(ctxName),
+      B.undef(),
+      labels,
     ], sourceRange);
   }
 

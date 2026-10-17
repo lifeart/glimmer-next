@@ -132,6 +132,18 @@ export type Flags = {
   // Glimmer renders "a⏎b". Whitespace between named blocks is still ignored,
   // as in Glimmer. Standalone and compat output are byte-identical when off.
   EMBER_WHITESPACE: boolean;
+  // Ember argument labels (a host's debug builds). Compile-time only,
+  // emission-affecting, default off: an Ember helper or modifier call site
+  // (`$_maybeHelper` / `$_maybeModifier`) whose arguments include a path passes
+  // a trailing labels argument with the source text of each path argument —
+  // `{ positional: [null, "this.foo"], named: { once: "this.once" } }` (`null`
+  // for an argument that is not a path; a part without labels is left out) —
+  // after the call's render context and call-site index (`undefined` where
+  // the call has none). The runtime hands the labels to the host helper /
+  // modifier manager, so its argument references carry Glimmer's debug labels
+  // (`{{on}}` / `{{fn}}` assertion messages: "While rendering: this.foo").
+  // Standalone, compat and native output are byte-identical when off.
+  EMBER_ARG_LABELS: boolean;
 };
 
 export function defaultFlags() {
@@ -158,5 +170,6 @@ export function defaultFlags() {
     EMBER_SELF: false,
     EMBER_LOOSE_COMPONENTS: false,
     EMBER_WHITESPACE: false,
+    EMBER_ARG_LABELS: false,
   } as Flags;
 }

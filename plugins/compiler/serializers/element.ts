@@ -19,7 +19,7 @@ import type {
 } from '../types';
 import { isSerializedValue, isRuntimeTag } from '../types';
 import { SYMBOLS, EVENT_TYPE, INTERNAL_HELPERS } from './symbols';
-import { buildValue, buildPathExpression, buildNativeArg, selfHeadedName, emittedRootName, emittedPathName } from './value';
+import { buildValue, buildPathExpression, buildNativeArg, buildArgLabels, selfHeadedName, emittedRootName, emittedPathName } from './value';
 import { B, serializeJS, type JSExpression, type JSProperty } from '../builder';
 import { escapeBindingName } from '../utils/js-utils';
 
@@ -529,17 +529,17 @@ export function buildEventHandlerExpr(
         for (const [key, val] of hv.named) {
           nativeNamed.push(B.prop(key, buildNativeArg(ctx, val, ctxName), false, val.sourceRange));
         }
-        const nativeCall = B.call(
-          SYMBOLS.MAYBE_MODIFIER,
-          [
-            modExpr,
-            B.id('$n'),
-            B.array(nativeExtra),
-            nativeNamed.length > 0 ? B.object(nativeNamed) : B.emptyObject(),
-            B.id(ctxName),
-          ],
-          hv.sourceRange,
-        );
+        const nativeArgs: JSExpression[] = [
+          modExpr,
+          B.id('$n'),
+          B.array(nativeExtra),
+          nativeNamed.length > 0 ? B.object(nativeNamed) : B.emptyObject(),
+          B.id(ctxName),
+        ];
+        // EMBER_ARG_LABELS: the source paths of the invocation arguments.
+        const nativeLabels = buildArgLabels(ctx, extraArgs, hv.named);
+        if (nativeLabels !== null) nativeArgs.push(nativeLabels);
+        const nativeCall = B.call(SYMBOLS.MAYBE_MODIFIER, nativeArgs, hv.sourceRange);
         return B.arrow(['$n'], nativeCall, hv.sourceRange);
       }
       const extraExprs = extraArgs.map(a =>
@@ -560,11 +560,12 @@ export function buildEventHandlerExpr(
         `() => (${serializeJS(hashBody, { report: ctx.emissionReport })})`,
         hv.sourceRange
       );
-      const callExpr = B.call(
-        SYMBOLS.MAYBE_MODIFIER,
-        [modExpr, B.id('$n'), B.array(extraExprs), hashExpr],
-        hv.sourceRange,
-      );
+      const dynamicArgs: JSExpression[] = [modExpr, B.id('$n'), B.array(extraExprs), hashExpr];
+      // EMBER_ARG_LABELS: the source paths of the invocation arguments, after
+      // the render context compat does not pass.
+      const dynamicLabels = buildArgLabels(ctx, extraArgs, hv.named);
+      if (dynamicLabels !== null) dynamicArgs.push(B.undef(), dynamicLabels);
+      const callExpr = B.call(SYMBOLS.MAYBE_MODIFIER, dynamicArgs, hv.sourceRange);
       handlerExpr = B.arrow(['$n'], callExpr, hv.sourceRange);
     } else if (handler.kind === 'helper' && eventName === EVENT_TYPE.ON_CREATED) {
       // Modifier handlers are stored as helper() values (kind === 'helper')
@@ -722,6 +723,13 @@ function buildModifierExpr(
       // The enclosing render context: the host reads the owner and the
       // interactivity of the render tree from it.
       callArgs.push(B.id(ctxName));
+    }
+    // EMBER_ARG_LABELS: the source paths of the arguments, after the render
+    // context (`undefined` in compat, which passes none).
+    const labels = buildArgLabels(ctx, mod.positional, mod.named);
+    if (labels !== null) {
+      if (!native) callArgs.push(B.undef());
+      callArgs.push(labels);
     }
     const callExpr = B.call(SYMBOLS.MAYBE_MODIFIER, callArgs, mod.sourceRange);
     return B.arrow(['$n'], callExpr, mod.sourceRange);
