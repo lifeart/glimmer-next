@@ -618,6 +618,29 @@ export class BasicListComponent<T extends { id: number }> {
     }
   }
   /**
+   * Keyed REUSE of the row of `key` for `item`. If the source object bound to
+   * the key changed by reference (a new object with the same key, or the keyed
+   * property was mutated in place, staling the key, then a ref-swap reused the
+   * row by that stale key), re-bind the row's block-param to the NEW object IN
+   * PLACE — preserving DOM identity (no recreate). The host hook swaps the
+   * body-proxy's holder target + re-fires the body; a no-op when the host
+   * hasn't installed it.
+   */
+  protected rebindReusedRow(key: string, item: T): void {
+    const boundItemMap = this.boundItemMap;
+    if (boundItemMap === null) return;
+    const boundItem = boundItemMap.get(key);
+    if (boundItem !== item) {
+      const rebind =
+        HOST_HOOKS.rebindEachItem ??
+        (globalThis as any).__gxtRebindEachItem;
+      if (typeof rebind === 'function') {
+        rebind(boundItem, item);
+      }
+      boundItemMap.set(key, item);
+    }
+  }
+  /**
    * Fast-path for updates that preserve all existing items and only append
    * new ones at the end.
    *
@@ -1454,6 +1477,11 @@ export class BasicListComponent<T extends { id: number }> {
         // Append target: bottomMarker (rows go just before it, in order).
         const appendTarget = this.getTargetNode(0);
         setParentContext(self);
+        // The prefix rows are kept by key; one whose object was replaced (same
+        // key, new object) is re-bound to it, as in the general diff below.
+        for (let index = 0; index < amountOfExistingKeys; index++) {
+          this.rebindReusedRow(itemKeys[index], items[index]);
+        }
         for (let index = amountOfExistingKeys; index < items.length; index++) {
           const item = items[index];
           const key = itemKeys[index];
@@ -1608,24 +1636,7 @@ export class BasicListComponent<T extends { id: number }> {
         if (oldIndex !== index) {
           indexMap.set(key, index);
         }
-        // Keyed REUSE. If the source object bound to this key changed by
-        // reference (e.g. the keyed property was mutated in place, staling the
-        // key, then a ref-swap reused the row by that stale key), re-bind the
-        // row's block-param to the NEW object IN PLACE — preserving DOM identity
-        // (no recreate). The host hook swaps the body-proxy's holder target +
-        // re-fires the body; a no-op when the host hasn't installed it.
-        if (this.boundItemMap !== null) {
-          const boundItem = this.boundItemMap.get(key);
-          if (boundItem !== item) {
-            const rebind =
-              HOST_HOOKS.rebindEachItem ??
-              (globalThis as any).__gxtRebindEachItem;
-            if (typeof rebind === 'function') {
-              rebind(boundItem, item);
-            }
-            this.boundItemMap.set(key, item);
-          }
-        }
+        this.rebindReusedRow(key, item);
       }
     }
 
