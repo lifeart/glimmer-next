@@ -11,6 +11,7 @@
  */
 import {
   SYMBOLS,
+  COMPAT_SYMBOLS,
   LOOSE_BUILTINS_SYMBOL,
   LOOSE_SYMBOLS,
   NATIVE_SYMBOLS,
@@ -137,14 +138,16 @@ export function buildPrecompileTemplateMaker(
 }
 
 /**
- * The Ember-native-layer runtime symbols a module compiled under `flags` may
- * reference, beyond the always-on barrel (`Object.values(SYMBOLS)`): the AOT
- * assembler imports exactly these from the main entry; the runtime compiler
- * binds them. Empty with every Ember-native flag off.
+ * The Ember-layer runtime symbols (native, or compat's `COMPAT_SYMBOLS`) a
+ * module compiled under `flags` may reference, beyond the always-on barrel
+ * (`Object.values(SYMBOLS)`): the AOT assembler imports exactly these from the
+ * main entry; the runtime compiler binds them. Empty with every Ember flag
+ * off.
  */
 export function nativeTemplateSymbols(flags: Partial<Flags>): string[] {
   const symbols: string[] = [];
   if (flags.EMBER_NATIVE === true) symbols.push(...NATIVE_SYMBOLS);
+  else if (flags.WITH_EMBER_INTEGRATION === true) symbols.push(...COMPAT_SYMBOLS);
   if (flags.EMBER_OUTLET === true) symbols.push(...OUTLET_SYMBOLS);
   if (flags.EMBER_PROPERTY_TAGS === true) symbols.push(...PROPERTY_TAG_SYMBOLS);
   if (flags.EMBER_SELF === true) symbols.push(...SELF_SYMBOLS);

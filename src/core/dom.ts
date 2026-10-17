@@ -36,7 +36,7 @@ import {
   materializeAbsentPathCell,
   registerLeafOwnersForFormula,
 } from '@/core/reactive';
-import { opcodeFor, opcodeForValue, checkOpcode } from '@/core/vm';
+import { opcodeFor, opcodeForValue, opcodeForCreatedContent, checkOpcode } from '@/core/vm';
 import {
   SyncListComponent,
   AsyncListComponent,
@@ -402,10 +402,20 @@ export function $prop(
     (EMBER_NATIVE || WITH_EMBER_INTEGRATION) &&
     key === 'value' &&
     (element as Element).tagName === 'INPUT';
+  // Ember (Glimmer's InputValueDynamicAttribute): an update of the `value` of
+  // an `<input>` / `<textarea>` compares with the element's CURRENT value —
+  // the user may have typed since the last write — and writes when they
+  // differ, even when the binding's value did not change. Every other
+  // property compares with the value written last (DefaultDynamicProperty).
+  const liveInputValue =
+    (EMBER_NATIVE || WITH_EMBER_INTEGRATION) &&
+    key === 'value' &&
+    ((element as Element).tagName === 'INPUT' || (element as Element).tagName === 'TEXTAREA');
 
   if (isReactive) {
     let prevPropValue: any = undefined;
     let firstWrite = emptyInputValueAttr;
+    let written = false;
     destructors.push(
       opcodeFor(result as AnyCell, (resolvedValue) => {
         // Host normalize seam, prop side (isProp=true). Unregistered =>
@@ -419,9 +429,15 @@ export function $prop(
         const normalized =
           hook === null ? resolvedValue : hook(key, resolvedValue, element as Element, true);
         const val = normalized === null ? '' : normalized;
-        if (val === prevPropValue) {
+        if (liveInputValue && written) {
+          if ((element as HTMLInputElement).value === (val === undefined ? '' : String(val))) {
+            prevPropValue = val;
+            return;
+          }
+        } else if (val === prevPropValue) {
           return;
         }
+        written = true;
         // When a reactive `style` prop binding transitions to empty, setting
         // `element.style = ''` leaves a stale `style=""` attribute on the
         // in-place element. Ember removes the attribute entirely for empty
@@ -701,15 +717,17 @@ export function $ev(
   destructors: DestructorFn[],
 ) {
   if (eventName === EVENT_TYPE.TEXT_CONTENT) {
-    const result = $_TO_VALUE(fn);
+    const resolvedHere = isFn(fn);
+    const result = resolvedHere ? resolveRenderable(fn as Function) : fn;
     if (isEmpty(result)) {
       return;
     }
     if (isPrimitive(result)) {
       api.textContent(element, result as string);
     } else {
+      const bindText = resolvedHere ? opcodeForCreatedContent : opcodeFor;
       destructors.push(
-        opcodeFor(result as AnyCell, (value) => {
+        bindText(result as AnyCell, (value) => {
           api.textContent(element, String(value ?? ''));
           // Re-register leaf-object owners on every opcode tick.
           // `resolveRenderable` registered owners on first render, but when a
@@ -1005,6 +1023,26 @@ function reactiveTagElement(
   return carrier;
 }
 
+// An element's events: the `...attributes` ones (forwarded modifiers and
+// listeners) first, then its own, in source order (`$ev`: listeners,
+// modifiers, text content).
+function applyElementEvents(
+  api: DOMApi,
+  element: HTMLElement,
+  tagProps: Props,
+  destructors: Destructors,
+): void {
+  const splat = tagProps[3];
+  if (typeof splat === 'object') {
+    for (let i = 0; i < splat[2].length; i++) {
+      $ev(api, element, splat[2][i][0], splat[2][i][1], destructors);
+    }
+  }
+  for (let i = 0; i < tagProps[2].length; i++) {
+    $ev(api, element, tagProps[2][i][0], tagProps[2][i][1], destructors);
+  }
+}
+
 function _DOM(
   tag: string | (() => string),
   tagProps: Props,
@@ -1116,20 +1154,10 @@ function _DOM(
       }
     }
 
-    if (hasSplatAttrs === true) {
-      for (let i = 0; i < tagProps[3]![2].length; i++) {
-        $ev(
-          api,
-          element,
-          tagProps[3]![2][i][0],
-          tagProps[3]![2][i][1],
-          destructors,
-        );
-      }
-    }
-
-    for (let i = 0; i < tagProps[2].length; i++) {
-      $ev(api, element, tagProps[2][i][0], tagProps[2][i][1], destructors);
+    // Standalone gxt runs the element's events (its modifiers among them)
+    // before its attributes; Ember runs them after (below).
+    if (!emberSplat) {
+      applyElementEvents(api, element, tagProps, destructors);
     }
 
     if (hasSplatAttrs === true) {
@@ -1170,6 +1198,14 @@ function _DOM(
 
   if (deferredType !== null && deferredType.length !== 0) {
     addAttrs(api, deferredType, element, null, destructors);
+  }
+
+  // Ember (native and compat): Glimmer installs an element's modifiers after
+  // its attributes, properties and classes are set (`type` included), so a
+  // modifier sees the element the template describes and what it writes to an
+  // attribute stays.
+  if ((EMBER_NATIVE || WITH_EMBER_INTEGRATION) && $_edp !== tagProps) {
+    applyElementEvents(api, element, tagProps, destructors);
   }
 
   if (SUPPORT_SHADOW_DOM) {
@@ -2492,6 +2528,10 @@ export function $_dc(
   // the resolved component (and re-applied across swaps, since `args` is reused
   // by the swap branch below). 3-arg call sites are unchanged.
   fw?: FwType,
+  // Ember (WITH_EMBER_INTEGRATION emission): the invocation's tag path as
+  // written (`this.HelloWorld`, `@Greeting`), for the host's debug tooling;
+  // the Ember compat `$_dc` reads it. Not used here.
+  _label?: string,
 ) {
   if (fw != null && args !== null && typeof args === 'object') {
     mergeForwardedProps(args, fw);

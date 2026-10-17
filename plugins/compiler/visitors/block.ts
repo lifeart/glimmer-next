@@ -95,15 +95,15 @@ function convertComponentBlock(
   // In compat mode, convert hyphenated block names to PascalCase so the
   // serializer recognizes them as component-like tags (via isLikelyComponent).
   // E.g., {{#foo-bar}} → tag 'FooBar', matching how inline curlies work.
-  // Also register the PascalCase tag as a temporary binding so the serializer's
-  // isComponentTag() recognizes it and uses $_c (component call) with proper slots
-  // instead of $_tag (element call) with flat children.
+  // The node is marked as a component invoked by name (`compatComponent`), so
+  // the serializer emits `$_c('FooBar', …)` with its block as a slot (block
+  // params bound) at any depth. A scope binding would reach codegen only from
+  // the root scope — a curly block inside an element or another block became
+  // a `$_tag('FooBar', …)` element whose block params were dropped — and would
+  // turn every `<FooBar>` element of the template into a component.
   const compatCurly = !byName && ctx.flags.IS_GLIMMER_COMPAT_MODE && rawTag.includes('-');
   const tag = compatCurly ? toPascalCase(rawTag) : rawTag;
-  const needsTagBinding = compatCurly && !ctx.scopeTracker.hasBinding(tag);
-  if (needsTagBinding) {
-    ctx.scopeTracker.addBinding(tag, { kind: 'compat-component', name: tag });
-  }
+  const compatComponent = compatCurly && !ctx.scopeTracker.hasBinding(tag);
 
   // Convert hash pairs to @-prefixed attribute tuples
   const attributes: AttributeTuple[] = node.hash.pairs.map((pair) => {
@@ -226,6 +226,7 @@ function convertComponentBlock(
     sourceRange: range,
     tagRange,
     ...(byName ? { byName: true } : {}),
+    ...(compatComponent ? { compatComponent: true } : {}),
   };
 }
 
@@ -420,9 +421,14 @@ export function visitBlock(
     ctx.scopeTracker.exitScope();
   }
 
-  // Empty block - skip (unless there's an inverse/else branch)
+  // Empty block - skip (unless there's an inverse/else branch). Ember: Glimmer
+  // evaluates a conditional's condition and an iteration's collection even when
+  // the block renders nothing, so an empty `{{#if (foo)}}{{/if}}` still calls
+  // `foo` (and asserts that it is a helper); such a block is kept.
   if (!childElements.length && !inverseElements?.length) {
-    return null;
+    if (!(ctx.flags.WITH_EMBER_INTEGRATION && evaluatesCallParam(name, node))) {
+      return null;
+    }
   }
 
   // Extract key and sync options
@@ -487,6 +493,19 @@ export function visitBlock(
         range
       );
   }
+}
+
+// The blocks whose first param Glimmer evaluates to render them: a
+// conditional's condition, an iteration's collection.
+const EVALUATED_PARAM_BLOCKS = new Set(['if', 'unless', 'each', 'each-in']);
+
+/**
+ * Whether rendering the block `name` evaluates a param that calls something
+ * (a sub-expression: a helper call), which an empty block must still do.
+ */
+function evaluatesCallParam(name: string, node: ASTv1.BlockStatement): boolean {
+  if (!EVALUATED_PARAM_BLOCKS.has(name)) return false;
+  return node.params.length > 0 && node.params[0]!.type === 'SubExpression';
 }
 
 /**

@@ -22,13 +22,13 @@ import {
   isEmpty,
   isTagLike,
 } from './shared';
-import { opcodeFor } from './vm';
+import { opcodeFor, opcodeForCreatedContent } from './vm';
 import type { MergedCell } from './reactive';
 import { registerLeafOwnersForFormula } from './reactive';
 
 // Import resolveRenderable from root.ts
 import { resolveRenderable } from './root';
-import { nativeContentBinding } from './native-content';
+import { contentBinding } from './native-content';
 
 // Track which components have been rendered (dev-only: for HMR relocate)
 let RENDERED_COMPONENTS!: WeakSet<object>;
@@ -101,7 +101,10 @@ export function renderElement(
   placeholder: Comment | Node | null = null,
   skipRegistration = false,
 ): void {
-  if (isFn(el)) {
+  // A binding `resolveRenderable` creates here is bound with the value it read
+  // (`opcodeForCreatedContent`); a tag handed in is evaluated by its opcode.
+  const resolvedHere = isFn(el);
+  if (resolvedHere) {
     // @ts-expect-error
     el = resolveRenderable(el);
   }
@@ -193,7 +196,8 @@ export function renderElement(
       for (let i = 0; i < len; i++) {
         let node: unknown = renderedNodes[i];
         // Resolve renderable if it's a function
-        if (isFn(node)) {
+        const nodeResolvedHere = isFn(node);
+        if (nodeResolvedHere) {
           node = resolveRenderable(node as () => unknown);
         }
         if (isEmpty(node) || node === '') {
@@ -222,9 +226,10 @@ export function renderElement(
           const textNode = api.text('');
           renderedNodes[i] = textNode;
           api.insert(target, textNode, placeholder);
-          // EMBER_NATIVE dynamic content (G15): the value may be / become a
-          // node, trusted HTML or a component (native-content.ts).
-          const nativeContent = nativeContentBinding();
+          // Ember dynamic content (G15; the native runtime's binding or a
+          // compat host's): the value may be / become a node, trusted HTML or
+          // a component (native-content.ts).
+          const nativeContent = contentBinding();
           if (nativeContent !== null) {
             registerDestructor(
               el as ComponentLike,
@@ -232,9 +237,10 @@ export function renderElement(
             );
             continue;
           }
+          const bindText = nodeResolvedHere ? opcodeForCreatedContent : opcodeFor;
           registerDestructor(
             el as ComponentLike,
-            opcodeFor(node as MergedCell, (value) => {
+            bindText(node as MergedCell, (value) => {
               api.textContent(textNode, String(value ?? ''));
               // Re-register leaf-object owners each tick so a parent ref-swap of
               // the held object re-subscribes the reverse-lookup (see dom.ts $ev
@@ -268,8 +274,8 @@ export function renderElement(
       ctx[RENDERED_NODES_PROPERTY].push(node);
     }
     api.insert(target, node, placeholder);
-    // EMBER_NATIVE dynamic content (G15, native-content.ts).
-    const nativeContent = nativeContentBinding();
+    // Ember dynamic content (G15, native-content.ts `contentBinding`).
+    const nativeContent = contentBinding();
     if (nativeContent !== null) {
       registerDestructor(
         ctx,
@@ -277,9 +283,10 @@ export function renderElement(
       );
       return;
     }
+    const bindText = resolvedHere ? opcodeForCreatedContent : opcodeFor;
     registerDestructor(
       ctx,
-      opcodeFor(el, (value) => {
+      bindText(el, (value) => {
         api.textContent(node, String(value ?? ''));
         // Fine-grained GH#14332: re-register leaf-object owners each tick so a
         // parent ref-swap of the held object re-subscribes the reverse-lookup

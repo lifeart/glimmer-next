@@ -44,12 +44,21 @@ import { compile as compilerCompile, type CompileOptions, type CompileResult, ty
 import { SYMBOLS, CONSTANTS, EVENT_TYPE } from './symbols';
 import { type Flags, defaultFlags } from './flags';
 import { buildTemplateTagFunction, templateScopeNames } from './template-wrapper';
+import { escapeBindingName } from './compiler/utils/js-utils';
 import { cId } from '../src/core/tree';
 import { COMPONENT_ID_PROPERTY } from '../src/core/types';
 
 // Re-export types
 export type { CompileOptions, CompileResult, AstTransform, Flags };
 export { SYMBOLS, CONSTANTS, EVENT_TYPE };
+/**
+ * The JS identifier a template binding is declared and referenced under in
+ * compiled code: the name itself when it is a plain JS identifier, else an
+ * escaped one (`some-helper` → `__bp_some$2d$helper`, `debugger` →
+ * `__bp_debugger`). A host that declares the caller-provided bindings of a
+ * compiled template itself (its scope values) declares each under this name.
+ */
+export { escapeBindingName };
 
 // Import GXT runtime primitives from dom.ts
 import {
@@ -115,6 +124,7 @@ import {
   $__or,
   $__and,
   $__cached,
+  $__ref,
   $__cellFor,
   $_qStr,
   $_uid,
@@ -164,6 +174,7 @@ export const GXT_RUNTIME_SYMBOLS = {
   $__or,
   $__and,
   $__cached,
+  $__ref,
   $__cellFor,
   $_qStr,
   $_uid,
@@ -348,9 +359,11 @@ export function compileTemplate(
   let templateFn: RuntimeCompileResult['templateFn'];
 
   try {
-    // Build scope for the function
+    // Build scope for the function. A scope value is a parameter named as the
+    // compiled code references it (`escapeBindingName`: a name that is not a
+    // plain JS identifier, `some-helper` / `debugger`, is escaped).
     const scopeVars = options.scopeValues || {};
-    const scopeNames = Object.keys(scopeVars);
+    const scopeNames = Object.keys(scopeVars).map(escapeBindingName);
     const scopeValuesList = Object.values(scopeVars);
 
     // Validate scope names to prevent code injection via new Function()

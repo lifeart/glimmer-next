@@ -210,8 +210,7 @@ export type BindingKind =
   | 'block-param'  // Block parameter (e.g., |item| in {{#each}})
   | 'let-binding'  // Let block binding
   | 'arg'          // Component argument (@arg)
-  | 'this'         // this context
-  | 'compat-component';  // Synthetic binding for compat-mode curly component blocks
+  | 'this';        // this context
 
 /**
  * Information about a binding in a scope.
@@ -409,6 +408,24 @@ export interface HBSNode {
    * `$_MANAGERS.component`), not a lexical binding or an HTML element.
    */
   readonly byName?: boolean;
+  /**
+   * Glimmer compat mode: a curly component block (`{{#foo-bar}}…{{/foo-bar}}`,
+   * tag `FooBar`), a component invoked by its registry name
+   * (`$_c('FooBar', …)`) with its block as a slot, wherever it is in the
+   * template.
+   */
+  readonly compatComponent?: boolean;
+  /**
+   * `{{component this.x}}` lowered to a dynamic component element (`tag`
+   * `this.x`): not an angle-bracket invocation, so `$_dc` gets no tag-path
+   * debug label (its node is named by the definition).
+   */
+  readonly componentKeyword?: boolean;
+  /**
+   * Glimmer compat mode: a lowercase dashed source tag (`<x-foo>`), a custom
+   * element, never a component invocation (see `visitElement`).
+   */
+  readonly customElement?: boolean;
 }
 
 /**

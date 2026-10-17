@@ -97,6 +97,9 @@ export const SYMBOLS = {
   // Identity memoization wrapper for (hash)/(array). Emitted around the arg
   // getter so the produced object/array reference stays stable across reads.
   CACHED: '$__cached',
+  // Ember compat (WITH_EMBER_INTEGRATION without EMBER_NATIVE): the `{{#let}}`
+  // value of a helper call, a cached reference (src/core/helpers/cached.ts).
+  REF: '$__ref',
   // Ember-dialect {{#each}} row-item reactive tap. Emitted by the value
   // serializer for a member read whose head is a block param, gated by
   // WITH_EMBER_INTEGRATION + IS_GLIMMER_COMPAT_MODE.

@@ -1462,7 +1462,8 @@ export default <template><main>{{outlet}}</main><Layout>{{outlet}}</Layout></tem
     const code = compileWith({ ...emberFlags, EMBER_OUTLET: true });
     expect(code).toContain('$_outlet(this)');
     expect(code).toMatch(/\$_outlet\(ctx\d+\)/);
-    expect(code).toMatch(/import \{ \$_outlet \} from ['"]@lifeart\/gxt['"]/);
+    // (compat flags: `$__ref` — the `{{#let}}` reference — shares the import)
+    expect(code).toMatch(/import \{ \$__ref, \$_outlet \} from ['"]@lifeart\/gxt['"]/);
     expect(code).not.toContain('$_slot(');
   });
 

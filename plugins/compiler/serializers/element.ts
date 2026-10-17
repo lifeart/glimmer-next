@@ -19,7 +19,7 @@ import type {
 } from '../types';
 import { isSerializedValue, isRuntimeTag } from '../types';
 import { SYMBOLS, EVENT_TYPE, INTERNAL_HELPERS } from './symbols';
-import { buildValue, buildPathExpression, buildNativeArg, selfHeadedName, emittedRootName } from './value';
+import { buildValue, buildPathExpression, buildNativeArg, selfHeadedName, emittedRootName, emittedPathName } from './value';
 import { B, serializeJS, type JSExpression, type JSProperty } from '../builder';
 import { escapeBindingName } from '../utils/js-utils';
 
@@ -107,11 +107,13 @@ export function buildElement(
   const childExprs = buildChildrenExprs(ctx, node.children, ctxName);
 
   // In compat mode, wrap children of component-like $_tag calls in lazy arrow functions.
-  // Detect Ember components: hyphenated names (custom elements) or PascalCase (angle-bracket).
-  // Standard HTML elements (div, span, p, etc.) don't need lazy children.
+  // Detect Ember components: hyphenated names or PascalCase (angle-bracket).
+  // Standard HTML elements (div, span, p, etc.) don't need lazy children, nor,
+  // for an Ember host, does a custom element (`<x-foo>`): Glimmer never
+  // invokes one as a component.
   const isLikelyComponent = typeof node.tag === 'string' && (
     node.tag.includes('-') || (node.tag[0] >= 'A' && node.tag[0] <= 'Z')
-  );
+  ) && !(node.customElement === true && ctx.flags.WITH_EMBER_INTEGRATION === true);
   const finalChildExprs = (ctx.flags.IS_GLIMMER_COMPAT_MODE && isLikelyComponent)
     ? maybeWrapComponentChildren(childExprs)
     : childExprs;
@@ -192,8 +194,11 @@ export function buildComponent(
   // re-thread them across a component swap). Static component invocations
   // ($_c) keep the in-args merge. The tag test mirrors buildComponentCall's
   // own `$_dc` routing rule (`typeof tag === 'string' && tag.includes('.')`).
+  // A loose-mode by-name component (G11) and a compat curly component block
+  // (`compatComponent`) are invoked by their name: `$_c('Name', …)`.
+  const byName = node.byName === true || node.compatComponent === true;
   const isDynamicComponent =
-    node.byName !== true &&
+    !byName &&
     typeof node.tag === 'string' &&
     (node.tag.includes('.') || isArgComponentTag(ctx, node.tag));
   const dynamicSplat = isDynamicComponent && hasSplatAttrs;
@@ -221,16 +226,20 @@ export function buildComponent(
 
   const useFormatted = ctx.formatter.options.enabled;
 
+  // Ember: an angle-bracket dynamic invocation's tag path is `$_dc`'s debug
+  // label (see buildComponentCall); `{{component this.x}}` has none.
+  const dcLabel = node.componentKeyword !== true;
+
   if (node.selfClosing) {
     // Self-closing component - empty slots object
     const argsCall = buildComponentArgsExpr(ctx, args, B.emptyObject(), finalPropsExpr, ctxName);
-    return buildComponentCall(ctx, node.tag, argsCall, ctxName, useFormatted, node.sourceRange, node.tagRange, dynamicSplat, node.byName === true);
+    return buildComponentCall(ctx, node.tag, argsCall, ctxName, useFormatted, node.sourceRange, node.tagRange, dynamicSplat, byName, dcLabel);
   }
 
   // Component with children/slots
   const slotsExpr = buildSlots(ctx, node);
   const argsCall = buildComponentArgsExpr(ctx, args, slotsExpr, finalPropsExpr, ctxName);
-  return buildComponentCall(ctx, node.tag, argsCall, ctxName, useFormatted, node.sourceRange, node.tagRange, dynamicSplat, node.byName === true);
+  return buildComponentCall(ctx, node.tag, argsCall, ctxName, useFormatted, node.sourceRange, node.tagRange, dynamicSplat, byName, dcLabel);
 }
 
 /**
@@ -636,8 +645,9 @@ function buildModifierExpr(
         ? `${SYMBOLS.ARGS_ALIAS}["${argName}"]`
         : `${SYMBOLS.ARGS_ALIAS}.${argName}`) + members;
   } else {
-    // EMBER_SELF (G6): a `this.modifier` reference reads the template self.
-    modName = selfHeadedName(ctx, modName);
+    // EMBER_SELF (G6): a `this.modifier` reference reads the template self; a
+    // binding is referenced under the name it is declared under.
+    modName = emittedPathName(ctx, selfHeadedName(ctx, modName));
   }
 
   // Ember native layer: literal-or-thunk arguments (buildNativeArg) — the host
@@ -892,7 +902,9 @@ function buildComponentCall(
   // the parent's `...attributes` into the resolved component.
   emitForwardedProps = false,
   // Ember loose mode (G11): `tag` is a component NAME the host resolves.
-  byName = false
+  byName = false,
+  // Ember: pass a dynamic component's tag path to `$_dc` as its debug label.
+  dcLabel = false
 ): JSExpression {
   // Handle RuntimeTag (namespace providers, dynamic components)
   if (isRuntimeTag(tag)) {
@@ -900,7 +912,8 @@ function buildComponentCall(
   }
 
   // Ember loose mode (G11, EMBER_LOOSE_COMPONENTS): `$_c("foo-bar", …)` — the
-  // host component manager resolves the name through its registry.
+  // host component manager resolves the name through its registry. Also a
+  // compat curly component block (`$_c('FooBar', …)`).
   if (byName) {
     return B.call(SYMBOLS.COMPONENT, [B.stringSingle(tag, tagRange), argsExpr, B.id(ctxName)], sourceRange, formatted, 'ComponentNode');
   }
@@ -956,6 +969,14 @@ function buildComponentCall(
       ctx.usedFw = true;
       dcArgs.push(B.id(SYMBOLS.LOCAL_FW));
     }
+    if (dcLabel && ctx.flags.WITH_EMBER_INTEGRATION) {
+      // Ember (compat and native): the invocation's tag path as written
+      // (`this.HelloWorld`, `@Greeting`) is the 5th `$_dc` argument, so the
+      // host can name the component's debug render tree node as Glimmer does
+      // (and its errors) without reading the getter's source.
+      if (!emitForwardedProps) dcArgs.push(B.undef());
+      dcArgs.push(B.string(tag, tagRange));
+    }
     return B.call(SYMBOLS.DYNAMIC_COMPONENT, dcArgs, sourceRange, formatted, 'ElementNode');
   }
 
@@ -966,14 +987,9 @@ function buildComponentCall(
   // $_c(FooBar, ...) which fails with "FooBar is not defined" because FooBar
   // is not a JS variable — it's an Ember registry component.
   if (ctx.flags.IS_GLIMMER_COMPAT_MODE) {
-    // Check if tag is genuinely in user scope (e.g., passed via scopeValues / strict mode).
-    // Only use string literal for tags that were synthetically added as bindings
-    // (from curly block conversion) or that have no real JS binding.
-    const binding = ctx.scopeTracker.resolve(tag);
-    const isSyntheticCompatBinding = binding && binding.kind === 'compat-component';
-    // If the binding is synthetic (added by convertComponentBlock in block.ts),
-    // or there's no real binding at all, use string literal for registry lookup.
-    if (isSyntheticCompatBinding || !ctx.scopeTracker.hasBinding(tag)) {
+    // A tag genuinely in user scope (e.g., passed via scopeValues / strict
+    // mode) is a JS binding; any other is a name for the registry lookup.
+    if (!ctx.scopeTracker.hasBinding(tag)) {
       return B.call(SYMBOLS.COMPONENT, [B.stringSingle(tag, tagRange), argsExpr, B.id(ctxName)], sourceRange, formatted, 'ComponentNode');
     }
   }

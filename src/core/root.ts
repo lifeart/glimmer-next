@@ -24,7 +24,7 @@ import {
 import { TREE, CHILD, PARENT, cId } from './tree';
 import { isPrimitive, isEmpty, isArray } from './shared';
 import { provideContext, ROOT_CONTEXT } from './context';
-import { nativeContentBinding, nativeDeepFnValue, stashInitialContent } from './native-content';
+import { contentBinding, nativeDeepFnValue, stashInitialContent } from './native-content';
 
 type RenderableType = Node | string | number | { [RENDERED_NODES_PROPERTY]: unknown[] };
 
@@ -85,10 +85,11 @@ export function resolveRenderable(
   child: Function,
   debugName = 'resolveRenderable',
 ): RenderableType | MergedCell | Cell {
-  // EMBER_NATIVE dynamic content (G15, native-content.ts): a content value
-  // may be — or become — a node, trusted HTML or a component; it stays a
-  // reactive binding whatever its first value is.
-  const native = nativeContentBinding() !== null;
+  // Ember dynamic content (G15, native-content.ts; the native runtime's binding
+  // or a compat host's `contentBinding`): a content value may be — or become —
+  // a node, trusted HTML or a component; it stays a reactive binding whatever
+  // its first value is.
+  const native = contentBinding() !== null;
   const f = native
     ? formula(() => nativeDeepFnValue(child), debugName)
     : formula(() => deepFnValue(child), debugName);
@@ -134,8 +135,9 @@ export function resolveRenderable(
       // Register leaf-object owners so a nested-property `set()` on a held
       // object dirties this cell.
       registerLeafOwnersForFormula(f);
-      // Native: the binding applies the value read above (one create read).
-      if (native) stashInitialContent(f, componentProps);
+      // Ember (native and compat): the binding applies the value read above
+      // (one create read; `opcodeForCreatedContent`).
+      if (native || WITH_EMBER_INTEGRATION) stashInitialContent(f, componentProps);
       return f;
     } else {
       // looks like a component

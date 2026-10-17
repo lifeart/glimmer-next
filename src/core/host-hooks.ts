@@ -17,6 +17,8 @@
  * ```
  */
 
+import type { NativeContentBinding } from './native-content';
+
 /**
  * Metadata passed to {@link HostHooks.onConditionBranchSwap} alongside the
  * freshly-created per-branch render ctx.
@@ -359,6 +361,26 @@ export interface HostHooks {
    * asking.
    */
   classifyContent?: (value: unknown) => 'html' | 'component' | 'helper' | null | undefined;
+  /**
+   * Glimmer dynamic content for the Ember compat build (WITH_EMBER_INTEGRATION
+   * without the EMBER_NATIVE runtime). The binding render-core uses for a
+   * reactive content value gxt renders itself — a `{{value}}` at the top level
+   * of a template or of a block, a function child of an element — in place of
+   * its historic text binding; the contract of the native runtime's binding
+   * (native-content.ts `NativeContentBinding`): bind the content formula `f`
+   * to the already-inserted `textNode`, return the destructor. gxt's own
+   * `bindNativeContent` (main entry) is such a binding: with it `{{value}}`
+   * follows the kind of its value (text, DOM node or fragment, trusted HTML /
+   * component / helper by `classifyContent`), and creation applies the value
+   * the first read computed. While it is registered the content value is read
+   * like the native runtime reads it (`nativeDeepFnValue`, which stops at a
+   * function `classifyContent` claims) and a value that is not text stays
+   * bound whatever its first value is. It does not turn on the native runtime
+   * semantics (`isNativeRuntime()` stays false). Consulted only under
+   * WITH_EMBER_INTEGRATION, after the native runtime's own binding; standalone
+   * builds fold the consult away.
+   */
+  contentBinding?: NativeContentBinding;
   /**
    * Host assertion channel for gxt's host-parity runtime checks (Ember: the
    * `@ember/debug` `assert`, so `expectAssertion` / the Ember assertion stubs

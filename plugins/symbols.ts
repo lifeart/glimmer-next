@@ -136,6 +136,12 @@ export const SELF_SYMBOLS: readonly string[] = ['$_self'];
 export const LOOSE_BUILTINS_SYMBOL = '$_looseBuiltins';
 export const LOOSE_SYMBOLS: readonly string[] = ['$_looseAppend', LOOSE_BUILTINS_SYMBOL];
 
+// Ember compat (WITH_EMBER_INTEGRATION without EMBER_NATIVE): the `{{#let}}`
+// value of a helper call is a cached reference, `$__ref(() => …)`. Same rule
+// as NATIVE_SYMBOLS (imported only under the flags; flag-off output stays
+// byte-identical).
+export const COMPAT_SYMBOLS: readonly string[] = ['$__ref'];
+
 export const RECYCLE_SYMBOLS: readonly string[] = [
   SYMBOLS.EACH_RECYCLED,
   SYMBOLS.EACH_SYNC_RECYCLED,

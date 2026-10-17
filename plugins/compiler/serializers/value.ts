@@ -22,11 +22,15 @@ import {
 import { escapeBindingName } from '../utils/js-utils';
 
 /**
- * When `rootName` refers to a block-param / let-binding whose name is a JS
- * reserved word (e.g. `{{#each x as |if|}}` → the `if` row item), return the
- * safe emitted identifier (`__bp_if`) that the declaration site also emits.
- * Any other name — including reserved words that are NOT local bindings — is
- * returned unchanged, so output stays byte-identical.
+ * When `rootName` refers to a binding whose name is not a plain JS identifier
+ * — a JS reserved word (`{{#each x as |if|}}` → the `if` row item; a strict-mode
+ * local named `debugger`) or a name such as `each-in` / `some-helper` — return
+ * the safe identifier the binding is declared under (`escapeBindingName`:
+ * `__bp_if`, `__bp_some$2d$helper`). Block params and let-bindings are declared
+ * by the template itself; a caller-provided binding (lexical scope, a strict
+ * local) is declared by the caller under the same escaped name. Any other name
+ * — a plain identifier, or a name that is not a binding — is returned
+ * unchanged, so output stays byte-identical.
  */
 function emitBindingRootName(
   ctx: CompilerContext,
@@ -41,7 +45,36 @@ function emitBindingRootName(
     // reads (BindingInfo.emitName) is referenced under that fresh name.
     return binding.emitName ?? escapeBindingName(rootName);
   }
+  if (binding && binding.kind === 'component') {
+    return escapeBindingName(rootName);
+  }
   return rootName;
+}
+
+/**
+ * The emitted text of a callee / tag path whose root may be a binding: the
+ * root as `emitBindingRootName` emits it, the rest of the path unchanged.
+ */
+export function emittedPathName(ctx: CompilerContext, path: string): string {
+  const rootName = path.split(/[?.[]/)[0];
+  const emitted = emitBindingRootName(ctx, rootName);
+  return emitted === rootName ? path : emitted + path.slice(rootName.length);
+}
+
+/**
+ * `head` followed by the dotted `path` as member reads: a segment that is not a
+ * JS identifier is a computed member (`this["each-in"]`, `this.a["b-c"]`).
+ * A path that is not a plain dotted path is appended as it is.
+ */
+function memberPathText(head: string, path: string): string {
+  if (path.includes('?.') || path.includes('[')) return `${head}.${path}`;
+  let text = head;
+  for (const segment of path.split('.')) {
+    text += /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(segment)
+      ? `.${segment}`
+      : `[${JSON.stringify(segment)}]`;
+  }
+  return text;
 }
 
 /**
@@ -337,8 +370,9 @@ export function buildPathExpression(
         );
         return wrapInGetter ? B.reactiveGetter(implicit, value.sourceRange) : implicit;
       }
-      // Treat as this.expression — Ember's implicit this
-      const thisPath = `${ctxName}.${expression}`;
+      // Treat as this.expression — Ember's implicit this (a segment that is
+      // not a JS identifier, `{{each-in}}`, is a computed member).
+      const thisPath = memberPathText(ctxName, expression);
       if (wrapInGetter) {
         return B.reactiveGetter(B.id(thisPath), value.sourceRange);
       }
@@ -861,8 +895,9 @@ function buildHelper(
       ? `${SYMBOLS.ARGS_ALIAS}["${argName}"]`
       : `${SYMBOLS.ARGS_ALIAS}.${argName}`;
   } else {
-    // EMBER_SELF (G6): a `this.helper` callee reads the template self.
-    resolvedName = selfHeadedName(ctx, name);
+    // EMBER_SELF (G6): a `this.helper` callee reads the template self; a
+    // binding is referenced under the name it is declared under.
+    resolvedName = emittedPathName(ctx, selfHeadedName(ctx, name));
   }
 
   // Check if it's a known binding (component/helper from scope)

@@ -169,7 +169,9 @@ describe('compiler: EMBER_NATIVE empty-block invocations', () => {
 
   test('flag off: the compat marker (historic)', () => {
     expect(source('<Foo></Foo>', COMPAT_FLAGS, ['Foo'])).toContain('__hasBlock__: "default"');
-    expect(source('<foo-bar></foo-bar>', COMPAT_FLAGS)).toContain('["@__hasBlock__", "default"]');
+    expect(source('<Foo::Bar></Foo::Bar>', COMPAT_FLAGS)).toContain('["@__hasBlock__", "default"]');
+    // A custom element is not a component invocation (Glimmer): no marker.
+    expect(source('<foo-bar></foo-bar>', COMPAT_FLAGS)).not.toContain('__hasBlock__');
   });
 });
 

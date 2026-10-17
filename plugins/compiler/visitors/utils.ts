@@ -98,20 +98,17 @@ function lineColumnToOffset(source: string, line: number, column: number): numbe
 }
 
 /**
- * True when `name` resolves to a genuine binding (lexical scope / `scope`
- * entry / block param), NOT the synthetic `compat-component` binding that
- * block.ts registers for a curly `{{#link-to}}` → `LinkTo` conversion. That
- * synthetic entry is never removed from its scope frame, so a later
- * `<LinkTo>` in the same template must still get the registry (kebab)
- * mapping — mirroring the serializer's `isSyntheticCompatBinding` rule.
+ * True when `name` resolves to a binding (lexical scope / `scope` entry /
+ * block param / let binding). A curly component block (`{{#link-to}}` →
+ * `LinkTo`) adds no binding (block.ts marks its node `compatComponent`), so a
+ * `<LinkTo>` of the same template still gets the registry (kebab) mapping.
  *
  * Shared by every keyword rewrite a genuine binding must shadow: the compat
  * PascalCase→kebab tag mapping (element.ts, G2) and the EMBER_OUTLET
  * `{{outlet}}` keyword (mustache.ts, G3).
  */
 export function hasRealBinding(ctx: CompilerContext, name: string): boolean {
-  const binding = ctx.scopeTracker.resolve(name);
-  return binding !== undefined && binding.kind !== 'compat-component';
+  return ctx.scopeTracker.resolve(name) !== undefined;
 }
 
 /**

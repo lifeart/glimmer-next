@@ -40,6 +40,8 @@
  *    caller-provided binding. See `isEmittedFreeIdentifierHead`.
  */
 
+import { escapeBindingName } from './utils/js-utils';
+
 /**
  * The mutable collector threaded through compilation. Sets are deduped by
  * construction; the boolean latches to `true` on first hit.
@@ -65,6 +67,13 @@ export interface EmissionReport {
    * Frozen snapshot — never mutated.
    */
   readonly callerBindings: ReadonlySet<string>;
+  /**
+   * The caller-provided bindings that are emitted under another identifier
+   * (`escapeBindingName`: `some-helper` → `__bp_some$2d$helper`, `debugger` →
+   * `__bp_debugger`), by that identifier: a reference to one is reported
+   * under the binding's own name.
+   */
+  readonly escapedCallerBindings: ReadonlyMap<string, string>;
   /** True once a string-form `$_maybeHelper` emission lands in named-arg position. */
   maybeHelperInNamedArgPosition: boolean;
 }
@@ -77,14 +86,26 @@ export interface EmissionReport {
 export function createEmissionReport(
   callerBindings: ReadonlySet<string> = new Set()
 ): EmissionReport {
+  const escapedCallerBindings = new Map<string, string>();
+  for (const name of callerBindings) {
+    const emitted = escapeBindingName(name);
+    if (emitted !== name) escapedCallerBindings.set(emitted, name);
+  }
   return {
     emittedSymbols: new Set<string>(),
     maybeHelperNames: new Set<string>(),
     referencedBindings: new Set<string>(),
     emittedIdentifiers: new Set<string>(),
     callerBindings,
+    escapedCallerBindings,
     maybeHelperInNamedArgPosition: false,
   };
+}
+
+/** The caller-provided binding an emitted identifier head references, if any. */
+function callerBindingOf(report: EmissionReport, head: string): string | undefined {
+  if (report.callerBindings.has(head)) return head;
+  return report.escapedCallerBindings.get(head);
 }
 
 /**
@@ -273,8 +294,9 @@ export function recordEmittedCode(
   // Free-identifier callees → referencedBindings (caller binding) + emittedIdentifiers.
   for (const m of stripped.matchAll(BARE_CALLEE_RE)) {
     const nm = m[1];
-    if (report.callerBindings.size > 0 && report.callerBindings.has(nm)) {
-      report.referencedBindings.add(nm);
+    const binding = report.callerBindings.size > 0 ? callerBindingOf(report, nm) : undefined;
+    if (binding !== undefined) {
+      report.referencedBindings.add(binding);
     }
     if (isEmittedFreeIdentifierHead(nm)) report.emittedIdentifiers.add(nm);
   }
@@ -320,8 +342,9 @@ export function recordEmittedName(
     report.emittedSymbols.add(name);
   }
   const root = referenceRootName(name);
-  if (report.callerBindings.size > 0 && report.callerBindings.has(root)) {
-    report.referencedBindings.add(root);
+  const binding = report.callerBindings.size > 0 ? callerBindingOf(report, root) : undefined;
+  if (binding !== undefined) {
+    report.referencedBindings.add(binding);
   }
   // Ambient-global member smuggle (Task A): when the head reduces to an ambient
   // host global (`globalThis`/`window`) the reference is really a member access
