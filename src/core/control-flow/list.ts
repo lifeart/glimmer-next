@@ -1324,9 +1324,13 @@ export class BasicListComponent<T extends { id: number }> {
           ) as T[];
           const itemIndex = values.indexOf(item);
           if (itemIndex === -1) {
-            return values.findIndex((value: T, i) => {
+            const keyIndex = values.findIndex((value: T, i) => {
               return this.keyForItem(value, i, values) === key;
             });
+            // A source that yields new item objects on every iteration (a
+            // Map's `[key, value]` entries) has neither the item nor its key
+            // in this read: the index is the row's position in the list.
+            return keyIndex === -1 ? (this.indexMap.get(key) ?? index) : keyIndex;
           }
           const firstKey = this.keyForItem(item, itemIndex, values);
           if (firstKey === key) return itemIndex;
@@ -1535,9 +1539,14 @@ export class BasicListComponent<T extends { id: number }> {
               ) as T[];
               const itemIndex = values.indexOf(item);
               if (itemIndex === -1) {
-                return values.findIndex((value: T, i) => {
+                const keyIndex = values.findIndex((value: T, i) => {
                   return keyForItem(value, i, values) === key;
                 });
+                // A source that yields new item objects on every iteration
+                // (a Map's `[key, value]` entries) has neither the item nor
+                // its key in this read: the index is the row's position in
+                // the list.
+                return keyIndex === -1 ? (indexMap.get(key) ?? index) : keyIndex;
               }
               // For the common (non-duplicate) case, indexOf is correct. When
               // the item appears multiple times in `values`, compute the key
