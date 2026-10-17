@@ -362,6 +362,18 @@ const ATTR_OVERRIDES: Record<string, Record<string, true> | undefined> = {
   BUTTON: { form: true },
 };
 
+// Ember (native and compat): the text of a bound `style` attribute —
+// Glimmer's normalizeValue (null, undefined, false, a function or a value
+// without `toString` remove the attribute; `true` is ""), except that an empty
+// string removes it too, as gxt's property path always did.
+function styleAttributeText(value: unknown): string | null {
+  if (value === null || value === undefined || value === false || value === '') return null;
+  if (value === true) return '';
+  if (typeof value === 'function') return null;
+  if (typeof (value as { toString?: unknown }).toString !== 'function') return null;
+  return String(value);
+}
+
 function prefersAttribute(element: Node, key: string): boolean {
   if (!(key in element)) return true;
   const tagName = (element as Element).tagName;
@@ -393,6 +405,14 @@ export function $prop(
   if (isEmpty(result)) {
     return;
   }
+
+  // Ember (native and compat): Glimmer's normalizeProperty maps `style` to an
+  // attribute although the element has a `style` property, so a bound style's
+  // text is set as it is (the property would re-serialize it through the
+  // CSSOM: `display:flex` → `display: flex;`). The host still normalizes it on
+  // its property side (`isProp`): the Ember native host gives Glimmer's DEV
+  // style warning there, which a static `style="…"` (an attribute) never gets.
+  const styleAttribute = (EMBER_NATIVE || WITH_EMBER_INTEGRATION) && key === 'style';
 
   // Ember (GH#19219, Glimmer's InputValueDynamicAttribute): a browser does not
   // turn `input.value = ''` into a value attribute when the input's type is set
@@ -428,6 +448,18 @@ export function $prop(
         const hook = WITH_EMBER_INTEGRATION ? hostNormalizeAttrValue : null;
         const normalized =
           hook === null ? resolvedValue : hook(key, resolvedValue, element as Element, true);
+        if (styleAttribute) {
+          const text = styleAttributeText(normalized);
+          if (written && text === prevPropValue) return;
+          written = true;
+          prevPropValue = text;
+          if (text === null) {
+            (element as HTMLElement).removeAttribute('style');
+          } else {
+            api.attr(element as HTMLElement, 'style', text);
+          }
+          return;
+        }
         const val = normalized === null ? '' : normalized;
         if (liveInputValue && written) {
           if ((element as HTMLInputElement).value === (val === undefined ? '' : String(val))) {
@@ -473,6 +505,11 @@ export function $prop(
     const hook = WITH_EMBER_INTEGRATION ? hostNormalizeAttrValue : null;
     const normalized =
       hook === null ? result : hook(key, result, element as Element, true);
+    if (styleAttribute) {
+      const text = styleAttributeText(normalized);
+      if (text !== null) api.attr(element as HTMLElement, 'style', text);
+      return;
+    }
     api.prop(element, key, normalized);
     if (emptyInputValueAttr && result === '') {
       api.attr(element as HTMLElement, 'value', '');
