@@ -122,6 +122,16 @@ export type Flags = {
   // `$_looseAppend` is auto-imported only under this flag; standalone and
   // compat output are byte-identical.
   EMBER_LOOSE_COMPONENTS: boolean;
+  // Ember template text (the Ember compat build; EMBER_NATIVE implies it).
+  // Compile-time only, emission-affecting, default off: a template is parsed
+  // as Glimmer parses it — Handlebars standalone-line and `~` whitespace
+  // control, HTML entities decoded once by the tokenizer — and every
+  // whitespace-only text node that parse produced is kept. gxt's own dialect
+  // parses source-preserving and drops whitespace-only text that spans lines
+  // or has more than one character, so `{{a}}⏎{{b}}` renders "ab" where
+  // Glimmer renders "a⏎b". Whitespace between named blocks is still ignored,
+  // as in Glimmer. Standalone and compat output are byte-identical when off.
+  EMBER_WHITESPACE: boolean;
 };
 
 export function defaultFlags() {
@@ -147,5 +157,6 @@ export function defaultFlags() {
     EMBER_PROPERTY_TAGS: false,
     EMBER_SELF: false,
     EMBER_LOOSE_COMPONENTS: false,
+    EMBER_WHITESPACE: false,
   } as Flags;
 }
