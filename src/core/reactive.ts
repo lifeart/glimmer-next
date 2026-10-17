@@ -190,8 +190,10 @@ export class Cell<T extends unknown = unknown> {
   [Symbol.toPrimitive]() {
     return this.value;
   }
-  _debugName?: string | undefined;
-  [isTag] = true;
+  // Set only in development (no per-instance slot otherwise).
+  declare _debugName?: string | undefined;
+  // On the prototype (see below), not a per-instance slot.
+  declare readonly [isTag]: true;
   constructor(value: T, debugName?: string) {
     this.__value = value;
     if (IS_DEV_MODE) {
@@ -266,6 +268,7 @@ export class Cell<T extends unknown = unknown> {
     }
   }
 }
+(Cell.prototype as { [isTag]: true })[isTag] = true;
 
 export class LazyCell<T extends unknown = unknown> extends Cell<T> {
   private __isResolved = false;
@@ -481,9 +484,11 @@ export class MergedCell {
   [Symbol.toPrimitive]() {
     return this.value;
   }
-  _debugName?: string | undefined;
+  // Set only in development (no per-instance slot otherwise).
+  declare _debugName?: string | undefined;
   relatedCells: Set<Cell> | null = null;
-  [isTag] = true;
+  // On the prototype (see below), not a per-instance slot.
+  declare readonly [isTag]: true;
   constructor(fn: Fn | Function, debugName?: string) {
     this.fn = fn;
     if (IS_DEV_MODE) {
@@ -557,6 +562,7 @@ export class MergedCell {
     }
   }
 }
+(MergedCell.prototype as { [isTag]: true })[isTag] = true;
 
 // this function is called when we need to update DOM, values represented by tags are changed
 export type tagOp = (...values: unknown[]) => Promise<void> | void;
