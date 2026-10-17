@@ -570,6 +570,7 @@ function createComponentElement(
     events: [],
     children: [],
     sourceRange: range,
+    ...(isStaticName ? {} : { componentKeyword: true }),
   };
 }
 

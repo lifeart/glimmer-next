@@ -415,6 +415,12 @@ export interface HBSNode {
    * template.
    */
   readonly compatComponent?: boolean;
+  /**
+   * `{{component this.x}}` lowered to a dynamic component element (`tag`
+   * `this.x`): not an angle-bracket invocation, so `$_dc` gets no tag-path
+   * debug label (its node is named by the definition).
+   */
+  readonly componentKeyword?: boolean;
 }
 
 /**

@@ -224,16 +224,20 @@ export function buildComponent(
 
   const useFormatted = ctx.formatter.options.enabled;
 
+  // Ember: an angle-bracket dynamic invocation's tag path is `$_dc`'s debug
+  // label (see buildComponentCall); `{{component this.x}}` has none.
+  const dcLabel = node.componentKeyword !== true;
+
   if (node.selfClosing) {
     // Self-closing component - empty slots object
     const argsCall = buildComponentArgsExpr(ctx, args, B.emptyObject(), finalPropsExpr, ctxName);
-    return buildComponentCall(ctx, node.tag, argsCall, ctxName, useFormatted, node.sourceRange, node.tagRange, dynamicSplat, byName);
+    return buildComponentCall(ctx, node.tag, argsCall, ctxName, useFormatted, node.sourceRange, node.tagRange, dynamicSplat, byName, dcLabel);
   }
 
   // Component with children/slots
   const slotsExpr = buildSlots(ctx, node);
   const argsCall = buildComponentArgsExpr(ctx, args, slotsExpr, finalPropsExpr, ctxName);
-  return buildComponentCall(ctx, node.tag, argsCall, ctxName, useFormatted, node.sourceRange, node.tagRange, dynamicSplat, byName);
+  return buildComponentCall(ctx, node.tag, argsCall, ctxName, useFormatted, node.sourceRange, node.tagRange, dynamicSplat, byName, dcLabel);
 }
 
 /**
@@ -896,7 +900,9 @@ function buildComponentCall(
   // the parent's `...attributes` into the resolved component.
   emitForwardedProps = false,
   // Ember loose mode (G11): `tag` is a component NAME the host resolves.
-  byName = false
+  byName = false,
+  // Ember: pass a dynamic component's tag path to `$_dc` as its debug label.
+  dcLabel = false
 ): JSExpression {
   // Handle RuntimeTag (namespace providers, dynamic components)
   if (isRuntimeTag(tag)) {
@@ -960,6 +966,14 @@ function buildComponentCall(
       // reference requires the `const $fw = $_GET_FW(...)` preamble local.
       ctx.usedFw = true;
       dcArgs.push(B.id(SYMBOLS.LOCAL_FW));
+    }
+    if (dcLabel && ctx.flags.WITH_EMBER_INTEGRATION) {
+      // Ember (compat and native): the invocation's tag path as written
+      // (`this.HelloWorld`, `@Greeting`) is the 5th `$_dc` argument, so the
+      // host can name the component's debug render tree node as Glimmer does
+      // (and its errors) without reading the getter's source.
+      if (!emitForwardedProps) dcArgs.push(B.undef());
+      dcArgs.push(B.string(tag, tagRange));
     }
     return B.call(SYMBOLS.DYNAMIC_COMPONENT, dcArgs, sourceRange, formatted, 'ElementNode');
   }

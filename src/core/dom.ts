@@ -2528,6 +2528,10 @@ export function $_dc(
   // the resolved component (and re-applied across swaps, since `args` is reused
   // by the swap branch below). 3-arg call sites are unchanged.
   fw?: FwType,
+  // Ember (WITH_EMBER_INTEGRATION emission): the invocation's tag path as
+  // written (`this.HelloWorld`, `@Greeting`), for the host's debug tooling;
+  // the Ember compat `$_dc` reads it. Not used here.
+  _label?: string,
 ) {
   if (fw != null && args !== null && typeof args === 'object') {
     mergeForwardedProps(args, fw);

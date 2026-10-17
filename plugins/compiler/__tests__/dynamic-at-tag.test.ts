@@ -59,7 +59,7 @@ describe('Ember compat: `<@comp>` is a dynamic component', () => {
 
   test('self-closing, text block and named blocks', () => {
     expect(compile('<@comp />', EMBER_COMPAT).code).toContain(
-      '$_dc(() => $a.comp, /*#__PURE__*/$_args({}, {}, $_edp), this)',
+      '$_dc(() => $a.comp, /*#__PURE__*/$_args({}, {}, $_edp), this, undefined, "@comp")',
     );
     expect(compile('<@comp>text</@comp>', EMBER_COMPAT).code).toMatch(/default: ctx0 => \["text"\]/);
     const named = compile('<@comp><:named>x</:named></@comp>', EMBER_COMPAT).code;
