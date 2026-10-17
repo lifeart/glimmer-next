@@ -2348,7 +2348,56 @@ export class AsyncListComponent<
       return false;
     }
   }
-  async syncList(items: T[]) {
+  // `syncList` applies one sync at a time: `syncing` while one runs,
+  // `syncDone` its promise, `queuedItems` the latest items requested
+  // meanwhile.
+  private syncing = false;
+  private syncDone: Promise<void> | null = null;
+  private queuedItems: T[] | null = null;
+
+  /**
+   * Applies `items`. A sync awaits the teardown of the rows it removes before
+   * it renders the new ones, and one DOM sync can run the list's opcode twice:
+   * a second sync started meanwhile found the removed rows' keys gone and
+   * rendered the new rows, which the first sync then rendered again (every
+   * row twice when the items are new objects on each read). A sync requested
+   * while one runs therefore runs after it, with the latest items requested
+   * (it supersedes an earlier queued one); its caller gets the running sync's
+   * promise, which settles once the queued items are applied too.
+   */
+  syncList(items: T[]): Promise<void> {
+    if (this.syncing) {
+      this.queuedItems = items;
+      return this.syncDone ?? Promise.resolve();
+    }
+    this.syncing = true;
+    const done = this.runSyncs(items);
+    // `runSyncs` suspends at its first `await`, so it is still running here.
+    if (this.syncing) this.syncDone = done;
+    return done;
+  }
+
+  private async runSyncs(items: T[]): Promise<void> {
+    try {
+      let next: T[] | null = items;
+      while (next !== null) {
+        await this.applySync(next);
+        next = this.queuedItems;
+        this.queuedItems = null;
+        // A list being destroyed renders no more rows: its destructor's
+        // `syncList([])` empties it.
+        if (next !== null && next.length > 0 && isDestructionStarted(this)) {
+          next = null;
+        }
+      }
+    } finally {
+      this.syncing = false;
+      this.syncDone = null;
+      this.queuedItems = null;
+    }
+  }
+
+  private async applySync(items: T[]) {
     // Defensive normalization (see SyncListComponent.syncList).
     if (!Array.isArray(items)) {
       items = normalizeIterableValue<T>(items);
