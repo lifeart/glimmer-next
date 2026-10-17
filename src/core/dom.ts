@@ -746,6 +746,9 @@ export const EVENT_TYPE = {
   TEXT_CONTENT: '1',
 };
 
+// A modifier's destructor before the modifier returned one.
+const NO_MODIFIER_DESTRUCTOR: DestructorFn = () => void 0;
+
 // Exported for the static-block fast path (see $prop note above).
 export function $ev(
   api: DOMApi,
@@ -782,7 +785,7 @@ export function $ev(
     }
   } else if (eventName === EVENT_TYPE.ON_CREATED) {
     if (REACTIVE_MODIFIERS) {
-      let destructor = () => void 0;
+      let destructor: DestructorFn = NO_MODIFIER_DESTRUCTOR;
       let isDestroying = false;
       const updatingCell = formula(() => {
         if (isDestroying) {
@@ -797,11 +800,14 @@ export function $ev(
         }
       });
       if (updatingCell.isConst) {
+        // Read no cell: it never runs again. Keep only what it returned — a
+        // wrapper closure would share this scope and keep the destroyed
+        // formula, its opcode and `fn` alive as long as the owner lives.
         updatingCell.destroy();
         opcodeDestructor();
-        destructors.push(() => {
-          return destructor();
-        });
+        if (destructor !== NO_MODIFIER_DESTRUCTOR) {
+          destructors.push(destructor);
+        }
       } else {
         destructors.push(
           () => {
