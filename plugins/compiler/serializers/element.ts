@@ -19,7 +19,7 @@ import type {
 } from '../types';
 import { isSerializedValue, isRuntimeTag } from '../types';
 import { SYMBOLS, EVENT_TYPE, INTERNAL_HELPERS } from './symbols';
-import { buildValue, buildPathExpression, buildNativeArg, selfHeadedName, emittedRootName } from './value';
+import { buildValue, buildPathExpression, buildNativeArg, selfHeadedName, emittedRootName, emittedPathName } from './value';
 import { B, serializeJS, type JSExpression, type JSProperty } from '../builder';
 import { escapeBindingName } from '../utils/js-utils';
 
@@ -639,8 +639,9 @@ function buildModifierExpr(
         ? `${SYMBOLS.ARGS_ALIAS}["${argName}"]`
         : `${SYMBOLS.ARGS_ALIAS}.${argName}`) + members;
   } else {
-    // EMBER_SELF (G6): a `this.modifier` reference reads the template self.
-    modName = selfHeadedName(ctx, modName);
+    // EMBER_SELF (G6): a `this.modifier` reference reads the template self; a
+    // binding is referenced under the name it is declared under.
+    modName = emittedPathName(ctx, selfHeadedName(ctx, modName));
   }
 
   // Ember native layer: literal-or-thunk arguments (buildNativeArg) — the host
