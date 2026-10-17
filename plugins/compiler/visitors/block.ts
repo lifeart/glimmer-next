@@ -421,9 +421,14 @@ export function visitBlock(
     ctx.scopeTracker.exitScope();
   }
 
-  // Empty block - skip (unless there's an inverse/else branch)
+  // Empty block - skip (unless there's an inverse/else branch). Ember: Glimmer
+  // evaluates a conditional's condition and an iteration's collection even when
+  // the block renders nothing, so an empty `{{#if (foo)}}{{/if}}` still calls
+  // `foo` (and asserts that it is a helper); such a block is kept.
   if (!childElements.length && !inverseElements?.length) {
-    return null;
+    if (!(ctx.flags.WITH_EMBER_INTEGRATION && evaluatesCallParam(name, node))) {
+      return null;
+    }
   }
 
   // Extract key and sync options
@@ -488,6 +493,19 @@ export function visitBlock(
         range
       );
   }
+}
+
+// The blocks whose first param Glimmer evaluates to render them: a
+// conditional's condition, an iteration's collection.
+const EVALUATED_PARAM_BLOCKS = new Set(['if', 'unless', 'each', 'each-in']);
+
+/**
+ * Whether rendering the block `name` evaluates a param that calls something
+ * (a sub-expression: a helper call), which an empty block must still do.
+ */
+function evaluatesCallParam(name: string, node: ASTv1.BlockStatement): boolean {
+  if (!EVALUATED_PARAM_BLOCKS.has(name)) return false;
+  return node.params.length > 0 && node.params[0]!.type === 'SubExpression';
 }
 
 /**
