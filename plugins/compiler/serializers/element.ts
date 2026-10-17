@@ -192,8 +192,11 @@ export function buildComponent(
   // re-thread them across a component swap). Static component invocations
   // ($_c) keep the in-args merge. The tag test mirrors buildComponentCall's
   // own `$_dc` routing rule (`typeof tag === 'string' && tag.includes('.')`).
+  // A loose-mode by-name component (G11) and a compat curly component block
+  // (`compatComponent`) are invoked by their name: `$_c('Name', …)`.
+  const byName = node.byName === true || node.compatComponent === true;
   const isDynamicComponent =
-    node.byName !== true &&
+    !byName &&
     typeof node.tag === 'string' &&
     (node.tag.includes('.') || isArgComponentTag(ctx, node.tag));
   const dynamicSplat = isDynamicComponent && hasSplatAttrs;
@@ -224,13 +227,13 @@ export function buildComponent(
   if (node.selfClosing) {
     // Self-closing component - empty slots object
     const argsCall = buildComponentArgsExpr(ctx, args, B.emptyObject(), finalPropsExpr, ctxName);
-    return buildComponentCall(ctx, node.tag, argsCall, ctxName, useFormatted, node.sourceRange, node.tagRange, dynamicSplat, node.byName === true);
+    return buildComponentCall(ctx, node.tag, argsCall, ctxName, useFormatted, node.sourceRange, node.tagRange, dynamicSplat, byName);
   }
 
   // Component with children/slots
   const slotsExpr = buildSlots(ctx, node);
   const argsCall = buildComponentArgsExpr(ctx, args, slotsExpr, finalPropsExpr, ctxName);
-  return buildComponentCall(ctx, node.tag, argsCall, ctxName, useFormatted, node.sourceRange, node.tagRange, dynamicSplat, node.byName === true);
+  return buildComponentCall(ctx, node.tag, argsCall, ctxName, useFormatted, node.sourceRange, node.tagRange, dynamicSplat, byName);
 }
 
 /**
@@ -900,7 +903,8 @@ function buildComponentCall(
   }
 
   // Ember loose mode (G11, EMBER_LOOSE_COMPONENTS): `$_c("foo-bar", …)` — the
-  // host component manager resolves the name through its registry.
+  // host component manager resolves the name through its registry. Also a
+  // compat curly component block (`$_c('FooBar', …)`).
   if (byName) {
     return B.call(SYMBOLS.COMPONENT, [B.stringSingle(tag, tagRange), argsExpr, B.id(ctxName)], sourceRange, formatted, 'ComponentNode');
   }
@@ -966,14 +970,9 @@ function buildComponentCall(
   // $_c(FooBar, ...) which fails with "FooBar is not defined" because FooBar
   // is not a JS variable — it's an Ember registry component.
   if (ctx.flags.IS_GLIMMER_COMPAT_MODE) {
-    // Check if tag is genuinely in user scope (e.g., passed via scopeValues / strict mode).
-    // Only use string literal for tags that were synthetically added as bindings
-    // (from curly block conversion) or that have no real JS binding.
-    const binding = ctx.scopeTracker.resolve(tag);
-    const isSyntheticCompatBinding = binding && binding.kind === 'compat-component';
-    // If the binding is synthetic (added by convertComponentBlock in block.ts),
-    // or there's no real binding at all, use string literal for registry lookup.
-    if (isSyntheticCompatBinding || !ctx.scopeTracker.hasBinding(tag)) {
+    // A tag genuinely in user scope (e.g., passed via scopeValues / strict
+    // mode) is a JS binding; any other is a name for the registry lookup.
+    if (!ctx.scopeTracker.hasBinding(tag)) {
       return B.call(SYMBOLS.COMPONENT, [B.stringSingle(tag, tagRange), argsExpr, B.id(ctxName)], sourceRange, formatted, 'ComponentNode');
     }
   }

@@ -95,15 +95,15 @@ function convertComponentBlock(
   // In compat mode, convert hyphenated block names to PascalCase so the
   // serializer recognizes them as component-like tags (via isLikelyComponent).
   // E.g., {{#foo-bar}} → tag 'FooBar', matching how inline curlies work.
-  // Also register the PascalCase tag as a temporary binding so the serializer's
-  // isComponentTag() recognizes it and uses $_c (component call) with proper slots
-  // instead of $_tag (element call) with flat children.
+  // The node is marked as a component invoked by name (`compatComponent`), so
+  // the serializer emits `$_c('FooBar', …)` with its block as a slot (block
+  // params bound) at any depth. A scope binding would reach codegen only from
+  // the root scope — a curly block inside an element or another block became
+  // a `$_tag('FooBar', …)` element whose block params were dropped — and would
+  // turn every `<FooBar>` element of the template into a component.
   const compatCurly = !byName && ctx.flags.IS_GLIMMER_COMPAT_MODE && rawTag.includes('-');
   const tag = compatCurly ? toPascalCase(rawTag) : rawTag;
-  const needsTagBinding = compatCurly && !ctx.scopeTracker.hasBinding(tag);
-  if (needsTagBinding) {
-    ctx.scopeTracker.addBinding(tag, { kind: 'compat-component', name: tag });
-  }
+  const compatComponent = compatCurly && !ctx.scopeTracker.hasBinding(tag);
 
   // Convert hash pairs to @-prefixed attribute tuples
   const attributes: AttributeTuple[] = node.hash.pairs.map((pair) => {
@@ -226,6 +226,7 @@ function convertComponentBlock(
     sourceRange: range,
     tagRange,
     ...(byName ? { byName: true } : {}),
+    ...(compatComponent ? { compatComponent: true } : {}),
   };
 }
 

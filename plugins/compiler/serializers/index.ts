@@ -110,8 +110,10 @@ export function buildNode(
   node: HBSNode,
   ctxName = 'this'
 ): JSExpression {
-  // A loose-mode by-name component (G11) is always a component.
-  const isComponent = node.byName === true || isComponentTag(ctx, node.tag);
+  // A loose-mode by-name component (G11) and a compat curly component block
+  // are always components.
+  const isComponent =
+    node.byName === true || node.compatComponent === true || isComponentTag(ctx, node.tag);
 
   if (isComponent) {
     return buildComponent(ctx, node, ctxName);
@@ -205,7 +207,8 @@ export function serializeNode(
   ctxName = 'this'
 ): string {
   // Check if it's a component (has binding, RuntimeTag, or dotted path)
-  const isComponent = node.byName === true || isComponentTag(ctx, node.tag);
+  const isComponent =
+    node.byName === true || node.compatComponent === true || isComponentTag(ctx, node.tag);
 
   if (isComponent) {
     return serializeComponent(ctx, node, ctxName);
