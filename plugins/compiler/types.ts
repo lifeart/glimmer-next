@@ -421,6 +421,11 @@ export interface HBSNode {
    * debug label (its node is named by the definition).
    */
   readonly componentKeyword?: boolean;
+  /**
+   * Glimmer compat mode: a lowercase dashed source tag (`<x-foo>`), a custom
+   * element, never a component invocation (see `visitElement`).
+   */
+  readonly customElement?: boolean;
 }
 
 /**

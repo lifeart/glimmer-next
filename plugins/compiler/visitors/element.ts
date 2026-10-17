@@ -170,6 +170,20 @@ function hasStableChild(element: ASTv1.ElementNode): boolean {
 }
 
 /**
+ * A custom element name as Glimmer classifies tags: lowercase first, with a
+ * dash, and not a path (`x-foo`, not `X-Foo`, `x.y-z` or `@x-y`).
+ */
+function isCustomElementTag(name: string): boolean {
+  return (
+    name[0]! >= 'a' &&
+    name[0]! <= 'z' &&
+    name.includes('-') &&
+    !name.includes('.') &&
+    !name.includes(':')
+  );
+}
+
+/**
  * Check if a tag name likely refers to a component (vs a standard element).
  * Standard components start with uppercase or contain dots/paths.
  */
@@ -197,6 +211,17 @@ export function visitElement(
 ): HBSNode {
   const range = getNodeRange(node);
   let actualTag = node.tag;
+
+  // Glimmer: a lowercase tag with a dash (`<x-foo>`) is a custom element, never
+  // a component, even when a component of that name exists (its own template
+  // may render `<x-foo>` as its element). Only a lexical binding of the name
+  // makes it an invocation. The tags lowered below (`<LinkTo>` → `link-to`,
+  // `<Foo::Bar>` → `foo--bar`) are component invocations: their source tag
+  // starts with an uppercase letter.
+  const customElement =
+    ctx.flags.IS_GLIMMER_COMPAT_MODE === true &&
+    isCustomElementTag(actualTag) &&
+    !hasRealBinding(ctx, actualTag);
 
   // Ember loose mode (G11, EMBER_LOOSE_COMPONENTS + a `strictMode: false`
   // template): an unbound uppercase-first / `::` tag is a component the host
@@ -231,9 +256,12 @@ export function visitElement(
   // a stray attribute), which Glimmer never has. A non-self-closing component
   // already gets an empty default slot from the serializer, so `has-block`
   // stays true without it.
+  // Not on a custom element: there it would be set as an attribute named
+  // `@__hasBlock__`, which is not a valid attribute name.
   if (
     ctx.flags.IS_GLIMMER_COMPAT_MODE &&
     !ctx.flags.EMBER_NATIVE &&
+    !customElement &&
     !node.selfClosing &&
     node.children.length === 0
   ) {
@@ -338,6 +366,7 @@ export function visitElement(
     _nodeType: 'element',
     tag: looseName ?? actualTag,
     ...(looseName !== null ? { byName: true } : {}),
+    ...(customElement ? { customElement: true } : {}),
     selfClosing: node.selfClosing,
     blockParams: node.blockParams,
     blockParamRanges: blockParamRanges ?? undefined,

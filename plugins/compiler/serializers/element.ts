@@ -107,11 +107,13 @@ export function buildElement(
   const childExprs = buildChildrenExprs(ctx, node.children, ctxName);
 
   // In compat mode, wrap children of component-like $_tag calls in lazy arrow functions.
-  // Detect Ember components: hyphenated names (custom elements) or PascalCase (angle-bracket).
-  // Standard HTML elements (div, span, p, etc.) don't need lazy children.
+  // Detect Ember components: hyphenated names or PascalCase (angle-bracket).
+  // Standard HTML elements (div, span, p, etc.) don't need lazy children, nor,
+  // for an Ember host, does a custom element (`<x-foo>`): Glimmer never
+  // invokes one as a component.
   const isLikelyComponent = typeof node.tag === 'string' && (
     node.tag.includes('-') || (node.tag[0] >= 'A' && node.tag[0] <= 'Z')
-  );
+  ) && !(node.customElement === true && ctx.flags.WITH_EMBER_INTEGRATION === true);
   const finalChildExprs = (ctx.flags.IS_GLIMMER_COMPAT_MODE && isLikelyComponent)
     ? maybeWrapComponentChildren(childExprs)
     : childExprs;
