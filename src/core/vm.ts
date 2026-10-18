@@ -202,14 +202,15 @@ function applyOpcode(op: tagOp, value: unknown) {
 }
 
 /**
- * `opcodeFor` (or, given the tag's current `value`, `opcodeForValue`) without
- * the unbind closure, for a binding that keeps `op` and the returned array
- * itself and unbinds with `removeOpcode(tag, ops, op)`.
+ * `opcodeForValue(tag, op, value)` — or `opcodeFor(tag, op)` when `value` is
+ * `NO_INITIAL` — without the unbind closure, for a binding that keeps `op`
+ * and the returned array itself and unbinds with `removeOpcode(tag, ops, op)`.
+ * `value` is required: `undefined` is a value (applied, not re-read).
  */
 export function bindOpcode(
   tag: AnyCell,
   op: tagOp,
-  value: unknown = NO_INITIAL,
+  value: unknown,
 ): Array<tagOp> {
   if (value === NO_INITIAL) {
     evaluateOpcode(tag, op);

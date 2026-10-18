@@ -242,6 +242,19 @@ describe('Ember native runtime', () => {
       expect(reads).toBe(2);
     });
 
+    test('a content getter that returns undefined also runs ONCE on create', () => {
+      let reads = 0;
+      const self = {
+        get value() {
+          reads++;
+          return undefined;
+        },
+      };
+      render(withSelf(compileNative('<p>[{{this.value}}]</p>'), self));
+      expect(fixture.container.querySelector('p')!.textContent).toBe('[]');
+      expect(reads).toBe(1);
+    });
+
     test('a fragment value renders its children; text again removes them', async () => {
       const self = { v: 'a' as unknown };
       render(withSelf(compileNative('<p>[{{this.v}}]</p>'), self));
