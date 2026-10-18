@@ -1,15 +1,14 @@
 import {
-  opsForTag,
   type AnyCell,
   type tagOp,
   markOpcodeAsync,
   setIsRendering,
   isRendering,
   formula,
-  opsFor,
+  addOpcode,
+  removeOpcode,
   getTracker,
   setTracker,
-  releaseOpArray,
   MergedCell,
   type Cell,
 } from './reactive';
@@ -184,6 +183,12 @@ export const checkOpcode = evaluateOpcode;
  * side-effecting getter twice (Glimmer reads once).
  */
 export function opcodeForValue(tag: AnyCell, op: tagOp, value: unknown) {
+  applyOpcode(op, value);
+  const ops = addOpcode(tag, op);
+  return () => removeOpcode(tag, ops, op);
+}
+
+function applyOpcode(op: tagOp, value: unknown) {
   const previousTracker = getTracker();
   if (renderFrame !== null || (previousTracker !== null && isNativeRuntime())) {
     // the `checkOpcode` read already forwarded the tag's dependencies; what
@@ -194,21 +199,25 @@ export function opcodeForValue(tag: AnyCell, op: tagOp, value: unknown) {
   } else {
     applyIsolated(op, value, previousTracker);
   }
-  const ops = opsFor(tag)!;
-  ops.push(op);
-  return () => {
-    const index = ops.indexOf(op);
-    if (index > -1) {
-      ops.splice(index, 1);
-    }
-    if (ops.length === 0) {
-      opsForTag.delete(tag.id);
-      releaseOpArray(ops);
-      if ('destroy' in tag) {
-        tag.destroy();
-      }
-    }
-  };
+}
+
+/**
+ * `opcodeForValue(tag, op, value)` — or `opcodeFor(tag, op)` when `value` is
+ * `NO_INITIAL` — without the unbind closure, for a binding that keeps `op`
+ * and the returned array itself and unbinds with `removeOpcode(tag, ops, op)`.
+ * `value` is required: `undefined` is a value (applied, not re-read).
+ */
+export function bindOpcode(
+  tag: AnyCell,
+  op: tagOp,
+  value: unknown,
+): Array<tagOp> {
+  if (value === NO_INITIAL) {
+    evaluateOpcode(tag, op);
+  } else {
+    applyOpcode(op, value);
+  }
+  return addOpcode(tag, op);
 }
 
 /**
@@ -233,19 +242,6 @@ export function opcodeForCreatedContent(tag: AnyCell, op: tagOp) {
 
 export function opcodeFor(tag: AnyCell, op: tagOp) {
   evaluateOpcode(tag, op);
-  const ops = opsFor(tag)!;
-  ops.push(op);
-  return () => {
-    const index = ops.indexOf(op);
-    if (index > -1) {
-      ops.splice(index, 1);
-    }
-    if (ops.length === 0) {
-      opsForTag.delete(tag.id);
-      releaseOpArray(ops);
-      if ('destroy' in tag) {
-        tag.destroy();
-      }
-    }
-  };
+  const ops = addOpcode(tag, op);
+  return () => removeOpcode(tag, ops, op);
 }

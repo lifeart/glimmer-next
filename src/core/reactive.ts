@@ -5,7 +5,6 @@
 */
 import { scheduleRevalidate } from '@/core/runtime';
 import { isFn, isTag, isTagLike, debugContext } from '@/core/shared';
-import { AdaptivePool, config } from '@/core/config';
 import { HOST_HOOKS } from '@/core/host-hooks';
 
 // Async opcode support — tree-shaken when ASYNC_COMPILE_TRANSFORMS is false
@@ -31,21 +30,6 @@ export const opsForTag: Map<
 export const tagsToRevalidate: Set<Cell> = new Set();
 // List of derived tags for each cell
 export const relatedTags: Map<number, Set<MergedCell>> = new Map();
-
-// Adaptive pool for ops arrays with automatic growth/shrink
-const opsPool = new AdaptivePool<Array<tagOp>>(
-  config.opsArrayPool,
-  () => [],
-  (arr) => { arr.length = 0; },
-);
-
-function getOpArray(): Array<tagOp> {
-  return opsPool.acquire();
-}
-
-export function releaseOpArray(arr: Array<tagOp>) {
-  opsPool.release(arr);
-}
 
 export const DEBUG_MERGED_CELLS = new Set<MergedCell>();
 export const DEBUG_CELLS = new Set<Cell>();
@@ -206,8 +190,10 @@ export class Cell<T extends unknown = unknown> {
   [Symbol.toPrimitive]() {
     return this.value;
   }
-  _debugName?: string | undefined;
-  [isTag] = true;
+  // Set only in development (no per-instance slot otherwise).
+  declare _debugName?: string | undefined;
+  // On the prototype (see below), not a per-instance slot.
+  declare readonly [isTag]: true;
   constructor(value: T, debugName?: string) {
     this.__value = value;
     if (IS_DEV_MODE) {
@@ -282,6 +268,7 @@ export class Cell<T extends unknown = unknown> {
     }
   }
 }
+(Cell.prototype as { [isTag]: true })[isTag] = true;
 
 export class LazyCell<T extends unknown = unknown> extends Cell<T> {
   private __isResolved = false;
@@ -315,13 +302,42 @@ export function listDependentCells(cells: Array<AnyCell>, cell: MergedCell) {
   return msg.join(' ');
 }
 
-export function opsFor(cell: AnyCell) {
-  let ops = opsForTag.get(cell.id);
+/**
+ * Register `op` to run when `tag` changes. Returns the array `op` was added
+ * to; pass it to `removeOpcode`. A tag's first opcode gets a new one-element
+ * array: most tags only ever have one, and a pushed-to empty array would
+ * reserve room for 17.
+ */
+export function addOpcode(tag: AnyCell, op: tagOp): Array<tagOp> {
+  const ops = opsForTag.get(tag.id);
   if (ops === undefined) {
-    ops = getOpArray();
-    opsForTag.set(cell.id, ops);
+    const created = [op];
+    opsForTag.set(tag.id, created);
+    return created;
   }
+  ops.push(op);
   return ops;
+}
+
+/**
+ * Undo `addOpcode(tag, op)`, given the array it returned. When that array
+ * empties, the tag's entry is dropped — only while it is still that array, so
+ * a second or stale call never drops opcodes bound later — and a formula tag
+ * is destroyed.
+ */
+export function removeOpcode(tag: AnyCell, ops: Array<tagOp>, op: tagOp): void {
+  const index = ops.indexOf(op);
+  if (index > -1) {
+    ops.splice(index, 1);
+  }
+  if (ops.length === 0) {
+    if (opsForTag.get(tag.id) === ops) {
+      opsForTag.delete(tag.id);
+    }
+    if ('destroy' in tag) {
+      tag.destroy();
+    }
+  }
 }
 
 export function relatedTagsForCell(cell: Cell) {
@@ -361,10 +377,9 @@ export function flushCellOpcodes(cell: Cell | MergedCell): void {
   const prevTracker = getTracker();
   if (prevTracker !== null) setTracker(null);
   try {
-    // Only execute the cell's own opcodes when it actually has some — for
-    // cells that exist purely as subscription targets (selector key cells,
-    // recycle holder cells) an unguarded executeTagSync would MATERIALIZE an
-    // empty pooled ops array into the global opsForTag map per flush.
+    // Only execute the cell's own opcodes when it actually has some — cells
+    // that exist purely as subscription targets (selector key cells, recycle
+    // holder cells) have none.
     const ownOps = opsForTag.get((cell as Cell).id);
     if (ownOps !== undefined && ownOps.length > 0) {
       try {
@@ -469,9 +484,11 @@ export class MergedCell {
   [Symbol.toPrimitive]() {
     return this.value;
   }
-  _debugName?: string | undefined;
+  // Set only in development (no per-instance slot otherwise).
+  declare _debugName?: string | undefined;
   relatedCells: Set<Cell> | null = null;
-  [isTag] = true;
+  // On the prototype (see below), not a per-instance slot.
+  declare readonly [isTag]: true;
   constructor(fn: Fn | Function, debugName?: string) {
     this.fn = fn;
     if (IS_DEV_MODE) {
@@ -545,6 +562,7 @@ export class MergedCell {
     }
   }
 }
+(MergedCell.prototype as { [isTag]: true })[isTag] = true;
 
 // this function is called when we need to update DOM, values represented by tags are changed
 export type tagOp = (...values: unknown[]) => Promise<void> | void;
@@ -766,8 +784,20 @@ export function executeTag(tag: Cell | MergedCell, awaitAsync: true): Promise<vo
 export function executeTag(tag: Cell | MergedCell, awaitAsync: false): void;
 export function executeTag(tag: Cell | MergedCell, awaitAsync?: boolean): Promise<void> | void;
 export function executeTag(tag: Cell | MergedCell, awaitAsync = true): Promise<void> | void {
-  const ops = opsFor(tag);
+  let ops = opsForTag.get(tag.id);
+  // Read even when the tag has no opcodes: a formula re-subscribes to its
+  // cells on this read.
   const value = tag.value;
+  if (ops === undefined) {
+    // A tag without opcodes gets no `opsForTag` entry: a changed cell that
+    // only formulas read, or a formula a list destroyed earlier in this pass,
+    // would otherwise keep an empty entry for good. The read above may have
+    // bound the tag's first opcode.
+    ops = opsForTag.get(tag.id);
+    if (ops === undefined) {
+      return awaitAsync ? Promise.resolve() : undefined;
+    }
+  }
   if (awaitAsync) {
     return executeTagAsyncOps(tag, ops, value);
   }

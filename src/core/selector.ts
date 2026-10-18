@@ -45,7 +45,6 @@ import {
   applyCellUpdateSync,
   opsForTag,
   relatedTags,
-  releaseOpArray,
 } from '@/core/reactive';
 import { opcodeFor } from '@/core/vm';
 import { registerDestructor } from '@/core/glimmer/destroyable';
@@ -61,8 +60,8 @@ export interface KeyedSelector<K> {
 
 // A key cell with no remaining subscribers is dead weight: its row formulas
 // were destroyed (row removed / list cleared) and removed themselves from the
-// cell's relatedTags set. Ops-array emptiness — not absence — is the liveness
-// signal on the ops side (pooled arrays may linger empty).
+// cell's relatedTags set. On the ops side, an empty array counts as unused
+// just like a missing one.
 function isKeyCellUnused(keyCell: Cell<boolean>): boolean {
   const subs = relatedTags.get(keyCell.id);
   if (subs !== undefined && subs.size > 0) {
@@ -73,11 +72,7 @@ function isKeyCellUnused(keyCell: Cell<boolean>): boolean {
 }
 
 function releaseKeyCell(keyCell: Cell<boolean>): void {
-  const ops = opsForTag.get(keyCell.id);
-  if (ops !== undefined) {
-    opsForTag.delete(keyCell.id);
-    releaseOpArray(ops);
-  }
+  opsForTag.delete(keyCell.id);
   relatedTags.delete(keyCell.id);
 }
 

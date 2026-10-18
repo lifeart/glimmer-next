@@ -17,8 +17,7 @@
  *     (`@tracked x = x`, `notifyPropertyChange` with an unchanged value). The
  *     cell is enqueued for the DOM drain only when something is subscribed to
  *     it (own opcodes or dependent formulas): an unsubscribed tag has nothing
- *     to re-execute, and enqueueing it would make the drain materialize a
- *     permanent empty `opsForTag` entry per dirtied tag. `scheduleRevalidate`
+ *     to re-execute. `scheduleRevalidate`
  *     (and so the host's `scheduleRevalidate` hook) is called for every dirty,
  *     as Glimmer's `DIRTY_TAG` does.
  *   - `currentRevision()` is the global revision (Glimmer `CURRENT_TAG`);

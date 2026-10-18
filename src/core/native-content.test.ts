@@ -26,6 +26,7 @@ import { destroyElementSync } from './destroy';
 import { HOST_HOOKS, registerHostHooks } from './host-hooks';
 import { tagFor, dirtyCell } from './tags';
 import { syncDom } from './runtime';
+import { cell, formula, opsForTag } from './reactive';
 import { notifyObjectKeyAdded } from './each-in-keyset';
 import { $__eachIn } from './helpers/each-in';
 import {
@@ -239,6 +240,131 @@ describe('Ember native runtime', () => {
       await syncDom();
       expect(fixture.container.querySelector('p')!.textContent).toBe('2');
       expect(reads).toBe(2);
+    });
+
+    test('a content getter that returns undefined also runs ONCE on create', () => {
+      let reads = 0;
+      const self = {
+        get value() {
+          reads++;
+          return undefined;
+        },
+      };
+      render(withSelf(compileNative('<p>[{{this.value}}]</p>'), self));
+      expect(fixture.container.querySelector('p')!.textContent).toBe('[]');
+      expect(reads).toBe(1);
+    });
+
+    test('a fragment value renders its children; text again removes them', async () => {
+      const self = { v: 'a' as unknown };
+      render(withSelf(compileNative('<p>[{{this.v}}]</p>'), self));
+      const p = () => fixture.container.querySelector('p')!;
+      const fragment = fixture.document.createDocumentFragment();
+      const b = fixture.document.createElement('b');
+      b.textContent = '1';
+      const u = fixture.document.createElement('u');
+      u.textContent = '2';
+      fragment.append(b, u);
+      await set(self, 'v', fragment);
+      expect(p().innerHTML).toBe('[<b>1</b><u>2</u>]');
+      await set(self, 'v', 'a');
+      expect(p().innerHTML).toBe('[a]');
+      expect(b.isConnected).toBe(false);
+      expect(u.isConnected).toBe(false);
+    });
+
+    test('text → component → text → component renders the component each time', async () => {
+      const Comp = compileNative('<i>component</i>');
+      const self = { v: 'a' as unknown };
+      render(withSelf(compileNative('<p>[{{this.v}}]</p>'), self));
+      const p = () => fixture.container.querySelector('p')!;
+      await set(self, 'v', Comp);
+      const first = p().querySelector('i');
+      expect(first).not.toBeNull();
+      expect(p().textContent).toBe('[component]');
+      await set(self, 'v', 'b');
+      expect(p().innerHTML).toBe('[b]');
+      expect(first!.isConnected).toBe(false);
+      await set(self, 'v', Comp);
+      const second = p().querySelector('i');
+      expect(second).not.toBeNull();
+      expect(second).not.toBe(first);
+      expect(p().textContent).toBe('[component]');
+      // The same definition again keeps the rendered component.
+      await set(self, 'v', Comp);
+      expect(p().querySelector('i')).toBe(second);
+    });
+
+    test('helper ↔ text swaps', async () => {
+      registerHostHooks({
+        classifyContent: (value: unknown) =>
+          typeof value === 'function' && (value as { isHelper?: boolean }).isHelper ? 'helper' : undefined,
+      });
+      const helper = Object.assign(() => 'from helper', { isHelper: true });
+      const self = { v: 'a' as unknown };
+      render(withSelf(compileNative('<p>{{this.v}}</p>'), self));
+      const p = () => fixture.container.querySelector('p')!;
+      await set(self, 'v', helper);
+      expect(p().textContent).toBe('from helper');
+      await set(self, 'v', 'b');
+      expect(p().textContent).toBe('b');
+      await set(self, 'v', helper);
+      expect(p().textContent).toBe('from helper');
+    });
+
+    test('the same node set again stays in place', async () => {
+      const a = fixture.document.createElement('a');
+      const self = { v: a as unknown };
+      render(withSelf(compileNative('<p>{{this.v}}</p>'), self));
+      const p = fixture.container.querySelector('p')!;
+      expect(p.firstElementChild).toBe(a);
+      await set(self, 'v', a);
+      expect(p.firstElementChild).toBe(a);
+      expect(p.childNodes).toHaveLength(2);
+    });
+
+    test('teardown with a live unit removes it and unbinds the content', async () => {
+      const opsBefore = opsForTag.size;
+      const self = { v: 'a' as unknown };
+      const { parent } = render(withSelf(compileNative('<p>[{{this.v}}]</p>'), self));
+      expect(opsForTag.size).toBe(opsBefore + 1);
+      await set(self, 'v', compileNative('<i>component</i>'));
+      expect(fixture.container.querySelector('i')).not.toBeNull();
+      destroyElementSync(parent, false, fixture.api);
+      expect(fixture.container.innerHTML).toBe('');
+      expect(opsForTag.size).toBe(opsBefore);
+      // A later change renders nothing.
+      await set(self, 'v', 'b');
+      expect(fixture.container.innerHTML).toBe('');
+    });
+
+    test('the destructor unbinds once; a second call is harmless', () => {
+      const value = cell<unknown>('a', 'value');
+      const f = formula(() => value.value, 'content');
+      const owner = new Component({});
+      owner[RENDERED_NODES_PROPERTY] = [];
+      addToTree(fixture.root, owner);
+      const textNode = fixture.api.text('');
+      fixture.container.appendChild(textNode);
+      owner[RENDERED_NODES_PROPERTY].push(textNode as never);
+      const unbind = bindNativeContent(fixture.api, owner, owner, textNode, f);
+      expect(textNode.textContent).toBe('a');
+      expect(opsForTag.get(f.id)).toHaveLength(1);
+      const node = fixture.document.createElement('b');
+      value.update(node);
+      syncDom();
+      expect(fixture.container.firstChild).toBe(node);
+      expect(owner[RENDERED_NODES_PROPERTY][0]).not.toBe(textNode);
+      unbind();
+      expect(opsForTag.has(f.id)).toBe(false);
+      expect(f.isDestroyed).toBe(true);
+      expect(node.isConnected).toBe(false);
+      expect(owner[RENDERED_NODES_PROPERTY]).toEqual([textNode]);
+      unbind();
+      value.update('b');
+      syncDom();
+      expect(textNode.textContent).toBe('');
+      expect(fixture.container.childNodes).toHaveLength(1);
     });
   });
 

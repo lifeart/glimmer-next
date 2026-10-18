@@ -17,7 +17,10 @@ export interface PoolConfig {
 }
 
 export interface GXTConfig {
-  /** Pool for ops arrays in reactive system */
+  /**
+   * Unused: opcode arrays are no longer pooled (a tag's first opcode gets a
+   * one-element array). Kept so existing `configureGXT` calls still work.
+   */
   opsArrayPool: PoolConfig;
   /** Pool for destructor arrays */
   destructorArrayPool: PoolConfig;

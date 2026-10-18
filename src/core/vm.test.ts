@@ -1037,3 +1037,63 @@ describe('Performance sanity checks', () => {
     // (exact count depends on implementation details)
   });
 });
+
+describe('opcode arrays', () => {
+  test("a tag's first opcode gets an array of its own, never a reused one", () => {
+    const a = cell(1, 'a');
+    const unbindFirst = opcodeFor(a, () => {});
+    const first = opsForTag.get(a.id)!;
+    expect(first.length).toBe(1);
+    unbindFirst();
+    expect(opsForTag.has(a.id)).toBe(false);
+    const unbindSecond = opcodeFor(a, () => {});
+    const second = opsForTag.get(a.id)!;
+    expect(second.length).toBe(1);
+    // An unbound tag's array is dropped, not kept for the next binding.
+    expect(second).not.toBe(first);
+    unbindSecond();
+  });
+
+  test('a second unbind does not leave two tags sharing one array', () => {
+    const a = cell(1, 'a');
+    const unbindA = opcodeFor(a, () => {});
+    unbindA();
+    unbindA();
+    const b = cell(1, 'b');
+    const c = cell(1, 'c');
+    const seenB: unknown[] = [];
+    const seenC: unknown[] = [];
+    const unbindB = opcodeFor(b, (v) => {
+      seenB.push(v);
+    });
+    const unbindC = opcodeFor(c, (v) => {
+      seenC.push(v);
+    });
+    expect(opsForTag.get(b.id)).not.toBe(opsForTag.get(c.id));
+    expect(opsForTag.get(b.id)!.length).toBe(1);
+    expect(opsForTag.get(c.id)!.length).toBe(1);
+    b.update(2);
+    syncDom();
+    expect(seenB).toEqual([1, 2]);
+    expect(seenC).toEqual([1]);
+    unbindB();
+    unbindC();
+  });
+
+  test("a stale unbind does not drop the tag's newer opcodes", () => {
+    const a = cell(1, 'a');
+    const unbindOld = opcodeFor(a, () => {});
+    unbindOld();
+    const seen: unknown[] = [];
+    const unbindNew = opcodeFor(a, (v) => {
+      seen.push(v);
+    });
+    unbindOld();
+    expect(opsForTag.get(a.id)?.length).toBe(1);
+    a.update(2);
+    syncDom();
+    expect(seen).toEqual([1, 2]);
+    unbindNew();
+    expect(opsForTag.has(a.id)).toBe(false);
+  });
+});

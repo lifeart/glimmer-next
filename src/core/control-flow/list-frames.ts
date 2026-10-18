@@ -82,9 +82,8 @@ import {
   type AnyCell,
   type Cell,
   type tagOp,
-  opsFor,
-  opsForTag,
-  releaseOpArray,
+  addOpcode,
+  removeOpcode,
   getTracker,
   setTracker,
   cellsMap,
@@ -169,21 +168,8 @@ export function frameHostHooksInstalled(): boolean {
  * unsubscribe is byte-for-byte `opcodeFor`'s.
  */
 function subscribeOp(tag: AnyCell, op: tagOp): () => void {
-  const ops = opsFor(tag)!;
-  ops.push(op);
-  return () => {
-    const index = ops.indexOf(op);
-    if (index > -1) {
-      ops.splice(index, 1);
-    }
-    if (ops.length === 0) {
-      opsForTag.delete(tag.id);
-      releaseOpArray(ops);
-      if ('destroy' in tag) {
-        tag.destroy();
-      }
-    }
-  };
+  const ops = addOpcode(tag, op);
+  return () => removeOpcode(tag, ops, op);
 }
 
 // ---------------------------------------------------------------------------
