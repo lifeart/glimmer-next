@@ -1,0 +1,92 @@
+{
+  "_doc": "Gated budgets for bench/budgets/run.mjs. A metric fails when its median exceeds `max`. `node bench/budgets/run.mjs --update` re-derives baseline/max from a run: max = ceil(baseline * (1 + rel) + abs), with rel/abs per metric family below. Heap figures are bytes; size figures are bytes of shipped JS.",
+  "chromium": "143.0.7499.4",
+  "tolerance": {
+    "memory.bytesPerRow": {
+      "rel": 0.05,
+      "abs": 16
+    },
+    "memory.afterClear": {
+      "rel": 0,
+      "abs": 65536
+    },
+    "memory.leakPerCycle": {
+      "rel": 0,
+      "abs": 4096
+    },
+    "size.raw": {
+      "rel": 0.01,
+      "abs": 256
+    },
+    "size.gzip": {
+      "rel": 0.01,
+      "abs": 64
+    },
+    "size.brotli": {
+      "rel": 0.01,
+      "abs": 64
+    }
+  },
+  "metrics": {
+    "size.bench.raw": {
+      "baseline": 48148,
+      "max": 48886
+    },
+    "size.bench.gzip": {
+      "baseline": 16361,
+      "max": 16589
+    },
+    "size.bench.brotli": {
+      "baseline": 14799,
+      "max": 15011
+    },
+    "size.hello.raw": {
+      "baseline": 18993,
+      "max": 19439
+    },
+    "size.hello.gzip": {
+      "baseline": 7157,
+      "max": 7293
+    },
+    "size.hello.brotli": {
+      "baseline": 6484,
+      "max": 6613
+    },
+    "memory.inline.bytesPerRow": {
+      "baseline": 1408.4,
+      "max": 1495
+    },
+    "memory.inline.afterClear": {
+      "baseline": 1217472,
+      "max": 1283008
+    },
+    "memory.inline.leakPerCycle": {
+      "baseline": 519273.2,
+      "max": 523370
+    },
+    "memory.component.bytesPerRow": {
+      "baseline": 2154.2,
+      "max": 2278
+    },
+    "memory.component.afterClear": {
+      "baseline": 60208,
+      "max": 125744
+    },
+    "memory.component.leakPerCycle": {
+      "baseline": 5507.2,
+      "max": 9604
+    },
+    "memory.frames.bytesPerRow": {
+      "baseline": 789.4,
+      "max": 845
+    },
+    "memory.frames.afterClear": {
+      "baseline": -58064,
+      "max": 65536
+    },
+    "memory.frames.leakPerCycle": {
+      "baseline": 4325.2,
+      "max": 8422
+    }
+  }
+}
