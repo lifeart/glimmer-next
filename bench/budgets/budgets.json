@@ -29,16 +29,16 @@
   },
   "metrics": {
     "size.bench.raw": {
-      "baseline": 48148,
-      "max": 48886
+      "baseline": 48834,
+      "max": 49579
     },
     "size.bench.gzip": {
-      "baseline": 16361,
-      "max": 16589
+      "baseline": 16511,
+      "max": 16741
     },
     "size.bench.brotli": {
-      "baseline": 14799,
-      "max": 15011
+      "baseline": 14924,
+      "max": 15138
     },
     "size.hello.raw": {
       "baseline": 18993,
@@ -53,40 +53,40 @@
       "max": 6613
     },
     "memory.inline.bytesPerRow": {
-      "baseline": 1408.4,
-      "max": 1495
+      "baseline": 1406.8,
+      "max": 1494
     },
     "memory.inline.afterClear": {
-      "baseline": 1217472,
-      "max": 1283008
+      "baseline": -43924,
+      "max": 65536
     },
     "memory.inline.leakPerCycle": {
-      "baseline": 519273.2,
-      "max": 523370
+      "baseline": 4646.8,
+      "max": 8743
     },
     "memory.component.bytesPerRow": {
       "baseline": 2154.2,
       "max": 2278
     },
     "memory.component.afterClear": {
-      "baseline": 60208,
-      "max": 125744
+      "baseline": 59772,
+      "max": 125308
     },
     "memory.component.leakPerCycle": {
-      "baseline": 5507.2,
-      "max": 9604
+      "baseline": 5460.4,
+      "max": 9557
     },
     "memory.frames.bytesPerRow": {
       "baseline": 789.4,
       "max": 845
     },
     "memory.frames.afterClear": {
-      "baseline": -58064,
+      "baseline": -57982,
       "max": 65536
     },
     "memory.frames.leakPerCycle": {
-      "baseline": 4325.2,
-      "max": 8422
+      "baseline": 4327.2,
+      "max": 8424
     }
   }
 }

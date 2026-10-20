@@ -413,6 +413,9 @@ export class BasicListComponent<T extends { id: number }> {
   private _processedKeys: Set<string> = new Set();
   protected _keysToRemove: string[] = [];
   protected _rowsToRemove: GenericReturnType[] = [];
+  // Removed plain-node rows / inverse content still listed in this list's
+  // RENDERED_NODES (see releaseRenderedNode). Null until the first removal.
+  private _releasedNodes: Set<unknown> | null = null;
   // Set by syncList when the incoming items are a strict append-only superset of
   // the current rows (existing prefix unchanged + in order) AND nothing was
   // removed. updateItems reads this to take the O(added) incremental-append path
@@ -446,6 +449,42 @@ export class BasicListComponent<T extends { id: number }> {
       set.add(keyForItem(items[i], i, items));
     }
     return set;
+  }
+  /**
+   * `renderElement` lists every plain DOM node it inserts for this list — a
+   * single-element row body (`$_blk` or `$_tag` rows) and node inverse
+   * content — in the list's own RENDERED_NODES; that is how a parent cascade
+   * removes rows the list added after its first render. A removed row must
+   * leave that array too, or every row the list ever rendered (its subtree,
+   * listeners and bound item) stays reachable for the list's lifetime.
+   * Removal paths hand the content here; `compactRenderedNodes` drops the
+   * batch in one pass. Components (and EMBER_NATIVE array rows, inserted with
+   * skipRegistration) are not listed, so only nodes are collected.
+   */
+  protected releaseRenderedNode(content: unknown): void {
+    if (content === null || typeof content !== 'object') return;
+    if (isArray(content)) {
+      for (let i = 0; i < content.length; i++) {
+        this.releaseRenderedNode(content[i]);
+      }
+      return;
+    }
+    if (!this.api.isNode(content as Node)) return;
+    if (this._releasedNodes === null) this._releasedNodes = new Set();
+    this._releasedNodes.add(content);
+  }
+  /** Drop the released nodes from RENDERED_NODES (in place, one pass). */
+  protected compactRenderedNodes(): void {
+    const released = this._releasedNodes;
+    if (released === null || released.size === 0) return;
+    const nodes = this[RENDERED_NODES_PROPERTY];
+    let kept = 0;
+    for (let i = 0; i < nodes.length; i++) {
+      const node = nodes[i];
+      if (!released.has(node)) nodes[kept++] = node;
+    }
+    nodes.length = kept;
+    released.clear();
   }
   /**
    * Detach this list's child-id set before bulk destruction.
@@ -1181,6 +1220,8 @@ export class BasicListComponent<T extends { id: number }> {
     // Manually remove all DOM nodes between topMarker and bottomMarker.
     // This is the definitive cleanup — any inverse content nodes live in this range.
     this.clearInverseNodes();
+    this.releaseRenderedNode(content);
+    this.compactRenderedNodes();
   }
   /**
    * Remove all DOM nodes between topMarker and bottomMarker.
@@ -1204,6 +1245,8 @@ export class BasicListComponent<T extends { id: number }> {
     // (same approach as destroyInverseSync — see comment there)
     await destroyElement(content as ComponentLike, true, this.api);
     this.clearInverseNodes();
+    this.releaseRenderedNode(content);
+    this.compactRenderedNodes();
   }
   // @ts-expect-error non-string return type
   keyForItem(item: T, index: number, items?: T[]): string {
@@ -1884,12 +1927,14 @@ export class SyncListComponent<
         for (const node of outerText[1]) this.api.insert(parent, node);
       }
       for (const value of keyMap.values()) {
+        this.releaseRenderedNode(value);
         try {
           destroyElementSync(value as ComponentLike, true, this.api);
         } catch (e) {
           if (firstError === undefined) firstError = e;
         }
       }
+      this.compactRenderedNodes();
       // Clean up all reactive index formulas
       if (indexFormulaMap) {
         for (const formula of indexFormulaMap.values()) {
@@ -2064,10 +2109,13 @@ export class SyncListComponent<
       }
     } finally {
       this._syncInProgress = false;
+      // rows removed by destroyItem during this pass
+      this.compactRenderedNodes();
     }
   }
   destroyItem(row: GenericReturnType, key: string) {
     const { keyMap, indexMap, indexFormulaMap } = this;
+    this.releaseRenderedNode(row);
     keyMap.delete(key);
     indexMap.delete(key);
     if (this.boundItemMap !== null) this.boundItemMap.delete(key);
@@ -2276,7 +2324,9 @@ export class AsyncListComponent<
         const rows: ComponentLike[] = [];
         for (const value of keyMap.values()) {
           rows.push(value as ComponentLike);
+          this.releaseRenderedNode(value);
         }
+        this.compactRenderedNodes();
         if (indexFormulaMap) {
           for (const formula of indexFormulaMap.values()) {
             formula.destroy();
@@ -2393,6 +2443,8 @@ export class AsyncListComponent<
       let next: T[] | null = items;
       while (next !== null) {
         await this.applySync(next);
+        // rows removed by destroyItem during this pass
+        this.compactRenderedNodes();
         next = this.queuedItems;
         this.queuedItems = null;
         // A list being destroyed renders no more rows: its destructor's
@@ -2405,6 +2457,7 @@ export class AsyncListComponent<
       this.syncing = false;
       this.syncDone = null;
       this.queuedItems = null;
+      this.compactRenderedNodes();
     }
   }
 
@@ -2538,6 +2591,8 @@ export class AsyncListComponent<
   }
   async destroyItem(row: GenericReturnType, key: string) {
     const { keyMap, indexMap, indexFormulaMap } = this;
+    // synchronous part: runSyncs compacts after this pass's removals
+    this.releaseRenderedNode(row);
     keyMap.delete(key);
     indexMap.delete(key);
     // Clean up reactive index formula if it exists
