@@ -35,7 +35,7 @@ import {
   COMPONENT_ID_PROPERTY,
   isEmpty,
 } from '@/core/shared';
-import { RENDERING_CONTEXT_PROPERTY } from '@/core/types';
+import { RENDERING_CONTEXT_PROPERTY, MOUNT_REPARSE_HOOK } from '@/core/types';
 import { TREE, CHILD, PARENT, cId, addToTree, releaseId, nativeTreeParent } from '@/core/tree';
 import { isRehydrationScheduled } from '@/core/ssr/rehydration';
 import { initDOM } from '@/core/context';
@@ -52,9 +52,13 @@ import type { StaticBlockDef } from '@/core/static-block';
 import {
   framesQualify,
   frameHostHooksInstalled,
+  frameDelegatedEvents,
+  createFrameEvents,
+  syncFrameEventRoot,
   syncFrames,
   destroyFrameState,
   type EachFrame,
+  type FrameEvents,
   type FrameSharedEntry,
 } from './list-frames';
 import {
@@ -727,6 +731,12 @@ export class BasicListComponent<T extends { id: number }> {
   frameMode = false;
   frames: Map<string, EachFrame<T>> | null = null;
   frameShared: Map<AnyCell, FrameSharedEntry> | null = null;
+  // Frame mode with `{{on}}` slots (list-frames.ts, "Events"): whether the
+  // block has any, and the delegated listeners' state (null when no slot's
+  // event is delegated).
+  frameHasEvents = false;
+  frameEvents: FrameEvents | null = null;
+  declare [MOUNT_REPARSE_HOOK]: (() => void) | undefined;
   constructor(
     {
       tag,
@@ -809,6 +819,13 @@ export class BasicListComponent<T extends { id: number }> {
         !frameHostHooksInstalled()
       ) {
         this.frameMode = true;
+        this.frameHasEvents = block.slots.some((slot) => slot.k === 'event');
+        const delegated = frameDelegatedEvents(block);
+        if (delegated !== null) {
+          this.frameEvents = createFrameEvents(this, delegated);
+          // the parent element is known once the staged nodes are inserted
+          this[MOUNT_REPARSE_HOOK] = () => syncFrameEventRoot(this);
+        }
         // Frame teardown is owned by the LIST: when this instance is
         // destroyed, reclaim every frame's subscriptions + the list-level
         // shared-dep subscriptions. Idempotent with the subclass destructor's

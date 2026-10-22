@@ -27,7 +27,7 @@ import {
   setupRuntimeTemplateGlobals,
   type HarnessItem,
 } from './__test-utils__/list-harness';
-import { cellFor, relatedTags } from './reactive';
+import { cellFor, relatedTags, opsForTag } from './reactive';
 import { template, compileTemplate } from '../../plugins/runtime-compiler';
 
 const LIST_TEMPLATE = `
@@ -192,6 +192,11 @@ describe('static-block fast path ({{#each}} cloneNode rows)', () => {
   });
 
   test('row destroy unsubscribes slot binding opcodes (no leak)', async () => {
+    // This body has `{{on}}`, so it runs in frame mode (list-frames.ts,
+    // "Events"), whose bindings subscribe ops (`opsForTag`) where v1's
+    // per-binding formulas subscribe through `relatedTags`: count both.
+    const subs = (cell: { id: number }) =>
+      (relatedTags.get(cell.id)?.size ?? 0) + (opsForTag.get(cell.id)?.length ?? 0);
     const root = mountRoot(fixture, FastPathRoot);
     const items = buildItems(5);
     const labelCell = cellFor(items[0], 'label');
@@ -199,27 +204,27 @@ describe('static-block fast path ({{#each}} cloneNode rows)', () => {
 
     (root as any)._items = items;
     await settle();
-    // text binding formula is subscribed to the per-item label cell
-    expect(relatedTags.get(labelCell.id)?.size ?? 0).toBeGreaterThan(0);
-    const selectedSubsRendered = relatedTags.get(selectedCell.id)?.size ?? 0;
+    // the row's text binding is subscribed to the per-item label cell
+    expect(subs(labelCell)).toBeGreaterThan(0);
+    const selectedSubsRendered = subs(selectedCell);
     expect(selectedSubsRendered).toBeGreaterThan(0);
 
     (root as any)._items = [];
     await settle();
-    expect(relatedTags.get(labelCell.id)?.size ?? 0).toBe(0);
-    const selectedSubsCleared = relatedTags.get(selectedCell.id)?.size ?? 0;
-    expect(selectedSubsCleared).toBe(0);
+    expect(subs(labelCell)).toBe(0);
+    // v1: 0; frame mode keeps its ONE list-level subscription to a shared
+    // cell until the list itself is destroyed
+    const selectedSubsCleared = subs(selectedCell);
+    expect(selectedSubsCleared).toBeLessThanOrEqual(1);
 
     // repeated create/clear cycles stay bounded (no cumulative growth)
     for (let cycle = 0; cycle < 3; cycle++) {
       (root as any)._items = buildItems(5);
       await settle();
-      expect(relatedTags.get(selectedCell.id)?.size ?? 0).toBe(
-        selectedSubsRendered,
-      );
+      expect(subs(selectedCell)).toBe(selectedSubsRendered);
       (root as any)._items = [];
       await settle();
-      expect(relatedTags.get(selectedCell.id)?.size ?? 0).toBe(0);
+      expect(subs(selectedCell)).toBe(selectedSubsCleared);
     }
   });
 

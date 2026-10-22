@@ -7,12 +7,13 @@
  * identical across paths; after teardown the reactive/tree registries must be
  * back to their pre-mount sizes.
  *
- * Paths (the compiled code resolves `$_each` / `$_eachSync` / `$_blk` from
+ * Paths (the compiled code resolves `$_each` / `$_eachSync` from
  * globalThis, so each path is forced by wrapping those globals):
  *   plain   — the block args are dropped: rows come from the compiled body
  *             callback (`$_tag` & co.), the generic path;
  *   block   — static-block v1 (`$_blk` cloneNode + per-binding formulas):
- *             the block reports an extra event slot, which keeps it off frames;
+ *             the list is told the body reads `{{index}}`, which keeps it off
+ *             frames (the rows never read it);
  *   frames  — as compiled: frame mode where the body qualifies, else v1;
  * each in the async (`$_each`) and the sync (`$_eachSync`) list flavour.
  *
@@ -52,7 +53,6 @@ import { $_c, $_args, $_edp } from '../dom';
 import { renderElement } from '../render-core';
 import { destroyElementSync } from '../destroy';
 import { cellFor, opsForTag, relatedTags } from '../reactive';
-import type { StaticBlockDef } from '../static-block';
 import { GXT_RUNTIME_SYMBOLS, template } from '../../../plugins/runtime-compiler';
 import { generateTemplate, generateTape, type Step } from './generator';
 
@@ -87,29 +87,19 @@ function installMode(mode: Mode): void {
     mode.path === 'plain'
       ? (items, fn, key, ctx, inverseFn, hasIndex) =>
           target(items, fn, key, ctx, inverseFn, hasIndex)
-      : (...args) => target(...args);
+      : mode.path === 'block'
+        ? // frame mode needs `hasIndex === false`; the rows never read it
+          (items, fn, key, ctx, inverseFn, _hasIndex, block, blockValues) =>
+            target(items, fn, key, ctx, inverseFn, true, block, blockValues)
+        : (...args) => target(...args);
   g.$_each = each;
   g.$_eachSync = each;
-  g.$_blk =
-    mode.path === 'block'
-      ? (html: string, slots: StaticBlockDef['slots']) => {
-          const def = ORIGINAL.$_blk(html, slots) as StaticBlockDef;
-          // framesQualify sees an event slot; create/cloneFrame keep the
-          // real slot table (they read it from the def itself)
-          return {
-            slots: [...def.slots, { p: [], k: 'event', n: 'x-v1-only' }],
-            create: def.create.bind(def),
-            cloneFrame: def.cloneFrame.bind(def),
-          };
-        }
-      : ORIGINAL.$_blk;
 }
 
 function restoreGlobals(): void {
   const g = globalThis as unknown as Record<string, unknown>;
   g.$_each = ORIGINAL.$_each;
   g.$_eachSync = ORIGINAL.$_eachSync;
-  g.$_blk = ORIGINAL.$_blk;
 }
 
 // ---------------------------------------------------------------- the app
@@ -142,9 +132,12 @@ function defineRoot(source: string) {
       super(args);
       for (const key of ['a', 'b', 'flag', 'sel', 'items']) cellFor(this as any, key);
     }
+    // `{{on}}` calls its handler as `($e, $n)` with `$n` undefined: the
+    // event is not necessarily the last argument `fn` passes on
     hit = (site: string, ...rest: unknown[]) => {
-      const event = rest[rest.length - 1] as Event | undefined;
-      const id = rest.length > 1 ? String(rest[0]) : '-';
+      const isEvent = (x: unknown) => typeof (x as Event | null)?.type === 'string';
+      const event = rest.find(isEvent) as Event | undefined;
+      const id = rest.length > 0 && !isEvent(rest[0]) ? String(rest[0]) : '-';
       const current = event?.currentTarget as Element | null | undefined;
       this.log.push(
         `${site}:${id}:${event?.type}:${current?.getAttribute?.('data-hit') ?? String(current)}`,

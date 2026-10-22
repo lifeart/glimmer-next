@@ -176,10 +176,12 @@ describe('compiled $_blk rows with {{on}}: no retained rows across cycles', () =
         return this._items;
       }
       pick = () => {};
+      // `{{index}}` keeps the static block on v1 (frame mode does not use
+      // RENDERED_NODES at all)
       [$template] = template(`
         <table><tbody>
-          {{#each this.items key="id" as |item|}}
-            <tr><td><a {{on "click" this.pick}}>{{item.label}}</a></td></tr>
+          {{#each this.items key="id" as |item index|}}
+            <tr><td><a {{on "click" this.pick}}>{{item.label}}</a></td><td>{{index}}</td></tr>
           {{/each}}
         </tbody></table>
       `);
@@ -190,7 +192,7 @@ describe('compiled $_blk rows with {{on}}: no retained rows across cycles', () =
       (c) => c instanceof AsyncListComponent || c instanceof SyncListComponent,
     ) as BasicListComponent<HarnessItem>;
     expect(list).toBeDefined();
-    // the compiled body is a static block with an event slot (v1, not frames)
+    // the compiled body is a static block with an event slot, on v1
     expect(list.block).not.toBeNull();
     expect(list.frameMode).toBe(false);
     const listedBase = list[RENDERED_NODES_PROPERTY].length;
