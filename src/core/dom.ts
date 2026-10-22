@@ -707,8 +707,16 @@ export function $attr(
   }
 
   if (isReactive) {
+    let applied = false;
     destructors.push(
       opcodeFor(result as AnyCell, (resolvedValue) => {
+        // An empty (null / undefined) first value writes nothing, like the
+        // const branch — see the reactive branch of `$prop` for why a
+        // binding's const-ness depends on when it was created.
+        if (!applied) {
+          applied = true;
+          if (isEmpty(resolvedValue)) return;
+        }
         // Host attr-normalization seam (see HostHooks.normalizeAttrValue).
         // Unregistered => `hook === null` => byte-identical original write.
         // Renormalizes on EVERY reactive re-apply, not just initial render.

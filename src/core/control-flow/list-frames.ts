@@ -305,8 +305,8 @@ function routeSlotDeps(
  *   text    : `String(value ?? '')`, guarded on the applied string;
  *   class/prop: `null → ''`, an empty first value skipped (as $prop),
  *           `style`-empty removes the attribute;
- *   attr    : initial run always writes (opcodeFor's immediate evaluation
- *           parity), re-runs guarded on the raw value.
+ *   attr    : initial run writes unless empty (as $attr), re-runs guarded
+ *           on the raw value.
  */
 function applySlot(
   api: DOMApi,
@@ -339,6 +339,8 @@ function applySlot(
     }
     if (!initial && frame.values[s] === value) return;
     frame.values[s] = value;
+    // first value: empty writes nothing, like $attr
+    if (initial && isEmpty(value)) return;
     api.attr(node, slot.n!, value as string);
   } else {
     // 'class' | 'prop'
