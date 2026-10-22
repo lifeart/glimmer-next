@@ -2036,7 +2036,10 @@ export class SyncListComponent<
       }
 
       if (items.length === 0 && !this.isFirstRender) {
-        if (this.fastCleanup()) {
+        // Already empty: nothing to remove — and the bulk clear would also
+        // wipe the inverse ({{else}}) DOM while `inverseContent` stays set,
+        // so `renderInverse` would not bring it back.
+        if (keyMap.size === 0 || this.fastCleanup()) {
           if (this.inverseFn) this.renderInverse();
           return;
         }
@@ -2496,7 +2499,9 @@ export class AsyncListComponent<
     }
 
     if (items.length === 0 && !this.isFirstRender) {
-      if (await this.fastCleanup()) {
+      // Already empty: see SyncListComponent.syncList (the bulk clear would
+      // wipe the inverse DOM).
+      if (this.keyMap.size === 0 || (await this.fastCleanup())) {
         if (this.inverseFn) this.renderInverse();
         return;
       }
