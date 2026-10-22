@@ -600,10 +600,12 @@ export class BasicListComponent<T extends { id: number }> {
     let firstError: unknown = undefined;
     for (const [key, rowCtx] of rowCtxMap) {
       const rowId = rowCtx[COMPONENT_ID_PROPERTY];
-      // EMBER_NATIVE: an unwrapped row's nested blocks are tree children of
-      // its rowCtx (`buildNativeRow`), which nothing below reaches — collect
-      // them before `destroySync` runs rowCtx's tree cleanup.
-      const nativeChildren = EMBER_NATIVE ? CHILD.get(rowId) : undefined;
+      // The rowCtx's tree children, which nothing below reaches: components
+      // and blocks nested in an inline-element row body (`<li><Badge/></li>`
+      // renders with rowCtx as its ctx) and, EMBER_NATIVE, an unwrapped
+      // row's nested blocks (`buildNativeRow`). Collect them before
+      // `destroySync` runs rowCtx's tree cleanup.
+      const rowChildren = CHILD.get(rowId);
       // Run ONLY the rowCtx's OWN destructors (its inline-element binding
       // opcodes + any host `onRowContextCreated` pre-destroy hook) via the
       // non-cascading `destroySync` — NOT `destroyElementSync`, which would
@@ -621,9 +623,9 @@ export class BasicListComponent<T extends { id: number }> {
           if (firstError === undefined) firstError = e;
         }
       }
-      if (nativeChildren !== undefined && nativeChildren.size > 0) {
+      if (rowChildren !== undefined && rowChildren.size > 0) {
         try {
-          this.destroyRowChildren(nativeChildren, this.keyMap.get(key));
+          this.destroyRowChildren(rowChildren, this.keyMap.get(key));
         } catch (e) {
           if (firstError === undefined) firstError = e;
         }
@@ -637,13 +639,14 @@ export class BasicListComponent<T extends { id: number }> {
     if (firstError !== undefined) reportDestructionError(firstError);
   }
   /**
-   * EMBER_NATIVE bulk teardown of a row ctx's tree children (skipDom: the bulk
-   * clear removes the DOM). Skips what the bulk keyMap pass destroys itself:
-   * the row's own value (a wrapper component, a component row) and the parts
-   * of an array row — so what is left is the nested blocks of an unwrapped
-   * row (see `buildNativeRow`).
+   * Bulk teardown of a row ctx's tree children (skipDom: the bulk clear
+   * removes the DOM). Skips what the bulk keyMap pass destroys itself: the
+   * row's own value (a wrapper component, a component row) and the parts of
+   * an array row — so what is left is what the row body nested under its
+   * ctx: components inside an inline-element body and, EMBER_NATIVE, the
+   * nested blocks of an unwrapped row (see `buildNativeRow`).
    */
-  private destroyRowChildren(
+  protected destroyRowChildren(
     children: Set<number>,
     row: GenericReturnType | undefined,
   ): void {
@@ -2299,8 +2302,11 @@ export class AsyncListComponent<
           // funnelled rejections into the fire-and-forget `Promise.all`, so it
           // never aborted the loop either; preserve that.
           let firstError: unknown = undefined;
-          for (const rowCtx of rowCtxMap.values()) {
+          for (const [key, rowCtx] of rowCtxMap) {
             const rowId = rowCtx[COMPONENT_ID_PROPERTY];
+            // components nested in an inline-element body (see
+            // teardownAllRowCtxs)
+            const rowChildren = CHILD.get(rowId);
             CHILD.delete(rowId);
             TREE.delete(rowId);
             PARENT.delete(rowId);
@@ -2308,6 +2314,13 @@ export class AsyncListComponent<
             if (!isDestroyed(rowCtx as object)) {
               try {
                 destroySync(rowCtx as object);
+              } catch (e) {
+                if (firstError === undefined) firstError = e;
+              }
+            }
+            if (rowChildren !== undefined && rowChildren.size > 0) {
+              try {
+                this.destroyRowChildren(rowChildren, keyMap.get(key));
               } catch (e) {
                 if (firstError === undefined) firstError = e;
               }
