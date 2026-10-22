@@ -1,11 +1,12 @@
-// The three row shapes the budget harness renders. All three produce the
-// same DOM per row (krausest markup); they differ only in which gxt path
+// The row shapes the budget harness renders. The first three produce the
+// same DOM per row (krausest markup) and differ only in which gxt path
 // builds it:
 //   inline    — a non-component each-body WITH `{{on}}` (the `$_blk` path;
 //               event slots keep it off frame mode today)
 //   component — a class component row (krausest's gxt Row)
 //   frames    — the inline body WITHOUT events (frame mode; a reference
 //               point for what the event-free fast path costs)
+//   text      — the event-free body with mixed static + dynamic cell text
 // Formatting note: keep the row markup on single lines — prettier's template
 // formatter would add whitespace text nodes to the rows.
 import { Component } from '@lifeart/gxt';
@@ -33,6 +34,22 @@ export const FrameRows = <template>
       <tr class={{if (eq @store.selected item.id) 'danger'}}>
         <td class='col-md-1'>{{item.id}}</td>
         <td class='col-md-4'><a>{{item.label}}</a></td>
+        <td class='col-md-1'><a><span class='glyphicon glyphicon-remove' aria-hidden='true'></span></a></td>
+        <td class='col-md-6'></td>
+      </tr>
+    {{/each}}
+  </tbody></table>
+</template>;
+
+// text — mixed static + dynamic text in the cells (`#{{item.id}}`,
+// `{{item.label}} (id {{item.id}})`), no events: what a typical row with
+// formatted text costs.
+export const TextRows = <template>
+  <table class='table'><tbody>
+    {{#each @store.items key='id' sync=true as |item|}}
+      <tr class={{if (eq @store.selected item.id) 'danger'}}>
+        <td class='col-md-1'>#{{item.id}}</td>
+        <td class='col-md-4'><a>{{item.label}} (id {{item.id}})</a></td>
         <td class='col-md-1'><a><span class='glyphicon glyphicon-remove' aria-hidden='true'></span></a></td>
         <td class='col-md-6'></td>
       </tr>

@@ -15,7 +15,10 @@
  *             the list is told the body reads `{{index}}`, which keeps it off
  *             frames (the rows never read it);
  *   frames  — as compiled: frame mode where the body qualifies, else v1;
- * each in the async (`$_each`) and the sync (`$_eachSync`) list flavour.
+ * each in the async (`$_each`) and the sync (`$_eachSync`) list flavour —
+ * plus three runs compiled with the AOT defaults (no Ember integration):
+ * mixed text as one `$_txt` binding (COLLAPSE_MIXED_TEXT) on the plain and
+ * the frame path, and the same flags without it.
  *
  * Normalization: comments are dropped (row/list markers differ per path by
  * design) and attributes are compared sorted by name (the block path bakes
@@ -61,12 +64,24 @@ type Flavour = 'async' | 'sync';
 interface Mode {
   path: Path;
   flavour: Flavour;
+  /** Compiler flags for the template (the runtime compiler's defaults when
+   * unset: compat, WITH_EMBER_INTEGRATION). */
+  flags?: Record<string, boolean>;
+  label?: string;
 }
 const MODES: Mode[] = [];
 for (const path of ['plain', 'block', 'frames'] as const) {
   for (const flavour of ['async', 'sync'] as const) MODES.push({ path, flavour });
 }
-const modeName = (m: Mode) => `${m.path}/${m.flavour}`;
+// The AOT defaults (no Ember integration), where mixed text collapses into
+// one `$_txt` binding (COLLAPSE_MIXED_TEXT), against the same without it.
+const AOT = { WITH_EMBER_INTEGRATION: false };
+MODES.push(
+  { path: 'plain', flavour: 'async', flags: { ...AOT, COLLAPSE_MIXED_TEXT: false }, label: 'aot' },
+  { path: 'plain', flavour: 'async', flags: { ...AOT, COLLAPSE_MIXED_TEXT: true }, label: 'aot+txt' },
+  { path: 'frames', flavour: 'sync', flags: { ...AOT, COLLAPSE_MIXED_TEXT: true }, label: 'aot+txt' },
+);
+const modeName = (m: Mode) => `${m.path}/${m.flavour}${m.label ? ` ${m.label}` : ''}`;
 
 const DEFAULT_SEEDS = 40;
 function seeds(): number[] {
@@ -115,10 +130,9 @@ function makeItem(id: number, label: string): Item {
   return item;
 }
 
-const Badge = template('<span class="badge">{{@v}}{{yield}}</span>');
-
-function defineRoot(source: string) {
-  const compiled = template(source, { scope: { Badge } });
+function defineRoot(source: string, flags?: Record<string, boolean>) {
+  const Badge = template('<span class="badge">{{@v}}{{yield}}</span>', { flags });
+  const compiled = template(source, { scope: { Badge }, flags });
   class FuzzRoot extends Component {
     a = 'alpha';
     b = 0;
@@ -283,7 +297,7 @@ async function run(
   mode: Mode,
 ): Promise<RunResult> {
   installMode(mode);
-  const Root = defineRoot(source);
+  const Root = defineRoot(source, mode.flags);
   const parent = new Component({});
   (parent as any)[RENDERED_NODES_PROPERTY] = [];
   const baseline = registrySizes();
@@ -334,20 +348,28 @@ describe('differential: {{#each}} paths render identically (seeded)', () => {
         fixture.container.innerHTML = '';
         results.push([mode, await run(fixture, source, tape, mode)]);
       }
-      const [refMode, ref] = results[0];
       const context = `seed ${seed}\ntemplate: ${source}\ntape: ${JSON.stringify(tape)}`;
-      // first step where any path disagrees: report every path's DOM there
-      for (let step = 0; step < ref.snapshots.length; step++) {
-        const differs = results.some(([, r]) => r.snapshots[step] !== ref.snapshots[step]);
-        if (differs) {
-          const what = step === 0 ? 'first render' : JSON.stringify(tape[step - 1]);
-          const table = results
-            .map(([m, r]) => `  ${modeName(m).padEnd(13)} ${r.snapshots[step]}`)
-            .join('\n');
-          expect.fail(`paths disagree after step ${step} (${what})\n${table}\n${context}`);
+      // Each compile-flag group is compared with its own first run: the
+      // groups themselves differ by design (e.g. a const `false` renders as
+      // "false" with the compat defaults and as "" with the AOT flags).
+      for (const group of [false, true]) {
+        const members = results.filter(([m]) => (m.flags !== undefined) === group);
+        const ref = members[0][1];
+        // first step where any path disagrees: report every path's DOM there
+        for (let step = 0; step < ref.snapshots.length; step++) {
+          const differs = members.some(([, r]) => r.snapshots[step] !== ref.snapshots[step]);
+          if (differs) {
+            const what = step === 0 ? 'first render' : JSON.stringify(tape[step - 1]);
+            const table = members
+              .map(([m, r]) => `  ${modeName(m).padEnd(21)} ${r.snapshots[step]}`)
+              .join('\n');
+            expect.fail(`paths disagree after step ${step} (${what})\n${table}\n${context}`);
+          }
         }
       }
+      const [refMode, ref] = results[0];
       for (const [mode, result] of results) {
+        // handlers do not depend on the compile-flag group
         expect(result.log, `${modeName(mode)} vs ${modeName(refMode)} click log\n${context}`).toEqual(ref.log);
         expect(
           result.after,
@@ -367,7 +389,7 @@ describe('differential: {{#each}} paths render identically (seeded)', () => {
       { op: 'refSwap', at: 1 },
     ];
     const rendered: Record<string, string> = {};
-    for (const mode of MODES) {
+    for (const mode of MODES.filter((m) => m.flags === undefined)) {
       fixture.container.innerHTML = '';
       const result = await run(fixture, source, tape, mode);
       rendered[modeName(mode)] = result.snapshots[2];

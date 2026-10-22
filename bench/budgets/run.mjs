@@ -6,7 +6,7 @@
  *
  *   --reps N          fresh-page repetitions per row kind (default 10); every
  *                     reported number is the median over the reps
- *   --kinds a,b       row kinds (default inline,component,frames; see
+ *   --kinds a,b       row kinds (default inline,component,frames,text; see
  *                     app/kinds.gts)
  *   --skip-timing     memory + size only (the gated metrics)
  *   --skip-memory     timing + size only
@@ -60,7 +60,7 @@ const budgetsFile = path.join(here, "budgets.json");
 function parseArgs(argv) {
   const opts = {
     reps: 10,
-    kinds: ["inline", "component", "frames"],
+    kinds: ["inline", "component", "frames", "text"],
     timing: true,
     memory: true,
     build: true,
@@ -221,10 +221,10 @@ async function sanity(browser, origin, kind) {
   );
   await p.op("update");
   check(
-    (await p.call(() => window.__bench.firstLabel())).endsWith(" !!!"),
+    (await p.call(() => window.__bench.firstLabel())).includes(" !!!"),
     `${kind}: update every 10th row`,
   );
-  if (kind !== "frames") {
+  if (KINDS_WITH_EVENTS.has(kind)) {
     await p.call(() => window.__bench.click(2, "select"));
     check(
       (await p.call(() => window.__bench.selectedRowIndex())) === 2,
@@ -245,6 +245,7 @@ async function sanity(browser, origin, kind) {
 }
 
 const CYCLES = 5;
+const KINDS_WITH_EVENTS = new Set(["inline", "component"]);
 
 async function memoryRep(browser, origin, kind) {
   const p = await openKind(browser, origin, kind);
@@ -350,7 +351,9 @@ function deriveMax(budgets, metric, baseline) {
       `budgets: no tolerance for ${familyOf(metric)} in budgets.json`,
     );
   }
-  return Math.ceil(Math.max(baseline, 0) * (1 + tol.rel) + tol.abs);
+  // |baseline|: a negative baseline (heap below the reference after a clear)
+  // keeps its headroom relative to itself, not to 0
+  return Math.ceil(baseline + Math.abs(baseline) * tol.rel + tol.abs);
 }
 
 function fmt(n, digits = 1) {

@@ -1,5 +1,5 @@
 {
-  "_doc": "Gated budgets for bench/budgets/run.mjs. A metric fails when its median exceeds `max`. `node bench/budgets/run.mjs --update` re-derives baseline/max from a run: max = ceil(baseline * (1 + rel) + abs), with rel/abs per metric family below. Heap figures are bytes; size figures are bytes of shipped JS.",
+  "_doc": "Gated budgets for bench/budgets/run.mjs. A metric fails when its median exceeds `max`. `node bench/budgets/run.mjs --update` re-derives baseline/max from a run: max = ceil(baseline + |baseline| * rel + abs), with rel/abs per metric family below. Heap figures are bytes; size figures are bytes of shipped JS.",
   "chromium": "143.0.7499.4",
   "tolerance": {
     "memory.bytesPerRow": {
@@ -29,28 +29,28 @@
   },
   "metrics": {
     "size.bench.raw": {
-      "baseline": 51942,
-      "max": 52718
+      "baseline": 53070,
+      "max": 53857
     },
     "size.bench.gzip": {
-      "baseline": 17460,
-      "max": 17699
+      "baseline": 17570,
+      "max": 17810
     },
     "size.bench.brotli": {
-      "baseline": 15789,
-      "max": 16011
+      "baseline": 15934,
+      "max": 16158
     },
     "size.hello.raw": {
-      "baseline": 19069,
-      "max": 19516
+      "baseline": 19228,
+      "max": 19677
     },
     "size.hello.gzip": {
-      "baseline": 7177,
-      "max": 7313
+      "baseline": 7229,
+      "max": 7366
     },
     "size.hello.brotli": {
-      "baseline": 6505,
-      "max": 6635
+      "baseline": 6543,
+      "max": 6673
     },
     "memory.inline.bytesPerRow": {
       "baseline": 915.4,
@@ -58,35 +58,47 @@
     },
     "memory.inline.afterClear": {
       "baseline": -372020,
-      "max": 65536
+      "max": -306484
     },
     "memory.inline.leakPerCycle": {
       "baseline": 3606.4,
       "max": 7703
     },
     "memory.component.bytesPerRow": {
-      "baseline": 2160.5,
-      "max": 2285
+      "baseline": 2159.7,
+      "max": 2284
     },
     "memory.component.afterClear": {
-      "baseline": -122104,
-      "max": 65536
+      "baseline": -129898,
+      "max": -64362
     },
     "memory.component.leakPerCycle": {
-      "baseline": 4170.8,
-      "max": 8267
+      "baseline": 5644,
+      "max": 9740
     },
     "memory.frames.bytesPerRow": {
       "baseline": 791.4,
       "max": 847
     },
     "memory.frames.afterClear": {
-      "baseline": -365708,
-      "max": 65536
+      "baseline": -365682,
+      "max": -300146
     },
     "memory.frames.leakPerCycle": {
-      "baseline": 3255.2,
-      "max": 7352
+      "baseline": 3564.8,
+      "max": 7661
+    },
+    "memory.text.bytesPerRow": {
+      "baseline": 928.5,
+      "max": 991
+    },
+    "memory.text.afterClear": {
+      "baseline": 20556,
+      "max": 86092
+    },
+    "memory.text.leakPerCycle": {
+      "baseline": 4354,
+      "max": 8450
     }
   }
 }

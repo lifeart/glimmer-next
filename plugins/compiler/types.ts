@@ -170,6 +170,12 @@ export interface CompilerFlags {
    * See plugins/flags.ts.
    */
   readonly EMBER_ARG_LABELS?: boolean;
+  /**
+   * Mixed static + dynamic text as one text binding (`$_txt`). On by default;
+   * never applied under EMBER_NATIVE or WITH_EMBER_INTEGRATION. See
+   * plugins/flags.ts.
+   */
+  readonly COLLAPSE_MIXED_TEXT?: boolean;
 }
 
 /**
@@ -204,6 +210,7 @@ export const DEFAULT_FLAGS: CompilerFlags = Object.freeze({
   EMBER_LOOSE_COMPONENTS: false, // loose templates resolve free names by name (host opt-in)
   EMBER_WHITESPACE: false, // Glimmer's parse and whitespace text nodes (host opt-in)
   EMBER_ARG_LABELS: false, // source paths of helper / modifier arguments (host opt-in, debug)
+  COLLAPSE_MIXED_TEXT: true, // mixed text children -> one `$_txt` text binding
 });
 
 /**

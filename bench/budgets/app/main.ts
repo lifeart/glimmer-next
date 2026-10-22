@@ -1,17 +1,18 @@
 // Page-side driver for the budget harness (bench/budgets/run.mjs). The page
-// renders ONE row kind (`?kind=inline|component|frames`) and exposes
+// renders ONE row kind (`?kind=inline|component|frames|text`) and exposes
 // `window.__bench`, which the Playwright runner drives over CDP. Ops write the
 // store, then flush gxt synchronously (`syncDom`) so the measured interval
 // covers the whole render, not a microtask hop.
 import { renderComponent, syncDom } from '@lifeart/gxt';
 import { Store } from './store';
 import { buildData, type Item } from './data';
-import { InlineRows, FrameRows, ComponentRows } from './kinds.gts';
+import { InlineRows, FrameRows, ComponentRows, TextRows } from './kinds.gts';
 
 const ROOTS = {
   inline: InlineRows,
   frames: FrameRows,
   component: ComponentRows,
+  text: TextRows,
 } as const;
 type Kind = keyof typeof ROOTS;
 
