@@ -303,8 +303,8 @@ function routeSlotDeps(
  *   static  (first run tracked no cells): the const-collapsed branch —
  *           empty values are skipped, others written raw, never re-run;
  *   text    : `String(value ?? '')`, guarded on the applied string;
- *   class/prop: `null → ''`, first-run `undefined` skipped (the
- *           `prevPropValue` quirk), `style`-empty removes the attribute;
+ *   class/prop: `null → ''`, an empty first value skipped (as $prop),
+ *           `style`-empty removes the attribute;
  *   attr    : initial run always writes (opcodeFor's immediate evaluation
  *           parity), re-runs guarded on the raw value.
  */
@@ -349,6 +349,8 @@ function applySlot(
       api.prop(node, name, value);
       return;
     }
+    // first value: empty writes nothing, like $prop (see its reactive branch)
+    if (frame.values[s] === UNSET && isEmpty(value)) return;
     const val = value === null ? '' : value;
     const prev = frame.values[s] === UNSET ? undefined : frame.values[s];
     if (val === prev) return;
