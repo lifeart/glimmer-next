@@ -477,6 +477,26 @@ export class BasicListComponent<T extends { id: number }> {
     if (this._releasedNodes === null) this._releasedNodes = new Set();
     this._releasedNodes.add(content);
   }
+  /**
+   * An emptied list lets go of its per-sync key scratch. The sets and arrays
+   * are reused across syncs (no per-sync allocation), so after a big list is
+   * cleared they would hold its keys — and their grown tables — until the
+   * next non-empty sync: ~16 bytes per key per structure, ~0.3 MB after
+   * clearing 10k frame rows (bench/budgets).
+   */
+  protected releaseKeyScratch(): void {
+    this._dupItemsRef = null;
+    this._dupDetectSet.clear();
+    this._dupFirstIdxMap.clear();
+    this._updatingKeys.clear();
+    this._moveSet.clear();
+    this._freshMoveKeys.clear();
+    this._processedKeys.clear();
+    this._existKeys.length = 0;
+    this._existNewIdx.length = 0;
+    this._existOldIdx.length = 0;
+    this._itemKeys.length = 0;
+  }
   /** Drop the released nodes from RENDERED_NODES (in place, one pass). */
   protected compactRenderedNodes(): void {
     const released = this._releasedNodes;
@@ -2013,6 +2033,7 @@ export class SyncListComponent<
         }
       } finally {
         this._syncInProgress = false;
+        if (items.length === 0) this.releaseKeyScratch();
       }
       return;
     }
@@ -2134,6 +2155,7 @@ export class SyncListComponent<
       this._syncInProgress = false;
       // rows removed by destroyItem during this pass
       this.compactRenderedNodes();
+      if (items.length === 0) this.releaseKeyScratch();
     }
   }
   destroyItem(row: GenericReturnType, key: string) {
@@ -2478,6 +2500,7 @@ export class AsyncListComponent<
         await this.applySync(next);
         // rows removed by destroyItem during this pass
         this.compactRenderedNodes();
+        if (next.length === 0) this.releaseKeyScratch();
         next = this.queuedItems;
         this.queuedItems = null;
         // A list being destroyed renders no more rows: its destructor's

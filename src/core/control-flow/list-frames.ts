@@ -829,6 +829,8 @@ function syncFramesScratch(
   // ----- clear
   if (n === 0) {
     clearAllFrames(list);
+    // the shared scratch would hold the last non-empty sync's keys
+    S.keyset.clear();
     return;
   }
 
