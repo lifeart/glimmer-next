@@ -112,6 +112,10 @@ export const SYMBOLS = {
   // `[...].join('')`, gated by the EMBER_ATTR_CONCAT flag. Applies Ember string
   // coercion and returns null for all-nullish (attribute-removal contract).
   QUOTED_STR: '$_qStr',
+  // Mixed static + dynamic text collapsed into one `@textContent` binding
+  // (`optimizeTextChild`): `() => $_txt(["Count: ", this.count, "!"])`. Coerces
+  // each part like a text node of its own (src/core/helpers/text-concat.ts).
+  TEXT_CONCAT: '$_txt',
   // Compat-mode `{{unique-id}}` — stable per-(render-context, call-site) id.
   // Emitted by the value serializer for `unique-id` under IS_GLIMMER_COMPAT_MODE
   // as `$_uid(this, SITE_INDEX)`, where SITE_INDEX is a per-template call-site
@@ -309,6 +313,11 @@ export const INTERNAL_HELPERS = {
   // intercepts this name and emits `$_html(() => inner, ctx)` (SYMBOLS.HTML).
   // Never a real runtime import — purely a compile-time routing sentinel.
   TRUSTED_HTML: '$__html',
+  // Marker for collapsed mixed text (the element visitor's
+  // `optimizeTextChild`): positional = the children in order (string
+  // literals and `{{…}}` values). buildHelper lowers it to `$_txt([...])`
+  // (SYMBOLS.TEXT_CONCAT). A compile-time routing sentinel only.
+  TEXT_CONCAT: '$__txt',
   // Marker for an Ember `{{outlet}}` (EMBER_OUTLET flag, G3) in content
   // position. buildHelper lowers it to `$_outlet(ctx)` (SYMBOLS.OUTLET); like
   // TRUSTED_HTML it produces DOM (a component), so the element visitor keeps it

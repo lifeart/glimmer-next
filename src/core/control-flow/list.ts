@@ -35,7 +35,7 @@ import {
   COMPONENT_ID_PROPERTY,
   isEmpty,
 } from '@/core/shared';
-import { RENDERING_CONTEXT_PROPERTY } from '@/core/types';
+import { RENDERING_CONTEXT_PROPERTY, MOUNT_REPARSE_HOOK } from '@/core/types';
 import { TREE, CHILD, PARENT, cId, addToTree, releaseId, nativeTreeParent } from '@/core/tree';
 import { isRehydrationScheduled } from '@/core/ssr/rehydration';
 import { initDOM } from '@/core/context';
@@ -52,9 +52,13 @@ import type { StaticBlockDef } from '@/core/static-block';
 import {
   framesQualify,
   frameHostHooksInstalled,
+  frameDelegatedEvents,
+  createFrameEvents,
+  syncFrameEventRoot,
   syncFrames,
   destroyFrameState,
   type EachFrame,
+  type FrameEvents,
   type FrameSharedEntry,
 } from './list-frames';
 import {
@@ -413,6 +417,9 @@ export class BasicListComponent<T extends { id: number }> {
   private _processedKeys: Set<string> = new Set();
   protected _keysToRemove: string[] = [];
   protected _rowsToRemove: GenericReturnType[] = [];
+  // Removed plain-node rows / inverse content still listed in this list's
+  // RENDERED_NODES (see releaseRenderedNode). Null until the first removal.
+  private _releasedNodes: Set<unknown> | null = null;
   // Set by syncList when the incoming items are a strict append-only superset of
   // the current rows (existing prefix unchanged + in order) AND nothing was
   // removed. updateItems reads this to take the O(added) incremental-append path
@@ -446,6 +453,62 @@ export class BasicListComponent<T extends { id: number }> {
       set.add(keyForItem(items[i], i, items));
     }
     return set;
+  }
+  /**
+   * `renderElement` lists every plain DOM node it inserts for this list — a
+   * single-element row body (`$_blk` or `$_tag` rows) and node inverse
+   * content — in the list's own RENDERED_NODES; that is how a parent cascade
+   * removes rows the list added after its first render. A removed row must
+   * leave that array too, or every row the list ever rendered (its subtree,
+   * listeners and bound item) stays reachable for the list's lifetime.
+   * Removal paths hand the content here; `compactRenderedNodes` drops the
+   * batch in one pass. Components (and EMBER_NATIVE array rows, inserted with
+   * skipRegistration) are not listed, so only nodes are collected.
+   */
+  protected releaseRenderedNode(content: unknown): void {
+    if (content === null || typeof content !== 'object') return;
+    if (isArray(content)) {
+      for (let i = 0; i < content.length; i++) {
+        this.releaseRenderedNode(content[i]);
+      }
+      return;
+    }
+    if (!this.api.isNode(content as Node)) return;
+    if (this._releasedNodes === null) this._releasedNodes = new Set();
+    this._releasedNodes.add(content);
+  }
+  /**
+   * An emptied list lets go of its per-sync key scratch. The sets and arrays
+   * are reused across syncs (no per-sync allocation), so after a big list is
+   * cleared they would hold its keys — and their grown tables — until the
+   * next non-empty sync: ~16 bytes per key per structure, ~0.3 MB after
+   * clearing 10k frame rows (bench/budgets).
+   */
+  protected releaseKeyScratch(): void {
+    this._dupItemsRef = null;
+    this._dupDetectSet.clear();
+    this._dupFirstIdxMap.clear();
+    this._updatingKeys.clear();
+    this._moveSet.clear();
+    this._freshMoveKeys.clear();
+    this._processedKeys.clear();
+    this._existKeys.length = 0;
+    this._existNewIdx.length = 0;
+    this._existOldIdx.length = 0;
+    this._itemKeys.length = 0;
+  }
+  /** Drop the released nodes from RENDERED_NODES (in place, one pass). */
+  protected compactRenderedNodes(): void {
+    const released = this._releasedNodes;
+    if (released === null || released.size === 0) return;
+    const nodes = this[RENDERED_NODES_PROPERTY];
+    let kept = 0;
+    for (let i = 0; i < nodes.length; i++) {
+      const node = nodes[i];
+      if (!released.has(node)) nodes[kept++] = node;
+    }
+    nodes.length = kept;
+    released.clear();
   }
   /**
    * Detach this list's child-id set before bulk destruction.
@@ -561,10 +624,12 @@ export class BasicListComponent<T extends { id: number }> {
     let firstError: unknown = undefined;
     for (const [key, rowCtx] of rowCtxMap) {
       const rowId = rowCtx[COMPONENT_ID_PROPERTY];
-      // EMBER_NATIVE: an unwrapped row's nested blocks are tree children of
-      // its rowCtx (`buildNativeRow`), which nothing below reaches — collect
-      // them before `destroySync` runs rowCtx's tree cleanup.
-      const nativeChildren = EMBER_NATIVE ? CHILD.get(rowId) : undefined;
+      // The rowCtx's tree children, which nothing below reaches: components
+      // and blocks nested in an inline-element row body (`<li><Badge/></li>`
+      // renders with rowCtx as its ctx) and, EMBER_NATIVE, an unwrapped
+      // row's nested blocks (`buildNativeRow`). Collect them before
+      // `destroySync` runs rowCtx's tree cleanup.
+      const rowChildren = CHILD.get(rowId);
       // Run ONLY the rowCtx's OWN destructors (its inline-element binding
       // opcodes + any host `onRowContextCreated` pre-destroy hook) via the
       // non-cascading `destroySync` — NOT `destroyElementSync`, which would
@@ -582,9 +647,9 @@ export class BasicListComponent<T extends { id: number }> {
           if (firstError === undefined) firstError = e;
         }
       }
-      if (nativeChildren !== undefined && nativeChildren.size > 0) {
+      if (rowChildren !== undefined && rowChildren.size > 0) {
         try {
-          this.destroyRowChildren(nativeChildren, this.keyMap.get(key));
+          this.destroyRowChildren(rowChildren, this.keyMap.get(key));
         } catch (e) {
           if (firstError === undefined) firstError = e;
         }
@@ -598,13 +663,14 @@ export class BasicListComponent<T extends { id: number }> {
     if (firstError !== undefined) reportDestructionError(firstError);
   }
   /**
-   * EMBER_NATIVE bulk teardown of a row ctx's tree children (skipDom: the bulk
-   * clear removes the DOM). Skips what the bulk keyMap pass destroys itself:
-   * the row's own value (a wrapper component, a component row) and the parts
-   * of an array row — so what is left is the nested blocks of an unwrapped
-   * row (see `buildNativeRow`).
+   * Bulk teardown of a row ctx's tree children (skipDom: the bulk clear
+   * removes the DOM). Skips what the bulk keyMap pass destroys itself: the
+   * row's own value (a wrapper component, a component row) and the parts of
+   * an array row — so what is left is what the row body nested under its
+   * ctx: components inside an inline-element body and, EMBER_NATIVE, the
+   * nested blocks of an unwrapped row (see `buildNativeRow`).
    */
-  private destroyRowChildren(
+  protected destroyRowChildren(
     children: Set<number>,
     row: GenericReturnType | undefined,
   ): void {
@@ -685,6 +751,12 @@ export class BasicListComponent<T extends { id: number }> {
   frameMode = false;
   frames: Map<string, EachFrame<T>> | null = null;
   frameShared: Map<AnyCell, FrameSharedEntry> | null = null;
+  // Frame mode with `{{on}}` slots (list-frames.ts, "Events"): whether the
+  // block has any, and the delegated listeners' state (null when no slot's
+  // event is delegated).
+  frameHasEvents = false;
+  frameEvents: FrameEvents | null = null;
+  declare [MOUNT_REPARSE_HOOK]: (() => void) | undefined;
   constructor(
     {
       tag,
@@ -767,6 +839,13 @@ export class BasicListComponent<T extends { id: number }> {
         !frameHostHooksInstalled()
       ) {
         this.frameMode = true;
+        this.frameHasEvents = block.slots.some((slot) => slot.k === 'event');
+        const delegated = frameDelegatedEvents(block);
+        if (delegated !== null) {
+          this.frameEvents = createFrameEvents(this, delegated);
+          // the parent element is known once the staged nodes are inserted
+          this[MOUNT_REPARSE_HOOK] = () => syncFrameEventRoot(this);
+        }
         // Frame teardown is owned by the LIST: when this instance is
         // destroyed, reclaim every frame's subscriptions + the list-level
         // shared-dep subscriptions. Idempotent with the subclass destructor's
@@ -1181,6 +1260,8 @@ export class BasicListComponent<T extends { id: number }> {
     // Manually remove all DOM nodes between topMarker and bottomMarker.
     // This is the definitive cleanup — any inverse content nodes live in this range.
     this.clearInverseNodes();
+    this.releaseRenderedNode(content);
+    this.compactRenderedNodes();
   }
   /**
    * Remove all DOM nodes between topMarker and bottomMarker.
@@ -1204,6 +1285,8 @@ export class BasicListComponent<T extends { id: number }> {
     // (same approach as destroyInverseSync — see comment there)
     await destroyElement(content as ComponentLike, true, this.api);
     this.clearInverseNodes();
+    this.releaseRenderedNode(content);
+    this.compactRenderedNodes();
   }
   // @ts-expect-error non-string return type
   keyForItem(item: T, index: number, items?: T[]): string {
@@ -1884,12 +1967,14 @@ export class SyncListComponent<
         for (const node of outerText[1]) this.api.insert(parent, node);
       }
       for (const value of keyMap.values()) {
+        this.releaseRenderedNode(value);
         try {
           destroyElementSync(value as ComponentLike, true, this.api);
         } catch (e) {
           if (firstError === undefined) firstError = e;
         }
       }
+      this.compactRenderedNodes();
       // Clean up all reactive index formulas
       if (indexFormulaMap) {
         for (const formula of indexFormulaMap.values()) {
@@ -1948,6 +2033,7 @@ export class SyncListComponent<
         }
       } finally {
         this._syncInProgress = false;
+        if (items.length === 0) this.releaseKeyScratch();
       }
       return;
     }
@@ -1991,7 +2077,10 @@ export class SyncListComponent<
       }
 
       if (items.length === 0 && !this.isFirstRender) {
-        if (this.fastCleanup()) {
+        // Already empty: nothing to remove — and the bulk clear would also
+        // wipe the inverse ({{else}}) DOM while `inverseContent` stays set,
+        // so `renderInverse` would not bring it back.
+        if (keyMap.size === 0 || this.fastCleanup()) {
           if (this.inverseFn) this.renderInverse();
           return;
         }
@@ -2064,10 +2153,14 @@ export class SyncListComponent<
       }
     } finally {
       this._syncInProgress = false;
+      // rows removed by destroyItem during this pass
+      this.compactRenderedNodes();
+      if (items.length === 0) this.releaseKeyScratch();
     }
   }
   destroyItem(row: GenericReturnType, key: string) {
     const { keyMap, indexMap, indexFormulaMap } = this;
+    this.releaseRenderedNode(row);
     keyMap.delete(key);
     indexMap.delete(key);
     if (this.boundItemMap !== null) this.boundItemMap.delete(key);
@@ -2248,8 +2341,11 @@ export class AsyncListComponent<
           // funnelled rejections into the fire-and-forget `Promise.all`, so it
           // never aborted the loop either; preserve that.
           let firstError: unknown = undefined;
-          for (const rowCtx of rowCtxMap.values()) {
+          for (const [key, rowCtx] of rowCtxMap) {
             const rowId = rowCtx[COMPONENT_ID_PROPERTY];
+            // components nested in an inline-element body (see
+            // teardownAllRowCtxs)
+            const rowChildren = CHILD.get(rowId);
             CHILD.delete(rowId);
             TREE.delete(rowId);
             PARENT.delete(rowId);
@@ -2257,6 +2353,13 @@ export class AsyncListComponent<
             if (!isDestroyed(rowCtx as object)) {
               try {
                 destroySync(rowCtx as object);
+              } catch (e) {
+                if (firstError === undefined) firstError = e;
+              }
+            }
+            if (rowChildren !== undefined && rowChildren.size > 0) {
+              try {
+                this.destroyRowChildren(rowChildren, keyMap.get(key));
               } catch (e) {
                 if (firstError === undefined) firstError = e;
               }
@@ -2276,7 +2379,9 @@ export class AsyncListComponent<
         const rows: ComponentLike[] = [];
         for (const value of keyMap.values()) {
           rows.push(value as ComponentLike);
+          this.releaseRenderedNode(value);
         }
+        this.compactRenderedNodes();
         if (indexFormulaMap) {
           for (const formula of indexFormulaMap.values()) {
             formula.destroy();
@@ -2393,6 +2498,9 @@ export class AsyncListComponent<
       let next: T[] | null = items;
       while (next !== null) {
         await this.applySync(next);
+        // rows removed by destroyItem during this pass
+        this.compactRenderedNodes();
+        if (next.length === 0) this.releaseKeyScratch();
         next = this.queuedItems;
         this.queuedItems = null;
         // A list being destroyed renders no more rows: its destructor's
@@ -2405,6 +2513,7 @@ export class AsyncListComponent<
       this.syncing = false;
       this.syncDone = null;
       this.queuedItems = null;
+      this.compactRenderedNodes();
     }
   }
 
@@ -2443,7 +2552,9 @@ export class AsyncListComponent<
     }
 
     if (items.length === 0 && !this.isFirstRender) {
-      if (await this.fastCleanup()) {
+      // Already empty: see SyncListComponent.syncList (the bulk clear would
+      // wipe the inverse DOM).
+      if (this.keyMap.size === 0 || (await this.fastCleanup())) {
         if (this.inverseFn) this.renderInverse();
         return;
       }
@@ -2538,6 +2649,8 @@ export class AsyncListComponent<
   }
   async destroyItem(row: GenericReturnType, key: string) {
     const { keyMap, indexMap, indexFormulaMap } = this;
+    // synchronous part: runSyncs compacts after this pass's removals
+    this.releaseRenderedNode(row);
     keyMap.delete(key);
     indexMap.delete(key);
     // Clean up reactive index formula if it exists

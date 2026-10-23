@@ -32,6 +32,7 @@
     "test": "tsc --noEmit && pnpm run test:vitest && pnpm run test:qunit",
     "test:vitest": "vitest run",
     "test:dist-semantics": "node scripts/verify-dist-string-semantics.mjs",
+    "bench:budgets": "node bench/budgets/run.mjs",
     "fix": "prettier --write .",
     "prerender:main": "node ./bin/prerender-main-page.mjs",
     "ci:nyc:merge": "nyc merge ./coverage-artifacts ./merged-coverage/coverage.json",

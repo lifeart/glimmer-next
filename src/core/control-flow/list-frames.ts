@@ -51,8 +51,10 @@
  * constructor — the compiler already guarantees single-root inline-element
  * bodies for any emitted `$_blk`):
  *   - a compiler-emitted block + blockValues (v1 prerequisite);
- *   - NO 'event' slots (event listeners keep v1 — they need the per-row
- *     destructor plumbing frame records intentionally drop);
+ *   - 'event' slots only when the frame event layer below can keep `{{on}}`
+ *     semantics: no element with two handlers for the same event, and not
+ *     RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES (its listener-removal
+ *     destructors are per-row plumbing frames drop);
  *   - `hasIndex === false` (bodies reading `{{index}}` need the per-row index
  *     formula machinery — v1);
  *   - not SSR / not rehydrating (block path can't adopt server DOM);
@@ -65,6 +67,24 @@
  * Everything else — component bodies, multi-root, nested control flow,
  * modifiers, `...attributes`, duplicate-unsafe constructs — already bailed at
  * the compiler's block extraction and stays on the standard keyed path.
+ *
+ * Events (`{{on}}` slots) are row DATA: the compiled handler stays in
+ * `frame.thunks[s]` (never probed, never applied) and is read when an event
+ * is dispatched, so a rebind or a changed bound value needs no listener work
+ * and teardown has nothing to remove.
+ *   - bubbling events: ONE capture-phase listener per (list, event type) on
+ *     the list's parent element. The dispatcher finds the row (the child of
+ *     that parent on the event path; root → frame WeakMap) and calls the
+ *     row's handlers from the target outwards, as bubbling would, stopping
+ *     when one calls stopPropagation (`cancelBubble`). Capture on the list
+ *     parent runs before that parent's own bubble listeners and everything
+ *     above it, which is where direct listeners on the row ran too. During a
+ *     handler `event.currentTarget` reads the element the `{{on}}` is on
+ *     (an own property, removed after); `eventPhase` is CAPTURING_PHASE.
+ *     The parent is resolved on mount (MOUNT_REPARSE_HOOK), on every sync and,
+ *     while the list still sits in a fragment, once more in a microtask.
+ *   - other events (focus, blur, mouseenter, load, scroll…): a direct
+ *     listener per slot node that calls the frame's current handler.
  *
  * Dev-tooling caveat: frame rows live ONLY in `list.frames` — the v1 per-row
  * state (`keyMap` / `indexMap` / `itemMarkers` / rowCtx) is never populated.
@@ -133,13 +153,48 @@ export interface FrameSharedEntry {
  * `$prop`'s `prevPropValue = undefined` semantics exactly. */
 const UNSET: unknown = Symbol();
 
+/** Events whose dispatch bubbles: handled by the list's delegated listener.
+ * Anything else gets a direct listener on its node (see the header). */
+const DELEGATED_EVENTS: ReadonlySet<string> = new Set([
+  'click', 'dblclick', 'auxclick', 'contextmenu',
+  'mousedown', 'mouseup', 'mousemove', 'mouseover', 'mouseout',
+  'pointerdown', 'pointerup', 'pointermove', 'pointerover', 'pointerout',
+  'pointercancel', 'touchstart', 'touchend', 'touchmove', 'touchcancel',
+  'keydown', 'keyup', 'keypress', 'input', 'beforeinput', 'change',
+  'focusin', 'focusout', 'wheel', 'submit', 'reset',
+  'dragstart', 'drag', 'dragend', 'dragenter', 'dragover', 'dragleave', 'drop',
+  'copy', 'cut', 'paste',
+]);
+
 /** Runtime frame-mode qualification over the compiled slot table. */
 export function framesQualify(block: StaticBlockDef): boolean {
   const slots = block.slots;
+  let seen: Set<string> | null = null;
   for (let i = 0; i < slots.length; i++) {
-    if (slots[i].k === 'event') return false;
+    const slot = slots[i];
+    if (slot.k !== 'event') continue;
+    if (RUN_EVENT_DESTRUCTORS_FOR_SCOPED_NODES) return false;
+    // two handlers for one event on one element: the second must not run
+    // after the first calls stopImmediatePropagation, which the dispatcher
+    // cannot observe (cancelBubble covers stopPropagation too)
+    const id = `${slot.p.join(',')}:${slot.n}`;
+    if (seen === null) seen = new Set();
+    if (seen.has(id)) return false;
+    seen.add(id);
   }
   return true;
+}
+
+/** Delegated event types of a qualifying block, or null when it has none. */
+export function frameDelegatedEvents(block: StaticBlockDef): string[] | null {
+  let out: string[] | null = null;
+  for (const slot of block.slots) {
+    if (slot.k === 'event' && DELEGATED_EVENTS.has(slot.n!)) {
+      if (out === null) out = [];
+      if (out.indexOf(slot.n!) === -1) out.push(slot.n!);
+    }
+  }
+  return out;
 }
 
 /** Ember-host detection — hosts keep the v1 formula-based bindings.
@@ -303,10 +358,10 @@ function routeSlotDeps(
  *   static  (first run tracked no cells): the const-collapsed branch —
  *           empty values are skipped, others written raw, never re-run;
  *   text    : `String(value ?? '')`, guarded on the applied string;
- *   class/prop: `null → ''`, first-run `undefined` skipped (the
- *           `prevPropValue` quirk), `style`-empty removes the attribute;
- *   attr    : initial run always writes (opcodeFor's immediate evaluation
- *           parity), re-runs guarded on the raw value.
+ *   class/prop: `null → ''`, an empty first value skipped (as $prop),
+ *           `style`-empty removes the attribute;
+ *   attr    : initial run writes unless empty (as $attr), re-runs guarded
+ *           on the raw value.
  */
 function applySlot(
   api: DOMApi,
@@ -339,6 +394,8 @@ function applySlot(
     }
     if (!initial && frame.values[s] === value) return;
     frame.values[s] = value;
+    // first value: empty writes nothing, like $attr
+    if (initial && isEmpty(value)) return;
     api.attr(node, slot.n!, value as string);
   } else {
     // 'class' | 'prop'
@@ -349,6 +406,8 @@ function applySlot(
       api.prop(node, name, value);
       return;
     }
+    // first value: empty writes nothing, like $prop (see its reactive branch)
+    if (frame.values[s] === UNSET && isEmpty(value)) return;
     const val = value === null ? '' : value;
     const prev = frame.values[s] === UNSET ? undefined : frame.values[s];
     if (val === prev) return;
@@ -385,6 +444,8 @@ function runSlot(
   knownCell?: AnyCell,
 ): void {
   const slot = list.block!.slots[s];
+  // event handlers are row data, read on dispatch (see the header)
+  if (slot.k === 'event') return;
   const raw = frame.thunks[s];
   let value: unknown;
   let isStatic = false;
@@ -485,7 +546,138 @@ function createFrame(
   for (let s = 0; s < k; s++) {
     runSlot(list, frame, s, true);
   }
+  if (list.frameHasEvents) {
+    if (list.frameEvents !== null) list.frameEvents.frameOf.set(root, frame);
+    const slots = block.slots;
+    for (let s = 0; s < k; s++) {
+      const slot = slots[s];
+      if (slot.k === 'event' && !DELEGATED_EVENTS.has(slot.n!)) {
+        bindDirectEvent(list.api, frame, s, slot.n!);
+      }
+    }
+  }
   return frame;
+}
+
+// ---------------------------------------------------------------------------
+// Events (see the header)
+// ---------------------------------------------------------------------------
+
+/** Per-list delegation state. */
+export interface FrameEvents {
+  /** Delegated event types of the block. */
+  readonly types: readonly string[];
+  /** Row root → frame, for THIS list's rows only (lists can share a parent).
+   * A Map, not a WeakMap: entries go with their frames (dropFrame /
+   * clearAllFrames), and a clear releases the table at once. */
+  readonly frameOf: Map<Node, EachFrame<unknown>>;
+  /** Element the listeners are on (null until known). */
+  root: Element | null;
+  /** The listener (one function for every type). */
+  readonly listener: (event: Event) => void;
+  /** A microtask re-check is pending. */
+  recheck: boolean;
+}
+
+function callHandler(handler: unknown, node: Node, event: Event): void {
+  // The handler sees the element its `{{on}}` is on as currentTarget, as it
+  // would with its own listener; the dispatcher's element otherwise.
+  Object.defineProperty(event, 'currentTarget', {
+    configurable: true,
+    value: node,
+  });
+  try {
+    (handler as (event: Event) => void).call(node, event);
+  } finally {
+    delete (event as { currentTarget?: unknown }).currentTarget;
+  }
+}
+
+function dispatchFrameEvent(list: AnyList, event: Event): void {
+  const events = list.frameEvents!;
+  const container = events.root;
+  let node = event.target as Node | null;
+  // the row: the node on the event path whose parent is the container
+  let root: Node | null = null;
+  while (node !== null && node !== container) {
+    if (node.parentNode === container) {
+      root = node;
+      break;
+    }
+    node = node.parentNode;
+  }
+  if (root === null) return;
+  const frame = events.frameOf.get(root);
+  if (frame === undefined) return;
+  const slots = list.block!.slots;
+  const type = event.type;
+  // inner → outer, like bubbling; a handler's stopPropagation ends it
+  for (let current = event.target as Node | null; current !== null; current = current.parentNode) {
+    for (let s = 0; s < slots.length; s++) {
+      const slot = slots[s];
+      if (slot.k === 'event' && slot.n === type && frame.nodes[s] === current) {
+        callHandler(frame.thunks[s], current, event);
+        if (event.cancelBubble) return;
+      }
+    }
+    if (current === root) return;
+  }
+}
+
+/** Non-delegated event: a direct listener that runs the frame's current
+ * handler (a rebind swaps `frame.thunks`, not the listener). */
+function bindDirectEvent(
+  api: DOMApi,
+  frame: EachFrame<unknown>,
+  s: number,
+  type: string,
+): void {
+  api.addEventListener(frame.nodes[s], type, (event: Event) => {
+    (frame.thunks[s] as (event: Event) => void).call(frame.nodes[s], event);
+  });
+}
+
+export function createFrameEvents(list: AnyList, types: string[]): FrameEvents {
+  return {
+    types,
+    frameOf: new Map(),
+    root: null,
+    listener: (event: Event) => dispatchFrameEvent(list, event),
+    recheck: false,
+  };
+}
+
+/** Put the delegated listeners on the list's current parent element. */
+export function syncFrameEventRoot(list: AnyList): void {
+  const events = list.frameEvents;
+  if (events === null) return;
+  const parent = list.api.parent(list.bottomMarker) as Node | null;
+  if (parent === null || parent.nodeType !== 1) {
+    // still staged in a fragment: look again once the render inserted it
+    if (!events.recheck && parent !== null) {
+      events.recheck = true;
+      queueMicrotask(() => {
+        events.recheck = false;
+        if (list.frameEvents === events) syncFrameEventRoot(list);
+      });
+    }
+    return;
+  }
+  if (events.root === parent) return;
+  removeFrameEventRoot(events);
+  for (const type of events.types) {
+    parent.addEventListener(type, events.listener, true);
+  }
+  events.root = parent as Element;
+}
+
+function removeFrameEventRoot(events: FrameEvents): void {
+  const root = events.root;
+  if (root === null) return;
+  for (const type of events.types) {
+    root.removeEventListener(type, events.listener, true);
+  }
+  events.root = null;
 }
 
 function unsubscribeFrameItems(frame: EachFrame<unknown>): void {
@@ -526,8 +718,14 @@ function rebindFrame(
   }
 }
 
-function dropFrame(api: DOMApi, frame: EachFrame<unknown>, removeDom: boolean): void {
+function dropFrame(
+  api: DOMApi,
+  frame: EachFrame<unknown>,
+  removeDom: boolean,
+  frameOf: Map<Node, EachFrame<unknown>> | null,
+): void {
   unsubscribeFrameItems(frame);
+  if (frameOf !== null) frameOf.delete(frame.root);
   if (removeDom) {
     api.destroy(frame.root);
   }
@@ -555,8 +753,10 @@ export function clearAllFrames(list: AnyList): void {
     api.insert(parent, topMarker);
     api.insert(parent, bottomMarker);
   }
+  const frameOf = list.frameEvents === null ? null : list.frameEvents.frameOf;
+  if (frameOf !== null) frameOf.clear();
   for (const frame of frames.values()) {
-    dropFrame(api, frame, !bulk);
+    dropFrame(api, frame, !bulk, null);
   }
   frames.clear();
 }
@@ -568,6 +768,10 @@ export function clearAllFrames(list: AnyList): void {
  */
 export function destroyFrameState(list: AnyList): void {
   clearAllFrames(list);
+  if (list.frameEvents !== null) {
+    removeFrameEventRoot(list.frameEvents);
+    list.frameEvents = null;
+  }
   const shared = list.frameShared;
   if (shared !== null) {
     for (const entry of shared.values()) {
@@ -625,6 +829,8 @@ function syncFramesScratch(
   // ----- clear
   if (n === 0) {
     clearAllFrames(list);
+    // the shared scratch would hold the last non-empty sync's keys
+    S.keyset.clear();
     return;
   }
 
@@ -652,7 +858,7 @@ function syncFramesScratch(
     } else if (survivors < frames.size) {
       for (const [key, frame] of frames) {
         if (!KEYSET.has(key)) {
-          dropFrame(api, frame, true);
+          dropFrame(api, frame, true, list.frameEvents === null ? null : list.frameEvents.frameOf);
           frames.delete(key);
         }
       }
@@ -672,6 +878,7 @@ function syncFramesScratch(
       api.insert(parent, fragment, bottomMarker);
     }
     KEYS.length = 0;
+    syncFrameEventRoot(list);
     return;
   }
 
@@ -733,4 +940,5 @@ function syncFramesScratch(
     anchor = root;
   }
   KEYS.length = 0;
+  syncFrameEventRoot(list);
 }

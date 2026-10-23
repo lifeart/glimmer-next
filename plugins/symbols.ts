@@ -74,6 +74,11 @@ export const SYMBOLS = {
   // `$_qStr` (ReferenceError at render). Resolved from @lifeart/gxt via
   // src/core/index.ts → `export * from '@/core/helpers/index'`.
   $_qStr: '$_qStr',
+  // Collapsed mixed text (`optimizeTextChild` → `$_txt([...])`). MUST be listed
+  // here (the AOT auto-import registry) — not only in serializers/symbols.ts —
+  // or AOT modules reference an unimported `$_txt`. Resolved from @lifeart/gxt
+  // via src/core/index.ts → `export * from '@/core/helpers/index'`.
+  $_txt: '$_txt',
   // Compat-mode `{{unique-id}}` stable-id helper. Emitted as `$_uid(this, N)`
   // under IS_GLIMMER_COMPAT_MODE. MUST be listed here (the AOT auto-import
   // registry, `Object.values(SYMBOLS)`) — not only in serializers/symbols.ts —

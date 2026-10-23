@@ -1,0 +1,46 @@
+name: BudgetsCheck
+
+# Memory and bundle-size budgets (bench/budgets): production builds of the
+# budget apps, measured in Playwright's pinned Chromium over CDP. Fails when a
+# gated median (heap per 10k rows, heap left after clear, heap growth per
+# create/clear cycle, gzip/brotli JS size) exceeds its max in
+# bench/budgets/budgets.json. Timings are machine dependent and are not
+# gated, so they are skipped here.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches: [master]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  budgets:
+    name: Memory and size budgets
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: wyvox/action-setup-pnpm@v3
+        with:
+          # vite 7 requires Node 20.19+/22.12+ (see tests.yml dist-semantics).
+          node-version: "22.12.0"
+          # Pin pnpm to the lockfile's major (lockfileVersion 9.0): the
+          # action's default pnpm cannot read it and silently ignores it.
+          pnpm-version: 10
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Measure budgets
+        run: pnpm bench:budgets --reps 7 --skip-timing --json budgets-results.json
+      - name: Upload results
+        if: failure() || success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: budgets-results
+          path: budgets-results.json
+          retention-days: 7

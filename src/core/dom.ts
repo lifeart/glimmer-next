@@ -461,6 +461,14 @@ export function $prop(
           }
           return;
         }
+        // A reactive binding's first value is applied like a const one's: an
+        // empty (null / undefined) value writes nothing. Whether a binding is
+        // const-collapsed depends on WHEN it was created — outside a render
+        // pass (an `{{#if}}` branch rendered after the async teardown of the
+        // previous one) the formula never computes `isConst` — so writing ''
+        // here rendered `class={{null}}` as `class=""` or as no attribute
+        // depending on timing. Later updates to null still clear the value.
+        if (!written && isEmpty(normalized)) return;
         const val = normalized === null ? '' : normalized;
         if (liveInputValue && written) {
           if ((element as HTMLInputElement).value === (val === undefined ? '' : String(val))) {
@@ -699,8 +707,16 @@ export function $attr(
   }
 
   if (isReactive) {
+    let applied = false;
     destructors.push(
       opcodeFor(result as AnyCell, (resolvedValue) => {
+        // An empty (null / undefined) first value writes nothing, like the
+        // const branch — see the reactive branch of `$prop` for why a
+        // binding's const-ness depends on when it was created.
+        if (!applied) {
+          applied = true;
+          if (isEmpty(resolvedValue)) return;
+        }
         // Host attr-normalization seam (see HostHooks.normalizeAttrValue).
         // Unregistered => `hook === null` => byte-identical original write.
         // Renormalizes on EVERY reactive re-apply, not just initial render.

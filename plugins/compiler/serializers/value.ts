@@ -861,6 +861,15 @@ function buildHelper(
   if (name === INTERNAL_HELPERS.OUTLET) {
     return B.call(SYMBOLS.OUTLET, [B.id(ctxName)], sourceRange);
   }
+  // Collapsed mixed text (the element visitor's `optimizeTextChild`):
+  // `$_txt([part, …])`, parts built like buildConcat's — direct references,
+  // the enclosing getter provides the reactivity.
+  if (name === INTERNAL_HELPERS.TEXT_CONCAT) {
+    const parts = positional.map((p) =>
+      p.kind === 'path' ? buildPathExpression(ctx, p, false, ctxName) : buildValue(ctx, p, ctxName)
+    );
+    return B.call(SYMBOLS.TEXT_CONCAT, [B.array(parts)], sourceRange);
+  }
   // Ember loose-mode ambiguous append (EMBER_LOOSE_COMPONENTS, G11):
   // `$_looseAppend("name", [args], {named}, ctx, site, optional)` with the
   // native literal-or-thunk argument convention (like `$_maybeHelper`) and the
