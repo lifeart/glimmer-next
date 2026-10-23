@@ -6,7 +6,6 @@
  */
 
 import type { CompilerContext } from '../context';
-import { addWarning } from '../context';
 import type { HBSControlExpression, HBSChild, HBSNode, SerializedValue } from '../types';
 import { isHBSControlExpression, isHBSNode, isSerializedValue } from '../types';
 import { SYMBOLS } from './symbols';
@@ -440,22 +439,16 @@ function normalizeEachParams(blockParams: readonly string[]): string[] {
  * Validate and normalize the each key.
  */
 function normalizeEachKey(
-  ctx: CompilerContext,
+  _ctx: CompilerContext,
   control: HBSControlExpression
 ): string | null {
-  let key = control.key;
-
-  if (key === '@index') {
-    addWarning(
-      ctx,
-      '@index identity is not supported, falling back to @identity',
-      'W003',
-      control.sourceRange
-    );
-    key = '@identity';
-  }
-
-  return key;
+  // `@index` is a POSITIONAL key: the runtime (control-flow/list.ts) keys each
+  // row by its position so a reorder keeps the row node in place and updates its
+  // bound item, and `@index` yields the stable position (ember.js#21340 C36,
+  // N20). It is no longer rewritten to `@identity` (which keyed by value and
+  // moved/re-created rows). An explicit `@key` / path key passes through
+  // unchanged.
+  return control.key;
 }
 
 /**

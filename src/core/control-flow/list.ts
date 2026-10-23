@@ -1096,6 +1096,14 @@ export class BasicListComponent<T extends { id: number }> {
         }
         return baseKey;
       };
+    } else if (this.key === '@index') {
+      // Positional key (ember.js#21340 C36, N20): the row at position `i` is
+      // keyed by `i`, so a reorder leaves every key in place — the diff keeps
+      // (never moves) the row node and `rebindReusedRow` updates its bound item,
+      // and `@index` yields the stable position. A position is unique, so no
+      // duplicate-key qualification is needed.
+      this.keyForItem = (_item: T, i: number) =>
+        String(i) as unknown as string;
     } else {
       const resolveRawKey = (item: T, i: number): string => {
         // Null/undefined/primitive items cannot be keyed by an arbitrary
@@ -1553,7 +1561,20 @@ export class BasicListComponent<T extends { id: number }> {
         // down — causes every existing row's index cell to recompute on
         // the next render pass.
         let idx: number | MergedCell = index;
-        if (this.hasIndex) {
+        if (this.hasIndex && this.key === '@index') {
+          // Positional key: the index IS the row's fixed position (its key), not
+          // the bound item's current position — the row never moves and its item
+          // is rebound in place, so a const formula keeps `index.value` equal to
+          // the build position across reorders.
+          const pos = index;
+          const indexFormula = formula(
+            () => pos,
+            IS_DEV_MODE ? `each.index[@index:${pos}]` : undefined,
+          );
+          idx = indexFormula;
+          if (!this.indexFormulaMap) this.indexFormulaMap = new Map();
+          this.indexFormulaMap.set(key, indexFormula);
+        } else if (this.hasIndex) {
           const indexFormula = formula(
             () => {
               if (isPrimitive(item) && !this.primitiveByValue) {
@@ -1968,6 +1989,11 @@ export class SyncListComponent<
       // exhibit the bug (their sources aren't `$__cellFor`-tapped block params).
       if (
         this.key !== '@identity' &&
+        // `@index` is positional, not a property-name key: a row's bound item
+        // has no `item['@index']`, so this property-drift eviction must not run
+        // (it would read `undefined`, see it differ from the position key, and
+        // wrongly destroy every reused row on reorder).
+        this.key !== '@index' &&
         !this.key.includes('.') &&
         this.boundItemMap !== null &&
         this.boundItemMap.size > 0
