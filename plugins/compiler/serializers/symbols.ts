@@ -29,6 +29,15 @@ export const SYMBOLS = {
   // (also sets the node-thunk flag). Side-effecting → absent from
   // PURE_FUNCTIONS below.
   NAMED_BLOCK_THUNK: '$_nbt',
+  // Argument-thunk marker. Wraps the reactive getters the compiler emits for a
+  // component's named args (`buildArgsObject`) so the arg-access layer
+  // (`ArgProxyHandler` / the DEV `$_args` getter) invokes ONLY branded thunks
+  // and passes a plain function arg VALUE (a forwarded action, a `{{fn}}`/helper
+  // result) through unchanged (ember.js#21340 C38). Hosts read the runtime
+  // `isArgThunk` predicate instead of the `fn.length`/`fn.prototype` shape
+  // heuristic. Identity at runtime (side effect: marking) — absent from
+  // PURE_FUNCTIONS below.
+  ARG_THUNK: '$_argThunk',
 
   // Control flow
   IF: '$_if',

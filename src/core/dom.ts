@@ -1617,6 +1617,54 @@ export function getNamedBlockName(fn: unknown): string | null {
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Argument-thunk marker
+//
+// In IS_GLIMMER_COMPAT_MODE a component's named args are built by the compiler
+// (`buildArgsObject`) as an object whose reactive values are zero-arg THUNKS —
+// `{ title: () => this.title }` — that the arg-access layer (`ArgProxyHandler`
+// in prod, the DEV `$_args` getter) INVOKES on read to yield the live value.
+//
+// The historical arg layer invoked ANY function-valued arg. That cannot tell a
+// compiler-emitted reactive thunk (`() => this.title`) apart from a function
+// that is itself the arg VALUE — an action/closure passed through from a host
+// (the Ember bridge forwards a bound `() => this.incrementProperty(...)`), or
+// the bound function a `{{fn}}` / helper result resolves to. Invoking those
+// calls the user's action on every arg read (ember.js#21340 C38: 4/8/15/22
+// instead of 1/1/2/3) and loses the function the consumer actually wanted.
+//
+// `$_argThunk` lets the compiler MARK the thunks it KNOWS are reactive arg
+// getters, so the arg layer invokes ONLY branded thunks and passes every other
+// function value through unchanged. The marker is a plain string-keyed property
+// (like `$_isNode`): terser runs with `mangle.properties:false`, so the key
+// survives minification verbatim and the `$_`-prefix will not collide with host
+// data. Identity at runtime; a no-op on non-functions so wrapping a folded
+// literal/eager value is harmless.
+const ARG_THUNK_FLAG = '$_isArgThunk';
+
+/**
+ * Mark `fn` as a compiler-emitted reactive ARG thunk and return it (identity).
+ * Emitted by the compiler around the reactive getters in a component's args
+ * object (`buildArgsObject`). A no-op on non-functions.
+ */
+export function $_argThunk<T>(fn: T): T {
+  if (typeof fn === 'function') {
+    (fn as any)[ARG_THUNK_FLAG] = true;
+  }
+  return fn;
+}
+
+/**
+ * True when `fn` is a thunk the compiler marked as a reactive arg getter (via
+ * `$_argThunk`). The arg-access layer invokes only these; every other function
+ * value (a forwarded action, a `{{fn}}`/helper bound result) passes through.
+ * Hosts (the Ember bridge) call this instead of shape heuristics
+ * (`fn.length`/`fn.prototype`), which it retires — it is minification-proof.
+ */
+export function isArgThunk(fn: unknown): boolean {
+  return typeof fn === 'function' && (fn as any)[ARG_THUNK_FLAG] === true;
+}
+
 if (IS_DEV_MODE) {
   function buildGraph(
     obj: Record<string, unknown>,
@@ -2305,10 +2353,19 @@ export function $_each<T extends { id: number }>(
 const ArgProxyHandler: ProxyHandler<{}> = {
   get(target: Record<string, () => unknown>, prop: string) {
     if (prop in target) {
-      if (!isFn(target[prop])) {
-        return target[prop];
+      const value = target[prop];
+      if (!isFn(value)) {
+        return value;
       }
-      return target[prop]();
+      // Ember dialect: invoke ONLY compiler-branded reactive arg thunks. A
+      // plain function value — a host-forwarded action, a `{{fn}}`/helper bound
+      // result — is the arg itself and passes through unchanged
+      // (ember.js#21340 C38). Standalone gxt keeps invoke-every-getter: every
+      // arg value there is a compiler getter, so the brand check is skipped.
+      if (WITH_EMBER_INTEGRATION && !isArgThunk(value)) {
+        return value;
+      }
+      return value();
     }
     return undefined;
   },
@@ -2372,10 +2429,17 @@ export function $_args(
         try {
           Object.defineProperty(newArgs, key, {
             get() {
-              if (!isFn(args[key])) {
-                return args[key];
+              const value = args[key];
+              if (!isFn(value)) {
+                return value;
               }
-              return (args[key] as () => unknown)();
+              // Ember dialect: invoke ONLY compiler-branded reactive arg thunks;
+              // pass a plain function value through unchanged (ember.js#21340
+              // C38). Standalone gxt keeps invoke-every-getter.
+              if (WITH_EMBER_INTEGRATION && !isArgThunk(value)) {
+                return value;
+              }
+              return (value as () => unknown)();
             },
             enumerable: true,
           });

@@ -784,6 +784,32 @@ function buildComponentArgsExpr(
 }
 
 /**
+ * A compiler-emitted REACTIVE ARG THUNK: a zero-arg getter the arg-access layer
+ * (`ArgProxyHandler` / the DEV `$_args` getter) must INVOKE on read to yield the
+ * live value. These are exactly the function-valued shapes `buildValue` emits
+ * for a reactive named arg in compat mode:
+ *   • `reactiveGetter` / zero-arg `arrow` — `() => this.x`
+ *   • `$__cached(() => …)` — the identity-memoized (hash)/(array) getter
+ *     (buildMaybeMemoizedGetter; returns a getter FUNCTION) used under
+ *     WITH_EMBER_INTEGRATION
+ * A literal, a path member read, or an EAGER helper call (`$_maybeHelper(…)`,
+ * `$__fn(…)`) is a VALUE — possibly a bound function the consumer must receive
+ * as-is — and is NOT a thunk, so it is left unbranded and passes through.
+ */
+function isReactiveArgThunk(node: JSExpression): boolean {
+  if (node.type === 'reactiveGetter') return true;
+  if (node.type === 'arrow' && node.params.length === 0) return true;
+  if (
+    node.type === 'call' &&
+    node.callee.type === 'identifier' &&
+    node.callee.name === SYMBOLS.CACHED
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * Build @args as an object.
  * Uses buildValue directly to preserve AST structure.
  */
@@ -800,7 +826,21 @@ function buildArgsObject(
     // Remove @ prefix from arg name
     const argName = name.slice(1);
     // Use buildValue directly to preserve AST structure for better code generation
-    const valueExpr = buildValue(ctx, value, ctxName);
+    let valueExpr = buildValue(ctx, value, ctxName);
+    // Ember dialect: the arg-access layer invokes only BRANDED reactive thunks,
+    // so mark the getters we emit here (ember.js#21340 C38). A plain function
+    // VALUE — a host-forwarded action, a `{{fn}}`/helper result — stays
+    // unbranded and is passed through un-invoked. Gated to the Ember dialect
+    // (WITH_EMBER_INTEGRATION + IS_GLIMMER_COMPAT_MODE): this is the only layer
+    // that forwards bare function values into gxt args. Standalone gxt keeps
+    // byte-identical codegen and its invoke-every-getter arg semantics.
+    if (
+      ctx.flags.IS_GLIMMER_COMPAT_MODE &&
+      ctx.flags.WITH_EMBER_INTEGRATION &&
+      isReactiveArgThunk(valueExpr)
+    ) {
+      valueExpr = B.call(B.id(SYMBOLS.ARG_THUNK), [valueExpr], valueExpr.sourceRange);
+    }
     // Use the arg name as-is; the serializer handles quoting non-identifier keys
     return B.prop(argName, valueExpr, false, range, nameRange);
   });
