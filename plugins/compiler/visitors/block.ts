@@ -667,14 +667,23 @@ function createEachInBlock(
 ): HBSControlExpression {
   const source = getVisit(ctx)(ctx, node.params[0], false);
   const sourceValue = source !== null && isSerializedValue(source) ? source : literal(null);
+  // Forward the `key=` option to `$__eachIn` so it owns the keying (resolving
+  // `@key`/`@index`/path keys against the ENTRY, not the `[key,value]` pair —
+  // ember.js#21340 N21-N25). The lowered `each` then keys by `@identity` on the
+  // returned pairs. `@identity`/default stays a 1-arg `$__eachIn(obj)` (the
+  // historic shape); only a non-identity key adds the 2nd argument.
+  const eachInArgs: SerializedValue[] = [sourceValue];
+  if (keyValue != null && keyValue !== '@identity') {
+    eachInArgs.push(literal(keyValue));
+  }
   return {
     _nodeType: 'control',
     type: 'each',
-    condition: getter(helper(INTERNAL_HELPERS.EACH_IN, [sourceValue], new Map(), range), range),
+    condition: getter(helper(INTERNAL_HELPERS.EACH_IN, eachInArgs, new Map(), range), range),
     blockParams: [],
     children,
     inverse,
-    key: keyValue ?? '@identity',
+    key: '@identity',
     isSync: true,
     sourceRange: range,
     eachInParams: blockParams.slice(0, 2),
