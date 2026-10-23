@@ -551,6 +551,17 @@ export interface CompilerDiagnostic {
   readonly lexicalContext?: string;
   /** Filename where the error occurred */
   readonly filename?: string;
+  /**
+   * The original error thrown during parse/compile (e.g. the `@glimmer/syntax`
+   * SyntaxError), preserved so a host can rethrow it UNCHANGED instead of
+   * re-wrapping the reduced `message`. Both the compiler and the Ember host pin
+   * the same `@glimmer/syntax`, so the original error's message, code-frame and
+   * position match what the host would have produced itself (ember.js#21340
+   * compile-error group). Only set for errors that originate from a thrown
+   * exception; synthesized diagnostics (unknown binding, W-codes) leave it
+   * undefined.
+   */
+  readonly originalError?: unknown;
 }
 
 /**
