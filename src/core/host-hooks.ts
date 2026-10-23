@@ -312,6 +312,21 @@ export interface HostHooks {
    */
   getProp?: (obj: object, key: string) => unknown;
   /**
+   * DEV-only cell-read seam (R1 backtracking detection, ember.js#21340 C4/C6/C7).
+   * Fired from the property-tag tap (`$__tag`) for every reactive property read
+   * of an object / function head — the compiler-emitted equivalent of Glimmer's
+   * "consumed tags". A host snapshots the `(object, key)` pairs read during a
+   * render pass and, when a later non-tracked `set()` dirties one of them,
+   * raises the "modified X twice in a single render" backtracking assertion —
+   * which compat silently lost for Glimmer (template-only) components, whose
+   * reads were never recorded. Independent of `getProp` (which consumes tags):
+   * a host wires this ONLY for the DEV backtracking bookkeeping and installs it
+   * only under DEBUG, so it is zero-cost (a single branch) when absent — the
+   * same hook-presence discipline as `getProp`. Fired before the `getProp`
+   * delegation so the read is captured whichever tag path runs.
+   */
+  onCellRead?: (object: object, key: string) => void;
+  /**
    * Ember loose-mode ambiguous append (G11, the EMBER_LOOSE_COMPONENTS compile
    * flag). In a LOOSE template a content-position `{{name …}}` whose callee has
    * no lexical binding compiles to `$_looseAppend(name, …)`, which asks this
@@ -451,6 +466,14 @@ export let hostNormalizeAttrValue: NonNullable<
 export let hostGetProp: NonNullable<HostHooks['getProp']> | null = null;
 
 /**
+ * Hot-path cache for {@link HostHooks.onCellRead} (read by every `$__tag`
+ * object/function-head tap): `null` unless a host registered the hook (only a
+ * DEBUG host does). Kept in lock-step with `HOST_HOOKS.onCellRead` by
+ * `registerHostHooks`.
+ */
+export let hostOnCellRead: NonNullable<HostHooks['onCellRead']> | null = null;
+
+/**
  * Merge the given hooks into the active slot table. Later registrations
  * override earlier ones per-key; passing `undefined` for a key is ignored
  * (use an explicit no-op function to disable a default the host set
@@ -478,6 +501,7 @@ export function registerHostHooks(hooks: HostHooks): void {
   // after tests clear the table resets the cache back to `null`.
   hostNormalizeAttrValue = HOST_HOOKS.normalizeAttrValue ?? null;
   hostGetProp = HOST_HOOKS.getProp ?? null;
+  hostOnCellRead = HOST_HOOKS.onCellRead ?? null;
   // Cross-instance host-presence sentinel. HOST_HOOKS is module-local, so a
   // consumer bundled into a different entry chunk (e.g. the list frame-mode
   // gate) sees its OWN empty copy. This single globalThis flag — set true the

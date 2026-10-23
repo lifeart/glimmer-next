@@ -1,6 +1,6 @@
 import { getTracker } from '../reactive';
 import { tagFor } from '../tags';
-import { hostGetProp } from '../host-hooks';
+import { hostGetProp, hostOnCellRead } from '../host-hooks';
 
 /**
  * Non-defining member tap (Ember native layer, EMBER_NATIVE compile flag).
@@ -34,6 +34,14 @@ export function $__tag(obj: unknown, key: string): unknown {
   const t = typeof obj;
   if (t !== 'object' && t !== 'function') {
     return (obj as Record<string, unknown>)[key];
+  }
+  // DEV-only cell-read seam (R1 backtracking detection, #21340 C4/C6/C7): report
+  // every reactive property read of an object/function head so a host can
+  // snapshot a render pass's consumed (object, key) pairs. Fired BEFORE the
+  // `getProp` delegation so the read is captured whichever tag path runs. A
+  // single branch when absent (only a DEBUG host installs it).
+  if (hostOnCellRead !== null) {
+    hostOnCellRead(obj as object, key);
   }
   if (hostGetProp !== null) {
     return hostGetProp(obj as object, key);
