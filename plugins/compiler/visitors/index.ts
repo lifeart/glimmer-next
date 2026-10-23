@@ -237,6 +237,31 @@ function visitSubExpression(
         }
         return mutResult;
       }
+      // R7 (ember.js#21340 C13/C14): (mut LEXICAL.rest) — a lexical JS head
+      // (`state.arg1` from a block param) cannot be resolved by name at
+      // runtime the way the `this.`/`@` path string is, so the former code
+      // dropped it and the host's `mut` asserted "You can only pass a path to
+      // mut". Lower it to the existing (mut (get obj key)) machinery:
+      // `__mutGet(() => head, "rest")` — a parent getter + key the host writes
+      // through with `set(parent, key, v)`. Dotted-tail keys are supported by
+      // `__mutGet` directly.
+      else if (
+        paramPath.includes('.') &&
+        !paramPath.includes('[') &&
+        ctx.scopeTracker.hasBinding(paramPath.slice(0, paramPath.indexOf('.')))
+      ) {
+        const dot = paramPath.indexOf('.');
+        const head = paramPath.slice(0, dot);
+        const restKey = paramPath.slice(dot + 1);
+        const headRange = getNodeRange(firstParam);
+        const parentGetter = getter(path(head, false, headRange));
+        const pathRange = getNodeRange(node.path);
+        const mutGetResult = helper('__mutGet', [parentGetter, literal(restKey)], range, pathRange);
+        if (wrap) {
+          return getter(mutGetResult, range);
+        }
+        return mutGetResult;
+      }
     }
   }
 
