@@ -898,7 +898,9 @@ function buildHelper(
             : buildValue(ctx, value, ctxName);
     return B.call(SYMBOLS.TRUST_ATTR, [valueExpr], sourceRange);
   }
-  // `{{#each-in}}` iteration source (EMBER_NATIVE, G5): `$__eachIn(obj)`.
+  // `{{#each-in}}` iteration source (EMBER_NATIVE, G5): `$__eachIn(obj)`, or
+  // `$__eachIn(obj, "key")` when the block has a non-identity `key=` option
+  // (#21340 N21-N25) — `$__eachIn` resolves the key against each entry.
   if (name === INTERNAL_HELPERS.EACH_IN) {
     const source = positional[0];
     // Read in place: the call already runs inside the each's source getter.
@@ -910,6 +912,10 @@ function buildHelper(
           : source.kind === 'getter'
             ? buildValueNoGetter(ctx, source.value, ctxName)
             : buildValue(ctx, source, ctxName);
+    const keyArg = positional[1];
+    if (keyArg !== undefined) {
+      return B.call(SYMBOLS.EACH_IN, [sourceExpr, buildValue(ctx, keyArg, ctxName)], sourceRange);
+    }
     return B.call(SYMBOLS.EACH_IN, [sourceExpr], sourceRange);
   }
   if (name === INTERNAL_HELPERS.ELEMENT_HELPER) {
