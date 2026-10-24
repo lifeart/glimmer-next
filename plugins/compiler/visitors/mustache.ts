@@ -176,7 +176,7 @@ export function visitMustache(
         const headRange = getNodeRange(firstParam);
         const parentGetter = getter(path(head, false, headRange));
         const pathRange = getNodeRange(node.path);
-        const mutGetResult = helper('__mutGet', [parentGetter, literal(restKey)], range, pathRange);
+        const mutGetResult = helper('__mutGet', [parentGetter, literal(restKey)], new Map(), range, pathRange);
         if (wrap) {
           return getter(mutGetResult, range);
         }
