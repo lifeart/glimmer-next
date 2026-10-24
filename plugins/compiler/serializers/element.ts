@@ -17,7 +17,7 @@ import type {
   HelperValue,
   SerializedValue,
 } from '../types';
-import { isSerializedValue, isRuntimeTag } from '../types';
+import { isSerializedValue, isRuntimeTag, path } from '../types';
 import { SYMBOLS, EVENT_TYPE, INTERNAL_HELPERS } from './symbols';
 import { buildValue, buildPathExpression, buildNativeArg, buildArgLabels, selfHeadedName, emittedRootName, emittedPathName } from './value';
 import { B, serializeJS, type JSExpression, type JSProperty } from '../builder';
@@ -709,9 +709,21 @@ function buildModifierExpr(
 
     // For known bindings, pass the function reference directly
     // For unknown bindings, pass the name as a string for runtime resolution
-    const modRef = isKnownModifier
-      ? (typeof modCallee === 'string' ? B.id(modCallee) : modCallee)
-      : B.string(mod.name, mod.pathRange);
+    let modRef: JSExpression;
+    if (!isKnownModifier) {
+      modRef = B.string(mod.name, mod.pathRange);
+    } else if (ctx.flags.EMBER_PROPERTY_TAGS && mod.name.startsWith('this.')) {
+      // N5: a DYNAMIC `this.*` modifier name must tap the property tag like any
+      // value path does. Emitted as a plain member read (`$s.dyn`) it reads no
+      // tag, so the modifier formula is treated as const and a later
+      // `set(ctx, 'dyn', X)` never re-installs the modifier. Route the name
+      // through the same property-tag chain as buildValue (buildPathExpression
+      // → buildEmberMemberChain → `$__tag(obj, "key")`), so the resolution read
+      // is reactive. Gated to EMBER_PROPERTY_TAGS — standalone keeps `$s.dyn`.
+      modRef = buildPathExpression(ctx, path(mod.name, false, mod.pathRange), false, ctxName);
+    } else {
+      modRef = typeof modCallee === 'string' ? B.id(modCallee) : modCallee;
+    }
 
     const callArgs: JSExpression[] = [
       modRef,

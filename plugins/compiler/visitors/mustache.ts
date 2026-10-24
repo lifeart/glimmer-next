@@ -159,6 +159,29 @@ export function visitMustache(
         }
         return mutResult;
       }
+      // R7 (ember.js#21340 C13/C14): mustache-form (mut LEXICAL.rest) — mirror
+      // of the SubExpression handler in visitors/index.ts. A lexical JS head
+      // cannot be resolved by name at runtime, so lower to the existing
+      // `__mutGet(() => head, "rest")` machinery (parent getter + key the host
+      // writes through) instead of dropping the path (which makes the host's
+      // `mut` assert "You can only pass a path to mut").
+      else if (
+        paramPath.includes('.') &&
+        !paramPath.includes('[') &&
+        ctx.scopeTracker.hasBinding(paramPath.slice(0, paramPath.indexOf('.')))
+      ) {
+        const dot = paramPath.indexOf('.');
+        const head = paramPath.slice(0, dot);
+        const restKey = paramPath.slice(dot + 1);
+        const headRange = getNodeRange(firstParam);
+        const parentGetter = getter(path(head, false, headRange));
+        const pathRange = getNodeRange(node.path);
+        const mutGetResult = helper('__mutGet', [parentGetter, literal(restKey)], new Map(), range, pathRange);
+        if (wrap) {
+          return getter(mutGetResult, range);
+        }
+        return mutGetResult;
+      }
     }
   }
 
