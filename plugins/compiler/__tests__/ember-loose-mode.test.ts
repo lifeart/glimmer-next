@@ -84,7 +84,9 @@ describe('angle-bracket components by name', () => {
   test('args, attributes and the default block reach the component (no textContent folding)', () => {
     const code = loose('<FooBar @a={{this.x}} class="c">text</FooBar>');
     expect(code).toContain("$_c('foo-bar'");
-    expect(code).toContain('a: () => $__tag($s, "x")');
+    // Ember dialect: reactive arg getters are branded ($_argThunk) so the
+    // arg-access layer invokes only compiler thunks, not forwarded functions.
+    expect(code).toContain('a: $_argThunk(() => $__tag($s, "x"))');
     expect(code).toContain('default: ctx0 => ["text"]');
     expect(code).not.toMatch(/\$_tag\('foo-bar'/);
   });
@@ -139,7 +141,7 @@ describe('curly components by name', () => {
   });
 
   test('{{component "name"}} / {{#component "name"}} resolve the name', () => {
-    expect(loose('{{component "foo-bar" a=1}}')).toContain("$_c('foo-bar', $_args({ a: () => 1 }, {}, $_edp), this)");
+    expect(loose('{{component "foo-bar" a=1}}')).toContain("$_c('foo-bar', $_args({ a: $_argThunk(() => 1) }, {}, $_edp), this)");
     expect(loose('{{#component "foo-bar"}}y{{/component}}')).toContain("$_c('foo-bar'");
     expect(loose('{{component "foo-bar"}}')).not.toContain('__fromComponentHelper__');
   });
