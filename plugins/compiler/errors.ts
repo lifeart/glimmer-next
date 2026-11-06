@@ -194,7 +194,7 @@ export function getErrorHint(code: string): string | undefined {
  * Enrich an error with source snippet and formatting information.
  */
 export function enrichError(
-  error: { message: string; code: string; sourceRange?: SourceRange },
+  error: { message: string; code: string; sourceRange?: SourceRange; originalError?: unknown },
   source: string,
   options?: DiagnosticsOptions
 ): CompilerError {
@@ -203,6 +203,7 @@ export function enrichError(
       message: error.message,
       code: error.code,
       hint: getErrorHint(error.code),
+      originalError: error.originalError,
     };
   }
 
@@ -255,6 +256,7 @@ export function enrichError(
     column: pos.column,
     lexicalContext: extractLexicalContext(source, error.sourceRange),
     filename: options?.filename,
+    originalError: error.originalError,
   };
 }
 
