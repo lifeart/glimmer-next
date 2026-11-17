@@ -2621,10 +2621,31 @@ export function $_each<T extends { id: number }>(
   return toNodeReturnType(outlet, instance);
 }
 
+// Ember dialect: the key under which an args object `$_args` built gives the
+// record it reads — the arguments as the compiler passed them (`argumentOf`).
+const ARGS_RECORD = Symbol('args-record');
+
+/**
+ * Ember dialect (WITH_EMBER_INTEGRATION): the argument `key` of the args
+ * object `args` as the compiler passed it to `$_args` — its getter, branded
+ * (`$_argThunk`) with where a write of the argument goes (`argSource`), or its
+ * value; `undefined` when `args` is not an args object `$_args` built. A host
+ * that writes a two-way bound argument through the args object of a
+ * component's caller (Glimmer's `@x` is the caller's reference) finds the
+ * caller's own argument's source here.
+ */
+export function argumentOf(args: object, key: string): unknown {
+  if (!WITH_EMBER_INTEGRATION) return undefined;
+  const record: unknown = (args as { [ARGS_RECORD]?: unknown })[ARGS_RECORD];
+  return typeof record === 'object' && record !== null
+    ? (record as Record<string, unknown>)[key]
+    : undefined;
+}
+
 const ArgProxyHandler: ProxyHandler<{}> = {
-  get(target: Record<string, () => unknown>, prop: string) {
+  get(target: Record<string, () => unknown>, prop: string | symbol) {
     if (prop in target) {
-      const value = target[prop];
+      const value = target[prop as string];
       if (!isFn(value)) {
         return value;
       }
@@ -2640,7 +2661,7 @@ const ArgProxyHandler: ProxyHandler<{}> = {
       }
       return value();
     }
-    return undefined;
+    return WITH_EMBER_INTEGRATION && prop === ARGS_RECORD ? target : undefined;
   },
   set() {
     if (IS_DEV_MODE) {
@@ -2698,6 +2719,9 @@ export function $_args(
         [$SLOTS_SYMBOL]: slots ?? {},
         [$PROPS_SYMBOL]: props ?? {},
       };
+      if (WITH_EMBER_INTEGRATION) {
+        Object.defineProperty(newArgs, ARGS_RECORD, { value: args });
+      }
       Object.keys(args).forEach((key) => {
         try {
           Object.defineProperty(newArgs, key, {
