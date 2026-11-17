@@ -2262,7 +2262,7 @@ function createSlot(
   // an item reference the computation read before and one the block reads for
   // a reason of its own.
   const paramReferences =
-    tracker !== null && readsItem ? runtime!.paramReferences(tracker, trackerSize) : null;
+    tracker !== null && readsItem ? runtime!.paramReferences!(tracker, trackerSize) : null;
   if (formulasToDestroy.length > 0) {
     registerDestructor(slotContext, () => {
       for (const f of formulasToDestroy) {

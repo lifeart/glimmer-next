@@ -46,9 +46,9 @@ describe('a list keyed by position needs the item reference runtime', () => {
     const parent = new Component({});
     parent[RENDERED_NODES_PROPERTY] = [];
     addToTree(root, parent);
-    return new SyncListComponent<{ name: string }>(
+    return new SyncListComponent<{ id: number; name: string }>(
       {
-        tag: cell([{ name: 'a' }]),
+        tag: cell([{ id: 1, name: 'a' }]),
         key,
         ctx: parent,
         ItemComponent: () => document.createElement('div'),

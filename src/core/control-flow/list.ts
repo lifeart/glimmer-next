@@ -1189,9 +1189,7 @@ export class BasicListComponent<T extends { id: number }> {
       const runtime = itemReferenceRuntime();
       if (runtime === null) {
         throw new Error(
-          `gxt: a list keyed "${this.key}" builds its rows with references to their items, ` +
-            `which the item reference runtime makes: install it (\`registerItemReferenceRuntime()\` ` +
-            `from '@lifeart/gxt/item-references')`,
+          `gxt: key="${this.key}" needs registerItemReferenceRuntime() from @lifeart/gxt/item-references`,
         );
       }
       const rows = runtime.rows<T>(this.key);
