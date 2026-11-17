@@ -734,6 +734,7 @@ export class BasicListComponent<T extends { id: number }> {
       }
       boundItemMap.set(key, item);
     }
+    HOST_HOOKS.itemReferencesChanged?.();
   }
   /**
    * What the new row of `key` is built with: `item`, or for an item-reference

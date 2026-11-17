@@ -119,6 +119,14 @@ export interface HostHooks {
    */
   rebindEachItem?: (oldItem: unknown, newItem: unknown) => void;
   /**
+   * A list kept rows keyed by position (or `{{#each-in}}` rows) for other
+   * items: their item references now hold the new items, and what reads them
+   * through gxt's cells has updated. A host that gives some components their
+   * argument values in a pass of its own (Ember's classic components) runs it
+   * again for these rows' components, in the same render.
+   */
+  itemReferencesChanged?: () => void;
+  /**
    * Register a leaf object held by a tracked cell as a value-owner of that
    * cell (host reverse-lookup so `set(leafObj, key, …)` can reach the
    * cell). Replaces `globalThis.__gxtRegisterObjectValueOwner`.
