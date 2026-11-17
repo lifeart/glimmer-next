@@ -7,7 +7,7 @@
 
 import type { CompilerContext } from '../context';
 import { addError, recordLooseBuiltin } from '../context';
-import type { SerializedValue, SourceRange, PathValue } from '../types';
+import type { LetWriteSource, SerializedValue, SourceRange, PathValue } from '../types';
 import { path } from '../types';
 import { SYMBOLS, INTERNAL_HELPERS, getBuiltInHelperSymbol } from './symbols';
 import {
@@ -1205,6 +1205,34 @@ export function withArgSource(
   return B.call(B.id(SYMBOLS.ARG_THUNK), brandArgs, getterExpr.sourceRange);
 }
 
+/**
+ * Ember compat: where a write of a `{{#let}}` binding of `value` goes, found
+ * at the let (serializers/control.ts buildLet), in its scope: the object (an
+ * expression of it built there) and the property; `undefined` when the
+ * binding is not writable. A binding of an outer binding writes where that one
+ * does: its source is the outer one (`shared`), whose let declares its getter.
+ */
+export function letWriteSourceOf(
+  ctx: CompilerContext,
+  value: SerializedValue,
+  ctxName: string
+): { source: LetWriteSource; shared: boolean } | undefined {
+  let inner = value;
+  while (inner.kind === 'getter') inner = inner.value;
+  if (inner.kind === 'path') {
+    const name = inner.expression;
+    if (/^[^.?[@]+$/.test(name) && name !== SYMBOLS.ARGS_ALIAS) {
+      const binding = ctx.scopeTracker.resolve(name);
+      const outer = binding?.kind === 'let-binding' ? binding.letSource : undefined;
+      return outer === undefined ? undefined : { source: outer, shared: true };
+    }
+  }
+  const found = argSourceOf(ctx, value, ctxName, 0);
+  return found === null
+    ? undefined
+    : { source: { parent: found.parent, key: found.key, parentVar: null }, shared: false };
+}
+
 // The object a write of the path argument `value` sets a property of, and the
 // property (`withArgSource`); null when the argument is not writable.
 function argSourceOf(
@@ -1237,8 +1265,15 @@ function argSourceOf(
   if (tokens.length === 1) {
     const name = tokens[0]!;
     const binding = ctx.scopeTracker.resolve(name);
-    if (binding?.kind === 'let-binding' && binding.letValue !== undefined) {
-      return argSourceOf(ctx, binding.letValue, ctxName, depth + 1);
+    const letSource = binding?.kind === 'let-binding' ? binding.letSource : undefined;
+    if (letSource !== undefined) {
+      // Read through the getter the let declares in its own scope: an inner
+      // block param of the same name as a name of the let's path does not
+      // capture it.
+      if (letSource.parentVar === null) {
+        letSource.parentVar = `$__letSrc${++ctx.letSourceCounter}`;
+      }
+      return { parent: B.call(B.id(letSource.parentVar), []), key: letSource.key };
     }
     return null;
   }

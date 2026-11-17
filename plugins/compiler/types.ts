@@ -7,6 +7,7 @@
 // callers can supply standard `@glimmer/syntax` AST plugins/visitors. This is
 // erased at build time and adds no runtime dependency.
 import type { ASTPluginBuilder, NodeVisitor } from '@glimmer/syntax';
+import type { JSExpression } from './builder/types';
 
 // ============================================================================
 // Source Range & Mapping Types
@@ -235,6 +236,15 @@ export type BindingKind =
 /**
  * Information about a binding in a scope.
  */
+/** See `BindingInfo.letSource`. */
+export interface LetWriteSource {
+  /** The let's built expression of the object written to. */
+  readonly parent: JSExpression;
+  readonly key: string;
+  /** The getter of `parent` the let declares, once an argument uses it. */
+  parentVar: string | null;
+}
+
 export interface BindingInfo {
   readonly kind: BindingKind;
   readonly name: string;
@@ -264,11 +274,14 @@ export interface BindingInfo {
    */
   readonly itemReference?: boolean;
   /**
-   * Ember compat: the value of a `{{#let}}` binding, when it is a path — a
-   * component argument that is the binding writes where the path writes
-   * (serializers/value.ts `withArgSource`).
+   * Ember compat: where a write of a `{{#let}}` binding of a path goes, found
+   * at the let — in its scope, where the path's names mean what they mean
+   * there: the object (`parent`, the let's built expression of it) and the
+   * property. A component argument that is the binding writes there
+   * (serializers/value.ts `withArgSource`), through a getter of `parent` the
+   * let declares (`parentVar`) when an argument uses it.
    */
-  readonly letValue?: SerializedValue;
+  readonly letSource?: LetWriteSource;
   /**
    * The JS identifier a `{{#let}}` binding is DECLARED and REFERENCED under,
    * when it differs from its (reserved-word-escaped) template name. Set only

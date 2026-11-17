@@ -6,10 +6,16 @@
  */
 
 import type { CompilerContext } from '../context';
-import type { HBSControlExpression, HBSChild, HBSNode, SerializedValue } from '../types';
+import type {
+  HBSControlExpression,
+  HBSChild,
+  HBSNode,
+  LetWriteSource,
+  SerializedValue,
+} from '../types';
 import { isHBSControlExpression, isHBSNode, isSerializedValue } from '../types';
 import { SYMBOLS } from './symbols';
-import { buildValue, buildPathExpression } from './value';
+import { buildValue, buildPathExpression, letWriteSourceOf } from './value';
 import {
   extractStaticBlock,
   buildStaticBlockDefExpr,
@@ -993,20 +999,28 @@ function buildLet(
     }
   });
 
+  // Ember compat: where a write of a binding of a path goes, found here, in
+  // the let's scope (`withArgSource`). A component argument that is the
+  // binding writes through a getter of the object the let declares
+  // (`parentVar`, set when an argument uses it), so a block param of the same
+  // name as one of the path's names, inside the let, does not capture it.
+  const letSources = bindings.map((binding) =>
+    compatReferences && ctx.flags.IS_GLIMMER_COMPAT_MODE
+      ? letWriteSourceOf(ctx, binding.value, ctxName)
+      : undefined,
+  );
+
   // Add let bindings in a fresh scope frame so nested `{{#let}}` blocks
   // shadow rather than clobber the outer binding.
   ctx.scopeTracker.enterScope('let');
   bindings.forEach((binding, index) => {
     const emitName = emitNames[index]!;
-    // Ember compat: a binding to a path writes where the path writes
-    // (`withArgSource`).
-    const letValue =
-      compatReferences && binding.value.kind === 'path' ? binding.value : undefined;
+    const letSource = letSources[index]?.source;
     ctx.scopeTracker.addBinding(
       binding.name,
       emitName === escapeBindingName(binding.name)
-        ? { kind: 'let-binding', name: binding.name, letValue }
-        : { kind: 'let-binding', name: binding.name, emitName },
+        ? { kind: 'let-binding', name: binding.name, letSource }
+        : { kind: 'let-binding', name: binding.name, emitName, letSource },
     );
   });
 
@@ -1026,10 +1040,22 @@ function buildLet(
     ? B.formattedArray(rewrittenExprs, true)
     : B.array(rewrittenExprs);
 
+  // The getters of the objects the arguments that are a binding write to (a
+  // binding of an outer binding shares that let's).
+  const sourceDecls: JSStatement[] = [];
+  for (const found of letSources) {
+    if (found === undefined || found.shared) continue;
+    const source: LetWriteSource = found.source;
+    if (source.parentVar !== null) {
+      sourceDecls.push(B.varDecl('let', source.parentVar, B.arrow([], source.parent)));
+    }
+  }
+
   // Build arrow-function IIFE: ...(() => { declarations; return [children]; })()
   // Arrow function preserves this from the enclosing scope.
   const body: JSStatement[] = [
     ...varDecls,
+    ...sourceDecls,
     B.ret(childArrayExpr),
   ];
 
