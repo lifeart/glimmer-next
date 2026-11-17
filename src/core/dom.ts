@@ -56,7 +56,7 @@ import {
   registerDestructorBatch,
 } from './glimmer/destroyable';
 import { HTMLBrowserDOMApi } from '@/core/dom-api';
-import { $_argThunk, isArgThunk } from '@/core/helpers/-private';
+import { $_argThunk, isArgThunk, argSource } from '@/core/helpers/-private';
 import {
   isFn,
   isPrimitive,
@@ -165,8 +165,9 @@ import {
 import { splatLocalPlan } from './splat-local';
 export { $_MANAGERS };
 
-// The brand of a compiler-emitted argument getter (helpers/-private.ts).
-export { $_argThunk, isArgThunk };
+// The brand of a compiler-emitted argument getter, and where a write of the
+// argument goes (helpers/-private.ts).
+export { $_argThunk, isArgThunk, argSource };
 
 export function $_TO_VALUE(reference: unknown) {
   if (isFn(reference)) {

@@ -998,10 +998,14 @@ function buildLet(
   ctx.scopeTracker.enterScope('let');
   bindings.forEach((binding, index) => {
     const emitName = emitNames[index]!;
+    // Ember compat: a binding to a path writes where the path writes
+    // (`withArgSource`).
+    const letValue =
+      compatReferences && binding.value.kind === 'path' ? binding.value : undefined;
     ctx.scopeTracker.addBinding(
       binding.name,
       emitName === escapeBindingName(binding.name)
-        ? { kind: 'let-binding', name: binding.name }
+        ? { kind: 'let-binding', name: binding.name, letValue }
         : { kind: 'let-binding', name: binding.name, emitName },
     );
   });

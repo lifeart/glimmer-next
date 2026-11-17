@@ -264,6 +264,12 @@ export interface BindingInfo {
    */
   readonly itemReference?: boolean;
   /**
+   * Ember compat: the value of a `{{#let}}` binding, when it is a path — a
+   * component argument that is the binding writes where the path writes
+   * (serializers/value.ts `withArgSource`).
+   */
+  readonly letValue?: SerializedValue;
+  /**
    * The JS identifier a `{{#let}}` binding is DECLARED and REFERENCED under,
    * when it differs from its (reserved-word-escaped) template name. Set only
    * when the binding's name occurs in one of the let's own value expressions

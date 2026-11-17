@@ -1166,6 +1166,86 @@ export function isReactiveArgThunk(node: JSExpression): boolean {
  * IS_GLIMMER_COMPAT_MODE): standalone gxt keeps byte-identical codegen and its
  * invoke-every-getter semantics.
  */
+/**
+ * Ember compat (IS_GLIMMER_COMPAT_MODE + WITH_EMBER_INTEGRATION, not
+ * EMBER_NATIVE — the native build has no classic components): the getter of a
+ * component argument, branded, with where a write of the argument goes when
+ * the argument is a path (`$_argThunk(getter, parent, key)`). A classic
+ * component that sets the property of a two-way bound argument writes there,
+ * as Glimmer's curly component manager updates the argument's reference:
+ *   - `this.x` → `set(this, "x")`; `this.a.b` → `set(this.a, "b")`, `this.a`
+ *     read when the write happens; a block param's path `item.name` →
+ *     `set(item, "name")`;
+ *   - `@x` → the caller's reference: `$a` and `"@x"`, which the host follows
+ *     through the args object to where its own caller's argument writes
+ *     (nothing when that is a literal or a helper's result);
+ *   - a `{{#let}}` binding of a path → where that path writes;
+ *   - anything else — a literal, a helper's result, a block param itself (an
+ *     `{{#each}}` row's own reference) — is not writable: branded, no source.
+ * `valueExpr` is the argument as built (a getter, branded or not, or a value);
+ * a value is returned as it is.
+ */
+export function withArgSource(
+  ctx: CompilerContext,
+  value: SerializedValue,
+  valueExpr: JSExpression,
+  ctxName: string
+): JSExpression {
+  if (
+    !ctx.flags.IS_GLIMMER_COMPAT_MODE ||
+    !ctx.flags.WITH_EMBER_INTEGRATION ||
+    ctx.flags.EMBER_NATIVE
+  ) {
+    return valueExpr;
+  }
+  let getterExpr = valueExpr;
+  if (
+    valueExpr.type === 'call' &&
+    valueExpr.callee.type === 'identifier' &&
+    valueExpr.callee.name === SYMBOLS.ARG_THUNK
+  ) {
+    getterExpr = valueExpr.arguments[0]!;
+  }
+  if (!isReactiveArgThunk(getterExpr)) return valueExpr;
+  const source = argSourceOf(ctx, value, ctxName, 0);
+  const brandArgs: JSExpression[] = source === null
+    ? [getterExpr]
+    : [getterExpr, B.arrow([], source.parent), B.string(source.key)];
+  return B.call(B.id(SYMBOLS.ARG_THUNK), brandArgs, getterExpr.sourceRange);
+}
+
+// The object a write of the path argument `value` sets a property of, and the
+// property (`withArgSource`); null when the argument is not writable.
+function argSourceOf(
+  ctx: CompilerContext,
+  value: SerializedValue,
+  ctxName: string,
+  depth: number
+): { parent: JSExpression; key: string } | null {
+  if (value.kind !== 'path' || depth > 8) return null;
+  const expression = value.expression;
+  if (expression.includes('[') || expression.includes('?')) return null;
+  const tokens = expression.split('.');
+  if (tokens.some((token) => token === '')) return null;
+  if (tokens.length === 1) {
+    const name = tokens[0]!;
+    if (name.startsWith('@')) {
+      // The caller's reference: the args object's own argument, named with
+      // its `@` (the host follows it to where the caller's argument writes).
+      ctx.usedArgsAlias = true;
+      return { parent: B.id(SYMBOLS.ARGS_ALIAS), key: name };
+    }
+    const binding = ctx.scopeTracker.resolve(name);
+    if (binding?.kind === 'let-binding' && binding.letValue !== undefined) {
+      return argSourceOf(ctx, binding.letValue, ctxName, depth + 1);
+    }
+    return null;
+  }
+  const key = tokens[tokens.length - 1]!;
+  const parentPath = path(tokens.slice(0, -1).join('.'), value.isArg, value.sourceRange);
+  return { parent: buildPathExpression(ctx, parentPath, false, ctxName), key };
+}
+
 export function brandArgGetter(ctx: CompilerContext, valueExpr: JSExpression): JSExpression {
   if (
     ctx.flags.IS_GLIMMER_COMPAT_MODE &&

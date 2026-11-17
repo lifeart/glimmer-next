@@ -19,7 +19,7 @@ import type {
 } from '../types';
 import { isSerializedValue, isRuntimeTag, path } from '../types';
 import { SYMBOLS, EVENT_TYPE, INTERNAL_HELPERS } from './symbols';
-import { buildValue, buildPathExpression, buildNativeArg, buildArgLabels, selfHeadedName, emittedRootName, emittedPathName, brandArgGetter } from './value';
+import { buildValue, buildPathExpression, buildNativeArg, buildArgLabels, selfHeadedName, emittedRootName, emittedPathName, brandArgGetter, withArgSource } from './value';
 import { B, serializeJS, type JSExpression, type JSProperty } from '../builder';
 import { escapeBindingName } from '../utils/js-utils';
 import { replaceBindingRefs } from './binding-refs';
@@ -408,11 +408,17 @@ function buildTupleArray(
   const items = tuples.map((tuple) => {
     const [name, value, range, nameRange] = tuple;
     // Use buildValue directly to preserve AST structure for better code generation
-    const valueExpr = buildValue(ctx, value, ctxName);
+    // Ember compat: a component argument (`@name`, the host reads it as one)
+    // is branded, and carries where a write of it goes when it is a path
+    // (`withArgSource`).
+    const builtExpr = buildValue(ctx, value, ctxName);
+    const valueExpr = name.startsWith('@') && !name.startsWith('@__')
+      ? withArgSource(ctx, value, builtExpr, ctxName)
+      : builtExpr;
     // Ground-truth: a string-form $_maybeHelper landing in a `["@name", …]`
     // tuple is the named-arg resolved-helper shape the Ember DEBUG guard
     // rewrites. The position is known here (the tuple is built with the key).
-    if (name.startsWith('@') && isStringFormMaybeHelperCall(valueExpr)) {
+    if (name.startsWith('@') && isStringFormMaybeHelperCall(builtExpr)) {
       ctx.emissionReport.maybeHelperInNamedArgPosition = true;
     }
     // Use nameRange for attribute names when available (AttributeTuple has 4 elements)
@@ -819,7 +825,14 @@ function buildArgsObject(
     // components, "renders with dot path and updates attributes"). A plain
     // function VALUE — a host-forwarded action, a `{{fn}}`/helper result —
     // stays unbranded and is passed through un-invoked (`brandArgGetter`).
-    const valueExpr = brandArgGetter(ctx, buildValue(ctx, value, ctxName));
+    // Ember compat: a path argument's getter also carries where a write of
+    // the argument goes (`withArgSource`).
+    const valueExpr = withArgSource(
+      ctx,
+      value,
+      brandArgGetter(ctx, buildValue(ctx, value, ctxName)),
+      ctxName,
+    );
     // Use the arg name as-is; the serializer handles quoting non-identifier keys
     return B.prop(argName, valueExpr, false, range, nameRange);
   });
