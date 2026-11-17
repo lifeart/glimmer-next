@@ -736,12 +736,19 @@ function serializeHelperCall(value: SerializedValue & { kind: 'helper' }, ctx?: 
     // $_componentHelper unwraps each value through $_unwrapHelperArg (which calls
     // function values), so this is snapshot-equivalent for standalone; we still
     // gate on compat mode to byte-match the JSExpression path, which only wraps
-    // when IS_GLIMMER_COMPAT_MODE is set.
+    // when IS_GLIMMER_COMPAT_MODE is set. Under the Ember dialect the getter is
+    // branded `$_argThunk`, as buildNamedArgsObject brands it (`brandArgGetter`):
+    // the args object reads only a branded getter, and passes any other
+    // function on as the argument's value.
     const wrapNamed = ctx?.flags.IS_GLIMMER_COMPAT_MODE === true;
+    const brandNamed = wrapNamed && ctx?.flags.WITH_EMBER_INTEGRATION === true;
     const namedPairs: string[] = [];
     for (const [key, val] of value.named) {
       const serialized = serializeValueToString(val, ctx);
-      const emitted = wrapNamed && val.kind === 'path' ? `() => ${serialized}` : serialized;
+      const getter = `() => ${serialized}`;
+      const emitted = wrapNamed && val.kind === 'path'
+        ? (brandNamed ? `${SYMBOLS.ARG_THUNK}(${getter})` : getter)
+        : serialized;
       namedPairs.push(`${quoteKey(key)}: ${emitted}`);
     }
     const namedObj = namedPairs.length > 0 ? `{ ${namedPairs.join(', ')} }` : '{}';

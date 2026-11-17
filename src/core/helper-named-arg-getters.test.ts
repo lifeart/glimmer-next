@@ -33,10 +33,11 @@ function code(tpl: string, flags: object, bindings: string[] = []) {
 
 describe('the compiler brands the getters among a helper\'s named arguments', () => {
   test('compat: a path is a branded getter, a sub-expression a value', () => {
-    const out = code('{{my-helper save=(fn this.save 1) action=this.act n=1}}', COMPAT);
+    const out = code('{{my-helper this.x save=(fn this.save 1) action=this.act n=1}}', COMPAT);
+    expect(out).toContain('$_maybeHelper("my-helper"');
     expect(out).toContain('action: $_argThunk(() => this.act)');
     expect(out).toContain('n: 1');
-    expect(out).not.toMatch(/save: \$_argThunk/);
+    expect(out).toContain('save: $__fn(');
   });
 
   test("compat: a curried helper's named arguments too", () => {

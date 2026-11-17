@@ -102,7 +102,9 @@ describe('{{#let}} self-shadowing bindings are renamed', () => {
     expect(names[0]).toBe('h');
     expect(names[1]).toMatch(/^h\$\d+$/);
     // the inner initializer reads the outer getter, the body the inner one
-    expect(out).toMatch(/let h\$\d+ = \(\) => \$_maybeHelper\(hash, \[\], \{\s*b: \(\) => h\(\)/);
+    expect(out).toMatch(
+      /let h\$\d+ = \(\) => \$_maybeHelper\(hash, \[\], \{\s*b: \$_argThunk\(\(\) => h\(\)\)/,
+    );
   });
 
   test('a renamed component binding is invoked under its declared name', () => {
