@@ -17,12 +17,21 @@ import {
 } from './static-block';
 import { B, serializeJS, type JSExpression, type JSStatement } from '../builder';
 import { escapeBindingName } from '../utils/js-utils';
+import { replaceBindingRefs } from './binding-refs';
 
 // Sentinel each-key that opts a block into row recycling. Mirrors RECYCLE_KEY
 // in src/core/control-flow/list-recycle.ts (no cross-boundary import: plugins
 // must not pull runtime modules). Detected at compile time so the recycle
 // runtime stays tree-shakable — see buildEach.
 const RECYCLE_KEY = '@recycle';
+
+// The each key whose rows are built with a REFERENCE to their item (the row
+// callback gets a cell, `.value` being the item the row stands for now) —
+// mirrors POSITIONAL_KEY in src/core/control-flow/list.ts. A positional row
+// (`key="@index"`, and `key="@key"`: an array's iteration key is the position)
+// keeps its place while the items move; the body reads the item through the
+// reference (see `itemReferenceReads`).
+const POSITIONAL_KEY = '@index';
 
 // Forward declarations - set from index.ts to avoid circular dependency
 let buildChildrenExprs: (ctx: CompilerContext, children: readonly HBSChild[], ctxName: string) => JSExpression[];
@@ -245,6 +254,9 @@ function buildEach(
 
   // Validate and normalize key
   const eachKey = normalizeEachKey(ctx, control);
+  // How the body reads the block params of a row built with a reference to
+  // its item, or null for a row built with the item.
+  const itemReads = itemReferenceReads(eachKey, paramNames, eachInParams);
 
   // Choose sync or async each.
   // PR https://github.com/lifeart/glimmer-next/pull/212: previously this
@@ -317,7 +329,7 @@ function buildEach(
 
   // Build the callback body with index replacement
   // Pass all param names so they can be tracked as known bindings during serialization
-  const bodyExpr = buildEachBody(ctx, control.children, newCtxName, paramNames, hasStable, isRecycled, eachInParams);
+  const bodyExpr = buildEachBody(ctx, control.children, newCtxName, paramNames, hasStable, isRecycled, eachInParams, itemReads);
 
   // Static-block fast path (RESEARCH_LIST_TRACKING_OPTIMIZATION.md §2.A1/§4):
   // when the body is a single qualifying inline element, ALSO emit a
@@ -328,7 +340,12 @@ function buildEach(
   // code byte-identical to not having the fast path. `key="@recycle"` rows
   // render against per-row state objects, not raw items — keep them on the
   // compiled-callback path.
-  const staticBlockParts = isRecycled || eachInParams !== undefined ? null : extractStaticBlock(control);
+  // Nor positional rows, which are built with a reference to their item (the
+  // runtime builds them with the compiled callback).
+  const staticBlockParts =
+    isRecycled || eachInParams !== undefined || eachKey === POSITIONAL_KEY
+      ? null
+      : extractStaticBlock(control);
   let blockDefExpr: JSExpression | null = null;
   let blockValuesExpr: JSExpression | null = null;
   if (staticBlockParts !== null) {
@@ -443,13 +460,40 @@ function normalizeEachKey(
   control: HBSControlExpression
 ): string | null {
   // `@index` is a POSITIONAL key: the runtime (control-flow/list.ts) keys each
-  // row by its position so a reorder keeps the row node in place and updates its
-  // bound item, and `@index` yields the stable position
-  // (emberjs/ember.js#21340: the `@index`-key Updating test and native "@key
-  // keys items by position"). It is no longer rewritten to `@identity` (which
-  // keyed by value and moved/re-created rows). An explicit `@key` / path key
-  // passes through unchanged.
+  // row by its position so a reorder keeps the row node in place and points
+  // the row's item reference at the item now at its position, and `@index`
+  // yields the stable position (emberjs/ember.js#21340: the `@index`-key
+  // Updating test and native "@key keys items by position"). `@key` keys a
+  // row by the iteration key of its item, which for an `{{#each}}` (an array,
+  // an iterable) is its position: the same key. A path key passes through
+  // unchanged.
+  if (control.key === '@key' && control.eachInParams === undefined) {
+    return POSITIONAL_KEY;
+  }
   return control.key;
+}
+
+/**
+ * The rows of a list keyed by `POSITIONAL_KEY` are built with a reference to
+ * their item: how the body reads the block params through it, as a map from
+ * the param's emitted name to the expression that reads it — the item `item`
+ * as `item.value`. Null for any other list, and when the body has no param to
+ * read.
+ */
+function itemReferenceReads(
+  eachKey: string | null,
+  paramNames: readonly string[],
+  eachInParams: readonly string[] | undefined
+): ReadonlyMap<string, string> | null {
+  const reads = new Map<string, string>();
+  if (eachInParams === undefined && eachKey === POSITIONAL_KEY) {
+    const item = paramNames[0]!;
+    if (item !== '$noop') {
+      const name = escapeBindingName(item);
+      reads.set(name, `${name}.value`);
+    }
+  }
+  return reads.size > 0 ? reads : null;
 }
 
 /**
@@ -462,7 +506,8 @@ function buildEachBody(
   paramNames: string[],
   hasStable: boolean,
   isRecycled = false,
-  eachInParams?: readonly string[]
+  eachInParams?: readonly string[],
+  itemReads: ReadonlyMap<string, string> | null = null
 ): JSExpression {
   const indexParam = paramNames[1] ?? '$index';
   const usesIndex = childrenUseIndex(children, indexParam);
@@ -494,9 +539,13 @@ function buildEachBody(
   // Exit scope, restoring outer bindings.
   ctx.scopeTracker.exitScope();
 
-  const rewrittenExprs = usesIndex
+  const indexedExprs = usesIndex
     ? childExprs.map((expr) => replaceIndexRefsInExpr(expr, escapeBindingName(indexParam)))
     : childExprs;
+  // A row built with a reference to its item reads its params through it.
+  const rewrittenExprs = itemReads !== null
+    ? indexedExprs.map((expr) => replaceBindingRefs(expr, itemReads))
+    : indexedExprs;
 
   const childArrayExpr = ctx.formatter.options.enabled && rewrittenExprs.length > 0
     ? B.formattedArray(rewrittenExprs, true)
