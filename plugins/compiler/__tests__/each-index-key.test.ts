@@ -64,6 +64,17 @@ describe('{{#each key="@index"}} compiles to a positional key (no @identity rewr
     expect(result.code).not.toContain('item.value.v');
   });
 
+  test('a positional row invokes its item as a component through a getter ($_dc), others once ($_c)', () => {
+    const positional = compile(
+      '{{#each this.items key="@index" as |Item|}}<li><Item /></li>{{/each}}',
+    );
+    expect(positional.errors).toHaveLength(0);
+    expect(positional.code).toContain('$_dc(() => Item.value');
+    const keyed = compile('{{#each this.items as |Item|}}<li><Item /></li>{{/each}}');
+    expect(keyed.errors).toHaveLength(0);
+    expect(keyed.code).not.toContain('$_dc(');
+  });
+
   test('other keys read the item itself', () => {
     const result = compile(
       '{{#each this.items key="id" as |item|}}<li>{{item.name}}</li>{{/each}}',

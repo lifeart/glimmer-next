@@ -983,8 +983,14 @@ function buildComponentCall(
 
   // Check for dynamic component (dotted path like context.V or this.Component)
   // Ember: an `@`-headed tag (`<@comp />`) is a dynamic component too
-  // (isComponentTag routes it here).
-  const isDynamic = tag.includes('.') || isArgComponentTag(ctx, tag);
+  // (isComponentTag routes it here). So is a list row's item read through its
+  // item reference (`{{#each this.comps key="@index" as |Item|}}<Item />`):
+  // the row stays while another component comes to stand at it, and the
+  // invocation follows it, as Glimmer's does.
+  const isDynamic =
+    tag.includes('.') ||
+    isArgComponentTag(ctx, tag) ||
+    ctx.scopeTracker.resolve(tag)?.itemReference === true;
 
   if (isDynamic) {
     // Wrap in reactive getter for dynamic component paths

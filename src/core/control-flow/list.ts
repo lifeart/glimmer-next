@@ -126,6 +126,18 @@ function hasItemRefs(key: string | null | undefined): boolean {
   return key === POSITIONAL_KEY || key === EACH_IN_KEY;
 }
 
+// The item references rows are built with (`itemRef`).
+const ITEM_REFERENCES: WeakSet<object> = new WeakSet();
+
+/**
+ * Whether `cell` is the item reference of a list row (`POSITIONAL_KEY` /
+ * `EACH_IN_KEY`): a value read through it can be replaced while the row
+ * stays. A block yielded such a value follows it (dom.ts `renderSlot`).
+ */
+export function isItemReference(cell: unknown): boolean {
+  return cell !== null && typeof cell === 'object' && ITEM_REFERENCES.has(cell);
+}
+
 // Two `{{#each-in}}` entries of one row that read the same: same key and value.
 function sameEachInEntry(a: unknown, b: unknown): boolean {
   const x = a as [unknown, unknown] | undefined;
@@ -708,6 +720,7 @@ export class BasicListComponent<T extends { id: number }> {
       item,
       IS_DEV_MODE ? `each.item[${String(key)}]` : undefined,
     );
+    ITEM_REFERENCES.add(ref);
     this.itemRefs!.set(key, ref);
     return ref as unknown as T;
   }

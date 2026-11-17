@@ -36,11 +36,14 @@ import {
   tagsFromRange,
   materializeAbsentPathCell,
   registerLeafOwnersForFormula,
+  getTracker,
+  setTracker,
 } from '@/core/reactive';
 import { opcodeFor, opcodeForCreatedContent, checkOpcode, bindOpcode } from '@/core/vm';
 import {
   SyncListComponent,
   AsyncListComponent,
+  isItemReference,
   type InverseFn,
 } from '@/core/control-flow/list';
 // NB: circular-by-design — static-block.ts imports $prop/$attr/$ev back from
@@ -1402,23 +1405,70 @@ export function $_inElement(
     ctx,
   );
 
-  function renderInElementBody() {
-      let appendRef!: HTMLElement;
+  function readDestination(): HTMLElement {
       if (isFn(elementRef)) {
         let result = elementRef();
         if (isFn(result)) {
           result = result();
         }
         if (result !== null && result !== undefined && isTagLike(result)) {
-          appendRef = result.value;
-        } else {
-          appendRef = result;
+          return result.value;
         }
+        return result;
       } else if (elementRef !== null && elementRef !== undefined && isTagLike(elementRef)) {
-        appendRef = elementRef.value;
-      } else {
-        appendRef = elementRef;
+        return elementRef.value;
       }
+      return elementRef;
+  }
+
+  // The destination is read once. When it is read through a list row's item
+  // reference (`{{#in-element item.target}}` in a positional or each-in row
+  // that is kept for another item), the block is moved — rendered again — to
+  // the destination of the item now at the row, as Glimmer's in-element
+  // follows its destination reference.
+  function renderInElementBody() {
+      const outer = getTracker();
+      const frame: Set<Cell> = new Set();
+      setTracker(frame);
+      let appendRef: HTMLElement;
+      try {
+        appendRef = readDestination();
+      } finally {
+        setTracker(outer);
+      }
+      const references: Cell[] = [];
+      frame.forEach((cell) => {
+        if (outer !== null) outer.add(cell);
+        if (isItemReference(cell)) references.push(cell);
+      });
+      let teardown = renderInto(appendRef);
+      registerDestructor(ctx, () => teardown(false));
+      if (references.length === 0) return;
+      const watch = formula(
+        () => references.map((reference) => reference.value),
+        IS_DEV_MODE ? 'in-element:items' : undefined,
+      );
+      let first = true;
+      const stop = opcodeFor(watch, () => {
+        if (first) {
+          first = false;
+          return;
+        }
+        const next = readDestination();
+        if (next === appendRef) return;
+        teardown(true);
+        appendRef = next;
+        teardown = renderInto(appendRef);
+      });
+      registerDestructor(ctx, stop, () => {
+        watch.destroy();
+      });
+  }
+
+  // Render the block into `appendRef`; returns what removes it again — and
+  // destroys what it rendered, when the block moves to another destination
+  // (else the render context's teardown destroys it).
+  function renderInto(appendRef: HTMLElement): (destroyContent: boolean) => void {
       if (!appendRef) {
         if (deferToMount) {
           // Glimmer / Ember: a nullish destination is an assertion (a host
@@ -1426,13 +1476,13 @@ export function $_inElement(
           const message = 'You cannot pass a null or undefined destination element to in-element';
           if (HOST_HOOKS.assert !== undefined) HOST_HOOKS.assert(message);
           else hostAssertFailed(message);
-          return;
+          return noTeardown;
         }
         if (IS_DEV_MODE) {
           const errMsg = `in-element: target element is null or undefined. isFn: ${isFn(elementRef)}, isTagLike: ${isTagLike(elementRef)}, fnResult: ${isFn(elementRef) ? String(elementRef()) : 'N/A'}`;
           console.error(errMsg);
         }
-        return;
+        return noTeardown;
       }
       // Clear/replace mode (Glimmer/Ember default): remove the target's
       // existing children before rendering our block body.
@@ -1449,8 +1499,14 @@ export function $_inElement(
         : null;
       const nodes = roots(ctx);
       renderElement(api, ctx, appendRef, nodes);
-      registerDestructor(ctx, () => {
+      let removed = false;
+      return (destroyContent: boolean) => {
+        if (removed) return;
+        removed = true;
         unregisterFromParent(nodes as ComponentLike[]);
+        if (destroyContent) {
+          destroyElementSync(nodes as unknown as ComponentLike, false, api);
+        }
         if (preExisting !== null) {
           const current = Array.from(appendRef.childNodes);
           for (let i = 0; i < current.length; i++) {
@@ -1462,9 +1518,11 @@ export function $_inElement(
         } else {
           appendRef.innerHTML = '';
         }
-      });
+      };
   }
 }
+
+function noTeardown(): void {}
 
 export function $_ucw(
   roots: (context: Component<any>) => (Node | ComponentReturnType)[],
@@ -2137,11 +2195,19 @@ function _component(
   return instance;
 }
 
+// A param the block gets as the value it has when the block renders (an
+// object, `null`), not as a formula it re-reads (see `createSlot`).
+function isSnapshotParam(value: unknown): boolean {
+  return typeof value === 'object';
+}
+
 function createSlot(
   value: Slots[string],
   params: () => unknown[],
   name: string,
   ctx: any,
+  // The params as just read (`renderSlot`), else read here.
+  initial: unknown[] = params(),
 ) {
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.push(`:${name}`);
@@ -2155,7 +2221,7 @@ function createSlot(
   // @ts-expect-error slot return type
   addToTree(ctx, slotContext);
   const formulasToDestroy: MergedCell[] = [];
-  const paramsArray = params().map((_, i) => {
+  const paramsArray = initial.map((_, i) => {
     const v = formula(() => params()[i], `slot:param:${i}`);
     const value = v.value;
     if (v.isConst || typeof value === 'object') {
@@ -2190,6 +2256,131 @@ function createSlot(
   return $_fin(elements, slotContext);
 }
 
+/**
+ * Render the block `value` with the yielded `params`.
+ *
+ * The block gets an object param as the value it has now (`createSlot`): its
+ * reads of the object's members stay reactive, but a later object in its
+ * place reaches the block only if it is rendered again. A list row kept for
+ * another item (a positional `{{#each}}` or an `{{#each-in}}` row, which
+ * reads its item through a reference — list.ts `isItemReference`) yields that
+ * other item without being rebuilt: when the params read such a reference and
+ * one of them is an object, the block is rendered again, in place, whenever
+ * one of those objects is replaced (`followingSlot`). Glimmer's block follows
+ * its param reference the same way, without a new rendering of its DOM.
+ */
+function renderSlot(
+  value: Slots[string],
+  params: () => unknown[],
+  name: string,
+  ctx: any,
+) {
+  const outer = getTracker();
+  const frame: Set<Cell> = new Set();
+  setTracker(frame);
+  let initial: unknown[];
+  try {
+    initial = params();
+  } finally {
+    setTracker(outer);
+  }
+  const references: Cell[] = [];
+  frame.forEach((cell) => {
+    if (outer !== null) outer.add(cell);
+    if (isItemReference(cell)) references.push(cell);
+  });
+  if (references.length === 0 || !initial.some(isSnapshotParam)) {
+    return createSlot(value, params, name, ctx, initial);
+  }
+  return followingSlot(value, params, name, ctx, initial, references);
+}
+
+// The object params of `params` by position (others `undefined`).
+function snapshotParams(params: unknown[]): unknown[] {
+  return params.map((param) => (isSnapshotParam(param) ? param : undefined));
+}
+
+function sameSnapshotParams(a: unknown[], b: unknown[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (!Object.is(a[i], b[i])) return false;
+  }
+  return true;
+}
+
+/**
+ * `createSlot`, rendered again in place whenever an object param is replaced
+ * after one of `references` (list item references the params read) changed.
+ * Laid out like a swapping `$_dc`: the content's nodes end with an anchor the
+ * next rendering goes before, and the returned object stands for the current
+ * content.
+ */
+function followingSlot(
+  value: Slots[string],
+  params: () => unknown[],
+  name: string,
+  ctx: any,
+  initial: unknown[],
+  references: Cell[],
+) {
+  const api = initDOM(ctx);
+  let rendered = snapshotParams(initial);
+  let result = createSlot(value, params, name, ctx, initial) as unknown as ComponentLike;
+  result[RENDERED_NODES_PROPERTY].push(
+    IS_DEV_MODE ? api.comment(`slot-{{${name}}}-anchor`) : api.comment(),
+  );
+  const watch = formula(
+    () => references.map((reference) => reference.value),
+    IS_DEV_MODE ? `slot:${name}:items` : undefined,
+  );
+  let first = true;
+  const destructor = opcodeFor(watch, () => {
+    if (first) {
+      first = false;
+      return;
+    }
+    const next = params();
+    const nextSnapshot = snapshotParams(next);
+    if (sameSnapshotParams(rendered, nextSnapshot)) return;
+    rendered = nextSnapshot;
+    const anchor = result[RENDERED_NODES_PROPERTY].pop() as Node;
+    const parent = api.parent(anchor)!;
+    const nextAnchor = IS_DEV_MODE
+      ? api.comment(`slot-{{${name}}}-anchor`)
+      : api.comment();
+    api.insert(parent, nextAnchor, anchor);
+    unregisterFromParent(result);
+    destroyElementSync(result, false, api);
+    api.destroy(anchor);
+    result = createSlot(value, params, name, ctx, next) as unknown as ComponentLike;
+    result[RENDERED_NODES_PROPERTY].push(nextAnchor);
+    renderElement(api, ctx, parent, result, nextAnchor);
+  });
+  registerDestructor(ctx, destructor, () => {
+    watch.destroy();
+  });
+  return {
+    get [RENDERING_CONTEXT_PROPERTY]() {
+      return result[RENDERING_CONTEXT_PROPERTY];
+    },
+    set [RENDERING_CONTEXT_PROPERTY](value) {
+      result[RENDERING_CONTEXT_PROPERTY] = value;
+    },
+    get [COMPONENT_ID_PROPERTY]() {
+      return result[COMPONENT_ID_PROPERTY];
+    },
+    set [COMPONENT_ID_PROPERTY](value) {
+      result[COMPONENT_ID_PROPERTY] = value;
+    },
+    get [RENDERED_NODES_PROPERTY]() {
+      return result[RENDERED_NODES_PROPERTY];
+    },
+    set [RENDERED_NODES_PROPERTY](value) {
+      result[RENDERED_NODES_PROPERTY] = value;
+    },
+  };
+}
+
 function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
   if (!(name in $slot)) {
     const api = initDOM(ctx);
@@ -2209,7 +2400,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
         }
         slotValue = value;
 
-        const slotRoots = createSlot(slotValue, params, name, ctx);
+        const slotRoots = renderSlot(slotValue, params, name, ctx);
         renderElement(
           api,
           ctx,
@@ -2228,7 +2419,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
     });
     return slotPlaceholder;
   }
-  return createSlot($slot[name], params, name, ctx);
+  return renderSlot($slot[name], params, name, ctx);
 }
 
 function getRenderTargets(api: DOMApi, debugName: string) {

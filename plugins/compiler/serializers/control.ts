@@ -525,9 +525,13 @@ function buildEachBody(
   // Add block params in a dedicated scope frame so nested each/if blocks with
   // matching block-param names shadow rather than clobber outer bindings.
   ctx.scopeTracker.enterScope('control-block');
-  // `{{#each-in}}` key / value params: plain values destructured from the pair.
+  // `{{#each-in}}` key / value params, read through the row's entry.
   for (const param of eachInParams ?? []) {
-    ctx.scopeTracker.addBinding(param, { kind: 'block-param', name: param });
+    ctx.scopeTracker.addBinding(param, {
+      kind: 'block-param',
+      name: param,
+      itemReference: itemReads !== null && itemReads.has(escapeBindingName(param)),
+    });
   }
   paramNames.forEach((param, i) => {
     ctx.scopeTracker.addBinding(param, {
@@ -540,6 +544,8 @@ function buildEachBody(
       // props are forwarding accessors over a re-pointable holder; a cellFor
       // tap would clobber that channel, so recycled params are never tapped.
       recycledRow: isRecycled,
+      // A positional row's item, read through the row's item reference.
+      itemReference: itemReads !== null && itemReads.has(escapeBindingName(param)),
     });
   });
 
