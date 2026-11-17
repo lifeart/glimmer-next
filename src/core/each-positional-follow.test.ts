@@ -119,8 +119,9 @@ describe('a kept positional row follows its item where its body reads it once', 
   });
 
   test('{{#in-element item.target}}: the block moves to the destination of the item now at the row', async () => {
-    const one = document.createElement('div');
-    const two = document.createElement('div');
+    const doc = fixture.container.ownerDocument;
+    const one = doc.createElement('div');
+    const two = doc.createElement('div');
     fixture.container.append(one, two);
     const root = mountRoot(
       fixture,
