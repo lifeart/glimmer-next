@@ -251,7 +251,7 @@ export function $_modifierHelper(params: any[], hash: Record<string, unknown>, c
     // modifier manager when `$_maybeModifier` installs it.
     return $_curry(CURRIED_MODIFIER, params, hash, ctx) as never;
   }
-  const modifierFn = $_unwrapHelperArg(params[0]) as Function;
+  const modifierFn = unwrapModifierArg(params[0]) as Function;
   const boundParams = params.slice(1);
 
   // @ts-expect-error EmberFunctionalModifiers global
@@ -268,7 +268,7 @@ export function $_modifierHelper(params: any[], hash: Record<string, unknown>, c
   }
 
   return function wrappedModifier(node: HTMLElement, _params: any[], _hash: Record<string, unknown>) {
-    const allParams = $_unwrapArgs([...boundParams, ..._params]);
+    const allParams = unwrapModifierArgs([...boundParams, ..._params]);
     const mergedHash = { ...hash, ..._hash };
     return modifierFn(node, allParams, mergedHash);
   };
@@ -1912,6 +1912,27 @@ export const $_maybeHelper = (
   return value;
 };
 
+// A modifier's argument in gxt's own modifier paths (a curried modifier, a
+// modifier no host manager claims): read by shape — every function without a
+// prototype is a getter — in every build. (A host manager reads the arguments
+// of the modifiers it claims itself.)
+function unwrapModifierArg(value: unknown): unknown {
+  if (typeof value === 'function' && !value.prototype) {
+    value = value();
+  }
+  if (value !== null && value !== undefined && isTagLike(value)) {
+    return (value as { value: unknown }).value;
+  }
+  return value;
+}
+
+function unwrapModifierArgs(args: any[]): any[] {
+  for (let i = 0; i < args.length; i++) {
+    args[i] = unwrapModifierArg(args[i]);
+  }
+  return args;
+}
+
 export function $_unwrapArgs(args: any[]): any[] {
   for (let i = 0; i < args.length; i++) {
     args[i] = $_unwrapHelperArg(args[i]);
@@ -2991,7 +3012,7 @@ export const $_maybeModifier = (
     return () => {
       requestAnimationFrame(() => {
         const f = formula(() => {
-          const unwrappedProps = $_unwrapArgs([...props]);
+          const unwrappedProps = unwrapModifierArgs([...props]);
           instance.modify(element, unwrappedProps, hashArgs());
         }, 'class-based modifier');
         destructors.push(
@@ -3021,24 +3042,24 @@ export const $_maybeModifier = (
         Object.defineProperty(newArgs, key, {
           enumerable: true,
           get() {
-            return $_unwrapHelperArg(args[key]);
+            return unwrapModifierArg(args[key]);
           },
         });
       }
-      const unwrappedProps = $_unwrapArgs([...props]);
+      const unwrappedProps = unwrapModifierArgs([...props]);
       return modifier(element, unwrappedProps, newArgs);
     };
   }
 
   if (typeof modifier === 'function') {
     return (el: HTMLElement) => {
-      const unwrappedProps = $_unwrapArgs([...props]);
+      const unwrappedProps = unwrapModifierArgs([...props]);
       const hash = hashArgs();
       const unwrappedHash: Record<string, unknown> = {};
       const keys = Object.keys(hash);
       for (let i = 0; i < keys.length; i++) {
         const key = keys[i];
-        unwrappedHash[key] = $_unwrapHelperArg(hash[key]);
+        unwrappedHash[key] = unwrapModifierArg(hash[key]);
       }
       return modifier(el, unwrappedProps, unwrappedHash);
     };
