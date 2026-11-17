@@ -56,6 +56,12 @@ export const SYMBOLS = {
   // too or AOT modules throw `$_argThunk is not defined`. Resolved from
   // @lifeart/gxt via src/core/index.ts → `export * from '@/core/dom'`.
   ARG_THUNK: '$_argThunk',
+  // Block-param read ($__bpv) — the same AOT auto-import requirement: the
+  // Ember dialect reads every block param of a slot through it
+  // (serializers/element.ts buildSlots), so it MUST be in this registry or AOT
+  // modules throw `$__bpv is not defined`. Resolved from @lifeart/gxt via
+  // src/core/index.ts → `export * from '@/core/dom'`.
+  BLOCK_PARAM_VALUE: '$__bpv',
   $_blk: '$_blk',
   $__if: '$__if',
   $__eq: '$__eq',

@@ -254,11 +254,13 @@ export interface BindingInfo {
    */
   readonly recycledRow?: boolean;
   /**
-   * True for a block param a list row reads through its item reference (the
-   * item of a positional `{{#each}}`, the key or value of an `{{#each-in}}`;
-   * serializers/control.ts `itemReferenceReads`): its value can change while
-   * the row stays, so a construct that would read it once — a component
-   * invocation `<Item />` — reads it through a getter instead.
+   * True for a block param read through a reference: the item of a positional
+   * `{{#each}}` row or the key or value of an `{{#each-in}}` row, read through
+   * the row's item reference (serializers/control.ts `itemReferenceReads`),
+   * and under the Ember dialect a slot's block param, read through `$__bpv`
+   * (serializers/element.ts buildSlots). Its value can change while the block
+   * stays, so a construct that would read it once — a component invocation
+   * `<Item />` — reads it through a getter instead.
    */
   readonly itemReference?: boolean;
   /**

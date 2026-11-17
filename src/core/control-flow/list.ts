@@ -127,16 +127,40 @@ function hasItemRefs(key: string | null | undefined): boolean {
   return key === POSITIONAL_KEY || key === EACH_IN_KEY;
 }
 
-// The item references rows are built with (`itemRef`).
-const ITEM_REFERENCES: WeakSet<object> = new WeakSet();
+// How many times an item reference has been read (`ItemReference`).
+let itemReferenceReads = 0;
+
+/**
+ * The reference a list row (`POSITIONAL_KEY` / `EACH_IN_KEY`) is built with
+ * (`itemRef`): its value is the item the row stands for now, which can be
+ * replaced while the row stays. Its reads are counted, so that a construct
+ * that reads a value once — a yielded param, an `{{#in-element}}` destination
+ * (dom.ts) — can tell, by comparing `itemReferenceReadCount()` before and
+ * after the read, that the value came through such a reference and follow it,
+ * without tracking every read it makes.
+ */
+class ItemReference<T> extends Cell<T> {
+  get value(): T {
+    itemReferenceReads++;
+    return super.value;
+  }
+  set value(value: T) {
+    this.update(value);
+  }
+}
+
+/** The number of item reference reads so far (see `ItemReference`). */
+export function itemReferenceReadCount(): number {
+  return itemReferenceReads;
+}
 
 /**
  * Whether `cell` is the item reference of a list row (`POSITIONAL_KEY` /
  * `EACH_IN_KEY`): a value read through it can be replaced while the row
- * stays. A block yielded such a value follows it (dom.ts `renderSlot`).
+ * stays.
  */
 export function isItemReference(cell: unknown): boolean {
-  return cell !== null && typeof cell === 'object' && ITEM_REFERENCES.has(cell);
+  return cell instanceof ItemReference;
 }
 
 // Two `{{#each-in}}` entries of one row that read the same: same key and value.
@@ -717,11 +741,10 @@ export class BasicListComponent<T extends { id: number }> {
    * destroyed.
    */
   protected itemRef(key: string, item: T): T {
-    const ref = new Cell<T>(
+    const ref = new ItemReference<T>(
       item,
       IS_DEV_MODE ? `each.item[${String(key)}]` : undefined,
     );
-    ITEM_REFERENCES.add(ref);
     this.itemRefs!.set(key, ref);
     return ref as unknown as T;
   }

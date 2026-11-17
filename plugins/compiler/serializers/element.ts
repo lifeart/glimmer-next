@@ -22,6 +22,7 @@ import { SYMBOLS, EVENT_TYPE, INTERNAL_HELPERS } from './symbols';
 import { buildValue, buildPathExpression, buildNativeArg, buildArgLabels, selfHeadedName, emittedRootName, emittedPathName, brandArgGetter } from './value';
 import { B, serializeJS, type JSExpression, type JSProperty } from '../builder';
 import { escapeBindingName } from '../utils/js-utils';
+import { replaceBindingRefs } from './binding-refs';
 
 // Forward declarations - set from index.ts to avoid circular dependency
 let buildChildrenExprs: (ctx: CompilerContext, children: readonly HBSChild[], ctxName: string) => JSExpression[];
@@ -873,15 +874,39 @@ function buildSlots(
       ? slot.blockParamRanges ?? []
       : [];
 
+    // Ember dialect: a block param is a reference to the yielded value, as in
+    // Glimmer. The runtime passes a param that can change as a reference
+    // (src/core/dom.ts `createSlot`), and the block reads every param through
+    // `$__bpv`, which reads such a reference and passes any other value as it
+    // is: what reads the param follows it, and the block keeps its DOM and
+    // component instances. A component invoked as the param (`<Item />`) is
+    // invoked through a getter (`buildComponentCall`).
+    const referenceParams =
+      ctx.flags.IS_GLIMMER_COMPAT_MODE === true && ctx.flags.WITH_EMBER_INTEGRATION === true;
+
     // Add block params in a dedicated scope frame so nested slots with
     // matching block-param names shadow rather than clobber outer bindings.
     ctx.scopeTracker.enterScope('slot');
     for (const param of blockParams) {
-      ctx.scopeTracker.addBinding(param, { kind: 'block-param', name: param });
+      ctx.scopeTracker.addBinding(param, {
+        kind: 'block-param',
+        name: param,
+        itemReference: referenceParams,
+      });
     }
 
     // Build slot children as JSExpression array (proper tree for correct indentation)
-    const slotChildExprs = buildChildrenExprs(ctx, children, sContext);
+    const builtChildExprs = buildChildrenExprs(ctx, children, sContext);
+    const paramReads = new Map<string, string>();
+    if (referenceParams) {
+      for (const param of blockParams) {
+        const name = escapeBindingName(param);
+        paramReads.set(name, `${SYMBOLS.BLOCK_PARAM_VALUE}(${name})`);
+      }
+    }
+    const slotChildExprs = paramReads.size > 0
+      ? builtChildExprs.map((expr) => replaceBindingRefs(expr, paramReads))
+      : builtChildExprs;
     const slotArrayExpr = fmt.options.enabled && slotChildExprs.length > 0
       ? B.formattedArray(slotChildExprs, true)
       : B.array(slotChildExprs);
