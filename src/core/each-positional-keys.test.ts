@@ -196,4 +196,33 @@ describe('positional {{#each key="@index"}} keys (rows stay in place on reorder)
       delete (HOST_HOOKS as Record<string, unknown>).rebindEachItem;
     }
   });
+
+  test('the host itemReferencesChanged hook runs once an update kept rows for other items', async () => {
+    let calls = 0;
+    let textsAtCall: Array<string | null> = [];
+    (HOST_HOOKS as Record<string, unknown>).itemReferencesChanged = () => {
+      calls++;
+      textsAtCall = texts();
+    };
+    try {
+      const root = mountRoot(fixture, indexRoot('@index'));
+      const [a, b, c] = buildItems(3, (i) => `L${i}`);
+      root._items = [a, b, c];
+      await settle();
+      expect(calls).toBe(0);
+
+      // Every row is kept for another item: one call, after the rows show them.
+      root._items = [c, b, a];
+      await settle();
+      expect(calls).toBe(1);
+      expect(textsAtCall).toEqual(['L2:0', 'L1:1', 'L0:2']);
+
+      // No row gets another item (a row is added): no call.
+      root._items = [c, b, a, ...buildItems(1, () => 'L3')];
+      await settle();
+      expect(calls).toBe(1);
+    } finally {
+      delete (HOST_HOOKS as Record<string, unknown>).itemReferencesChanged;
+    }
+  });
 });
