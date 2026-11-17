@@ -65,6 +65,30 @@ describe('a list keyed by position needs the item reference runtime', () => {
     expect(container.querySelectorAll('div').length).toBe(1);
   });
 
+  test('without it, the throw leaves nothing of the list in the component tree', () => {
+    const api = new HTMLBrowserDOMApi(document);
+    const root = new Root(document);
+    provideContext(root, RENDERING_CONTEXT, api);
+    const parent = new Component({});
+    parent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, parent);
+    const before = [TREE.size, PARENT.size, CHILD.size];
+    expect(
+      () =>
+        new SyncListComponent<{ id: number; name: string }>(
+          {
+            tag: cell([{ id: 1, name: 'a' }]),
+            key: '@index',
+            ctx: parent,
+            ItemComponent: () => document.createElement('div'),
+          },
+          container,
+          document.createComment('list top'),
+        ),
+    ).toThrow(/registerItemReferenceRuntime/);
+    expect([TREE.size, PARENT.size, CHILD.size]).toEqual(before);
+  });
+
   test('with it, a positional list builds its rows with references', async () => {
     const { registerItemReferenceRuntime } = await import('../item-references');
     registerItemReferenceRuntime();
