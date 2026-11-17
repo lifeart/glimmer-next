@@ -9,7 +9,9 @@
  * passed as it is, whatever its shape.
  */
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
-import { $_maybeHelper, $_looseAppend, $_argThunk } from './dom';
+import { $_maybeHelper, $_looseAppend, $_argThunk, $_unwrapHelperArg } from './dom';
+import { $__hash } from './helpers/hash';
+import { $__fn } from './helpers/fn';
 import { HOST_HOOKS } from './host-hooks';
 import { $_MANAGERS } from './manager-integration';
 import { compile } from '../../plugins/compiler/compile';
@@ -50,10 +52,27 @@ describe('the compiler brands the getters among a helper\'s named arguments', ()
     expect(helper).toContain('{ other: $_argThunk(() => $__tag($s, "b")), n: 1 }');
   });
 
+  test('positional getters and (hash) member getters are branded too', () => {
+    const compat = code('{{my-helper this.x (fn this.save 1) 2}}', COMPAT);
+    expect(compat).toContain(
+      '$_maybeHelper("my-helper", [$_argThunk(() => this.x), $__fn(() => this.save, 1), 2]',
+    );
+    const native = code('{{fmt this.b}}', NATIVE, ['fmt']);
+    expect(native).toContain('$_maybeHelper(fmt, [$_argThunk(() => $__tag($s, "b"))]');
+    for (const flags of [COMPAT, NATIVE]) {
+      const hash = code('{{yield (hash a=this.a b=(fn this.save 1))}}', flags);
+      expect(hash).toMatch(/\$__hash\(\{ a: \$_argThunk\(\(\) => /);
+      expect(hash).toMatch(/b: \$_argThunk\(\(\) => \$__fn\(/);
+    }
+  });
+
   test('standalone: no brand', () => {
     expect(code('{{my-helper a=this.b}}', { IS_GLIMMER_COMPAT_MODE: true })).not.toContain(
       '$_argThunk',
     );
+    expect(
+      code('{{my-helper this.x (hash a=this.a)}}', { IS_GLIMMER_COMPAT_MODE: true }),
+    ).not.toContain('$_argThunk');
   });
 });
 
@@ -143,3 +162,42 @@ describe('named argument getters of helper calls and loose-mode appends', () => 
     expect(seen).toEqual({ title: 'Hello', size: 3, onClose });
   });
 });
+
+describe('positional helper arguments and (hash) members', () => {
+  let saved: boolean;
+  beforeEach(() => {
+    saved = runtime.WITH_EMBER_INTEGRATION;
+  });
+  afterEach(() => {
+    runtime.WITH_EMBER_INTEGRATION = saved;
+  });
+
+  test('Ember dialect: only a branded getter is read; any other function is the value', () => {
+    runtime.WITH_EMBER_INTEGRATION = true;
+    const action = () => 'called';
+    expect($_unwrapHelperArg($_argThunk(() => 5))).toBe(5);
+    expect($_unwrapHelperArg(action)).toBe(action);
+    const hash = $__hash({ a: $_argThunk(() => 1), onClick: action }) as Record<string, unknown>;
+    expect(hash.a).toBe(1);
+    expect(hash.onClick).toBe(action);
+  });
+
+  test('standalone: a getter is any function without a prototype; a (fn) result has one', () => {
+    runtime.WITH_EMBER_INTEGRATION = false;
+    let calls = 0;
+    const save = () => {
+      calls++;
+    };
+    expect($_unwrapHelperArg(() => 5)).toBe(5);
+    const bound = $__fn(save, 1);
+    expect($_unwrapHelperArg(bound)).toBe(bound);
+    expect(calls).toBe(0);
+    const hash = $__hash({ a: () => 1 }) as Record<string, unknown>;
+    expect(hash.a).toBe(1);
+    // A bound function passed to another (fn) reaches it as the value.
+    const outer = $__fn((received: unknown) => received, bound) as () => unknown;
+    expect(outer()).toBe(bound);
+    expect(calls).toBe(0);
+  });
+});
+

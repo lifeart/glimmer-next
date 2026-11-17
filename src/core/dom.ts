@@ -56,6 +56,7 @@ import {
   registerDestructorBatch,
 } from './glimmer/destroyable';
 import { HTMLBrowserDOMApi } from '@/core/dom-api';
+import { $_argThunk, isArgThunk } from '@/core/helpers/-private';
 import {
   isFn,
   isPrimitive,
@@ -164,6 +165,9 @@ import {
 import { splatLocalPlan } from './splat-local';
 export { $_MANAGERS };
 
+// The brand of a compiler-emitted argument getter (helpers/-private.ts).
+export { $_argThunk, isArgThunk };
+
 export function $_TO_VALUE(reference: unknown) {
   if (isFn(reference)) {
     return resolveRenderable(reference as Function);
@@ -175,9 +179,19 @@ export function $_TO_VALUE(reference: unknown) {
 /**
  * Unwrap a helper argument - if it's a getter function, call it to get the actual value.
  * If it's a Tag (reactive cell), get its .value property.
+ *
+ * Under the Ember dialect (WITH_EMBER_INTEGRATION) the getter is one the
+ * compiler branded (`$_argThunk`, serializers/value.ts `brandArgGetter`): any
+ * other function — an action, a `(fn)` result — is the argument's value and
+ * is passed as it is. A standalone build reads every function without a
+ * prototype as a getter (`$__fn` returns a function with one, so a `(fn)`
+ * result passed as an argument is not called).
  */
 export function $_unwrapHelperArg(value: unknown): unknown {
-  if (typeof value === 'function' && !value.prototype) {
+  if (
+    typeof value === 'function' &&
+    (WITH_EMBER_INTEGRATION ? isArgThunk(value) : !value.prototype)
+  ) {
     value = value();
   }
   if (value !== null && value !== undefined && isTagLike(value)) {
@@ -1682,31 +1696,6 @@ export function getNamedBlockName(fn: unknown): string | null {
 // survives minification verbatim and the `$_`-prefix will not collide with host
 // data. Identity at runtime; a no-op on non-functions so wrapping a folded
 // literal/eager value is harmless.
-const ARG_THUNK_FLAG = '$_isArgThunk';
-
-/**
- * Mark `fn` as a compiler-emitted reactive ARG thunk and return it (identity).
- * Emitted by the compiler around the reactive getters in a component's args
- * object (`buildArgsObject`). A no-op on non-functions.
- */
-export function $_argThunk<T>(fn: T): T {
-  if (typeof fn === 'function') {
-    (fn as any)[ARG_THUNK_FLAG] = true;
-  }
-  return fn;
-}
-
-/**
- * True when `fn` is a thunk the compiler marked as a reactive arg getter (via
- * `$_argThunk`). The arg-access layer invokes only these; every other function
- * value (a forwarded action, a `{{fn}}`/helper bound result) passes through.
- * Hosts (the Ember bridge) call this instead of shape heuristics
- * (`fn.length`/`fn.prototype`), which it retires — it is minification-proof.
- */
-export function isArgThunk(fn: unknown): boolean {
-  return typeof fn === 'function' && (fn as any)[ARG_THUNK_FLAG] === true;
-}
-
 if (IS_DEV_MODE) {
   function buildGraph(
     obj: Record<string, unknown>,

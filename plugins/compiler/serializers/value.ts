@@ -1086,7 +1086,9 @@ function buildSpecialHelper(
     return buildNativeCurryCall(ctx, callee, positional, named, ctxName, sourceRange);
   }
 
-  const posArgs = positional.map(arg => buildValue(ctx, arg, ctxName));
+  // Ember dialect: the getters among the arguments are branded
+  // (`brandArgGetter`): the curried value reads only branded getters.
+  const posArgs = positional.map(arg => brandArgGetter(ctx, buildValue(ctx, arg, ctxName)));
 
   // In compat mode, wrap $_componentHelper hash values in getter functions
   // for reactivity. This preserves reactivity so curried component args
@@ -1196,7 +1198,11 @@ function buildMaybeHelper(
   // Ember native layer (G4): literal-or-thunk arguments (buildNativeArg).
   const native = ctx.flags.EMBER_NATIVE === true;
   const buildArg = native ? buildNativeArg : buildValue;
-  const posArgs = positional.map(arg => buildArg(ctx, arg, ctxName));
+  // The getters among the positional arguments are branded under the Ember
+  // dialect (`brandArgGetter`): gxt reads only a branded getter of a helper's
+  // argument (`$_unwrapHelperArg`) and passes any other function as the
+  // argument's value.
+  const posArgs = positional.map(arg => brandArgGetter(ctx, buildArg(ctx, arg, ctxName)));
 
   // Build named args: the getters among them branded, as gxt reads a helper's
   // named arguments through an args object (`$_args`) where a host does not
@@ -1335,7 +1341,7 @@ function buildComponentHelperNamedArgs(
   for (const [key, val] of named) {
     const builtVal = buildValue(ctx, val, ctxName);
     // Wrap in getter for reactivity, but don't double-wrap if already a function
-    const wrappedVal = B.getter(builtVal, val.sourceRange);
+    const wrappedVal = brandArgGetter(ctx, B.getter(builtVal, val.sourceRange));
     props.push(B.prop(key, wrappedVal, false, val.sourceRange));
   }
   return B.object(props);
@@ -1526,7 +1532,10 @@ function buildBuiltInHelper(
       // Use B.getter() to preserve AST structure for sourcemaps. A nested
       // (hash)/(array) prop is memoized through $__cached so reading
       // `outerHash.nested` returns an identity-stable reference too.
-      hashProps.push(B.prop(key, buildMaybeMemoizedGetter(ctx, val, builtVal, val.sourceRange), false, val.sourceRange));
+      // Ember dialect: the getter is branded (`brandArgGetter`), as `$__hash`
+      // there reads only branded getters and keeps any other function as the
+      // member's value.
+      hashProps.push(B.prop(key, brandArgGetter(ctx, buildMaybeMemoizedGetter(ctx, val, builtVal, val.sourceRange)), false, val.sourceRange));
     }
     return B.call(helperId, [B.object(hashProps)], sourceRange);
   }
@@ -1599,7 +1608,7 @@ function buildBuiltInHelper(
     if (ctx.flags.EMBER_NATIVE) {
       return buildNativeCurryCall(ctx, helperId, positional, named, ctxName, sourceRange);
     }
-    const posArgs = positional.map(arg => buildValue(ctx, arg, ctxName));
+    const posArgs = positional.map(arg => brandArgGetter(ctx, buildValue(ctx, arg, ctxName)));
     const namedObj = buildNamedArgsObject(ctx, named, ctxName);
     return B.call(helperId, [B.array(posArgs), namedObj], sourceRange);
   }

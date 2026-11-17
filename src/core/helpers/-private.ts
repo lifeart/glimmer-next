@@ -47,3 +47,28 @@ export function unwrap(value: unknown): unknown {
   }
   return value;
 }
+
+const ARG_THUNK_FLAG = '$_isArgThunk';
+
+/**
+ * Mark `fn` as a compiler-emitted reactive ARG thunk and return it (identity).
+ * Emitted by the compiler around the reactive getters of the arguments it
+ * builds (`brandArgGetter`). A no-op on non-functions.
+ */
+export function $_argThunk<T>(fn: T): T {
+  if (typeof fn === 'function') {
+    (fn as any)[ARG_THUNK_FLAG] = true;
+  }
+  return fn;
+}
+
+/**
+ * True when `fn` is a thunk the compiler marked as a reactive arg getter (via
+ * `$_argThunk`). The arg-access layer invokes only these; every other function
+ * value (a forwarded action, a `{{fn}}`/helper bound result) passes through.
+ * Hosts (the Ember bridge) call this instead of shape heuristics
+ * (`fn.length`/`fn.prototype`), which it retires — it is minification-proof.
+ */
+export function isArgThunk(fn: unknown): boolean {
+  return typeof fn === 'function' && (fn as any)[ARG_THUNK_FLAG] === true;
+}

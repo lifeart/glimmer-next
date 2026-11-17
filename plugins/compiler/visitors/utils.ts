@@ -678,10 +678,15 @@ function serializeHelperCall(value: SerializedValue & { kind: 'helper' }, ctx?: 
   // Special handling for hash helper - wrap values in getters for lazy evaluation
   // This prevents $__hash from auto-calling function values
   if (symbolName === SYMBOLS.HASH) {
+    // Ember dialect: each getter is branded, as the JSExpression serializer
+    // brands it (`brandArgGetter`): `$__hash` there reads only branded getters.
+    const brandHash =
+      ctx?.flags.IS_GLIMMER_COMPAT_MODE === true && ctx.flags.WITH_EMBER_INTEGRATION === true;
     const namedPairs: string[] = [];
     for (const [key, val] of value.named) {
       // Wrap each value in a getter
-      namedPairs.push(`${quoteKey(key)}: () => ${serializeValueToString(val, ctx)}`);
+      const getter = `() => ${serializeValueToString(val, ctx)}`;
+      namedPairs.push(`${quoteKey(key)}: ${brandHash ? `${SYMBOLS.ARG_THUNK}(${getter})` : getter}`);
     }
     return `${symbolName}({ ${namedPairs.join(', ')} })`;
   }
