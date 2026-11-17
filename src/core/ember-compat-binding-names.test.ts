@@ -61,7 +61,9 @@ describe('binding names that are not JS identifiers: compiler', () => {
       const tpl = `{{some-helper ${keyword}}}`;
       expect(isValidJs(tpl, ['some-helper', keyword])).toBe(true);
       const { source: code } = source(tpl, ['some-helper', keyword]);
-      expect(code).toContain(`$_maybeHelper(__bp_some$2d$helper, [() => ${escapeBindingName(keyword)}]`);
+      expect(code).toContain(
+        `$_maybeHelper(__bp_some$2d$helper, [$_argThunk(() => ${escapeBindingName(keyword)})]`,
+      );
     });
 
     test(`a free name \`${keyword}\` in a loose template is read from this`, () => {
@@ -100,7 +102,7 @@ describe('binding names that are not JS identifiers: compiler', () => {
 
   test('a plain identifier binding is emitted as before', () => {
     const { source: code } = source('{{foo bar}}{{this.x-y}}', ['foo', 'bar']);
-    expect(code).toContain('$_maybeHelper(foo, [() => bar], {})');
+    expect(code).toContain('$_maybeHelper(foo, [$_argThunk(() => bar)], {})');
     expect(code).toContain('this["x-y"]');
   });
 

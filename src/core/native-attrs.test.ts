@@ -136,7 +136,7 @@ describe('compiler: EMBER_NATIVE block params', () => {
     expect(each).toContain('(__bp_foo$2d$bar, __bp_i$2d$x, ctx0)');
     expect(each).toContain('() => __bp_foo$2d$bar, () => __bp_i$2d$x.value');
     expect(source('<Foo as |a-b|>{{a-b}}</Foo>', NATIVE_FLAGS, ['Foo'])).toContain(
-      '(ctx0, __bp_a$2d$b) => [() => __bp_a$2d$b]',
+      '(ctx0, __bp_a$2d$b) => [() => $__bpv(__bp_a$2d$b)]',
     );
   });
 

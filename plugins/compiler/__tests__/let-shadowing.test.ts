@@ -111,7 +111,8 @@ describe('{{#let}} self-shadowing bindings are renamed', () => {
     const out = code('{{#let (component Foo) as |Foo|}}<Foo />{{/let}}', NATIVE, ['Foo']);
     const [name] = declaredNames(out);
     expect(name).toMatch(/^Foo\$\d+$/);
-    expect(out).toContain(`$_c(${name}()`);
+    // A `{{#let}}` binding used as a component is invoked through a getter.
+    expect(out).toContain(`$_dc(() => ${name}()`);
   });
 
   test('runtime: the renamed getter evaluates the outer helper once (no recursion)', () => {

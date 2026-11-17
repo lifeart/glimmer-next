@@ -2900,8 +2900,9 @@ describe('Hash helper advanced', () => {
     // (hash)/(array) prop is additionally memoized through $__cached so reading
     // `outerHash.outer` yields an identity-stable reference (classic
     // compute-ref contract); plain literal props stay as bare getters.
-    expect(result.code).toContain('outer: $__cached(() =>');
-    expect(result.code).toContain('inner: () =>');
+    // The Ember dialect brands each member getter (`$_argThunk`).
+    expect(result.code).toContain('outer: $_argThunk($__cached(() =>');
+    expect(result.code).toContain('inner: $_argThunk(() =>');
   });
 
   test('nested hash helpers are NOT memoized without WITH_EMBER_INTEGRATION (byte-identical compat)', () => {

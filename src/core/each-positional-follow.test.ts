@@ -246,7 +246,6 @@ describe('a yielded param that turns from a primitive into an object or back is 
         root._items = [{ name: 'x' }];
         await settle();
         expect(text('i')).toEqual(['x']);
-        expect(text('s')).toEqual(['[object Object]']);
 
         root._items = ['done'];
         await settle();

@@ -127,7 +127,7 @@ describe('angle-bracket components by name', () => {
 describe('curly components by name', () => {
   test('{{#name}} blocks (any spelling) are components with named args and blocks', () => {
     const code = loose('{{#foo-bar a=1 as |v|}}{{v}}{{/foo-bar}}');
-    expect(code).toContain("$_c('foo-bar', $_args({ a: 1 }, { default_: true, default: (ctx0, v) => [() => v] }, $_edp), this)");
+    expect(code).toContain("$_c('foo-bar', $_args({ a: 1 }, { default_: true, default: (ctx0, v) => [() => $__bpv(v)] }, $_edp), this)");
     expect(loose('{{#link-to route="index"}}x{{/link-to}}')).toContain(
       "$_c('link-to', $_args({ route: \"index\" }"
     );

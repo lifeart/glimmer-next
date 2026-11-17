@@ -52,7 +52,7 @@ describe('Ember compat: `<@comp>` is a dynamic component', () => {
   test('block params bind to the yielded values', () => {
     const { code } = compile('<@comp class="r" as |v|>[{{v}}]</@comp>', EMBER_COMPAT);
     expect(code).toContain('$_dc(() => $a.comp');
-    expect(code).toMatch(/default: \(ctx0, v\) => \["\[", \(\) => v, "\]"\]/);
+    expect(code).toMatch(/default: \(ctx0, v\) => \["\[", \(\) => \$__bpv\(v\), "\]"\]/);
     expect(code).not.toContain("$_tag('@comp'");
     expect(code).not.toContain('this.v');
   });

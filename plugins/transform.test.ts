@@ -1520,7 +1520,7 @@ export const Yielder = <template><Row @items={{@items}} as |r|>{{r.name}}</Row><
   test('flag on: block-param member reads use the non-defining $__tag (each row AND yielded param)', () => {
     const code = compileWith({ ...emberFlags, EMBER_NATIVE: true });
     expect(code).toContain('$__tag(item, "label")');
-    expect(code).toContain('$__tag(r, "name")');
+    expect(code).toContain('$__tag($__bpv(r), "name")');
     expect(code).not.toContain('$__cellFor(');
   });
 
