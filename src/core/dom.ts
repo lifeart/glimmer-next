@@ -2180,6 +2180,23 @@ export function $__bpv(param: unknown): unknown {
     : param;
 }
 
+// The param references of `SLOT_PARAM_REFERENCES` whose value was read through
+// a list row's item reference (`isItemSlotParam`).
+const ITEM_SLOT_PARAMS: WeakSet<object> = new WeakSet();
+
+/**
+ * Whether `param` is a param reference `createSlot` passed for a value read
+ * through a list row's item reference: another item's value can come to stand
+ * in it while the block stays. The components the block renders follow it
+ * through their arguments; a host that creates a component of the block
+ * inside a tracked renderable (Ember compat renders a by-name component of a
+ * block as such a thunk) reads it untracked there, so that the renderable —
+ * and the component — does not depend on the value it was created with.
+ */
+export function isItemSlotParam(param: unknown): boolean {
+  return typeof param === 'object' && param !== null && ITEM_SLOT_PARAMS.has(param);
+}
+
 // Whether the params of the slot `createSlot` built last read a list row's
 // item reference (`itemReferenceReadCount`).
 let slotParamsReadItem = false;
@@ -2228,6 +2245,7 @@ function createSlot(
     // reference too, which the block reads through `$__bpv`.
     if (WITH_EMBER_INTEGRATION) {
       SLOT_PARAM_REFERENCES.add(v);
+      if (readsItem) ITEM_SLOT_PARAMS.add(v);
     }
     formulasToDestroy.push(v);
     return v;

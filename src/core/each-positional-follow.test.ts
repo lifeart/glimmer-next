@@ -20,6 +20,16 @@ import { cellFor } from './reactive';
 import { template } from '../../plugins/runtime-compiler';
 import { HOST_HOOKS } from './host-hooks';
 import { registerDestructor } from './glimmer/destroyable';
+import {
+  $_c,
+  $_args,
+  $_edp,
+  $_fin,
+  $_GET_ARGS,
+  $_argThunk,
+  $__bpv,
+  isItemSlotParam,
+} from './dom';
 
 type RuntimeConstants = { WITH_EMBER_INTEGRATION: boolean };
 const runtime = globalThis as unknown as RuntimeConstants;
@@ -317,6 +327,49 @@ describe('Ember dialect: a yielded param is a reference, the block keeps its DOM
     expect(bs()[0]).toBe(before[0]);
     expect(created).toBe(2);
     expect(destroyed).toBe(1);
+  });
+
+  test('the block gets a param following the row\'s item as a reference it reads through $__bpv', async () => {
+    for (const [key, follows] of [
+      ['@index', true],
+      ['@identity', false],
+    ] as const) {
+      const captured: unknown[] = [];
+      const List = template(
+        `<ul>{{#each @items key="${key}" as |item|}}<li>{{yield item}}</li>{{/each}}</ul>`,
+      );
+      class Root extends Component<any> {
+        _items: unknown[] = [];
+        constructor(args: any) {
+          super(args);
+          cellFor(this as any, '_items');
+        }
+        [$template] = function (this: any) {
+          // eslint-disable-next-line prefer-rest-params
+          $_GET_ARGS(this, arguments);
+          const slots = {
+            default_: true,
+            default: (_ctx: unknown, param: unknown) => {
+              captured.push(param);
+              return [];
+            },
+          };
+          return $_fin(
+            [$_c(List, $_args({ items: $_argThunk(() => this._items) }, slots as never, $_edp as never), this)],
+            this,
+          );
+        };
+      }
+      const root = mountRoot(fixture, Root as never) as unknown as { _items: unknown[] };
+      const a = { name: 'a' };
+      root._items = [a];
+      await settle();
+      expect(captured.length).toBe(1);
+      expect(isItemSlotParam(captured[0])).toBe(follows);
+      expect($__bpv(captured[0])).toBe(a);
+      fixture.cleanup();
+      fixture = createDOMFixture();
+    }
   });
 
   const lis = () => Array.from(fixture.container.querySelectorAll('li'));
