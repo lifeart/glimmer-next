@@ -20,6 +20,7 @@ import {
   getTracker,
   registerLeafOwnersForFormula,
   applyCellUpdateSync,
+  DEBUG_CELLS,
   type AnyCell,
 } from '@/core/reactive';
 import { tagFor } from '@/core/tags';
@@ -740,10 +741,33 @@ export class BasicListComponent<T extends { id: number }> {
       applyCellUpdateSync(updates[i] as Cell<T>, updates[i + 1] as T);
     }
   }
-  /** Forget the item a destroyed row of `key` was bound to. */
+  /**
+   * Forget the item a destroyed row of `key` was bound to, and release its
+   * item reference: a development build keeps every cell in `DEBUG_CELLS`,
+   * which would keep the reference — and the item it holds — alive after the
+   * row.
+   */
   protected forgetRowItem(key: string): void {
     if (this.boundItemMap !== null) this.boundItemMap.delete(key);
-    if (this.itemRefs !== null) this.itemRefs.delete(key);
+    const itemRefs = this.itemRefs;
+    if (itemRefs !== null) {
+      const ref = itemRefs.get(key);
+      if (ref !== undefined) {
+        itemRefs.delete(key);
+        if (IS_DEV_MODE) DEBUG_CELLS.delete(ref as Cell<unknown>);
+      }
+    }
+  }
+  /** `forgetRowItem` for every row (the list was cleared). */
+  protected forgetAllRowItems(): void {
+    if (this.boundItemMap !== null) this.boundItemMap.clear();
+    const itemRefs = this.itemRefs;
+    if (itemRefs !== null && itemRefs.size > 0) {
+      if (IS_DEV_MODE) {
+        itemRefs.forEach((ref) => DEBUG_CELLS.delete(ref as Cell<unknown>));
+      }
+      itemRefs.clear();
+    }
   }
   /**
    * Fast-path for updates that preserve all existing items and only append
@@ -2067,8 +2091,7 @@ export class SyncListComponent<
       }
       keyMap.clear();
       indexMap.clear();
-      if (this.boundItemMap !== null) this.boundItemMap.clear();
-      if (this.itemRefs !== null) this.itemRefs.clear();
+      this.forgetAllRowItems();
       this.itemMarkers.clear();
       this.markerSet.clear();
       if (firstError !== undefined) reportDestructionError(firstError);
@@ -2456,8 +2479,7 @@ export class AsyncListComponent<
         }
         keyMap.clear();
         indexMap.clear();
-        if (this.boundItemMap !== null) this.boundItemMap.clear();
-        if (this.itemRefs !== null) this.itemRefs.clear();
+        this.forgetAllRowItems();
         this.itemMarkers.clear();
         this.markerSet.clear();
         // Run ROW destructors fire-and-forget (DOM already gone → skipDom=true).
@@ -2525,8 +2547,7 @@ export class AsyncListComponent<
       }
       keyMap.clear();
       indexMap.clear();
-      if (this.boundItemMap !== null) this.boundItemMap.clear();
-      if (this.itemRefs !== null) this.itemRefs.clear();
+      this.forgetAllRowItems();
       this.itemMarkers.clear();
       this.markerSet.clear();
       return true;
