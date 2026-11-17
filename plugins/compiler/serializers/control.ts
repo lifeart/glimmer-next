@@ -403,7 +403,20 @@ function buildEach(
   const callback = B.arrow(callbackParams, bodyExpr);
 
   // Build key argument
-  const keyArg = eachKey !== null ? B.string(eachKey) : B.nil();
+  // A standalone template that keys a list by position passes the key through
+  // `$_itemRefKey`, which installs the item reference follow runtime (imported
+  // from '@lifeart/gxt/item-references', `usedItemRefs`): its rows' yielded
+  // blocks and in-elements follow the item now at the row. The Ember dialect
+  // passes the key as it is — its host's runtime compiler installs the
+  // runtime — and a build whose templates key no list by position does not
+  // carry it.
+  const followsItems = eachKey === POSITIONAL_KEY && ctx.flags.WITH_EMBER_INTEGRATION !== true;
+  if (followsItems) ctx.usedItemRefs = true;
+  const keyArg = eachKey === null
+    ? B.nil()
+    : followsItems
+      ? B.call(B.id(SYMBOLS.ITEM_REF_KEY), [B.string(eachKey)])
+      : B.string(eachKey);
 
   // Build inverse (else) branch if present
   // In compat mode, always use `this` as the component context (4th arg)

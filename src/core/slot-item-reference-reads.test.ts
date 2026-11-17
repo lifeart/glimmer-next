@@ -2,18 +2,19 @@
 /**
  * A slot whose params read a list row's item reference passes them to its
  * block as references (the Ember dialect): a computation the slot is built in
- * must not depend on the item reference through the params, or another item
- * coming to stand at the row would render the block again. Only the item
- * reference reads the params make are kept from the computation — a read the
- * block's own content makes, or one the computation made before, stays.
+ * must not depend on the item reference through the params — nor through the
+ * block's reads of them — or another item coming to stand at the row would
+ * render the block again. Only those item reference reads are kept from the
+ * computation: one the block's content makes for a reason of its own, or one
+ * the computation made before, stays.
  */
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
-import { $_slot } from './dom';
+import { $_slot, $__bpv } from './dom';
 import { Component } from './component';
 import { RENDERED_NODES_PROPERTY, addToTree } from './shared';
 import { getTracker, setTracker, type Cell } from './reactive';
 import { createDOMFixture, type DOMFixture } from './__test-utils__';
-import { createItemReference } from './item-references';
+import { createItemReference, registerItemReferenceRuntime } from './item-references';
 
 type RuntimeConstants = { WITH_EMBER_INTEGRATION: boolean };
 const runtime = globalThis as unknown as RuntimeConstants;
@@ -24,6 +25,8 @@ describe('a slot built inside a tracked computation (Ember dialect)', () => {
   beforeEach(() => {
     saved = runtime.WITH_EMBER_INTEGRATION;
     runtime.WITH_EMBER_INTEGRATION = true;
+    // rows keyed by position get item references from the follow runtime
+    registerItemReferenceRuntime();
     fixture = createDOMFixture();
   });
   afterEach(() => {
@@ -42,7 +45,10 @@ describe('a slot built inside a tracked computation (Ember dialect)', () => {
     const slots = {
       default: (_ctx: unknown, p: unknown) => {
         param = p;
-        // the block's own content reads another row's item
+        // the block reads its param (through the param reference: a read
+        // that belongs to the params) and, for a reason of its own, another
+        // row's item
+        expect($__bpv(p)).toEqual({ name: 'yielded' });
         void unrelated.value;
         return [];
       },

@@ -37,14 +37,11 @@ import {
   materializeAbsentPathCell,
   registerLeafOwnersForFormula,
   getTracker,
-  setTracker,
 } from '@/core/reactive';
 import { opcodeFor, opcodeForCreatedContent, checkOpcode, bindOpcode } from '@/core/vm';
 import {
   SyncListComponent,
   AsyncListComponent,
-  itemReferenceReadCount,
-  isItemReference,
   type InverseFn,
 } from '@/core/control-flow/list';
 // NB: circular-by-design — static-block.ts imports $prop/$attr/$ev back from
@@ -60,6 +57,7 @@ import {
 } from './glimmer/destroyable';
 import { HTMLBrowserDOMApi } from '@/core/dom-api';
 import { $_argThunk, isArgThunk, argSource } from '@/core/helpers/-private';
+import { itemReferenceReadCount, itemReferenceRuntime } from '@/core/item-reference-runtime';
 import {
   isFn,
   isPrimitive,
@@ -1446,30 +1444,20 @@ export function $_inElement(
 
   // The destination is read once. When it is read through a list row's item
   // reference (`{{#in-element item.target}}` in a positional or each-in row
-  // that is kept for another item; list.ts `ItemReference`), the block is
-  // moved — rendered again — to the destination of the item now at the row,
-  // as Glimmer's in-element follows its destination reference. Only such a
-  // block allocates what follows it.
+  // that is kept for another item), the item reference follow runtime moves
+  // the block — renders it again — to the destination of the item now at the
+  // row, as Glimmer's in-element follows its destination reference.
   function renderInElementBody() {
       const itemReads = itemReferenceReadCount();
       let appendRef = readDestination();
       let teardown = renderInto(appendRef);
       registerDestructor(ctx, () => teardown(false));
       if (itemReferenceReadCount() === itemReads) return;
-      const watch = formula(readDestination, IS_DEV_MODE ? 'in-element:destination' : undefined);
-      let first = true;
-      const stop = opcodeFor(watch, (next) => {
-        if (first) {
-          first = false;
-          return;
-        }
+      itemReferenceRuntime()?.followInElement(ctx, readDestination, (next) => {
         if (next === appendRef) return;
         teardown(true);
-        appendRef = next as HTMLElement;
+        appendRef = next;
         teardown = renderInto(appendRef);
-      });
-      registerDestructor(ctx, stop, () => {
-        watch.destroy();
       });
   }
 
@@ -2166,11 +2154,20 @@ function _component(
   return instance;
 }
 
-// The params `createSlot` hands a block as references under the Ember dialect
-// (WITH_EMBER_INTEGRATION): the formulas of the params that can change. The
-// compiler reads every block param of an Ember-dialect slot through `$__bpv`,
-// which reads such a reference and passes any other value as it is.
-const SLOT_PARAM_REFERENCES: WeakSet<object> = new WeakSet();
+/**
+ * Ember dialect (WITH_EMBER_INTEGRATION): a param `createSlot` hands a block as
+ * a reference — the formula of a param that can change. The compiler reads
+ * every block param of an Ember-dialect slot through `$__bpv`, which reads
+ * such a reference and passes any other value as it is. `followsItem`: its
+ * value was read through a list row's item reference (`isItemSlotParam`).
+ */
+class SlotParamReference extends MergedCell {
+  followsItem: boolean;
+  constructor(fn: () => unknown, followsItem: boolean, debugName?: string) {
+    super(fn, debugName);
+    this.followsItem = followsItem;
+  }
+}
 
 /**
  * The value of a block param `param` an Ember-dialect slot function received:
@@ -2178,17 +2175,13 @@ const SLOT_PARAM_REFERENCES: WeakSet<object> = new WeakSet();
  * tracked, so a binding that reads the param follows it), else `param`. As in
  * Glimmer, where a block param is a reference, the block keeps its DOM and
  * component instances when the yielded value changes; only what reads it
- * updates.
+ * updates. Without the Ember dialect there are no references: `param` itself.
  */
 export function $__bpv(param: unknown): unknown {
-  return typeof param === 'object' && param !== null && SLOT_PARAM_REFERENCES.has(param)
-    ? (param as MergedCell).value
+  return WITH_EMBER_INTEGRATION && param instanceof SlotParamReference
+    ? param.value
     : param;
 }
-
-// The param references of `SLOT_PARAM_REFERENCES` whose value was read through
-// a list row's item reference (`isItemSlotParam`).
-const ITEM_SLOT_PARAMS: WeakSet<object> = new WeakSet();
 
 /**
  * Whether `param` is a param reference `createSlot` passed for a value read
@@ -2196,58 +2189,32 @@ const ITEM_SLOT_PARAMS: WeakSet<object> = new WeakSet();
  * in it while the block stays. The components the block renders follow it
  * through their arguments; a host that creates a component of the block
  * inside a tracked renderable (Ember compat renders a by-name component of a
- * block as such a thunk) reads it untracked there, so that the renderable —
- * and the component — does not depend on the value it was created with.
+ * block as such a thunk) creates it untracked, so that the renderable — and
+ * the component — does not depend on what the component read.
  */
 export function isItemSlotParam(param: unknown): boolean {
-  return typeof param === 'object' && param !== null && ITEM_SLOT_PARAMS.has(param);
+  return WITH_EMBER_INTEGRATION && param instanceof SlotParamReference && param.followsItem;
 }
 
 // Whether the params of the slot `createSlot` built last read a list row's
 // item reference (`itemReferenceReadCount`).
 let slotParamsReadItem = false;
 
-/**
- * Render the block `value` with the yielded `params` as a slot (`buildSlot`).
- *
- * Under the Ember dialect a slot whose params read a list row's item
- * reference passes them as references the block follows in place. When the
- * slot is built inside a tracked computation (a binding that renders it), that
- * computation does not depend on the item reference through the slot — the
- * reads of the params and of the block's creation are made in a frame of
- * their own and passed on without the item references: otherwise another
- * item coming to stand at the row would render the block again, with new
- * component instances, where Glimmer only updates the param. Every other read
- * reaches the computation as before.
- */
-function createSlot(
-  value: Slots[string],
-  params: () => unknown[],
-  name: string,
-  ctx: any,
-) {
-  if (WITH_EMBER_INTEGRATION) {
-    const outer = getTracker();
-    if (outer !== null) {
-      const frame: Set<Cell> = new Set();
-      setTracker(frame);
-      let slot: ReturnType<typeof buildSlot>;
-      try {
-        slot = buildSlot(value, params, name, ctx);
-      } finally {
-        setTracker(outer);
-      }
-      const keepItemReferences = !slotParamsReadItem;
-      frame.forEach((cell) => {
-        if (keepItemReferences || !isItemReference(cell)) outer.add(cell);
-      });
-      return slot;
-    }
+// Under the Ember dialect, the item references the reads of a slot's params
+// added to the computation the slot is built in (`tracker`, which had `size`
+// cells before them).
+function paramItemReferences(tracker: Set<Cell>, size: number): Cell[] {
+  const runtime = itemReferenceRuntime();
+  const references: Cell[] = [];
+  if (runtime === null) return references;
+  let index = 0;
+  for (const cell of tracker) {
+    if (index++ >= size && runtime.isReference(cell)) references.push(cell);
   }
-  return buildSlot(value, params, name, ctx);
+  return references;
 }
 
-function buildSlot(
+function createSlot(
   value: Slots[string],
   params: () => unknown[],
   name: string,
@@ -2265,6 +2232,10 @@ function buildSlot(
   // @ts-expect-error slot return type
   addToTree(ctx, slotContext);
   const formulasToDestroy: MergedCell[] = [];
+  // A computation the slot is built in (a host binding that renders it) and
+  // what it read before the params.
+  const tracker = WITH_EMBER_INTEGRATION ? getTracker() : null;
+  const trackerSize = tracker !== null ? tracker.size : 0;
   const itemReads = itemReferenceReadCount();
   const initial = params();
   // A param read through a list row's item reference (a positional
@@ -2272,7 +2243,10 @@ function buildSlot(
   // at it) can be replaced by another object.
   const readsItem = itemReferenceReadCount() !== itemReads;
   const paramsArray = initial.map((_, i) => {
-    const v = formula(() => params()[i], `slot:param:${i}`);
+    const read = () => params()[i];
+    const v = WITH_EMBER_INTEGRATION
+      ? new SlotParamReference(read, readsItem, IS_DEV_MODE ? `slot:param:${i}` : undefined)
+      : formula(read, `slot:param:${i}`);
     const value = v.value;
     if (v.isConst) {
       v.destroy();
@@ -2281,20 +2255,26 @@ function buildSlot(
     if (typeof value === 'object' && !(WITH_EMBER_INTEGRATION && readsItem)) {
       // An object is passed as the value it has now: the block's reads of its
       // members stay reactive. (A standalone block that reads an item
-      // reference is rendered again for another object: `followingSlot`.)
+      // reference is rendered again for another object: the follow runtime's
+      // `followSlot`.)
       v.destroy();
       return value;
     }
     // A primitive is passed as its formula, which the block reads where it
     // renders it; under the Ember dialect, an object read through an item
     // reference too, which the block reads through `$__bpv`.
-    if (WITH_EMBER_INTEGRATION) {
-      SLOT_PARAM_REFERENCES.add(v);
-      if (readsItem) ITEM_SLOT_PARAMS.add(v);
-    }
     formulasToDestroy.push(v);
     return v;
   });
+  // The item references the params read: the computation the slot is built in
+  // does not depend on them, nor on the block's reads of the params (the
+  // block follows them through its param references), or another item coming
+  // to stand at the row would render the block again — with new component
+  // instances, where Glimmer only updates the param. Every other read stays,
+  // an item reference the computation read before and one the block reads for
+  // a reason of its own.
+  const paramReferences =
+    tracker !== null && readsItem ? paramItemReferences(tracker, trackerSize) : null;
   if (formulasToDestroy.length > 0) {
     registerDestructor(slotContext, () => {
       for (const f of formulasToDestroy) {
@@ -2303,6 +2283,9 @@ function buildSlot(
     });
   }
   const elements = value ? value(...[slotContext, ...paramsArray]) : [];
+  if (paramReferences !== null) {
+    for (const reference of paramReferences) tracker!.delete(reference);
+  }
   // Set after the block rendered (which may build slots of its own).
   slotParamsReadItem = readsItem;
   if (IS_DEV_MODE) {
@@ -2327,10 +2310,11 @@ function buildSlot(
  * Under the Ember dialect a param that can change reaches the block as a
  * reference, so the block follows it in place. A standalone block gets an
  * object param as the value it has when it renders; when the params are read
- * through a list row's item reference (list.ts `ItemReference`), the row can
- * be kept for another item, and the block is rendered again, in place,
- * whenever an object param is replaced or a param turns from a primitive into
- * an object or back (`followingSlot`).
+ * through a list row's item reference, the row can be kept for another item,
+ * and the item reference follow runtime (`@lifeart/gxt/item-references`, a
+ * build has it when a template keys a list by position) renders the block
+ * again, in place, whenever an object param is replaced or a param turns from
+ * a primitive into an object or back.
  */
 function renderSlot(
   value: Slots[string],
@@ -2342,96 +2326,17 @@ function renderSlot(
   if (WITH_EMBER_INTEGRATION || !slotParamsReadItem) {
     return result;
   }
-  return followingSlot(result as unknown as ComponentLike, value, params, name, ctx);
-}
-
-// The object params of `params` by position (others `undefined`).
-function snapshotParams(params: unknown[]): unknown[] {
-  return params.map((param) => (typeof param === 'object' ? param : undefined));
-}
-
-function sameSnapshotParams(a: unknown[], b: unknown[]): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) {
-    if (!Object.is(a[i], b[i])) return false;
+  const runtime = itemReferenceRuntime();
+  if (runtime === null) {
+    return result;
   }
-  return true;
-}
-
-// The anchor a following slot's next rendering goes before. It is a marker the
-// host keeps (`registerListMarker`), as a list's markers are: a host that
-// strips the empty comments of a rendering would otherwise detach it, and the
-// next rendering would go nowhere.
-function slotAnchor(api: DOMApi, name: string): Comment {
-  const anchor = IS_DEV_MODE ? api.comment(`slot-{{${name}}}-anchor`) : api.comment();
-  HOST_HOOKS.registerListMarker?.(anchor);
-  return anchor;
-}
-
-/**
- * The standalone slot `initial`, rendered again in place whenever an object
- * param is replaced or a param turns from a primitive into an object or back.
- * Laid out like a swapping `$_dc`: the content's nodes end with an anchor the
- * next rendering goes before (`slotAnchor`), and the returned object stands
- * for the current content.
- */
-function followingSlot(
-  initial: ComponentLike,
-  value: Slots[string],
-  params: () => unknown[],
-  name: string,
-  ctx: any,
-) {
-  const api = initDOM(ctx);
-  let result = initial;
-  let anchor = slotAnchor(api, name);
-  result[RENDERED_NODES_PROPERTY].push(anchor);
-  const watch = formula(params, IS_DEV_MODE ? `slot:${name}:params` : undefined);
-  let rendered: unknown[] | null = null;
-  const destructor = opcodeFor(watch, (next) => {
-    const nextSnapshot = snapshotParams(next as unknown[]);
-    if (rendered === null || sameSnapshotParams(rendered, nextSnapshot)) {
-      rendered = nextSnapshot;
-      return;
-    }
-    rendered = nextSnapshot;
-    result[RENDERED_NODES_PROPERTY].pop();
-    const parent = api.parent(anchor)!;
-    const nextAnchor = slotAnchor(api, name);
-    api.insert(parent, nextAnchor, anchor);
-    unregisterFromParent(result);
-    destroyElementSync(result, false, api);
-    HOST_HOOKS.unregisterListMarker?.(anchor);
-    api.destroy(anchor);
-    anchor = nextAnchor;
-    result = createSlot(value, params, name, ctx) as unknown as ComponentLike;
-    result[RENDERED_NODES_PROPERTY].push(nextAnchor);
-    renderElement(api, ctx, parent, result, nextAnchor);
-  });
-  registerDestructor(ctx, destructor, () => {
-    watch.destroy();
-    HOST_HOOKS.unregisterListMarker?.(anchor);
-  });
-  return {
-    get [RENDERING_CONTEXT_PROPERTY]() {
-      return result[RENDERING_CONTEXT_PROPERTY];
-    },
-    set [RENDERING_CONTEXT_PROPERTY](value) {
-      result[RENDERING_CONTEXT_PROPERTY] = value;
-    },
-    get [COMPONENT_ID_PROPERTY]() {
-      return result[COMPONENT_ID_PROPERTY];
-    },
-    set [COMPONENT_ID_PROPERTY](value) {
-      result[COMPONENT_ID_PROPERTY] = value;
-    },
-    get [RENDERED_NODES_PROPERTY]() {
-      return result[RENDERED_NODES_PROPERTY];
-    },
-    set [RENDERED_NODES_PROPERTY](value) {
-      result[RENDERED_NODES_PROPERTY] = value;
-    },
-  };
+  return runtime.followSlot(
+    result as unknown as ComponentLike,
+    () => createSlot(value, params, name, ctx) as unknown as ComponentLike,
+    params,
+    name,
+    ctx,
+  );
 }
 
 function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {

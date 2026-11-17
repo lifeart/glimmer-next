@@ -24,6 +24,7 @@ import {
   type AnyCell,
 } from '@/core/reactive';
 import { tagFor } from '@/core/tags';
+import { itemReferenceRuntime } from '@/core/item-reference-runtime';
 import { opcodeFor } from '@/core/vm';
 import {
   $_debug_args,
@@ -127,40 +128,15 @@ function hasItemRefs(key: string | null | undefined): boolean {
   return key === POSITIONAL_KEY || key === EACH_IN_KEY;
 }
 
-// How many times an item reference has been read (`ItemReference`).
-let itemReferenceReads = 0;
-
-/**
- * The reference a list row (`POSITIONAL_KEY` / `EACH_IN_KEY`) is built with
- * (`itemRef`): its value is the item the row stands for now, which can be
- * replaced while the row stays. Its reads are counted, so that a construct
- * that reads a value once — a yielded param, an `{{#in-element}}` destination
- * (dom.ts) — can tell, by comparing `itemReferenceReadCount()` before and
- * after the read, that the value came through such a reference and follow it,
- * without tracking every read it makes.
- */
-class ItemReference<T> extends Cell<T> {
-  get value(): T {
-    itemReferenceReads++;
-    return super.value;
-  }
-  set value(value: T) {
-    this.update(value);
-  }
-}
-
-/** The number of item reference reads so far (see `ItemReference`). */
-export function itemReferenceReadCount(): number {
-  return itemReferenceReads;
-}
-
 /**
  * Whether `cell` is the item reference of a list row (`POSITIONAL_KEY` /
- * `EACH_IN_KEY`): a value read through it can be replaced while the row
- * stays.
+ * `EACH_IN_KEY`) made by the item reference follow runtime
+ * (item-reference-runtime.ts): a value read through it can be replaced while
+ * the row stays.
  */
 export function isItemReference(cell: unknown): boolean {
-  return cell instanceof ItemReference;
+  const runtime = itemReferenceRuntime();
+  return runtime !== null && runtime.isReference(cell);
 }
 
 // Two `{{#each-in}}` entries of one row that read the same: same key and value.
@@ -734,7 +710,6 @@ export class BasicListComponent<T extends { id: number }> {
       }
       boundItemMap.set(key, item);
     }
-    HOST_HOOKS.itemReferencesChanged?.();
   }
   /**
    * What the new row of `key` is built with: `item`, or for an item-reference
@@ -742,10 +717,14 @@ export class BasicListComponent<T extends { id: number }> {
    * destroyed.
    */
   protected itemRef(key: string, item: T): T {
-    const ref = new ItemReference<T>(
-      item,
-      IS_DEV_MODE ? `each.item[${String(key)}]` : undefined,
-    );
+    // The follow runtime's reference when it is installed (a yielded block or
+    // an in-element of the row can then follow it), else a plain cell.
+    const debugName = IS_DEV_MODE ? `each.item[${String(key)}]` : undefined;
+    const runtime = itemReferenceRuntime();
+    const ref =
+      runtime !== null
+        ? runtime.createReference<T>(item, debugName)
+        : new Cell<T>(item, debugName);
     this.itemRefs!.set(key, ref);
     return ref as unknown as T;
   }
@@ -764,6 +743,7 @@ export class BasicListComponent<T extends { id: number }> {
     for (let i = 0; i < updates.length; i += 2) {
       applyCellUpdateSync(updates[i] as Cell<T>, updates[i + 1] as T);
     }
+    HOST_HOOKS.itemReferencesChanged?.();
   }
   /**
    * Forget the item a destroyed row of `key` was bound to, and release its

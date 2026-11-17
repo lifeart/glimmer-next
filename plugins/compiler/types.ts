@@ -642,6 +642,12 @@ export interface CompileResult {
    */
   readonly usedRecycle: boolean;
   /**
+   * Ground truth: `true` when this standalone template keys a list by
+   * position (`$_itemRefKey`): the module assembler imports the item
+   * reference follow runtime from '@lifeart/gxt/item-references'.
+   */
+  readonly usedItemRefs: boolean;
+  /**
    * Ground-truth preamble flags (see CompilerContext): `true` when the
    * compiled output actually references the corresponding wrapper-injected
    * local. Consumers (the runtime compiler in plugins/runtime-compiler.ts

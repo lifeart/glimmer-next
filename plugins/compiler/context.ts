@@ -275,6 +275,13 @@ export interface CompilerContext {
   usedRecycle: boolean;
 
   /**
+   * Ground truth: set by the `{{#each}}` serializer when a standalone template
+   * keys a list by position (`$_itemRefKey`), so the module assembler imports
+   * the item reference follow runtime from '@lifeart/gxt/item-references'.
+   */
+  usedItemRefs: boolean;
+
+  /**
    * Ground-truth preamble flags. Each is set to `true` by the exact
    * serializer site that emits a *free* reference to the corresponding
    * compiled-output local (the names the runtime wrapper conditionally
@@ -417,6 +424,7 @@ export function createContext(
     uniqueIdCounter: 0,
     helperSiteCounter: 0,
     usedRecycle: false,
+    usedItemRefs: false,
     usedArgsAlias: false,
     usedSlots: false,
     usedFw: false,

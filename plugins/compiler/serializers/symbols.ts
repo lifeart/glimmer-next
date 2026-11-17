@@ -44,6 +44,10 @@ export const SYMBOLS = {
   // yielded value (src/core/dom.ts `$__bpv`, serializers/element.ts
   // buildSlots).
   BLOCK_PARAM_VALUE: '$__bpv',
+  // The key of a list keyed by position in a standalone template:
+  // `$_itemRefKey("@index")` installs the item reference follow runtime
+  // (src/core/item-references.ts, imported from '@lifeart/gxt/item-references').
+  ITEM_REF_KEY: '$_itemRefKey',
 
   // Control flow
   IF: '$_if',
