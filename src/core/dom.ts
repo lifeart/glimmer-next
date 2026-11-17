@@ -57,7 +57,12 @@ import {
 } from './glimmer/destroyable';
 import { HTMLBrowserDOMApi } from '@/core/dom-api';
 import { $_argThunk, isArgThunk, argSource } from '@/core/helpers/-private';
-import { itemReferenceRuntime } from '@/core/item-reference-runtime';
+import {
+  followInElement,
+  followSlot,
+  itemReads,
+  paramRefs,
+} from '@/core/item-reference-runtime';
 import {
   isFn,
   isPrimitive,
@@ -1444,22 +1449,17 @@ export function $_inElement(
 
   // The destination is read once. When it is read through a list row's item
   // reference (`{{#in-element item.target}}` in a positional or each-in row
-  // that is kept for another item), the item reference follow runtime moves
-  // the block — renders it again — to the destination of the item now at the
-  // row, as Glimmer's in-element follows its destination reference.
+  // that is kept for another item), the item reference runtime moves the
+  // block — renders it again — to the destination of the item now at the row,
+  // as Glimmer's in-element follows its destination reference.
   function renderInElementBody() {
-      const runtime = itemReferenceRuntime();
-      let appendRef = runtime === null ? readDestination() : runtime.read(readDestination);
-      const follows = runtime !== null && runtime.readItem;
-      let teardown = renderInto(appendRef);
-      registerDestructor(ctx, () => teardown(false));
-      if (!follows) return;
-      runtime!.followInElement(ctx, readDestination, (next) => {
-        if (next === appendRef) return;
-        teardown(true);
-        appendRef = next;
-        teardown = renderInto(appendRef);
-      });
+      const reads = itemReads;
+      const appendRef = readDestination();
+      const remove = renderInto(appendRef);
+      registerDestructor(ctx, () => remove(false));
+      if (itemReads !== reads) {
+        followInElement!(ctx, readDestination, appendRef, remove, renderInto);
+      }
   }
 
   // Render the block into `appendRef`; returns what removes it again — and
@@ -1916,8 +1916,11 @@ export const $_maybeHelper = (
 // modifier no host manager claims): read by shape — every function without a
 // prototype is a getter — in every build. (A host manager reads the arguments
 // of the modifiers it claims itself.)
+// Without the Ember dialect that is the helper argument rule itself.
 function unwrapModifierArg(value: unknown): unknown {
-  return readArgument(value, typeof value === 'function' && !value.prototype);
+  return WITH_EMBER_INTEGRATION
+    ? readArgument(value, typeof value === 'function' && !value.prototype)
+    : $_unwrapHelperArg(value);
 }
 
 function unwrapModifierArgs(args: any[]): any[] {
@@ -2198,7 +2201,7 @@ export function isItemSlotParam(param: unknown): boolean {
 }
 
 // Whether the params of the slot `createSlot` built last read a list row's
-// item reference (the item reference runtime's `read`).
+// item reference (`itemReads`).
 let slotParamsReadItem = false;
 
 function createSlot(
@@ -2226,10 +2229,10 @@ function createSlot(
   // A param read through a list row's item reference (a positional
   // `{{#each}}` or `{{#each-in}}` row, kept while another item comes to stand
   // at it) can be replaced by another object. Only the item reference runtime
-  // makes such references (it counts their reads).
-  const runtime = itemReferenceRuntime();
-  const initial = runtime === null ? params() : runtime.read(params);
-  const readsItem = runtime !== null && runtime.readItem;
+  // makes such references; their reads are counted (`itemReads`).
+  const reads = itemReads;
+  const initial = params();
+  const readsItem = itemReads !== reads;
   const paramsArray = initial.map((_, i) => {
     const read = () => params()[i];
     const v = WITH_EMBER_INTEGRATION
@@ -2262,7 +2265,7 @@ function createSlot(
   // an item reference the computation read before and one the block reads for
   // a reason of its own.
   const paramReferences =
-    tracker !== null && readsItem ? runtime!.paramReferences(tracker, trackerSize) : null;
+    tracker !== null && readsItem ? paramRefs!(tracker, trackerSize) : null;
   if (formulasToDestroy.length > 0) {
     registerDestructor(slotContext, () => {
       for (const f of formulasToDestroy) {
@@ -2311,17 +2314,16 @@ function renderSlot(
   ctx: any,
 ) {
   const result = createSlot(value, params, name, ctx);
-  if (WITH_EMBER_INTEGRATION || !slotParamsReadItem) {
-    return result;
-  }
-  // Set only when the item reference runtime is installed.
-  return itemReferenceRuntime()!.followSlot(
-    result as unknown as ComponentLike,
-    () => createSlot(value, params, name, ctx) as unknown as ComponentLike,
-    params,
-    name,
-    ctx,
-  );
+  // (Set only when the item reference runtime is installed.)
+  return WITH_EMBER_INTEGRATION || !slotParamsReadItem
+    ? result
+    : followSlot!(
+        result as unknown as ComponentLike,
+        () => createSlot(value, params, name, ctx) as unknown as ComponentLike,
+        params,
+        name,
+        ctx,
+      );
 }
 
 function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {

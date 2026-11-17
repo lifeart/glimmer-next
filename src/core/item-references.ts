@@ -35,25 +35,22 @@ import {
 } from './types';
 import {
   installItemReferenceRuntime,
-  type ItemReferenceRuntime,
-  type RowReferences,
+  noteItemRead,
+  type RowRefs,
 } from './item-reference-runtime';
 
 // The keys of the lists whose rows are built with a reference to their item
 // (list.ts `POSITIONAL_KEY` / `EACH_IN_KEY`).
 const EACH_IN_KEY = '@each-in';
 
-// How many times an item reference has been read (`ItemReference`).
-let reads = 0;
-
 /**
  * A row's reference to its item: its value is the item the row stands for
- * now. Its reads are counted, so that a construct that reads a value once can
- * tell (`read`) that the value came through such a reference.
+ * now. Its reads are counted (`itemReads`), so that a construct that reads a
+ * value once can tell that the value came through such a reference.
  */
 class ItemReference<T> extends Cell<T> {
   get value(): T {
-    reads++;
+    noteItemRead();
     return super.value;
   }
   set value(value: T) {
@@ -76,76 +73,90 @@ function sameEachInEntry(a: unknown, b: unknown): boolean {
 }
 
 /**
- * The item references of the rows of one list. A positional row is keyed by
- * its position, so any item can come to stand at a kept row, and its `index` is
- * that position; an `{{#each-in}}` row is keyed by the key `$__eachIn` gives
- * its `[key, value, rowKey]` entry, and a kept row gets the entry's current key
- * and value. A kept row's new item is applied (`flush`) once the list update
- * has built, kept and moved every row.
+ * The item references of the rows of one list: the reference of each row by
+ * its key (`REFS`), the [reference, item] pairs a list update rebinds
+ * (`PENDING`), and whether the rows are `{{#each-in}}` rows (`EACH_IN`). A
+ * positional row is keyed by its position, so any item can come to stand at
+ * a kept row, and its `index` is that position; an `{{#each-in}}` row is keyed
+ * by the key `$__eachIn` gives its `[key, value, rowKey]` entry, and a kept row
+ * gets the entry's current key and value. Kept as an array, and handled by
+ * plain functions, so that a minifier shortens every name.
  */
-class ListItemReferences<T> implements RowReferences<T> {
-  private refs: Map<string, ItemReference<T>> = new Map();
-  private pending: Array<ItemReference<T> | T> = [];
-  private eachIn: boolean;
-  constructor(key: string) {
-    this.eachIn = key === EACH_IN_KEY;
+type ListRefs = [Map<string, ItemReference<unknown>>, unknown[], boolean];
+const REFS = 0;
+const PENDING = 1;
+const EACH_IN = 2;
+
+function createRowRefs(key: string): RowRefs {
+  const rows: ListRefs = [new Map(), [], key === EACH_IN_KEY];
+  return rows;
+}
+
+function rowKey(rows: RowRefs, item: unknown, index: number): string {
+  return (rows as ListRefs)[EACH_IN]
+    ? (item as [unknown, unknown, string])[2]
+    : String(index);
+}
+
+function rowRef(rows: RowRefs, key: string, item: unknown): unknown {
+  const ref = new ItemReference<unknown>(
+    item,
+    IS_DEV_MODE ? `each.item[${String(key)}]` : undefined,
+  );
+  (rows as ListRefs)[REFS].set(key, ref);
+  return ref;
+}
+
+function rowRebind(rows: RowRefs, key: string, item: unknown): void {
+  const list = rows as ListRefs;
+  const ref = list[REFS].get(key);
+  if (
+    ref !== undefined &&
+    (list[EACH_IN] ? !sameEachInEntry(ref._value, item) : ref._value !== item)
+  ) {
+    list[PENDING].push(ref, item);
   }
-  keyForItem(item: T, index: number): string {
-    return this.eachIn
-      ? (item as unknown as [unknown, unknown, string])[2]
-      : String(index);
+}
+
+// Each update re-renders the bindings of its row that read the item,
+// synchronously (the update runs inside a DOM sync, whose own queue would drop
+// a deferred cell write); then the host is told (a host that gives some
+// components their argument values in a pass of its own runs it again).
+function rowsFlush(rows: RowRefs): void {
+  const pending = (rows as ListRefs)[PENDING];
+  if (pending.length === 0) return;
+  const updates = pending.splice(0);
+  for (let i = 0; i < updates.length; i += 2) {
+    applyCellUpdateSync(updates[i] as ItemReference<unknown>, updates[i + 1]);
   }
-  build(key: string, item: T): T {
-    const ref = new ItemReference<T>(
-      item,
-      IS_DEV_MODE ? `each.item[${String(key)}]` : undefined,
-    );
-    this.refs.set(key, ref);
-    return ref as unknown as T;
+  HOST_HOOKS.itemReferencesChanged?.();
+}
+
+// A development build keeps every cell in `DEBUG_CELLS`, which would keep a
+// destroyed row's reference — and the item it holds — alive.
+function rowsForget(rows: RowRefs, key?: string): void {
+  const refs = (rows as ListRefs)[REFS];
+  if (key === undefined) {
+    if (IS_DEV_MODE) refs.forEach((ref) => DEBUG_CELLS.delete(ref as Cell<unknown>));
+    refs.clear();
+    return;
   }
-  rebind(key: string, item: T): void {
-    const ref = this.refs.get(key);
-    if (
-      ref !== undefined &&
-      (this.eachIn ? !sameEachInEntry(ref._value, item) : ref._value !== item)
-    ) {
-      this.pending.push(ref, item);
-    }
-  }
-  // Each update re-renders the bindings of its row that read the item,
-  // synchronously (the update runs inside a DOM sync, whose own queue would
-  // drop a deferred cell write); then the host is told (a host that gives some
-  // components their argument values in a pass of its own runs it again).
-  flush(): void {
-    if (this.pending.length === 0) return;
-    const updates = this.pending.splice(0);
-    for (let i = 0; i < updates.length; i += 2) {
-      applyCellUpdateSync(updates[i] as ItemReference<T>, updates[i + 1] as T);
-    }
-    HOST_HOOKS.itemReferencesChanged?.();
-  }
-  // A development build keeps every cell in `DEBUG_CELLS`, which would keep a
-  // destroyed row's reference — and the item it holds — alive.
-  forget(key: string): void {
-    const ref = this.refs.get(key);
-    if (ref === undefined) return;
-    this.refs.delete(key);
-    if (IS_DEV_MODE) DEBUG_CELLS.delete(ref as Cell<unknown>);
-  }
-  forgetAll(): void {
-    if (this.refs.size === 0) return;
-    if (IS_DEV_MODE) {
-      this.refs.forEach((ref) => DEBUG_CELLS.delete(ref as Cell<unknown>));
-    }
-    this.refs.clear();
-  }
-  index(position: number) {
-    if (this.eachIn) return null;
-    return formula(
-      () => position,
-      IS_DEV_MODE ? `each.index[@index:${position}]` : undefined,
-    );
-  }
+  const ref = refs.get(key);
+  if (ref === undefined) return;
+  refs.delete(key);
+  if (IS_DEV_MODE) DEBUG_CELLS.delete(ref as Cell<unknown>);
+}
+
+function rowIndex(rows: RowRefs, position: number) {
+  if ((rows as ListRefs)[EACH_IN]) return null;
+  return formula(
+    () => position,
+    IS_DEV_MODE ? `each.index[@index:${position}]` : undefined,
+  );
+}
+
+function isRowRef(cell: unknown): boolean {
+  return cell instanceof ItemReference;
 }
 
 // Under the Ember dialect, the item references the reads of a slot's params
@@ -250,14 +261,17 @@ function followSlot(
 }
 
 /**
- * An `{{#in-element}}` whose destination was read through an item reference:
- * the block moves — `move` renders it again — to the destination of the item
- * now at the row, as Glimmer's in-element follows its destination reference.
+ * An `{{#in-element}}` whose destination (`current`) was read through an item
+ * reference: the block moves — taken out (`remove`) and rendered again
+ * (`render`) — to the destination of the item now at the row, as Glimmer's
+ * in-element follows its destination reference.
  */
 function followInElement(
   ctx: any,
   readDestination: () => HTMLElement,
-  move: (next: HTMLElement) => void,
+  current: HTMLElement,
+  remove: (destroyContent: boolean) => void,
+  render: (destination: HTMLElement) => (destroyContent: boolean) => void,
 ): void {
   const watch = formula(readDestination, IS_DEV_MODE ? 'in-element:destination' : undefined);
   let first = true;
@@ -266,27 +280,34 @@ function followInElement(
       first = false;
       return;
     }
-    move(next as HTMLElement);
+    if (next === current) return;
+    remove(true);
+    current = next as HTMLElement;
+    remove = render(current);
   });
+  // The block's content in the destination it moved to goes with the render
+  // context (the in-element's own destructor removes the first rendering).
   registerDestructor(ctx, stop, () => {
     watch.destroy();
+    remove(false);
   });
 }
 
-const RUNTIME: ItemReferenceRuntime = {
-  rows: <T>(key: string) => new ListItemReferences<T>(key),
-  isReference: (cell: unknown) => cell instanceof ItemReference,
-  read<T>(read: () => T): T {
-    const before = reads;
-    const value = read();
-    RUNTIME.readItem = reads !== before;
-    return value;
-  },
-  readItem: false,
-  paramReferences,
-  followSlot,
-  followInElement,
-};
+function install(): void {
+  installItemReferenceRuntime(
+    createRowRefs,
+    rowKey,
+    rowRef,
+    rowRebind,
+    rowsFlush,
+    rowsForget,
+    rowIndex,
+    isRowRef,
+    paramReferences,
+    followSlot,
+    followInElement,
+  );
+}
 
 /**
  * Install the follow runtime (idempotent): rows keyed by position or each-in
@@ -298,7 +319,7 @@ const RUNTIME: ItemReferenceRuntime = {
  * templates.
  */
 export function registerItemReferenceRuntime(): void {
-  installItemReferenceRuntime(RUNTIME);
+  install();
 }
 
 /**
@@ -307,6 +328,6 @@ export function registerItemReferenceRuntime(): void {
  * runtime before the list builds its rows, and returns the key.
  */
 export function $_itemRefKey<K extends string>(key: K): K {
-  installItemReferenceRuntime(RUNTIME);
+  install();
   return key;
 }

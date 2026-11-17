@@ -6,17 +6,17 @@
  * position, and which the runtime compiler (the Ember host's) installs.
  */
 import { describe, test, expect } from 'vitest';
-import { itemReferenceRuntime } from './item-reference-runtime';
+import { createRowRefs } from './item-reference-runtime';
 import { compile } from '../../plugins/compiler/compile';
 
 const LIST = '{{#each this.items key="@index" as |x|}}{{x}}{{/each}}';
 
 describe('the item reference follow runtime is opt-in', () => {
   test('the core runtime has none until the entry installs it', async () => {
-    expect(itemReferenceRuntime()).toBe(null);
+    expect(createRowRefs).toBe(null);
     const entry = await import('./item-references');
     entry.registerItemReferenceRuntime();
-    expect(itemReferenceRuntime()).not.toBe(null);
+    expect(createRowRefs).not.toBe(null);
   });
 
   test('a standalone template keyed by position reaches it through the entry', () => {

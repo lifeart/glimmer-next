@@ -16,7 +16,7 @@ import { cleanupFastContext, provideContext, RENDERING_CONTEXT } from '../contex
 import { Root } from '../dom';
 import { SyncListComponent } from './list';
 import { cell } from '../reactive';
-import { itemReferenceRuntime } from '../item-reference-runtime';
+import { createRowRefs } from '../item-reference-runtime';
 
 describe('a list keyed by position needs the item reference runtime', () => {
   let window: Window;
@@ -59,7 +59,7 @@ describe('a list keyed by position needs the item reference runtime', () => {
   }
 
   test('without it, a positional list throws and names what to install; another list renders', () => {
-    expect(itemReferenceRuntime()).toBe(null);
+    expect(createRowRefs).toBe(null);
     expect(() => build('@index')).toThrow(/registerItemReferenceRuntime/);
     expect(() => build('@identity')).not.toThrow();
     expect(container.querySelectorAll('div').length).toBe(1);

@@ -22,7 +22,17 @@ import {
   type AnyCell,
 } from '@/core/reactive';
 import { tagFor } from '@/core/tags';
-import { itemReferenceRuntime, type RowReferences } from '@/core/item-reference-runtime';
+import {
+  createRowRefs,
+  isRowRef,
+  rowIndex,
+  rowKey,
+  rowRebind,
+  rowRef,
+  rowsFlush,
+  rowsForget,
+  type RowRefs,
+} from '@/core/item-reference-runtime';
 import { opcodeFor } from '@/core/vm';
 import {
   $_debug_args,
@@ -133,8 +143,26 @@ function hasItemRefs(key: string | null | undefined): boolean {
  * the row stays.
  */
 export function isItemReference(cell: unknown): boolean {
-  const runtime = itemReferenceRuntime();
-  return runtime !== null && runtime.isReference(cell);
+  return isRowRef !== null && isRowRef(cell);
+}
+
+/**
+ * Forget the item a destroyed row of `key` was bound to (every row's, without
+ * `key`), and release its item reference. (A plain function: a minifier
+ * shortens its name.)
+ */
+function forgetRowItems(list: BasicListComponent<any>, key?: string): void {
+  const bound = list.boundItemMap;
+  if (bound !== null) {
+    if (key === undefined) bound.clear();
+    else bound.delete(key);
+  }
+  if (list.itemRefs !== null) rowsForget!(list.itemRefs, key);
+}
+
+/** A positional row's fixed `index` (the runtime's `rowIndex`), else `null`. */
+function fixedRowIndex(list: BasicListComponent<any>, index: number): MergedCell | null {
+  return list.hasIndex && list.itemRefs !== null ? rowIndex!(list.itemRefs, index) : null;
 }
 
 type ListComponentArgs<T> = {
@@ -416,8 +444,8 @@ export class BasicListComponent<T extends { id: number }> {
   boundItemMap: Map<string, T> | null = null;
   // Item-reference lists (`hasItemRefs`): the references of the rows, made by
   // the item reference runtime — null for every other list. A kept row's new
-  // item is applied once the update has placed every row (`flushItemRefs`).
-  itemRefs: RowReferences<T> | null = null;
+  // item is applied once the update has placed every row (`updateItems`).
+  itemRefs: RowRefs | null = null;
   // Per-row destructor-owner context.
   //
   // The compiled each-body (`ItemComponent`) registers its per-element binding
@@ -676,9 +704,9 @@ export class BasicListComponent<T extends { id: number }> {
       const itemRefs = this.itemRefs;
       if (itemRefs !== null) {
         // The row reads its item through its reference: queue the update for
-        // `flushItemRefs`. The host hook is not for these rows — a row's
+        // `rowsFlush`. The host hook is not for these rows — a row's
         // reference is the only thing that names its item.
-        itemRefs.rebind(key, item);
+        rowRebind!(itemRefs, key, item);
       } else {
         const rebind =
           HOST_HOOKS.rebindEachItem ??
@@ -689,28 +717,6 @@ export class BasicListComponent<T extends { id: number }> {
       }
       boundItemMap.set(key, item);
     }
-  }
-  /**
-   * Apply the reference updates `rebindReusedRow` queued (the item reference
-   * runtime's `flush`). Run once the update has built, kept and moved every row
-   * (`updateItems`), so a nested block the rebinding re-renders (an `{{#each}}`
-   * over the item) builds with no row construction of this list in progress.
-   */
-  protected flushItemRefs(): void {
-    if (this.itemRefs !== null) this.itemRefs.flush();
-  }
-  /**
-   * Forget the item a destroyed row of `key` was bound to, and release its
-   * item reference.
-   */
-  protected forgetRowItem(key: string): void {
-    if (this.boundItemMap !== null) this.boundItemMap.delete(key);
-    if (this.itemRefs !== null) this.itemRefs.forget(key);
-  }
-  /** `forgetRowItem` for every row (the list was cleared). */
-  protected forgetAllRowItems(): void {
-    if (this.boundItemMap !== null) this.boundItemMap.clear();
-    if (this.itemRefs !== null) this.itemRefs.forgetAll();
   }
   /**
    * Fast-path for updates that preserve all existing items and only append
@@ -772,6 +778,13 @@ export class BasicListComponent<T extends { id: number }> {
     outlet: RenderTarget,
     topMarker: Comment,
   ) {
+    // A list keyed by position (or each-in rows) builds its rows with
+    // references to their items, which the item reference runtime makes: a
+    // template that needs it imports it (`$_itemRefKey`), or its host installs
+    // it. Checked before the list joins the component tree.
+    if (hasItemRefs(key) && createRowRefs === null) {
+      throw new Error(`gxt: key="${key}" needs registerItemReferenceRuntime()`);
+    }
     this.api = initDOM(ctx);
     if (inverseFn) {
       this.inverseFn = inverseFn;
@@ -1186,15 +1199,10 @@ export class BasicListComponent<T extends { id: number }> {
       // (`$__eachIn`), made unique within the entries. The item reference
       // runtime keys these rows and makes their references; a template that
       // needs it imports it (`$_itemRefKey`), or its host installs it.
-      const runtime = itemReferenceRuntime();
-      if (runtime === null) {
-        throw new Error(
-          `gxt: key="${this.key}" needs registerItemReferenceRuntime() from @lifeart/gxt/item-references`,
-        );
-      }
-      const rows = runtime.rows<T>(this.key);
+      // (The constructor checked that it is installed.)
+      const rows = createRowRefs!(this.key);
       this.itemRefs = rows;
-      this.keyForItem = (item: T, i: number) => rows.keyForItem(item, i);
+      this.keyForItem = (item: T, i: number) => rowKey!(rows, item, i);
     } else {
       const resolveRawKey = (item: T, i: number): string => {
         // Null/undefined/primitive items cannot be keyed by an arbitrary
@@ -1436,8 +1444,7 @@ export class BasicListComponent<T extends { id: number }> {
     let idx: number | MergedCell = index;
     // A positional row's index is its fixed position (see the same branch in
     // updateItems).
-    const fixedIndex =
-      this.hasIndex && this.itemRefs !== null ? this.itemRefs.index(index) : null;
+    const fixedIndex = fixedRowIndex(this, index);
     if (fixedIndex !== null) {
       idx = fixedIndex;
       if (!this.indexFormulaMap) this.indexFormulaMap = new Map();
@@ -1487,7 +1494,7 @@ export class BasicListComponent<T extends { id: number }> {
     // opcodes so they unsubscribe on teardown.
     const bodyCtx = this.rowBodyCtx(key);
     const row = this.buildRow(
-      this.itemRefs === null ? item : this.itemRefs.build(key, item),
+      this.itemRefs === null ? item : (rowRef!(this.itemRefs, key, item) as T),
       idx,
       bodyCtx,
     );
@@ -1519,7 +1526,7 @@ export class BasicListComponent<T extends { id: number }> {
       // rows to — also when building a row threw: the rows are bound to those
       // items now (`boundItemMap`), and a reference left behind would show the
       // old item, and its queued write would land in a later update.
-      this.flushItemRefs();
+      if (this.itemRefs !== null) rowsFlush!(this.itemRefs);
     }
   }
 
@@ -1683,8 +1690,7 @@ export class BasicListComponent<T extends { id: number }> {
         // is rebound in place, so a const formula keeps `index.value` equal to
         // the build position across reorders (the item reference runtime's
         // `index`).
-        const fixedIndex =
-          this.hasIndex && this.itemRefs !== null ? this.itemRefs.index(index) : null;
+        const fixedIndex = fixedRowIndex(this, index);
         if (fixedIndex !== null) {
           idx = fixedIndex;
           if (!this.indexFormulaMap) this.indexFormulaMap = new Map();
@@ -1739,7 +1745,7 @@ export class BasicListComponent<T extends { id: number }> {
         // binding opcodes so they unsubscribe on teardown.
         const bodyCtx = this.rowBodyCtx(key);
         const row = this.buildRow(
-          this.itemRefs === null ? item : this.itemRefs.build(key, item),
+          this.itemRefs === null ? item : (rowRef!(this.itemRefs, key, item) as T),
           idx,
           bodyCtx,
         );
@@ -2043,7 +2049,7 @@ export class SyncListComponent<
       }
       keyMap.clear();
       indexMap.clear();
-      this.forgetAllRowItems();
+      forgetRowItems(this);
       this.itemMarkers.clear();
       this.markerSet.clear();
       if (firstError !== undefined) reportDestructionError(firstError);
@@ -2216,7 +2222,7 @@ export class SyncListComponent<
     const { keyMap, indexMap, indexFormulaMap } = this;
     keyMap.delete(key);
     indexMap.delete(key);
-    this.forgetRowItem(key);
+    forgetRowItems(this, key);
     // Tear down this row's per-row destructor-owner ctx so its element binding
     // opcodes UNSUBSCRIBE from shared cells.
     this.destroyRowCtx(key);
@@ -2431,7 +2437,7 @@ export class AsyncListComponent<
         }
         keyMap.clear();
         indexMap.clear();
-        this.forgetAllRowItems();
+        forgetRowItems(this);
         this.itemMarkers.clear();
         this.markerSet.clear();
         // Run ROW destructors fire-and-forget (DOM already gone → skipDom=true).
@@ -2499,7 +2505,7 @@ export class AsyncListComponent<
       }
       keyMap.clear();
       indexMap.clear();
-      this.forgetAllRowItems();
+      forgetRowItems(this);
       this.itemMarkers.clear();
       this.markerSet.clear();
       return true;
@@ -2688,7 +2694,7 @@ export class AsyncListComponent<
     const { keyMap, indexMap, indexFormulaMap } = this;
     keyMap.delete(key);
     indexMap.delete(key);
-    this.forgetRowItem(key);
+    forgetRowItems(this, key);
     // The row's marker leaves the key now, and goes once the row's async
     // teardown below is done: a row built for the same key meanwhile (the key
     // of an item added back, a position a list that shrank grows into again)
