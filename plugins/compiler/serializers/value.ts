@@ -871,9 +871,13 @@ function buildHelper(
     const looseName = nameValue && nameValue.kind === 'literal' ? String(nameValue.value) : '';
     const optional = optionalValue !== undefined && optionalValue.kind === 'literal' && optionalValue.value === true;
     const posArgs = args.map(arg => buildNativeArg(ctx, arg, ctxName));
+    // The named arguments become a component's args object (`$_args`) or a
+    // helper's: their getters branded.
     const namedProps = [];
     for (const [key, val] of named) {
-      namedProps.push(B.prop(key, buildNativeArg(ctx, val, ctxName), false, val.sourceRange));
+      namedProps.push(
+        B.prop(key, brandArgGetter(ctx, buildNativeArg(ctx, val, ctxName)), false, val.sourceRange)
+      );
     }
     return B.call(SYMBOLS.LOOSE_APPEND, [
       B.string(looseName, pathRange),
@@ -1124,6 +1128,54 @@ function buildNativeCurryCall(
 }
 
 /**
+ * A compiler-emitted REACTIVE ARG THUNK: a zero-arg getter the arg-access layer
+ * (`ArgProxyHandler` / the DEV `$_args` getter) must INVOKE on read to yield the
+ * live value. These are exactly the function-valued shapes `buildValue` emits
+ * for a reactive named arg in compat mode:
+ *   • `reactiveGetter` / zero-arg `arrow` — `() => this.x`
+ *   • `$__cached(() => …)` — the identity-memoized (hash)/(array) getter
+ *     (buildMaybeMemoizedGetter; returns a getter FUNCTION) used under
+ *     WITH_EMBER_INTEGRATION
+ * A literal, a path member read, or an EAGER helper call (`$_maybeHelper(…)`,
+ * `$__fn(…)`) is a VALUE — possibly a bound function the consumer must receive
+ * as-is — and is NOT a thunk, so it is left unbranded and passes through.
+ */
+export function isReactiveArgThunk(node: JSExpression): boolean {
+  if (node.type === 'reactiveGetter') return true;
+  if (node.type === 'arrow' && node.params.length === 0) return true;
+  if (
+    node.type === 'call' &&
+    node.callee.type === 'identifier' &&
+    node.callee.name === SYMBOLS.CACHED
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * `valueExpr`, a named argument the compiler built for an args object gxt's
+ * `$_args` reads (a component invocation, a helper call, a loose-mode append,
+ * a curried helper's named arguments), with its getter branded `$_argThunk`
+ * when it is one (`isReactiveArgThunk`). Under the Ember dialect the args
+ * object invokes only branded getters and hands any other function out as the
+ * argument's value, so the getter must be told from a value where it is built
+ * — here. Gated to the Ember dialect (WITH_EMBER_INTEGRATION +
+ * IS_GLIMMER_COMPAT_MODE): standalone gxt keeps byte-identical codegen and its
+ * invoke-every-getter semantics.
+ */
+export function brandArgGetter(ctx: CompilerContext, valueExpr: JSExpression): JSExpression {
+  if (
+    ctx.flags.IS_GLIMMER_COMPAT_MODE &&
+    ctx.flags.WITH_EMBER_INTEGRATION &&
+    isReactiveArgThunk(valueExpr)
+  ) {
+    return B.call(B.id(SYMBOLS.ARG_THUNK), [valueExpr], valueExpr.sourceRange);
+  }
+  return valueExpr;
+}
+
+/**
  * Build a maybe helper call.
  * For unknown helpers: passes the name as a string and adds scope key for resolution.
  * For known helpers (WITH_HELPER_MANAGER): passes the function reference directly.
@@ -1146,10 +1198,14 @@ function buildMaybeHelper(
   const buildArg = native ? buildNativeArg : buildValue;
   const posArgs = positional.map(arg => buildArg(ctx, arg, ctxName));
 
-  // Build named args
+  // Build named args: the getters among them branded, as gxt reads a helper's
+  // named arguments through an args object (`$_args`) where a host does not
+  // claim the helper.
   const namedProps = [];
   for (const [key, val] of named) {
-    namedProps.push(B.prop(key, buildArg(ctx, val, ctxName), false, val.sourceRange));
+    namedProps.push(
+      B.prop(key, brandArgGetter(ctx, buildArg(ctx, val, ctxName)), false, val.sourceRange)
+    );
   }
 
   // For unknown bindings, context is passed directly as last arg
@@ -1254,9 +1310,11 @@ function buildNamedArgsObject(
 ): JSExpression {
   if (named.size === 0) return B.emptyObject();
 
+  // A curried helper's named arguments reach the helper merged with the
+  // call's (`$_helperHelper`): their getters branded, as the call's are.
   const props = [];
   for (const [key, val] of named) {
-    props.push(B.prop(key, buildValue(ctx, val, ctxName), false, val.sourceRange));
+    props.push(B.prop(key, brandArgGetter(ctx, buildValue(ctx, val, ctxName)), false, val.sourceRange));
   }
   return B.object(props);
 }

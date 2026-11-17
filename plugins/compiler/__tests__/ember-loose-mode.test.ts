@@ -155,7 +155,7 @@ describe('ambiguous append: $_looseAppend', () => {
 
   test('arguments follow the native literal-or-thunk convention; with arguments it is not optional', () => {
     expect(loose('{{foo-bar 1 a=this.b}}')).toContain(
-      '$_looseAppend("foo-bar", [1], { a: () => $__tag($s, "b") }, this, 0, false)'
+      '$_looseAppend("foo-bar", [1], { a: $_argThunk(() => $__tag($s, "b")) }, this, 0, false)'
     );
   });
 

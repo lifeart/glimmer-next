@@ -40,7 +40,7 @@ describe('EMBER_NATIVE: helper call sites (G4)', () => {
   test('known helper: thunked path args, literal args, named object, ctx + site', () => {
     const c = code('<span>{{fmt this.a 2 currency="USD" other=this.b}}</span>', NATIVE, ['fmt']);
     expect(c).toContain(
-      '$_maybeHelper(fmt, [() => this.a, 2], { currency: "USD", other: () => this.b }, this, 0)'
+      '$_maybeHelper(fmt, [() => this.a, 2], { currency: "USD", other: $_argThunk(() => this.b) }, this, 0)'
     );
   });
 
