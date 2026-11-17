@@ -41,8 +41,27 @@ describe('compat: a path argument of a component carries where a write of it goe
     expect(each).toContain('["@a", $_argThunk(() => $__cellFor(item, "name"), () => item, "name")]');
     expect(each).toContain('["@b", $_argThunk(() => item, null)]');
     const alias = code('{{#let this.m as |m|}}{{my-comp a=m b=m.z}}{{/let}}', COMPAT);
-    expect(alias).toContain('["@a", $_argThunk(() => m(), () => this, "m")]');
+    // the let records where its value writes, read in the let's own scope
+    const source = /let (\$__letSrc\d+) = \(\) => this;/.exec(alias);
+    expect(source).not.toBe(null);
+    expect(alias).toContain(`["@a", $_argThunk(() => m(), () => ${source![1]}(), "m")]`);
     expect(alias).toMatch(/\["@b", \$_argThunk\(\(\) => m\(\)\??\.z, \(\) => m\(\), "z"\)\]/);
+  });
+
+  test('a {{#let}} alias writes where it was made, not where it is used', () => {
+    const shadowed = code(
+      '{{#each this.items as |item|}}{{#let item.profile as |p|}}{{#each item.friends as |item|}}{{my-comp a=p}}{{/each}}{{/let}}{{/each}}',
+      COMPAT,
+    );
+    const source = /let (\$__letSrc\d+) = \(\) => item;/.exec(shadowed);
+    expect(source).not.toBe(null);
+    expect(shadowed).toContain(`["@a", $_argThunk(() => p(), () => ${source![1]}(), "profile")]`);
+    // through a positional row: the row's item reference
+    const positional = code(
+      '{{#each this.rows key="@index" as |row|}}{{#let row.profile as |p|}}{{my-comp a=p}}{{/let}}{{/each}}',
+      COMPAT,
+    );
+    expect(positional).toMatch(/let \$__letSrc\d+ = \(\) => row\.value;/);
   });
 
   test('an angle-bracket invocation too', () => {
