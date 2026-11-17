@@ -192,11 +192,18 @@ export function $_TO_VALUE(reference: unknown) {
  * result passed as an argument is not called).
  */
 export function $_unwrapHelperArg(value: unknown): unknown {
-  if (
+  return readArgument(
+    value,
     typeof value === 'function' &&
-    (WITH_EMBER_INTEGRATION ? isArgThunk(value) : !value.prototype)
-  ) {
-    value = value();
+      (WITH_EMBER_INTEGRATION ? isArgThunk(value) : !value.prototype),
+  );
+}
+
+// An argument's value: what `value` returns when it is a getter, else `value`;
+// a tag's current value.
+function readArgument(value: unknown, isGetter: boolean): unknown {
+  if (isGetter) {
+    value = (value as () => unknown)();
   }
   if (value !== null && value !== undefined && isTagLike(value)) {
     return (value as { value: unknown }).value;
@@ -1921,25 +1928,20 @@ export const $_maybeHelper = (
 // prototype is a getter — in every build. (A host manager reads the arguments
 // of the modifiers it claims itself.)
 function unwrapModifierArg(value: unknown): unknown {
-  if (typeof value === 'function' && !value.prototype) {
-    value = value();
-  }
-  if (value !== null && value !== undefined && isTagLike(value)) {
-    return (value as { value: unknown }).value;
-  }
-  return value;
+  return readArgument(value, typeof value === 'function' && !value.prototype);
 }
 
 function unwrapModifierArgs(args: any[]): any[] {
-  for (let i = 0; i < args.length; i++) {
-    args[i] = unwrapModifierArg(args[i]);
-  }
-  return args;
+  return unwrapEach(args, unwrapModifierArg);
 }
 
 export function $_unwrapArgs(args: any[]): any[] {
+  return unwrapEach(args, $_unwrapHelperArg);
+}
+
+function unwrapEach(args: any[], unwrap: (value: unknown) => unknown): any[] {
   for (let i = 0; i < args.length; i++) {
-    args[i] = $_unwrapHelperArg(args[i]);
+    args[i] = unwrap(args[i]);
   }
   return args;
 }
