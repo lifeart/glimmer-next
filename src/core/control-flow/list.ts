@@ -1067,6 +1067,10 @@ export class BasicListComponent<T extends { id: number }> {
     const marker = this.itemMarkers.get(key);
     if (!marker) return;
     this.itemMarkers.delete(key);
+    this.removeMarkerNode(marker);
+  }
+  /** Remove a row's marker (no longer, or never, the marker of a key). */
+  protected removeMarkerNode(marker: Comment) {
     this.markerSet.delete(marker);
     // Unregister from the consumer-provided registry (if any) so the WeakSet
     // entry can be released and the marker can be GC'd promptly.
@@ -2747,6 +2751,12 @@ export class AsyncListComponent<
     keyMap.delete(key);
     indexMap.delete(key);
     this.forgetRowItem(key);
+    // The row's marker leaves the key now, and goes once the row's async
+    // teardown below is done: a row built for the same key meanwhile (the key
+    // of an item added back, a position a list that shrank grows into again)
+    // gets a marker of its own, which that late removal must not take.
+    const marker = this.itemMarkers.get(key);
+    if (marker !== undefined) this.itemMarkers.delete(key);
     // Clean up reactive index formula if it exists
     if (indexFormulaMap) {
       const formula = indexFormulaMap.get(key);
@@ -2780,6 +2790,6 @@ export class AsyncListComponent<
     if (!isDestroyed(row as object)) {
       await destroyElement(row as ComponentLike, false, this.api);
     }
-    this.removeMarker(key);
+    if (marker !== undefined) this.removeMarkerNode(marker);
   }
 }
