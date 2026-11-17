@@ -971,14 +971,20 @@ function buildComponentCall(
 
   // Check for dynamic component (dotted path like context.V or this.Component)
   // Ember: an `@`-headed tag (`<@comp />`) is a dynamic component too
-  // (isComponentTag routes it here). So is a list row's item read through its
-  // item reference (`{{#each this.comps key="@index" as |Item|}}<Item />`):
-  // the row stays while another component comes to stand at it, and the
-  // invocation follows it, as Glimmer's does.
+  // (isComponentTag routes it here). So is a binding whose value can change:
+  // a list row's item read through its item reference
+  // (`{{#each this.comps key="@index" as |Item|}}<Item />`, the row stays while
+  // another component comes to stand at it), an Ember-dialect slot's block
+  // param (a reference to the yielded value), and a `{{#let}}` binding (a
+  // getter of its value): the invocation follows the value, as Glimmer's
+  // invocation of a local reference does. A value that never changes renders
+  // once (`$_dc` drops a constant formula).
+  const tagBinding = ctx.scopeTracker.resolve(tag);
   const isDynamic =
     tag.includes('.') ||
     isArgComponentTag(ctx, tag) ||
-    ctx.scopeTracker.resolve(tag)?.itemReference === true;
+    tagBinding?.itemReference === true ||
+    tagBinding?.kind === 'let-binding';
 
   if (isDynamic) {
     // Wrap in reactive getter for dynamic component paths

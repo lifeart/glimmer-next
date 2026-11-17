@@ -2929,11 +2929,9 @@ export function $_dc(
       api.insert(parent, newTarget, target);
       unregisterFromParent(result);
       destroyElementSync(result, false, api);
-      if (EMBER_NATIVE) {
-        // The outgoing placeholder was popped off the destroyed result, so its
-        // teardown left it in the DOM — one stray anchor per swap. Remove it.
-        api.destroy(target!);
-      }
+      // The outgoing placeholder was popped off the destroyed result, so its
+      // teardown left it in the DOM — one stray anchor per swap. Remove it.
+      api.destroy(target!);
       result = component(value, args, ctx);
       result![RENDERED_NODES_PROPERTY].push(newTarget!);
       renderElement(api, ctx, parent, result, newTarget!);
