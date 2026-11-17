@@ -7,7 +7,8 @@
  *   - G15: a dynamic `{{value}}` child of an element stays a child (dynamic
  *     content), it is not folded into a `textContent` binding;
  *   - G5: `{{#each-in obj as |k v|}}` lowers to an `each` over `$__eachIn(obj)`
- *     with a destructuring row callback.
+ *     keyed by the entries' row keys (`@each-in`), whose row reads the key and
+ *     value through the reference to its entry.
  * Flag off: gxt's historic output.
  */
 import { describe, test, expect } from 'vitest';
@@ -90,20 +91,25 @@ describe('G15: dynamic element children are content', () => {
 });
 
 describe('G5: {{#each-in}}', () => {
-  test('lowers to an each over $__eachIn with a destructuring row', () => {
+  test('lowers to an each over $__eachIn whose row reads its entry through a reference', () => {
     const out = code('{{#each-in this.obj as |k v|}}[{{k}}:{{v}}]{{else}}none{{/each-in}}');
-    expect(out).toContain('$_eachSync(() => $__eachIn($__tag($s, "obj")), ([k, v], $index, ctx0) =>');
-    expect(out).toContain('"@identity"');
+    expect(out).toContain('$_eachSync(() => $__eachIn($__tag($s, "obj")), ($__entry, $index, ctx0) =>');
+    expect(out).toContain('() => $__entry.value[0]');
+    expect(out).toContain('() => $__entry.value[1]');
+    expect(out).not.toMatch(/\(\) => [kv]\b/);
+    expect(out).toContain('"@each-in"');
+    expect(out).not.toContain('"@identity"');
     expect(out).toContain('["none"]');
   });
 
   test('one block param, reserved-word params, a key', () => {
-    expect(code('{{#each-in o as |key|}}{{key}}{{/each-in}}', NATIVE, ['o'])).toContain(
-      '$_eachSync(() => $__eachIn(o), ([key], $index, ctx0) =>',
-    );
+    const one = code('{{#each-in o as |key|}}{{key}}{{/each-in}}', NATIVE, ['o']);
+    expect(one).toContain('$_eachSync(() => $__eachIn(o), ($__entry, $index, ctx0) =>');
+    expect(one).toContain('$__entry.value[0]');
     const out = code('{{#each-in o key="@identity" as |if v|}}{{if}}{{v.x}}{{/each-in}}', NATIVE, ['o']);
-    expect(out).toContain('([__bp_if, v], $index, ctx0)');
-    expect(out).toContain('$__tag(v, "x")');
+    expect(out).toContain('($__entry, $index, ctx0)');
+    expect(out).not.toContain('__bp_if');
+    expect(out).toContain('$__tag($__entry.value[1], "x")');
   });
 
   test('a sub-expression source is evaluated inside the each source getter', () => {

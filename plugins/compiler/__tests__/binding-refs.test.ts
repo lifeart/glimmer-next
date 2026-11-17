@@ -1,7 +1,8 @@
 /**
  * The rewrite of the references to a block param a row reads through its item
  * reference (serializers/binding-refs.ts): `item` → `item.value` in a
- * positional `{{#each}}` row.
+ * positional `{{#each}}` row, `k` / `v` → `$__entry.value[0]` / `[1]` in a
+ * native `{{#each-in}}` row.
  */
 import { describe, test, expect } from 'vitest';
 import { B, serializeJS } from '../builder';

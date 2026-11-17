@@ -2,91 +2,89 @@
  * Key-aware native `{{#each-in}}` (emberjs/ember.js#21340: the native
  * "{{#each-in}} with the key option" tests).
  *
- * `$__eachIn(obj, key)` resolves the `key=` option against each ENTRY (the way
- * Glimmer's toEachInIterator + Ember's keyEachInEntries do), not against the
- * lowered `[key, value]` pair — so `@key`/path keys no longer resolve to
- * `undefined`. A pair keeps its identity (the lowered `each` keeps its row)
- * while its row key is unchanged; a key-stable value change updates the pair's
- * value in place, while an `@identity` value change makes a new pair (new row).
+ * `$__eachIn(obj, key)` gives each entry the key of its row, as Glimmer keys an
+ * each-in list for the `key=` option (`keyFor` over the each-in iterator, whose
+ * memo is the entry's key, made unique by `uniqueKeyFor`): the value
+ * (`@identity`, the default), the entry's key (`@key`), the entry's key as a
+ * string (`@index`), or the value at a path of the value. The list keys its
+ * rows by it (list.ts `EACH_IN_KEY`).
  */
-import { describe, test, expect } from 'vitest';
+import { describe, test, expect, afterEach } from 'vitest';
 import { $__eachIn } from './helpers/each-in';
+import { HOST_HOOKS } from './host-hooks';
 
 type V = { id: number; label: string };
 
+const rowKeys = (obj: unknown, key?: string) => $__eachIn(obj, key).map((entry) => entry[2]);
+
+// The host's entries of a Map (Glimmer's each-in iterator), which the default
+// enumeration of own keys cannot give.
+function useMapEntries() {
+  HOST_HOOKS.eachInEntries = (obj: object) =>
+    obj instanceof Map ? Array.from(obj.entries()) : Object.entries(obj);
+}
+
 describe('key-aware $__eachIn (each-in key option)', () => {
-  test('default (@identity): a value change makes a NEW pair (new row)', () => {
-    const v1: V = { id: 1, label: 'a' };
-    const obj: Record<string, V> = { x: v1 };
-    const p1 = $__eachIn(obj)[0];
-    expect(p1).toEqual(['x', v1]);
-    // re-read, unchanged → same pair identity
-    expect($__eachIn(obj)[0]).toBe(p1);
-    // replace the value (same key) → new pair (identity keying = by value)
-    obj.x = { id: 1, label: 'b' };
-    expect($__eachIn(obj)[0]).not.toBe(p1);
+  afterEach(() => {
+    delete (HOST_HOOKS as Record<string, unknown>).eachInEntries;
   });
 
-  test('path key: keyed by value[path]; retained+updated while path stable, new pair when path changes', () => {
+  test('an entry is [key, value, rowKey]', () => {
     const v1: V = { id: 1, label: 'a' };
-    const obj: Record<string, V> = { x: v1 };
-    const p1 = $__eachIn(obj, 'id')[0];
-    expect(p1).toEqual(['x', v1]);
-    // replace the value object but KEEP id=1 → RETAIN pair, update value in place
-    const v2: V = { id: 1, label: 'b' };
-    obj.x = v2;
-    const p2 = $__eachIn(obj, 'id')[0];
-    expect(p2).toBe(p1);
-    expect(p2[1]).toBe(v2);
-    // change id → new pair (new row)
-    obj.x = { id: 99, label: 'c' };
-    expect($__eachIn(obj, 'id')[0]).not.toBe(p1);
+    expect($__eachIn({ x: v1, y: 2 })).toEqual([
+      ['x', v1, v1],
+      ['y', 2, 'number:2#0'],
+    ]);
   });
 
-  test('@key: keyed by the entry key; a value change RETAINS the row', () => {
+  test('default (@identity): keyed by the value, the same for another object with the same values', () => {
     const v1: V = { id: 1, label: 'a' };
-    const obj: Record<string, V> = { x: v1 };
-    const p1 = $__eachIn(obj, '@key')[0];
-    const v2: V = { id: 2, label: 'b' };
-    obj.x = v2; // same key 'x', different value (and different id)
-    const p2 = $__eachIn(obj, '@key')[0];
-    expect(p2).toBe(p1); // retained by entry key
-    expect(p2[1]).toBe(v2);
+    expect(rowKeys({ a: 1, b: v1 })).toEqual(['number:1#0', v1]);
+    expect(rowKeys({ b: v1, a: 1 })).toEqual([v1, 'number:1#0']);
+    // a changed value is another row key (a new row)
+    expect(rowKeys({ a: 1, b: { ...v1 } })[1]).not.toBe(v1);
+    // `null` and `undefined` values are keys of their own
+    expect(rowKeys({ a: null, b: undefined })).toEqual(['object:null#0', 'undefined:undefined#0']);
   });
 
-  test('@index: keyed by position; the row at a position is retained + updated', () => {
-    const a: V = { id: 1, label: 'a' };
-    const b: V = { id: 2, label: 'b' };
-    const obj: Record<string, V> = { x: a, y: b };
-    const r1 = $__eachIn(obj, '@index');
-    const p0 = r1[0];
-    const a2: V = { id: 9, label: 'a2' };
-    obj.x = a2; // value at position 0 changes
-    const r2 = $__eachIn(obj, '@index');
-    expect(r2[0]).toBe(p0); // position 0 retained
-    expect(r2[0][1]).toBe(a2);
+  test('@key: keyed by the entry key, whatever the value', () => {
+    expect(rowKeys({ a: 1, b: 2 }, '@key')).toEqual(['string:a#0', 'string:b#0']);
+    expect(rowKeys({ a: 9, b: 3 }, '@key')).toEqual(['string:a#0', 'string:b#0']);
+    useMapEntries();
+    const k1 = { name: 'k1' };
+    expect(rowKeys(new Map([[k1, 1]]), '@key')).toEqual([k1]);
   });
 
-  test('distinct key modes over the same object do not clobber each other', () => {
-    const v1: V = { id: 1, label: 'a' };
-    const obj: Record<string, V> = { x: v1 };
-    const identPair = $__eachIn(obj)[0];
-    const idPair = $__eachIn(obj, 'id')[0];
-    // Separate per-mode caches: the two modes hand out independent pairs.
-    expect(idPair).not.toBe(identPair);
-    // Each mode is stable across re-reads.
-    expect($__eachIn(obj)[0]).toBe(identPair);
-    expect($__eachIn(obj, 'id')[0]).toBe(idPair);
+  test('@index: keyed by the entry key as a string, so object keys of a Map collide and are told apart by occurrence', () => {
+    expect(rowKeys({ b: 2, a: 9 }, '@index')).toEqual(['string:b#0', 'string:a#0']);
+    useMapEntries();
+    const a = { name: 'a' };
+    const b = { name: 'b' };
+    expect(rowKeys(new Map([[a, 1], [b, 2]]), '@index')).toEqual([
+      'string:[object Object]#0',
+      'string:[object Object]#1',
+    ]);
   });
 
-  test('a removed key drops its pair; a re-added key gets a fresh pair', () => {
+  test('a path key: keyed by the value at that path of the value', () => {
+    expect(rowKeys({ a: { id: 1 }, b: { id: 2 } }, 'id')).toEqual(['number:1#0', 'number:2#0']);
+    expect(rowKeys({ a: { v: { id: 'x' } } }, 'v.id')).toEqual(['string:x#0']);
+    expect(rowKeys({ a: null }, 'id')).toEqual(['object:null#0']);
+  });
+
+  test('repeated row keys are told apart by occurrence, an object by a stable key per occurrence', () => {
     const v1: V = { id: 1, label: 'a' };
-    const obj: Record<string, V> = { x: v1 };
-    const p1 = $__eachIn(obj, 'id')[0];
-    delete obj.x;
-    expect($__eachIn(obj, 'id')).toHaveLength(0);
-    obj.x = { id: 1, label: 'a' };
-    expect($__eachIn(obj, 'id')[0]).not.toBe(p1); // fresh pair
+    const first = rowKeys({ a: v1, b: v1, c: v1 });
+    expect(first[0]).toBe(v1);
+    expect(first[1]).not.toBe(v1);
+    expect(first[2]).not.toBe(first[1]);
+    const again = rowKeys({ x: v1, y: v1, z: v1 });
+    again.forEach((key, i) => expect(key).toBe(first[i]));
+    expect(rowKeys({ a: 1, b: 1 })).toEqual(['number:1#0', 'number:1#1']);
+    // two symbols with the same description stay apart
+    const s1 = Symbol('s');
+    const s2 = Symbol('s');
+    expect(rowKeys({ a: s1, b: s2 })).toEqual([s1, s2]);
   });
 
   test('nullish / primitive sources iterate nothing', () => {

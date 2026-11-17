@@ -114,11 +114,25 @@ export type InverseFn = (ctx: Component<any>) => GenericReturnType | null;
  *   `{{#each}}` as `@index` too, an array's iteration key being the position):
  *   a row is keyed by its position, so any item can come to stand at a kept
  *   row.
+ * - `EACH_IN_KEY`: the rows of a native `{{#each-in}}`, over the
+ *   `[key, value, rowKey]` entries of `$__eachIn` (helpers/each-in.ts); a row
+ *   is keyed by `rowKey`, the key Glimmer gives the entry for the `key=`
+ *   option, and a kept row gets the entry's current key and value.
  */
 export const POSITIONAL_KEY = '@index';
+export const EACH_IN_KEY = '@each-in';
 
 function hasItemRefs(key: string | null | undefined): boolean {
-  return key === POSITIONAL_KEY;
+  return key === POSITIONAL_KEY || key === EACH_IN_KEY;
+}
+
+// Two `{{#each-in}}` entries of one row that read the same: same key and value.
+function sameEachInEntry(a: unknown, b: unknown): boolean {
+  const x = a as [unknown, unknown] | undefined;
+  const y = b as [unknown, unknown] | undefined;
+  return (
+    x !== undefined && y !== undefined && Object.is(x[0], y[0]) && Object.is(x[1], y[1])
+  );
 }
 
 type ListComponentArgs<T> = {
@@ -665,7 +679,12 @@ export class BasicListComponent<T extends { id: number }> {
         // `flushItemRefs`. The host hook is not for these rows — a row's
         // reference is the only thing that names its item.
         const ref = itemRefs.get(key);
-        if (ref !== undefined && ref._value !== item) {
+        if (
+          ref !== undefined &&
+          (this.key === EACH_IN_KEY
+            ? !sameEachInEntry(ref._value, item)
+            : ref._value !== item)
+        ) {
           this._pendingItemRefs!.push(ref, item);
         }
       } else {
@@ -1183,6 +1202,13 @@ export class BasicListComponent<T extends { id: number }> {
       // qualification is needed.
       this.keyForItem = (_item: T, i: number) =>
         String(i) as unknown as string;
+      this.itemRefs = new Map();
+      this._pendingItemRefs = [];
+    } else if (this.key === EACH_IN_KEY) {
+      // `{{#each-in}}` entries carry the key of their row (`$__eachIn`), made
+      // unique within the entries.
+      this.keyForItem = (item: T) =>
+        (item as unknown as [unknown, unknown, string])[2];
       this.itemRefs = new Map();
       this._pendingItemRefs = [];
     } else {
@@ -2094,10 +2120,11 @@ export class SyncListComponent<
       // exhibit the bug (their sources aren't `$__cellFor`-tapped block params).
       if (
         this.key !== '@identity' &&
-        // `@index` is positional, not a property-name key: a row's bound item
-        // has no `item['@index']`, so this property-drift eviction must not run
-        // (it would read `undefined`, see it differ from the position key, and
-        // wrongly destroy every reused row on reorder).
+        // `@index` (positional) and `@each-in` (the entry's row key) are not
+        // property-name keys: a row's bound item has no `item['@index']`, so
+        // this property-drift eviction must not run (it would read
+        // `undefined`, see it differ from the row's key, and wrongly destroy
+        // every kept row).
         !hasItemRefs(this.key) &&
         !this.key.includes('.') &&
         this.boundItemMap !== null &&

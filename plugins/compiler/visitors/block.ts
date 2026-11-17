@@ -651,10 +651,12 @@ function describeInsertBeforeValue(value: ASTv1.Expression): string {
 /**
  * Ember `{{#each-in obj as |key value|}}…{{else}}…{{/each-in}}` (G5, the Ember
  * native layer): an `each` over `$__eachIn(obj)` — the object's entries as
- * STABLE `[key, value]` pairs (Glimmer `@identity` keying: a row is kept while
- * its key's value is unchanged) — whose row callback destructures each pair
- * into the block params. Children were visited with `key` / `value` in scope
- * as plain block params.
+ * `[key, value, rowKey]`, `rowKey` being the key Glimmer gives the entry's row
+ * for the `key=` option — keyed by those row keys (`@each-in`). A row is built
+ * with a reference to its entry and reads the block params through it
+ * (serializers/control.ts `itemReferenceReads`), so a kept row shows its
+ * entry's current key and value. Children were visited with `key` / `value`
+ * in scope as plain block params.
  */
 function createEachInBlock(
   ctx: CompilerContext,
@@ -667,12 +669,12 @@ function createEachInBlock(
 ): HBSControlExpression {
   const source = getVisit(ctx)(ctx, node.params[0], false);
   const sourceValue = source !== null && isSerializedValue(source) ? source : literal(null);
-  // Forward the `key=` option to `$__eachIn` so it owns the keying (resolving
-  // `@key`/`@index`/path keys against the ENTRY, not the `[key,value]` pair —
-  // emberjs/ember.js#21340: the native "{{#each-in}} with the key option"
-  // tests). The lowered `each` then keys by `@identity` on the
-  // returned pairs. `@identity`/default stays a 1-arg `$__eachIn(obj)` (the
-  // historic shape); only a non-identity key adds the 2nd argument.
+  // Forward the `key=` option to `$__eachIn`, which keys the entries
+  // (resolving `@key`/`@index`/path keys against the ENTRY, not the
+  // `[key, value]` pair — emberjs/ember.js#21340: the native "{{#each-in}}
+  // with the key option" tests). `@identity`/default stays a 1-arg
+  // `$__eachIn(obj)` (the historic shape); only a non-identity key adds the
+  // 2nd argument.
   const eachInArgs: SerializedValue[] = [sourceValue];
   if (keyValue != null && keyValue !== '@identity') {
     eachInArgs.push(literal(keyValue));
@@ -684,7 +686,7 @@ function createEachInBlock(
     blockParams: [],
     children,
     inverse,
-    key: '@identity',
+    key: '@each-in',
     isSync: true,
     sourceRange: range,
     eachInParams: blockParams.slice(0, 2),

@@ -2,13 +2,15 @@
  * Binding references read through an expression.
  *
  * Some rows of an `{{#each}}` are built with a REFERENCE to their item rather
- * than the item (src/core/control-flow/list.ts `POSITIONAL_KEY`): the row
- * callback gets a cell whose `.value` is the item the row stands for now, so
- * that a kept row re-renders in place when another item comes to stand at it.
- * The row body names its block params as usual; this module rewrites every
- * reference to such a param in the emitted body into the expression that reads
- * it — `item` → `item.value` for a positional row — so each binding that reads
- * the param reads the reference, and re-runs when it changes.
+ * than the item (src/core/control-flow/list.ts `POSITIONAL_KEY` /
+ * `EACH_IN_KEY`): the row callback gets a cell whose `.value` is the item the
+ * row stands for now, so that a kept row re-renders in place when another item
+ * comes to stand at it. The row body names its block params as usual; this
+ * module rewrites every reference to such a param in the emitted body into the
+ * expression that reads it — `item` → `item.value` for a positional row,
+ * `key` → `$__entry.value[0]` and `value` → `$__entry.value[1]` for a
+ * `{{#each-in}}` row — so each binding that reads the param reads the
+ * reference, and re-runs when it changes.
  *
  * A reference can sit in an identifier (`item`, a dotted callee `item.fn`, a
  * whole expression a visitor serialized into a name), a runtime reference

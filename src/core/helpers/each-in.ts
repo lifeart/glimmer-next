@@ -2,54 +2,72 @@ import { HOST_HOOKS } from '../host-hooks';
 import { entangleObjectKeys } from '../each-in-keyset';
 import { $__tag } from './tag';
 
-/** A `{{#each-in}}` row item: `[key, value]`. */
-export type EachInPair = [unknown, unknown];
-
-// Stable pairs per iterated object, namespaced by the KEY MODE so distinct
-// `{{#each-in}}` blocks over the same object with different `key=` don't
-// collide: `WeakMap<obj, Map<mode, Map<rowKey, pair>>>`. The inner map keys by
-// the ROW KEY directly (object OR primitive), so object row keys compare by
-// reference — no `String()` collapse. A pair keeps its identity — so the
-// `@identity`-keyed lowered `each` keeps (and moves) its row — while its row key
-// is unchanged.
-const PAIRS = new WeakMap<object, Map<string, Map<unknown, EachInPair>>>();
+/**
+ * A `{{#each-in}}` row item: `[key, value, rowKey]`, `rowKey` the key of the
+ * entry's row (see `$__eachIn`).
+ */
+export type EachInEntry = [unknown, unknown, unknown];
 
 /**
- * The ROW KEY of an entry for the `key=` option, the way Glimmer's
- * `toEachInIterator` + Ember's `keyEachInEntries` do (emberjs/ember.js#21340:
- * the native "{{#each-in}} with the key option" tests):
- *   - `@identity` (default) / `@key`: the entry KEY (its object property name);
- *     they differ only on how a VALUE change is treated (see `$__eachIn`).
- *   - `@index`: the entry's POSITION.
- *   - a path (`id`, `a.b`): the path read on the VALUE (NOT on the `[key,value]`
- *     pair — resolving against the pair is why path/`@key` keys used to resolve
- *     to `undefined`).
+ * The raw row key of an entry for the `key=` option, as Glimmer's `keyFor`
+ * (`@glimmer/reference` iterable.ts) computes it over the each-in iterator,
+ * whose memo is the entry's key:
+ *   - `@identity` (the default): the value;
+ *   - `@key`: the entry's key;
+ *   - `@index`: the entry's key as a string (so every object key of a Map
+ *     yields the same one);
+ *   - a path (`id`, `a.b`): the value at that path of the VALUE (not of the
+ *     `[key, value]` pair).
  */
-function rowKeyOf(
-  entryKey: unknown,
-  value: unknown,
-  index: number,
-  mode: string,
-): unknown {
-  if (mode === '@identity' || mode === '@key') return entryKey;
-  if (mode === '@index') return index;
-  if (value === null || value === undefined) return undefined;
-  if (mode.indexOf('.') === -1) {
-    return (value as Record<string, unknown>)[mode];
-  }
+function rawRowKey(entryKey: unknown, value: unknown, mode: string): unknown {
+  if (mode === '@identity') return value;
+  if (mode === '@key') return entryKey;
+  if (mode === '@index') return String(entryKey);
   let current: unknown = value;
-  for (const part of mode.split('.')) {
-    if (current === null || current === undefined) return undefined;
+  for (const part of mode.indexOf('.') === -1 ? [mode] : mode.split('.')) {
+    if (current === null || current === undefined) return current;
     current = (current as Record<string, unknown>)[part];
   }
   return current;
 }
 
+// The row keys of the 2nd, 3rd, … entries with the same object raw key in one
+// pass (Glimmer's `uniqueKeyFor`): stable per (object, occurrence), and held
+// only as long as the object.
+const REPEATED_OBJECT_KEYS = new WeakMap<object, object[]>();
+
+/**
+ * The row key of the `count`-th (0-based) entry of a pass whose raw key is
+ * `raw`, unique among the pass's entries as Glimmer's `uniqueKeyFor` makes
+ * it. An object (or a symbol) is its own key on its first occurrence, so the
+ * list compares it by reference — two objects never collide, as they would
+ * through `String()` — and a primitive is a string qualified by its type.
+ */
+function uniqueRowKey(raw: unknown, count: number): unknown {
+  const type = typeof raw;
+  if (raw !== null && (type === 'object' || type === 'function')) {
+    if (count === 0) return raw;
+    let keys = REPEATED_OBJECT_KEYS.get(raw as object);
+    if (keys === undefined) {
+      keys = [];
+      REPEATED_OBJECT_KEYS.set(raw as object, keys);
+    }
+    let key = keys[count - 1];
+    if (key === undefined) {
+      key = {};
+      keys[count - 1] = key;
+    }
+    return key;
+  }
+  if (type === 'symbol' && count === 0) return raw;
+  return `${type}:${String(raw)}#${count}`;
+}
+
 /**
  * `{{#each-in obj key=KEY as |key value|}}` iteration source (G5; the compiler
- * lowers each-in to `$_eachSync(() => $__eachIn(obj, KEY), ([key, value],
- * $index, ctx) => …)` with the `each` keyed by `@identity` on the returned
- * pairs — this function owns the keying).
+ * lowers each-in to `$_eachSync(() => $__eachIn(obj, KEY), ($__entry, $index,
+ * ctx) => …, "@each-in")`, the row reading its key and value through the
+ * reference to its entry, `$__entry.value[0]` / `[1]`).
  *
  * Entries come from the host's `eachInEntries` hook when registered (Ember:
  * Glimmer's `toEachInIterator`), else from the object's own enumerable keys,
@@ -57,71 +75,35 @@ function rowKeyOf(
  * entangled (`entangleObjectKeys`) so a host key-addition signal re-runs the
  * source. Nullish / primitive sources iterate nothing.
  *
- * `key` (default `@identity`) selects how a row is kept vs re-created:
- *   - `@identity`: keyed by the entry; a VALUE change is a NEW pair (new row) —
- *     Glimmer `@identity` keys each-in by value. (Historic default, unchanged.)
- *   - `@key` / `@index` / a path: keyed by the entry key / position / resolved
- *     path value; while that row key is unchanged the pair is RETAINED and its
- *     value updated IN PLACE, so a key-stable value change updates the row
- *     instead of re-creating it.
+ * Each entry carries the key of its row for `key` (default `@identity`), as
+ * Glimmer keys an each-in list (see `rawRowKey`, `uniqueRowKey`). The list
+ * keys its rows by it, so a row is kept, moved or replaced as in Glimmer — the
+ * same for every source object the list iterates, a new object with the same
+ * entries included — and a kept row shows the entry's current key and value.
  */
-export function $__eachIn(obj: unknown, key?: string | null): EachInPair[] {
+export function $__eachIn(obj: unknown, key?: string | null): EachInEntry[] {
   if (obj === null || obj === undefined) return [];
   const type = typeof obj;
   if (type !== 'object' && type !== 'function') return [];
   const source = obj as object;
   const mode = key == null ? '@identity' : key;
-  let entries: ReadonlyArray<EachInPair>;
+  let entries: ReadonlyArray<[unknown, unknown]>;
   const hook = HOST_HOOKS.eachInEntries;
   if (hook !== undefined) {
     entries = hook(source) ?? [];
   } else {
     const keys = Object.keys(source);
     entangleObjectKeys(source, keys);
-    entries = keys.map((k) => [k, $__tag(source, k)] as EachInPair);
+    entries = keys.map((k) => [k, $__tag(source, k)] as [unknown, unknown]);
   }
-  let modeMap = PAIRS.get(source);
-  if (modeMap === undefined) {
-    modeMap = new Map();
-    PAIRS.set(source, modeMap);
-  }
-  let pairs = modeMap.get(mode);
-  if (pairs === undefined) {
-    pairs = new Map();
-    modeMap.set(mode, pairs);
-  }
-  const out: EachInPair[] = new Array(entries.length);
-  const live = new Set<unknown>();
+  const out: EachInEntry[] = new Array(entries.length);
+  const occurrences = new Map<unknown, number>();
   for (let i = 0; i < entries.length; i++) {
     const [entryKey, value] = entries[i]!;
-    const rowKey = rowKeyOf(entryKey, value, i, mode);
-    live.add(rowKey);
-    let pair = pairs.get(rowKey);
-    if (pair === undefined) {
-      pair = [entryKey, value];
-      pairs.set(rowKey, pair);
-    } else if (mode === '@identity') {
-      // Glimmer `@identity`: a value change is a NEW row. Replace the pair
-      // OBJECT (new identity) so the `@identity`-keyed each re-creates the row.
-      if (!Object.is(pair[1], value)) {
-        pair = [entryKey, value];
-        pairs.set(rowKey, pair);
-      }
-    } else if (!Object.is(pair[1], value) || !Object.is(pair[0], entryKey)) {
-      // Stable row key, changed value/key: RETAIN the pair identity (keep the
-      // row) and update its value/key IN PLACE (a reactive row body re-reads the
-      // new value rather than the row being re-created).
-      pair[0] = entryKey;
-      pair[1] = value;
-    }
-    out[i] = pair;
-  }
-  // Forget pairs for THIS mode whose row key is no longer live (a re-added key
-  // gets a fresh pair / row). Other modes' pairs are left untouched.
-  if (pairs.size > out.length) {
-    for (const rowKey of Array.from(pairs.keys())) {
-      if (!live.has(rowKey)) pairs.delete(rowKey);
-    }
+    const raw = rawRowKey(entryKey, value, mode);
+    const count = occurrences.get(raw) ?? 0;
+    occurrences.set(raw, count + 1);
+    out[i] = [entryKey, value, uniqueRowKey(raw, count)];
   }
   return out;
 }

@@ -25,13 +25,15 @@ import { replaceBindingRefs } from './binding-refs';
 // runtime stays tree-shakable — see buildEach.
 const RECYCLE_KEY = '@recycle';
 
-// The each key whose rows are built with a REFERENCE to their item (the row
+// The each keys whose rows are built with a REFERENCE to their item (the row
 // callback gets a cell, `.value` being the item the row stands for now) —
-// mirrors POSITIONAL_KEY in src/core/control-flow/list.ts. A positional row
-// (`key="@index"`, and `key="@key"`: an array's iteration key is the position)
-// keeps its place while the items move; the body reads the item through the
-// reference (see `itemReferenceReads`).
+// mirror POSITIONAL_KEY / EACH_IN_KEY in src/core/control-flow/list.ts. A
+// positional row (`key="@index"`, and `key="@key"`: an array's iteration key
+// is the position) keeps its place while the items move, and an `{{#each-in}}`
+// row (native) gets its entry's current key and value; the body reads the item
+// through the reference (see `itemReferenceReads`).
 const POSITIONAL_KEY = '@index';
+const EACH_IN_KEY = '@each-in';
 
 // Forward declarations - set from index.ts to avoid circular dependency
 let buildChildrenExprs: (ctx: CompilerContext, children: readonly HBSChild[], ctxName: string) => JSExpression[];
@@ -382,10 +384,7 @@ function buildEach(
   // rename transparent. Non-reserved names pass through unchanged.
   const callbackParams = [
     ...paramNames.map((name, index) => {
-      if (index === 0 && eachInParams !== undefined && eachInParams.length > 0) {
-        // `{{#each-in}}`: destructure the `[key, value]` pair.
-        return `[${eachInParams.map((param) => escapeBindingName(param)).join(', ')}]`;
-      }
+      // (An `{{#each-in}}` row gets the reference to its entry, `$__entry`.)
       const emitName = escapeBindingName(name);
       const range = paramRanges[index];
       return range ? B.id(emitName, range) : emitName;
@@ -467,18 +466,21 @@ function normalizeEachKey(
   // row by the iteration key of its item, which for an `{{#each}}` (an array,
   // an iterable) is its position: the same key. A path key passes through
   // unchanged.
-  if (control.key === '@key' && control.eachInParams === undefined) {
-    return POSITIONAL_KEY;
-  }
+  //
+  // A native `{{#each-in}}` is keyed by the row keys `$__eachIn` gives its
+  // entries.
+  if (control.eachInParams !== undefined) return EACH_IN_KEY;
+  if (control.key === '@key') return POSITIONAL_KEY;
   return control.key;
 }
 
 /**
- * The rows of a list keyed by `POSITIONAL_KEY` are built with a reference to
- * their item: how the body reads the block params through it, as a map from
- * the param's emitted name to the expression that reads it — the item `item`
- * as `item.value`. Null for any other list, and when the body has no param to
- * read.
+ * The rows of a list keyed by `POSITIONAL_KEY` or `EACH_IN_KEY` are built with
+ * a reference to their item: how the body reads each block param through it,
+ * as a map from the param's emitted name to the expression that reads it —
+ * the positional item `item` as `item.value`, the `{{#each-in}}` key and
+ * value as `$__entry.value[0]` / `$__entry.value[1]`. Null for any other
+ * list, and when the body has no param to read.
  */
 function itemReferenceReads(
   eachKey: string | null,
@@ -486,7 +488,12 @@ function itemReferenceReads(
   eachInParams: readonly string[] | undefined
 ): ReadonlyMap<string, string> | null {
   const reads = new Map<string, string>();
-  if (eachInParams === undefined && eachKey === POSITIONAL_KEY) {
+  if (eachInParams !== undefined && eachKey === EACH_IN_KEY) {
+    const entry = escapeBindingName(paramNames[0]!);
+    eachInParams.forEach((param, i) => {
+      reads.set(escapeBindingName(param), `${entry}.value[${i}]`);
+    });
+  } else if (eachInParams === undefined && eachKey === POSITIONAL_KEY) {
     const item = paramNames[0]!;
     if (item !== '$noop') {
       const name = escapeBindingName(item);
