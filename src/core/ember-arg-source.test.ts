@@ -8,7 +8,8 @@
  * (no classic components) nor in standalone gxt.
  */
 import { describe, test, expect } from 'vitest';
-import { $_argThunk, argSource } from './dom';
+import { $_argThunk, argSource, $_args, $_edp } from './dom';
+import * as dom from './dom';
 import { compile } from '../../plugins/compiler/compile';
 
 const COMPAT = {
@@ -88,5 +89,36 @@ describe('argSource', () => {
     expect(argSource($_argThunk(() => 1))).toBe(undefined);
     expect(argSource(() => 1)).toBe(undefined);
     expect(argSource(1)).toBe(undefined);
+  });
+});
+
+describe('argumentOf (Ember dialect)', () => {
+  type RuntimeConstants = { WITH_EMBER_INTEGRATION: boolean };
+  const runtime = globalThis as unknown as RuntimeConstants;
+
+  test('an args object $_args built gives its arguments as the compiler passed them', () => {
+    const argumentOf = (dom as unknown as {
+      argumentOf?: (args: object, key: string) => unknown;
+    }).argumentOf;
+    expect(typeof argumentOf).toBe('function');
+    const saved = runtime.WITH_EMBER_INTEGRATION;
+    runtime.WITH_EMBER_INTEGRATION = true;
+    try {
+      const host = { local: 'a' };
+      const parent = () => host;
+      const getter = $_argThunk(() => host.local, parent, 'local');
+      const args = $_args({ value: getter, n: 1 }, false, $_edp as never) as object;
+      // the args object reads the argument
+      expect((args as { value: unknown }).value).toBe('a');
+      // and gives the getter, with its source, to a host that asks
+      expect(argumentOf!(args, 'value')).toBe(getter);
+      expect(argSource(argumentOf!(args, 'value'))).toEqual([parent, 'local']);
+      expect(argumentOf!(args, 'n')).toBe(1);
+      expect(argumentOf!(args, 'missing')).toBe(undefined);
+      // not an args object $_args built
+      expect(argumentOf!({ value: getter }, 'value')).toBe(undefined);
+    } finally {
+      runtime.WITH_EMBER_INTEGRATION = saved;
+    }
   });
 });
