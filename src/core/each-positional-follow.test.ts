@@ -20,6 +20,8 @@ import { cellFor } from './reactive';
 import { template } from '../../plugins/runtime-compiler';
 import { HOST_HOOKS } from './host-hooks';
 import { registerDestructor } from './glimmer/destroyable';
+import { getTracker, setTracker, type Cell } from './reactive';
+import { isItemReference } from './control-flow/list';
 import {
   $_c,
   $_args,
@@ -327,6 +329,39 @@ describe('Ember dialect: a yielded param is a reference, the block keeps its DOM
     expect(bs()[0]).toBe(before[0]);
     expect(created).toBe(2);
     expect(destroyed).toBe(1);
+  });
+
+  test('a slot built inside a tracked computation does not make it depend on the row\'s item', async () => {
+    const List = template(
+      '<ul>{{#each @items key="@index" as |item|}}<li>{{yield item}}</li>{{/each}}</ul>',
+    );
+    const a = { name: 'a' };
+    const b = { name: 'b' };
+    class Root extends Component<any> {
+      _items: unknown[] = [a, b];
+      constructor(args: any) {
+        super(args);
+        cellFor(this as any, '_items');
+      }
+      get items() {
+        return this._items;
+      }
+      [$template] = template('<List @items={{this.items}} as |x|><b>{{x.name}}</b></List>', {
+        scope: { List },
+      });
+    }
+    // As a host binding that renders the slot (Ember compat's content
+    // bindings) tracks what the rendering reads.
+    const outer = getTracker();
+    const frame: Set<Cell> = new Set();
+    setTracker(frame);
+    try {
+      mountRoot(fixture, Root as never);
+    } finally {
+      setTracker(outer);
+    }
+    expect(texts()).toEqual(['a', 'b']);
+    expect([...frame].some((cell) => isItemReference(cell))).toBe(false);
   });
 
   test('the block gets a param following the row\'s item as a reference it reads through $__bpv', async () => {

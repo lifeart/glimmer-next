@@ -36,12 +36,15 @@ import {
   tagsFromRange,
   materializeAbsentPathCell,
   registerLeafOwnersForFormula,
+  getTracker,
+  setTracker,
 } from '@/core/reactive';
 import { opcodeFor, opcodeForCreatedContent, checkOpcode, bindOpcode } from '@/core/vm';
 import {
   SyncListComponent,
   AsyncListComponent,
   itemReferenceReadCount,
+  isItemReference,
   type InverseFn,
 } from '@/core/control-flow/list';
 // NB: circular-by-design — static-block.ts imports $prop/$attr/$ev back from
@@ -2202,7 +2205,47 @@ export function isItemSlotParam(param: unknown): boolean {
 // item reference (`itemReferenceReadCount`).
 let slotParamsReadItem = false;
 
+/**
+ * Render the block `value` with the yielded `params` as a slot (`buildSlot`).
+ *
+ * Under the Ember dialect a slot whose params read a list row's item
+ * reference passes them as references the block follows in place. When the
+ * slot is built inside a tracked computation (a binding that renders it), that
+ * computation does not depend on the item reference through the slot — the
+ * reads of the params and of the block's creation are made in a frame of
+ * their own and passed on without the item references: otherwise another
+ * item coming to stand at the row would render the block again, with new
+ * component instances, where Glimmer only updates the param. Every other read
+ * reaches the computation as before.
+ */
 function createSlot(
+  value: Slots[string],
+  params: () => unknown[],
+  name: string,
+  ctx: any,
+) {
+  if (WITH_EMBER_INTEGRATION) {
+    const outer = getTracker();
+    if (outer !== null) {
+      const frame: Set<Cell> = new Set();
+      setTracker(frame);
+      let slot: ReturnType<typeof buildSlot>;
+      try {
+        slot = buildSlot(value, params, name, ctx);
+      } finally {
+        setTracker(outer);
+      }
+      const keepItemReferences = !slotParamsReadItem;
+      frame.forEach((cell) => {
+        if (keepItemReferences || !isItemReference(cell)) outer.add(cell);
+      });
+      return slot;
+    }
+  }
+  return buildSlot(value, params, name, ctx);
+}
+
+function buildSlot(
   value: Slots[string],
   params: () => unknown[],
   name: string,
@@ -2226,7 +2269,6 @@ function createSlot(
   // `{{#each}}` or `{{#each-in}}` row, kept while another item comes to stand
   // at it) can be replaced by another object.
   const readsItem = itemReferenceReadCount() !== itemReads;
-  slotParamsReadItem = readsItem;
   const paramsArray = initial.map((_, i) => {
     const v = formula(() => params()[i], `slot:param:${i}`);
     const value = v.value;
@@ -2259,6 +2301,8 @@ function createSlot(
     });
   }
   const elements = value ? value(...[slotContext, ...paramsArray]) : [];
+  // Set after the block rendered (which may build slots of its own).
+  slotParamsReadItem = readsItem;
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.pop();
     // @ts-expect-error
