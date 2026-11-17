@@ -62,11 +62,11 @@ const ARG_SOURCE = '$_argSource';
  * the path's last segment `key` is a property of (`this.a.b` → `this.a`,
  * `"b"`; `@x` → the args object, `"@x"`). See `argSource`.
  */
-export function $_argThunk<T>(fn: T, parent?: () => unknown, key?: string): T {
+export function $_argThunk<T>(fn: T, parent?: (() => unknown) | null, key?: string): T {
   if (typeof fn === 'function') {
     (fn as any)[ARG_THUNK_FLAG] = true;
     if (parent !== undefined) {
-      (fn as any)[ARG_SOURCE] = [parent, key];
+      (fn as any)[ARG_SOURCE] = parent === null ? null : [parent, key];
     }
   }
   return fn;
@@ -74,14 +74,16 @@ export function $_argThunk<T>(fn: T, parent?: () => unknown, key?: string): T {
 
 /**
  * Where a write of the argument a compiler-emitted getter reads goes:
- * `[parent, key]` (see `$_argThunk`), or `null` when the argument is not a
- * path (a literal, a helper's result, a block param itself) or the getter is
- * not one the compiler emitted.
+ * `[parent, key]` (see `$_argThunk`); `null` when the compiler says the
+ * argument is not writable (a literal, a helper's result, a block param
+ * itself); `undefined` when the compiler said nothing (another getter, or
+ * not a getter).
  */
-export function argSource(fn: unknown): readonly [() => unknown, string] | null {
-  if (typeof fn !== 'function') return null;
-  const source = (fn as any)[ARG_SOURCE];
-  return source === undefined ? null : source;
+export function argSource(
+  fn: unknown,
+): readonly [() => unknown, string] | null | undefined {
+  if (typeof fn !== 'function') return undefined;
+  return (fn as any)[ARG_SOURCE];
 }
 
 /**

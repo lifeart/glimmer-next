@@ -32,13 +32,14 @@ describe('compat: a path argument of a component carries where a write of it goe
     expect(out).toMatch(/\["@b", \$_argThunk\(\(\) => this\.a\??\.b, \(\) => this\.a, "b"\)\]/);
     expect(out).toContain('["@c", $_argThunk(() => $a.x, () => $a, "@x")]');
     // not writable: branded, no source
-    expect(out).toMatch(/\["@d", \$_argThunk\(\(\) => \$_maybeHelper\("concat", \["a"\], this\)\)\]/);
+    expect(out).toContain('["@d", $_argThunk(() => $_maybeHelper("concat", ["a"], this), null)]');
+    expect(out).toContain('["@e", $_argThunk(() => 1, null)]');
   });
 
   test('a block param path, a block param itself and a {{#let}} binding', () => {
     const each = code('{{#each this.items as |item|}}{{my-comp a=item.name b=item}}{{/each}}', COMPAT);
     expect(each).toContain('["@a", $_argThunk(() => $__cellFor(item, "name"), () => item, "name")]');
-    expect(each).toContain('["@b", $_argThunk(() => item)]');
+    expect(each).toContain('["@b", $_argThunk(() => item, null)]');
     const alias = code('{{#let this.m as |m|}}{{my-comp a=m b=m.z}}{{/let}}', COMPAT);
     expect(alias).toContain('["@a", $_argThunk(() => m(), () => this, "m")]');
     expect(alias).toMatch(/\["@b", \$_argThunk\(\(\) => m\(\)\??\.z, \(\) => m\(\), "z"\)\]/);
@@ -58,12 +59,15 @@ describe('compat: a path argument of a component carries where a write of it goe
 });
 
 describe('argSource', () => {
-  test('the source a getter was branded with, else null', () => {
+  test('the source a getter was branded with', () => {
     const parent = () => ({});
     const getter = $_argThunk(() => 1, parent, 'x');
     expect(argSource(getter)).toEqual([parent, 'x']);
-    expect(argSource($_argThunk(() => 1))).toBe(null);
-    expect(argSource(() => 1)).toBe(null);
-    expect(argSource(1)).toBe(null);
+    // not writable, as the compiler says
+    expect(argSource($_argThunk(() => 1, null))).toBe(null);
+    // the compiler said nothing
+    expect(argSource($_argThunk(() => 1))).toBe(undefined);
+    expect(argSource(() => 1)).toBe(undefined);
+    expect(argSource(1)).toBe(undefined);
   });
 });

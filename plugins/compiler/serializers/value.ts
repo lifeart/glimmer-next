@@ -1170,7 +1170,8 @@ export function isReactiveArgThunk(node: JSExpression): boolean {
  *     (nothing when that is a literal or a helper's result);
  *   - a `{{#let}}` binding of a path → where that path writes;
  *   - anything else — a literal, a helper's result, a block param itself (an
- *     `{{#each}}` row's own reference) — is not writable: branded, no source.
+ *     `{{#each}}` row's own reference) — is not writable: `$_argThunk(getter,
+ *     null)`.
  * `valueExpr` is the argument as built (a getter, branded or not, or a value);
  * a value is returned as it is.
  */
@@ -1197,8 +1198,9 @@ export function withArgSource(
   }
   if (!isReactiveArgThunk(getterExpr)) return valueExpr;
   const source = argSourceOf(ctx, value, ctxName, 0);
+  // `null`: not writable (the host writes nothing upstream).
   const brandArgs: JSExpression[] = source === null
-    ? [getterExpr]
+    ? [getterExpr, B.nil()]
     : [getterExpr, B.arrow([], source.parent), B.string(source.key)];
   return B.call(B.id(SYMBOLS.ARG_THUNK), brandArgs, getterExpr.sourceRange);
 }
