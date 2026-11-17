@@ -283,7 +283,7 @@ const RUNTIME: ItemReferenceRuntime = {
     return value;
   },
   readItem: false,
-  paramReferences: WITH_EMBER_INTEGRATION ? paramReferences : undefined,
+  paramReferences,
   followSlot,
   followInElement,
 };

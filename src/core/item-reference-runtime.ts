@@ -48,11 +48,10 @@ export interface ItemReferenceRuntime {
   read<T>(read: () => T): T;
   readItem: boolean;
   /**
-   * Ember dialect (WITH_EMBER_INTEGRATION; absent otherwise): the item
-   * references a slot's params added to `tracker` (the computation the slot is
-   * built in, which had `size` cells before).
+   * Ember dialect: the item references a slot's params added to `tracker`
+   * (the computation the slot is built in, which had `size` cells before).
    */
-  paramReferences?: (tracker: Set<Cell>, size: number) => Cell[];
+  paramReferences(tracker: Set<Cell>, size: number): Cell[];
   /**
    * A standalone slot whose params read an item reference (`renderSlot`):
    * `initial`, rendered again in place (`render`) whenever an object param is
