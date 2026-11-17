@@ -1666,6 +1666,34 @@ export function isArgThunk(fn: unknown): boolean {
   return typeof fn === 'function' && (fn as any)[ARG_THUNK_FLAG] === true;
 }
 
+/**
+ * The named arguments of a helper call or a loose-mode append, `named`, with
+ * their getters branded `$_argThunk`, for an args object (`$_args`) over
+ * them: under WITH_EMBER_INTEGRATION that object invokes only branded getters
+ * and hands any other function out as the argument's value. The compiler
+ * brands the getters of a component invocation's arguments, not these: under
+ * EMBER_NATIVE every function here is a getter (the literal-or-thunk argument
+ * convention); in the compat dialect a getter is a function without a
+ * prototype, as `$_unwrapHelperArg` reads a positional argument (and the Ember
+ * bridge, the same arguments). A getter is wrapped rather than branded in
+ * place, so no function that is also a value elsewhere comes out branded.
+ */
+function brandArgGetters(named: Record<string, unknown>): Record<string, unknown> {
+  let branded: Record<string, unknown> | null = null;
+  for (const key of Object.keys(named)) {
+    const value = named[key];
+    if (
+      typeof value === 'function' &&
+      !isArgThunk(value) &&
+      (EMBER_NATIVE || value.prototype === undefined)
+    ) {
+      if (branded === null) branded = { ...named };
+      branded[key] = $_argThunk(() => (value as () => unknown)());
+    }
+  }
+  return branded ?? named;
+}
+
 if (IS_DEV_MODE) {
   function buildGraph(
     obj: Record<string, unknown>,
@@ -1784,7 +1812,7 @@ export const $_maybeHelper = (
   if (typeof value === 'function') {
     if (value.helperType === 'ember') {
       // @ts-expect-error amount of args
-      const hash = $_args(_hash, false);
+      const hash = $_args(WITH_EMBER_INTEGRATION ? brandArgGetters(_hash) : _hash, false);
       const helper = new value();
       return (...runtimeArgs: any[]) => {
         return helper.compute.call(helper, $_unwrapArgs(runtimeArgs), hash);
@@ -1792,7 +1820,7 @@ export const $_maybeHelper = (
     }
     if (isHostFunctionalHelper(value)) {
       // @ts-expect-error amount of args
-      const hash = $_args(_hash, false);
+      const hash = $_args(WITH_EMBER_INTEGRATION ? brandArgGetters(_hash) : _hash, false);
       return (...runtimeArgs: any[]) => {
         return value($_unwrapArgs(runtimeArgs), hash);
       };
@@ -3184,7 +3212,11 @@ export function $_looseAppend(
         : $_curry(CURRIED_COMPONENT, [name, ...positional], {});
     return component(
       definition as unknown as typeof Component,
-      $_args(named, {}, $_edp as unknown as FwType),
+      $_args(
+        WITH_EMBER_INTEGRATION ? brandArgGetters(named) : named,
+        {},
+        $_edp as unknown as FwType,
+      ),
       ctx,
     );
   }
