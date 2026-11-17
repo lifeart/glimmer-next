@@ -301,6 +301,10 @@ export function compile(
         message,
         code: determineErrorCode(parseError),
         sourceRange: { start, end },
+        // Keep the thrown error so a host can rethrow it unchanged
+        // (emberjs/ember.js#21340 compile-error group) instead of re-wrapping
+        // the reduced `message`.
+        originalError: error,
       }, template, { ...options.diagnostics, filename: options.filename });
     } else {
       // Try to parse Glimmer tokenizer style errors which contain location in message
@@ -329,6 +333,7 @@ export function compile(
           message: rawMessage,
           code: determineErrorCode(rawMessage),
           sourceRange: { start, end },
+          originalError: error,
         }, template, { ...options.diagnostics, filename });
       } else {
         // Generic error
@@ -336,6 +341,7 @@ export function compile(
         enrichedError = enrichError({
           message,
           code: 'E001',
+          originalError: error,
         }, template, { ...options.diagnostics, filename: options.filename });
       }
     }
