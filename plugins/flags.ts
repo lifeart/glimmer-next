@@ -144,6 +144,15 @@ export type Flags = {
   // (`{{on}}` / `{{fn}}` assertion messages: "While rendering: this.foo").
   // Standalone, compat and native output are byte-identical when off.
   EMBER_ARG_LABELS: boolean;
+  // Mixed static + dynamic text as ONE text binding. Compile-time only,
+  // emission-affecting, default on: an element whose children are only text
+  // and `{{…}}` values (`<span>Count: {{this.count}}!</span>`) gets one text
+  // node bound to `$_txt([...])` instead of a text node per part. Each part
+  // renders as it did on its own (null / undefined are ''), except an object
+  // value (a node, a component), which is stringified — the case to turn
+  // this off for. Never applied under EMBER_NATIVE or WITH_EMBER_INTEGRATION,
+  // where content can be a SafeString or a node.
+  COLLAPSE_MIXED_TEXT: boolean;
 };
 
 export function defaultFlags() {
@@ -171,5 +180,6 @@ export function defaultFlags() {
     EMBER_LOOSE_COMPONENTS: false,
     EMBER_WHITESPACE: false,
     EMBER_ARG_LABELS: false,
+    COLLAPSE_MIXED_TEXT: true,
   } as Flags;
 }

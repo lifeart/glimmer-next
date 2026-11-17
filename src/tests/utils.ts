@@ -6,7 +6,9 @@ import { withRehydration } from '@/core/ssr/rehydration';
 import { renderInBrowser } from '@/core/ssr/ssr';
 import { addToTree, PARENT, RENDERED_NODES_PROPERTY, TREE } from '@/core/shared';
 import { cleanupFastContext } from '@/core/context';
-import { setResolveRender } from '@/core/runtime';
+import { setResolveRender, flushRevalidation } from '@/core/runtime';
+import { HOST_HOOKS } from '@/core/host-hooks';
+import { tagsToRevalidate } from '@/core/reactive';
 
 let ROOT: null | Root = null;
 
@@ -117,7 +119,96 @@ export async function render(component: ComponentReturnType) {
   return renderResult;
 }
 
+/**
+ * A test scheduler that applies cell writes only when the test says so.
+ *
+ * Installed through the `scheduleRevalidate` host hook (set directly, not via
+ * `registerHostHooks`, whose host sentinel would switch list frame mode off):
+ * a cell write only marks the UI dirty instead of queueing the microtask
+ * flush.
+ *   - `flush()` applies every pending write synchronously, re-running passes
+ *     while a pass dirties more cells (`flushRevalidation`). No timer, no
+ *     await: `value.update('x'); scheduler.flush(); assert…`.
+ *   - `settled()` flushes, then lets async teardown run (the promise chains
+ *     of an `{{#if}}` branch swap or an async list's row removal) and
+ *     flushes again until nothing is pending. `rerender()` and `render()`
+ *     use it while the scheduler is installed, so they stop relying on
+ *     `rerender`'s 16 ms timeout fallback.
+ * Work a test starts on a timer of its own (an animation that awaits a
+ * `setTimeout`) is not tracked.
+ */
+export interface ManualScheduler {
+  /** A cell was written since the last flush. */
+  readonly pending: boolean;
+  flush(): void;
+  settled(): Promise<void>;
+  uninstall(): void;
+}
+
+const MAX_FLUSH_PASSES = 100;
+const MAX_SETTLE_ROUNDS = 50;
+let MANUAL_SCHEDULER: ManualScheduler | null = null;
+
+export function installManualScheduler(): ManualScheduler {
+  if (MANUAL_SCHEDULER !== null) {
+    throw new Error('installManualScheduler: a manual scheduler is already installed');
+  }
+  const previous = HOST_HOOKS.scheduleRevalidate;
+  let pending = false;
+  const flush = () => {
+    pending = false;
+    for (let pass = 0; tagsToRevalidate.size > 0; pass++) {
+      if (pass === MAX_FLUSH_PASSES) {
+        throw new Error(
+          `manual scheduler: cells still dirty after ${MAX_FLUSH_PASSES} passes (a render writes what it reads)`,
+        );
+      }
+      flushRevalidation();
+    }
+    pending = false;
+  };
+  const scheduler: ManualScheduler = {
+    get pending() {
+      return pending;
+    },
+    flush,
+    async settled() {
+      for (let round = 0; round < MAX_SETTLE_ROUNDS; round++) {
+        flush();
+        // async teardown runs on promise chains: one macrotask drains them
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        if (!pending && tagsToRevalidate.size === 0) return;
+      }
+      throw new Error(`manual scheduler: not settled after ${MAX_SETTLE_ROUNDS} rounds`);
+    },
+    uninstall() {
+      if (MANUAL_SCHEDULER !== scheduler) return;
+      // nothing queued may outlive the scheduler: the default one only
+      // schedules a flush on the NEXT write
+      flush();
+      MANUAL_SCHEDULER = null;
+      HOST_HOOKS.scheduleRevalidate = previous;
+    },
+  };
+  HOST_HOOKS.scheduleRevalidate = () => {
+    pending = true;
+  };
+  MANUAL_SCHEDULER = scheduler;
+  return scheduler;
+}
+
+/** Settle the installed manual scheduler (see installManualScheduler). */
+export function settled(): Promise<void> {
+  if (MANUAL_SCHEDULER === null) {
+    throw new Error('settled(): no manual scheduler is installed');
+  }
+  return MANUAL_SCHEDULER.settled();
+}
+
 export async function rerender(timeout = 16) {
+  if (MANUAL_SCHEDULER !== null) {
+    return MANUAL_SCHEDULER.settled();
+  }
   // First, wait for any pending microtask (DOM sync) to complete
   await new Promise<void>((resolve) => {
     // Set up a callback to be called when DOM sync completes

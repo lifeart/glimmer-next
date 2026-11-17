@@ -128,6 +128,7 @@ import {
   $__ref,
   $__cellFor,
   $_qStr,
+  $_txt,
   $_uid,
 } from '../src/core/helpers/index';
 
@@ -179,6 +180,7 @@ export const GXT_RUNTIME_SYMBOLS = {
   $__ref,
   $__cellFor,
   $_qStr,
+  $_txt,
   $_uid,
   $_HTMLProvider,
   $_SVGProvider,

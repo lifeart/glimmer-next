@@ -7,9 +7,10 @@
  * (single-root inline element, attr/class/text slots, no events, no index)
  * and asserts the full keyed contract: create / per-item update / shared-dep
  * sweep / LIS reorder / replace / clear / inverse / duplicate keys / rebind —
- * plus the gate (event bodies and {{index}} bodies stay on v1, observable via
- * the per-item marker comments frame mode eliminates) and a subscription-leak
- * bound across create+clear cycles.
+ * plus the gate ({{index}} bodies and double same-event handlers stay on v1,
+ * observable via the per-item marker comments frame mode eliminates) and a
+ * subscription-leak bound across create+clear cycles. Event slots:
+ * list-frames.events.test.ts.
  */
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { createDOMFixture, type DOMFixture } from '../__test-utils__';
@@ -686,11 +687,27 @@ describe('frame-mode {{#each}} (static-block v2)', () => {
     expect(relatedTags.size).toBe(relatedAfterFirst);
   });
 
-  test('gate: event-bodied each stays on v1 (per-item markers present)', async () => {
+  test('gate: event-bodied each runs in frame mode (no per-item markers)', async () => {
     const EVENT_TEMPLATE = `
       <table><tbody>
         {{#each this.items key="id" as |item|}}
           <tr><td><button {{on "click" this.rowClass}}>{{item.label}}</button></td></tr>
+        {{/each}}
+      </tbody></table>
+    `;
+    const root = mountRoot(fixture, defineRoot(EVENT_TEMPLATE));
+    const empty = rowMarkerComments();
+    (root as any)._items = buildItems(4);
+    await settle();
+    expect(trs().length).toBe(4);
+    expect(rowMarkerComments()).toBe(empty);
+  });
+
+  test('gate: two handlers for one event on one element stay on v1', async () => {
+    const EVENT_TEMPLATE = `
+      <table><tbody>
+        {{#each this.items key="id" as |item|}}
+          <tr><td><button {{on "click" this.rowClass}} {{on "click" this.rowClass}}>{{item.label}}</button></td></tr>
         {{/each}}
       </tbody></table>
     `;

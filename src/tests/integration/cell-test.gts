@@ -1,15 +1,33 @@
 import { module, test } from 'qunit';
-import { render, rerender, find } from '@lifeart/gxt/test-utils';
+import {
+  render,
+  rerender,
+  find,
+  installManualScheduler,
+  type ManualScheduler,
+} from '@lifeart/gxt/test-utils';
 import { cell } from '@lifeart/gxt';
 
-module('Integration | Internal | Cell', function () {
+// Runs on the manual test scheduler: cell writes are applied when the test
+// flushes, and `rerender()` settles it instead of waiting on a timer.
+module('Integration | Internal | Cell', function (hooks) {
+  let scheduler: ManualScheduler;
+  hooks.beforeEach(() => {
+    scheduler = installManualScheduler();
+  });
+  hooks.afterEach(() => {
+    scheduler.uninstall();
+  });
+
   test('could render cell as text primitive', async function (assert) {
     const value = cell('foo');
     await render(<template>{{value}}</template>);
 
     assert.dom().hasText('foo', 'cell value is rendered');
     value.update('bar');
-    await rerender();
+    assert.true(scheduler.pending, 'the write is pending');
+    assert.dom().hasText('foo', 'not applied before the flush');
+    scheduler.flush();
     assert.dom().hasText('bar', 'cell value is updated');
   });
   test('could render cell as attr primitive', async function (assert) {

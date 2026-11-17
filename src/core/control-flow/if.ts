@@ -27,7 +27,7 @@ import {
   RENDERED_NODES_PROPERTY,
   COMPONENT_ID_PROPERTY,
 } from '@/core/shared';
-import { cId, addToTree, nativeTreeParent } from '@/core/tree';
+import { cId, addToTree, nativeTreeParent, PARENT } from '@/core/tree';
 import { opcodeFor } from '@/core/vm';
 import { initDOM } from '@/core/context';
 import { setParentContext, getParentContext } from '../tracking';
@@ -70,6 +70,20 @@ function edgeDomNode(item: unknown, fromStart: boolean): Node | null {
     if (found !== null) return found;
   }
   return null;
+}
+
+/** `node` sits below `ancestor` in the TREE (PARENT chain). */
+function isTreeDescendant(node: unknown, ancestor: unknown): boolean {
+  const ancestorId = (ancestor as { [COMPONENT_ID_PROPERTY]?: number } | null)?.[
+    COMPONENT_ID_PROPERTY
+  ];
+  if (ancestorId === undefined) return false;
+  let id = PARENT.get((node as { [COMPONENT_ID_PROPERTY]: number })[COMPONENT_ID_PROPERTY]);
+  while (id !== undefined) {
+    if (id === ancestorId) return true;
+    id = PARENT.get(id);
+  }
+  return false;
 }
 
 export class IfCondition {
@@ -158,31 +172,42 @@ export class IfCondition {
     // parent-context stack pushed by the outer's renderState / $_ucw), so we use
     // it as the tree parent.
     //
-    // This re-parent is gated on `WITH_EMBER_INTEGRATION` because it is needed
-    // ONLY under Ember (where `$_if` passes the gxt-root as `ctx`). STANDALONE
-    // glimmer-next passes the correct immediate parent, so the re-parent is
-    // unnecessary there — and HARMFUL with custom renderers: a sibling renderer
+    // Unconditionally re-parenting is HARMFUL with custom renderers: a sibling renderer
     // (e.g. PdfViewer) whose active parent-context is still on the stack would be
     // adopted as this {{#if}}'s tree parent, so `initDOM(this)` resolves that
     // FOREIGN DOMApi while `target`/`placeholder` are DOM nodes → `pdfApi.insert`
     // gets a DocumentFragment → "parentNode.children.includes is not a function"
     // and a blank render (renderers.spec.ts). Ember renders DOM-only, so the
-    // re-parent never crosses a renderer boundary. The flag is a build-time
-    // constant (folded by the gxt compiler plugin: `false` standalone → this whole
-    // block DCEs away; `true` in the Ember build), so there is no runtime cost.
+    // re-parent never crosses a renderer boundary.
+    //
+    // Standalone needs it too: the compiler passes the lexical `this` as the
+    // `ctx` of a nested `$_if` even inside an outer branch's `$_ucw`, so the
+    // inner if registered under the component, outlived every outer branch
+    // swap (its condition opcode still subscribed: TREE and opcode entries
+    // piled up per toggle) and could re-render into a branch being torn down
+    // asynchronously. Standalone re-parents only to an active parent that is
+    // a tree DESCENDANT of `parentContext` (a block wrapper inside the
+    // component — the nested-branch case, not an unrelated context still on
+    // the stack such as a Suspense/lazy boundary rendering later) AND renders
+    // with the same DOM api (not a custom renderer's block, the case above).
     let treeParent: Component<any> = parentContext;
-    if (WITH_EMBER_INTEGRATION) {
-      const activeParent = getParentContext();
-      if (
-        activeParent &&
-        activeParent !== parentContext &&
-        activeParent[COMPONENT_ID_PROPERTY] !== undefined &&
-        activeParent[COMPONENT_ID_PROPERTY] !==
-          (parentContext as any)?.[COMPONENT_ID_PROPERTY]
-      ) {
+    const activeParent = getParentContext();
+    if (
+      activeParent &&
+      activeParent !== parentContext &&
+      activeParent[COMPONENT_ID_PROPERTY] !== undefined &&
+      activeParent[COMPONENT_ID_PROPERTY] !==
+        (parentContext as any)?.[COMPONENT_ID_PROPERTY]
+    ) {
+      if (WITH_EMBER_INTEGRATION) {
         treeParent = EMBER_NATIVE
           ? (nativeTreeParent(activeParent as any, parentContext as any) as any)
           : activeParent;
+      } else if (
+        isTreeDescendant(activeParent, parentContext) &&
+        initDOM(activeParent as unknown as Component<any>) === initDOM(parentContext)
+      ) {
+        treeParent = activeParent as unknown as Component<any>;
       }
     }
     // Remember the resolved tree parent so the async destroy below registers on

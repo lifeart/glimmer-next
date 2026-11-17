@@ -94,6 +94,21 @@ describe('static-block fast path emission', () => {
       expect(code).toMatch(/\$_ucw\(.*empty.*\n?.*false, \/\*#__PURE__\*\/\$_blk\(/s);
     });
 
+    test('mixed text + interpolation is ONE text slot over $_txt (COLLAPSE_MIXED_TEXT)', () => {
+      const result = compile(wrap('<div>a {{item.x}}</div>'));
+      const code = result.code;
+      expect(code).toContain('$_blk("<div></div>", [{ p: [], k: "text" }])');
+      expect(code).toContain('(item, $index, ctx0) => [() => $_txt(["a ", item.x])]');
+    });
+
+    test('mixed text + interpolation bails with COLLAPSE_MIXED_TEXT off', () => {
+      const result = compile(wrap('<div>a {{item.x}}</div>'), {
+        flags: { COLLAPSE_MIXED_TEXT: false },
+      });
+      expect(result.code).not.toContain('$_blk');
+      expect(result.code).not.toContain('$_txt');
+    });
+
     test('sync each ($_eachSync) gets the block too', () => {
       const result = compile(
         '{{#each this.items key="id" sync=true as |item|}}<div>{{item.x}}</div>{{/each}}'
@@ -117,7 +132,6 @@ describe('static-block fast path emission', () => {
       ['multi-root body', wrap('<td>a</td><td>b</td>')],
       ['text root', wrap('plain text')],
       ['bare interpolation root', wrap('{{item.x}}')],
-      ['mixed text + interpolation', wrap('<div>a {{item.x}}</div>')],
       ['interpolation + element siblings', wrap('<div>{{item.x}}<b>y</b></div>')],
       ['table root (implied tbody)', wrap('<table><tr><td>x</td></tr></table>')],
       ['select (content filtering)', wrap('<select><option>x</option></select>')],

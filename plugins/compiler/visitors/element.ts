@@ -346,7 +346,8 @@ export function visitElement(
     actualTag,
     children,
     ctx.flags.EMBER_NATIVE === true,
-    isArgComponentTag(ctx, actualTag)
+    isArgComponentTag(ctx, actualTag),
+    collapsesMixedText(ctx)
   );
   const events = [...baseEvents, ...additionalEvents];
 
@@ -519,7 +520,8 @@ function visitElementInner(
     actualTag,
     children,
     ctx.flags.EMBER_NATIVE === true,
-    isArgComponentTag(ctx, actualTag)
+    isArgComponentTag(ctx, actualTag),
+    collapsesMixedText(ctx)
   );
   const events = [...baseEvents, ...additionalEvents];
 
@@ -1005,16 +1007,70 @@ interface TextChildOptimization {
   additionalEvents: EventTuple[];
 }
 
+/** Mixed text collapses into one `$_txt` binding (see COLLAPSE_MIXED_TEXT). */
+function collapsesMixedText(ctx: CompilerContext): boolean {
+  return (
+    ctx.flags.COLLAPSE_MIXED_TEXT !== false &&
+    ctx.flags.EMBER_NATIVE !== true &&
+    ctx.flags.WITH_EMBER_INTEGRATION !== true
+  );
+}
+
+/** Helpers a collapsed text binding must not take: they produce DOM (kept a
+ * child, as for the single-child case) or have side effects that a binding
+ * re-run whenever ANY part changes would repeat. */
+const NON_TEXT_HELPERS: ReadonlySet<string> = new Set([
+  INTERNAL_HELPERS.TRUSTED_HTML,
+  INTERNAL_HELPERS.OUTLET,
+  INTERNAL_HELPERS.LOOSE_APPEND,
+  'log',
+  'debugger',
+]);
+
+/**
+ * Children that are only text and `{{…}}` values, as the parts of ONE text
+ * binding: `["Count: ", this.count, "!"]` → `() => $_txt([...])`. Null when
+ * a child is anything else (an element, a block, a slot, a DOM-producing or
+ * side-effecting helper) or when no part is dynamic.
+ */
+function mixedTextParts(children: HBSChild[]): SerializedValue[] | null {
+  const parts: SerializedValue[] = [];
+  let dynamic = 0;
+  for (const child of children) {
+    if (typeof child === 'string') {
+      parts.push(literal(child));
+      continue;
+    }
+    if (!isSerializedValue(child)) return null;
+    const value = child.kind === 'getter' ? child.value : child;
+    if (value.kind === 'helper' && NON_TEXT_HELPERS.has(value.name)) return null;
+    if (value.kind !== 'path' && value.kind !== 'helper' && value.kind !== 'literal') {
+      return null;
+    }
+    const str = serializeValueToString(value);
+    if (str.includes('SLOT') || str.includes('...')) return null;
+    parts.push(value);
+    if (value.kind !== 'literal') dynamic++;
+  }
+  return dynamic > 0 ? parts : null;
+}
+
 /**
  * Optimize single text child into textContent event.
  * Returns both the optimized children array and any additional events to add.
  * This is a pure function - it does not mutate any inputs.
+ *
+ * With `collapseMixed`, several children that are only text and `{{…}}`
+ * values become ONE textContent binding over `$_txt([...parts])` (one text
+ * node and one binding instead of a text node per part; see
+ * src/core/helpers/text-concat.ts for the part coercion).
  */
 function optimizeTextChild(
   tag: string,
   children: HBSChild[],
   emberNative = false,
-  argComponent = false
+  argComponent = false,
+  collapseMixed = false
 ): TextChildOptimization {
   const noChange = { children, additionalEvents: [] };
 
@@ -1024,6 +1080,19 @@ function optimizeTextChild(
   // `textContent` binding (which would land in the forwarded attributes and
   // drop the block).
   if (argComponent || (emberNative && tag.includes('.'))) return noChange;
+
+  if (children.length > 1) {
+    if (!collapseMixed) return noChange;
+    if (tag.startsWith(':') || tag.toLowerCase() !== tag) return noChange;
+    const parts = mixedTextParts(children);
+    if (parts === null) return noChange;
+    return {
+      children: [],
+      additionalEvents: [
+        [EVENT_TYPE.TEXT_CONTENT, getter(helper(INTERNAL_HELPERS.TEXT_CONCAT, parts))],
+      ],
+    };
+  }
 
   if (children.length !== 1) return noChange;
 
