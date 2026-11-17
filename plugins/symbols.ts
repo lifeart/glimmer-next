@@ -49,6 +49,13 @@ export const SYMBOLS = {
   // Resolved from @lifeart/gxt via src/core/index.ts → `export * from
   // '@/core/dom'`.
   NAMED_BLOCK_THUNK: '$_nbt',
+  // Argument-thunk marker ($_argThunk) — same AOT auto-import requirement as
+  // $_nt/$_nbt: the compiler wraps a component's reactive arg getters in
+  // `$_argThunk(() => …)` (buildArgsObject) so the arg-access layer invokes
+  // only branded thunks, so it MUST be in this registry (`Object.values(SYMBOLS)`)
+  // too or AOT modules throw `$_argThunk is not defined`. Resolved from
+  // @lifeart/gxt via src/core/index.ts → `export * from '@/core/dom'`.
+  ARG_THUNK: '$_argThunk',
   $_blk: '$_blk',
   $__if: '$__if',
   $__eq: '$__eq',
