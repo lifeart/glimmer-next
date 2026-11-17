@@ -19,12 +19,10 @@ import {
   deepFnValue,
   getTracker,
   registerLeafOwnersForFormula,
-  applyCellUpdateSync,
-  DEBUG_CELLS,
   type AnyCell,
 } from '@/core/reactive';
 import { tagFor } from '@/core/tags';
-import { itemReferenceRuntime } from '@/core/item-reference-runtime';
+import { itemReferenceRuntime, type RowReferences } from '@/core/item-reference-runtime';
 import { opcodeFor } from '@/core/vm';
 import {
   $_debug_args,
@@ -130,22 +128,13 @@ function hasItemRefs(key: string | null | undefined): boolean {
 
 /**
  * Whether `cell` is the item reference of a list row (`POSITIONAL_KEY` /
- * `EACH_IN_KEY`) made by the item reference follow runtime
+ * `EACH_IN_KEY`), which the item reference runtime makes
  * (item-reference-runtime.ts): a value read through it can be replaced while
  * the row stays.
  */
 export function isItemReference(cell: unknown): boolean {
   const runtime = itemReferenceRuntime();
   return runtime !== null && runtime.isReference(cell);
-}
-
-// Two `{{#each-in}}` entries of one row that read the same: same key and value.
-function sameEachInEntry(a: unknown, b: unknown): boolean {
-  const x = a as [unknown, unknown] | undefined;
-  const y = b as [unknown, unknown] | undefined;
-  return (
-    x !== undefined && y !== undefined && Object.is(x[0], y[0]) && Object.is(x[1], y[1])
-  );
 }
 
 type ListComponentArgs<T> = {
@@ -425,12 +414,10 @@ export class BasicListComponent<T extends { id: number }> {
   // the host so the row's block-param re-binds to the new object WITHOUT
   // recreating the row. Lazily allocated.
   boundItemMap: Map<string, T> | null = null;
-  // Item-reference lists (`hasItemRefs`): the reference each row was built
-  // with, by key — null for every other list. `_pendingItemRefs` holds the
-  // [reference, item] pairs of the kept rows an update rebinds, applied once
-  // the update has placed every row (see `flushItemRefs`).
-  itemRefs: Map<string, Cell<T>> | null = null;
-  private _pendingItemRefs: Array<Cell<T> | T> | null = null;
+  // Item-reference lists (`hasItemRefs`): the references of the rows, made by
+  // the item reference runtime — null for every other list. A kept row's new
+  // item is applied once the update has placed every row (`flushItemRefs`).
+  itemRefs: RowReferences<T> | null = null;
   // Per-row destructor-owner context.
   //
   // The compiled each-body (`ItemComponent`) registers its per-element binding
@@ -691,15 +678,7 @@ export class BasicListComponent<T extends { id: number }> {
         // The row reads its item through its reference: queue the update for
         // `flushItemRefs`. The host hook is not for these rows — a row's
         // reference is the only thing that names its item.
-        const ref = itemRefs.get(key);
-        if (
-          ref !== undefined &&
-          (this.key === EACH_IN_KEY
-            ? !sameEachInEntry(ref._value, item)
-            : ref._value !== item)
-        ) {
-          this._pendingItemRefs!.push(ref, item);
-        }
+        itemRefs.rebind(key, item);
       } else {
         const rebind =
           HOST_HOOKS.rebindEachItem ??
@@ -712,66 +691,26 @@ export class BasicListComponent<T extends { id: number }> {
     }
   }
   /**
-   * What the new row of `key` is built with: `item`, or for an item-reference
-   * list (`hasItemRefs`) a new reference to it, kept until the row is
-   * destroyed.
-   */
-  protected itemRef(key: string, item: T): T {
-    // The follow runtime's reference when it is installed (a yielded block or
-    // an in-element of the row can then follow it), else a plain cell.
-    const debugName = IS_DEV_MODE ? `each.item[${String(key)}]` : undefined;
-    const runtime = itemReferenceRuntime();
-    const ref =
-      runtime !== null
-        ? runtime.createReference<T>(item, debugName)
-        : new Cell<T>(item, debugName);
-    this.itemRefs!.set(key, ref);
-    return ref as unknown as T;
-  }
-  /**
-   * Apply the reference updates `rebindReusedRow` queued: each re-renders the
-   * bindings of its row that read the item, synchronously (the update runs
-   * inside a DOM sync, whose own queue would drop a deferred cell write). Run
-   * once the update has built, kept and moved every row (`updateItems`), so a
-   * nested block the rebinding re-renders (an `{{#each}}` over the item)
-   * builds with no row construction of this list in progress.
+   * Apply the reference updates `rebindReusedRow` queued (the item reference
+   * runtime's `flush`). Run once the update has built, kept and moved every row
+   * (`updateItems`), so a nested block the rebinding re-renders (an `{{#each}}`
+   * over the item) builds with no row construction of this list in progress.
    */
   protected flushItemRefs(): void {
-    const pending = this._pendingItemRefs;
-    if (pending === null || pending.length === 0) return;
-    const updates = pending.splice(0);
-    for (let i = 0; i < updates.length; i += 2) {
-      applyCellUpdateSync(updates[i] as Cell<T>, updates[i + 1] as T);
-    }
-    HOST_HOOKS.itemReferencesChanged?.();
+    if (this.itemRefs !== null) this.itemRefs.flush();
   }
   /**
    * Forget the item a destroyed row of `key` was bound to, and release its
-   * item reference: a development build keeps every cell in `DEBUG_CELLS`,
-   * which would keep the reference — and the item it holds — alive after the
-   * row.
+   * item reference.
    */
   protected forgetRowItem(key: string): void {
     if (this.boundItemMap !== null) this.boundItemMap.delete(key);
-    const itemRefs = this.itemRefs;
-    if (itemRefs !== null) {
-      const ref = itemRefs.get(key);
-      if (ref !== undefined) {
-        itemRefs.delete(key);
-        if (IS_DEV_MODE) DEBUG_CELLS.delete(ref as Cell<unknown>);
-      }
-    }
+    if (this.itemRefs !== null) this.itemRefs.forget(key);
   }
   /** `forgetRowItem` for every row (the list was cleared). */
   protected forgetAllRowItems(): void {
     if (this.boundItemMap !== null) this.boundItemMap.clear();
-    const itemRefs = this.itemRefs;
-    if (itemRefs !== null && itemRefs.size > 0) {
-      if (IS_DEV_MODE) {
-        itemRefs.forEach((ref) => DEBUG_CELLS.delete(ref as Cell<unknown>));
-      }
-      itemRefs.clear();
-    }
+    if (this.itemRefs !== null) this.itemRefs.forgetAll();
   }
   /**
    * Fast-path for updates that preserve all existing items and only append
@@ -1237,25 +1176,27 @@ export class BasicListComponent<T extends { id: number }> {
         }
         return baseKey;
       };
-    } else if (this.key === POSITIONAL_KEY) {
+    } else if (hasItemRefs(this.key)) {
       // Positional key (emberjs/ember.js#21340: the `@index`-key Updating test
       // and native "@key keys items by position"): the row at position `i` is
       // keyed by `i`, so a reorder leaves every key in place — the diff keeps
       // (never moves) the row node, `rebindReusedRow` points its item
       // reference at the item now at its position, and `@index` yields the
-      // stable position. A position is unique, so no duplicate-key
-      // qualification is needed.
-      this.keyForItem = (_item: T, i: number) =>
-        String(i) as unknown as string;
-      this.itemRefs = new Map();
-      this._pendingItemRefs = [];
-    } else if (this.key === EACH_IN_KEY) {
-      // `{{#each-in}}` entries carry the key of their row (`$__eachIn`), made
-      // unique within the entries.
-      this.keyForItem = (item: T) =>
-        (item as unknown as [unknown, unknown, string])[2];
-      this.itemRefs = new Map();
-      this._pendingItemRefs = [];
+      // stable position. `{{#each-in}}` entries carry the key of their row
+      // (`$__eachIn`), made unique within the entries. The item reference
+      // runtime keys these rows and makes their references; a template that
+      // needs it imports it (`$_itemRefKey`), or its host installs it.
+      const runtime = itemReferenceRuntime();
+      if (runtime === null) {
+        throw new Error(
+          `gxt: a list keyed "${this.key}" builds its rows with references to their items, ` +
+            `which the item reference runtime makes: install it (\`registerItemReferenceRuntime()\` ` +
+            `from '@lifeart/gxt/item-references')`,
+        );
+      }
+      const rows = runtime.rows<T>(this.key);
+      this.itemRefs = rows;
+      this.keyForItem = (item: T, i: number) => rows.keyForItem(item, i);
     } else {
       const resolveRawKey = (item: T, i: number): string => {
         // Null/undefined/primitive items cannot be keyed by an arbitrary
@@ -1495,17 +1436,14 @@ export class BasicListComponent<T extends { id: number }> {
       if (_reg) _reg(marker);
     }
     let idx: number | MergedCell = index;
-    if (this.hasIndex && this.key === POSITIONAL_KEY) {
-      // Positional key: the row's index is its fixed position (see the same
-      // branch in updateItems).
-      const pos = index;
-      const indexFormula = formula(
-        () => pos,
-        IS_DEV_MODE ? `each.index[@index:${pos}]` : undefined,
-      );
-      idx = indexFormula;
+    // A positional row's index is its fixed position (see the same branch in
+    // updateItems).
+    const fixedIndex =
+      this.hasIndex && this.itemRefs !== null ? this.itemRefs.index(index) : null;
+    if (fixedIndex !== null) {
+      idx = fixedIndex;
       if (!this.indexFormulaMap) this.indexFormulaMap = new Map();
-      this.indexFormulaMap.set(key, indexFormula);
+      this.indexFormulaMap.set(key, fixedIndex);
     } else if (this.hasIndex) {
       const indexFormula = formula(
         () => {
@@ -1551,7 +1489,7 @@ export class BasicListComponent<T extends { id: number }> {
     // opcodes so they unsubscribe on teardown.
     const bodyCtx = this.rowBodyCtx(key);
     const row = this.buildRow(
-      this.itemRefs === null ? item : this.itemRef(key, item),
+      this.itemRefs === null ? item : this.itemRefs.build(key, item),
       idx,
       bodyCtx,
     );
@@ -1742,19 +1680,17 @@ export class BasicListComponent<T extends { id: number }> {
         // down — causes every existing row's index cell to recompute on
         // the next render pass.
         let idx: number | MergedCell = index;
-        if (this.hasIndex && this.key === POSITIONAL_KEY) {
-          // Positional key: the index IS the row's fixed position (its key), not
-          // the bound item's current position — the row never moves and its item
-          // is rebound in place, so a const formula keeps `index.value` equal to
-          // the build position across reorders.
-          const pos = index;
-          const indexFormula = formula(
-            () => pos,
-            IS_DEV_MODE ? `each.index[@index:${pos}]` : undefined,
-          );
-          idx = indexFormula;
+        // Positional key: the index IS the row's fixed position (its key), not
+        // the bound item's current position — the row never moves and its item
+        // is rebound in place, so a const formula keeps `index.value` equal to
+        // the build position across reorders (the item reference runtime's
+        // `index`).
+        const fixedIndex =
+          this.hasIndex && this.itemRefs !== null ? this.itemRefs.index(index) : null;
+        if (fixedIndex !== null) {
+          idx = fixedIndex;
           if (!this.indexFormulaMap) this.indexFormulaMap = new Map();
-          this.indexFormulaMap.set(key, indexFormula);
+          this.indexFormulaMap.set(key, fixedIndex);
         } else if (this.hasIndex) {
           const indexFormula = formula(
             () => {
@@ -1805,7 +1741,7 @@ export class BasicListComponent<T extends { id: number }> {
         // binding opcodes so they unsubscribe on teardown.
         const bodyCtx = this.rowBodyCtx(key);
         const row = this.buildRow(
-          this.itemRefs === null ? item : this.itemRef(key, item),
+          this.itemRefs === null ? item : this.itemRefs.build(key, item),
           idx,
           bodyCtx,
         );

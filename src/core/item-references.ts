@@ -1,14 +1,15 @@
 /**
- * `@lifeart/gxt/item-references` — the item reference follow runtime.
+ * `@lifeart/gxt/item-references` — the item reference runtime.
  *
- * A list keyed by position (`key="@index"`) or an `{{#each-in}}` builds each
- * row with a reference to its item; another item comes to stand in it while
- * the row stays (control-flow/list.ts). This runtime makes those references
- * `ItemReference`s, whose reads are counted, and makes what reads a value once
- * follow such a reference: a standalone yielded block is rendered again for
- * the object now at the row (`followSlot`), an `{{#in-element}}` moves to the
- * destination of the item now at the row (`followInElement`). It is kept out
- * of the main runtime (item-reference-runtime.ts), like `@lifeart/gxt/recycle`:
+ * A list keyed by position (`key="@index"`) or the rows of a native
+ * `{{#each-in}}` build each row with a reference to its item; another item
+ * comes to stand in it while the row stays (control-flow/list.ts). This
+ * runtime makes those references `ItemReference`s, whose reads are counted, and
+ * makes what reads a value once follow such a reference: a standalone yielded
+ * block is rendered again for the object now at the row (`followSlot`), an
+ * `{{#in-element}}` moves to the destination of the item now at the row
+ * (`followInElement`). It is kept out of the main runtime
+ * (item-reference-runtime.ts), like `@lifeart/gxt/recycle`:
  *   - AOT (plugins/test.ts) imports `$_itemRefKey` from this entry for a
  *     standalone template that keys a list by position (the compiler's
  *     `CompileResult.usedItemRefs`); calling it installs the runtime.
@@ -16,8 +17,9 @@
  *     by `@lifeart/gxt/glimmer-compatibility`; the runtime compiler's
  *     `setupGlobalScope` calls it): its templates key lists without
  *     `$_itemRefKey`, and `{{#each-in}}` rows are Ember's.
+ * A list keyed by position without it throws (list.ts).
  */
-import { Cell, formula } from './reactive';
+import { Cell, formula, applyCellUpdateSync, DEBUG_CELLS } from './reactive';
 import { opcodeFor } from './vm';
 import { initDOM } from './context';
 import { renderElement } from './render-core';
@@ -33,19 +35,25 @@ import {
 } from './types';
 import {
   installItemReferenceRuntime,
-  noteItemReferenceRead,
   type ItemReferenceRuntime,
+  type RowReferences,
 } from './item-reference-runtime';
+
+// The keys of the lists whose rows are built with a reference to their item
+// (list.ts `POSITIONAL_KEY` / `EACH_IN_KEY`).
+const EACH_IN_KEY = '@each-in';
+
+// How many times an item reference has been read (`ItemReference`).
+let reads = 0;
 
 /**
  * A row's reference to its item: its value is the item the row stands for
- * now. Its reads are counted (`itemReferenceReadCount`), so that a construct
- * that reads a value once can tell, by comparing the count before and after
- * the read, that the value came through such a reference.
+ * now. Its reads are counted, so that a construct that reads a value once can
+ * tell (`read`) that the value came through such a reference.
  */
 class ItemReference<T> extends Cell<T> {
   get value(): T {
-    noteItemReferenceRead();
+    reads++;
     return super.value;
   }
   set value(value: T) {
@@ -56,6 +64,100 @@ class ItemReference<T> extends Cell<T> {
 /** A row's reference to `item` (also for tests). */
 export function createItemReference<T>(item: T, debugName?: string): Cell<T> {
   return new ItemReference<T>(item, debugName);
+}
+
+// Two `{{#each-in}}` entries of one row that read the same: same key and value.
+function sameEachInEntry(a: unknown, b: unknown): boolean {
+  const x = a as [unknown, unknown] | undefined;
+  const y = b as [unknown, unknown] | undefined;
+  return (
+    x !== undefined && y !== undefined && Object.is(x[0], y[0]) && Object.is(x[1], y[1])
+  );
+}
+
+/**
+ * The item references of the rows of one list. A positional row is keyed by
+ * its position, so any item can come to stand at a kept row, and its `index` is
+ * that position; an `{{#each-in}}` row is keyed by the key `$__eachIn` gives
+ * its `[key, value, rowKey]` entry, and a kept row gets the entry's current key
+ * and value. A kept row's new item is applied (`flush`) once the list update
+ * has built, kept and moved every row.
+ */
+class ListItemReferences<T> implements RowReferences<T> {
+  private refs: Map<string, ItemReference<T>> = new Map();
+  private pending: Array<ItemReference<T> | T> = [];
+  private eachIn: boolean;
+  constructor(key: string) {
+    this.eachIn = key === EACH_IN_KEY;
+  }
+  keyForItem(item: T, index: number): string {
+    return this.eachIn
+      ? (item as unknown as [unknown, unknown, string])[2]
+      : String(index);
+  }
+  build(key: string, item: T): T {
+    const ref = new ItemReference<T>(
+      item,
+      IS_DEV_MODE ? `each.item[${String(key)}]` : undefined,
+    );
+    this.refs.set(key, ref);
+    return ref as unknown as T;
+  }
+  rebind(key: string, item: T): void {
+    const ref = this.refs.get(key);
+    if (
+      ref !== undefined &&
+      (this.eachIn ? !sameEachInEntry(ref._value, item) : ref._value !== item)
+    ) {
+      this.pending.push(ref, item);
+    }
+  }
+  // Each update re-renders the bindings of its row that read the item,
+  // synchronously (the update runs inside a DOM sync, whose own queue would
+  // drop a deferred cell write); then the host is told (a host that gives some
+  // components their argument values in a pass of its own runs it again).
+  flush(): void {
+    if (this.pending.length === 0) return;
+    const updates = this.pending.splice(0);
+    for (let i = 0; i < updates.length; i += 2) {
+      applyCellUpdateSync(updates[i] as ItemReference<T>, updates[i + 1] as T);
+    }
+    HOST_HOOKS.itemReferencesChanged?.();
+  }
+  // A development build keeps every cell in `DEBUG_CELLS`, which would keep a
+  // destroyed row's reference — and the item it holds — alive.
+  forget(key: string): void {
+    const ref = this.refs.get(key);
+    if (ref === undefined) return;
+    this.refs.delete(key);
+    if (IS_DEV_MODE) DEBUG_CELLS.delete(ref as Cell<unknown>);
+  }
+  forgetAll(): void {
+    if (this.refs.size === 0) return;
+    if (IS_DEV_MODE) {
+      this.refs.forEach((ref) => DEBUG_CELLS.delete(ref as Cell<unknown>));
+    }
+    this.refs.clear();
+  }
+  index(position: number) {
+    if (this.eachIn) return null;
+    return formula(
+      () => position,
+      IS_DEV_MODE ? `each.index[@index:${position}]` : undefined,
+    );
+  }
+}
+
+// Under the Ember dialect, the item references the reads of a slot's params
+// added to the computation the slot is built in (`tracker`, which had `size`
+// cells before them).
+function paramReferences(tracker: Set<Cell>, size: number): Cell[] {
+  const references: Cell[] = [];
+  let index = 0;
+  for (const cell of tracker) {
+    if (index++ >= size && cell instanceof ItemReference) references.push(cell);
+  }
+  return references;
 }
 
 // The object params of `params` by position (others `undefined`).
@@ -172,8 +274,16 @@ function followInElement(
 }
 
 const RUNTIME: ItemReferenceRuntime = {
-  createReference: createItemReference,
+  rows: <T>(key: string) => new ListItemReferences<T>(key),
   isReference: (cell: unknown) => cell instanceof ItemReference,
+  read<T>(read: () => T): T {
+    const before = reads;
+    const value = read();
+    RUNTIME.readItem = reads !== before;
+    return value;
+  },
+  readItem: false,
+  paramReferences,
   followSlot,
   followInElement,
 };

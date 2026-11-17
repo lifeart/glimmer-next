@@ -57,7 +57,7 @@ import {
 } from './glimmer/destroyable';
 import { HTMLBrowserDOMApi } from '@/core/dom-api';
 import { $_argThunk, isArgThunk, argSource } from '@/core/helpers/-private';
-import { itemReferenceReadCount, itemReferenceRuntime } from '@/core/item-reference-runtime';
+import { itemReferenceRuntime } from '@/core/item-reference-runtime';
 import {
   isFn,
   isPrimitive,
@@ -1448,12 +1448,13 @@ export function $_inElement(
   // the block — renders it again — to the destination of the item now at the
   // row, as Glimmer's in-element follows its destination reference.
   function renderInElementBody() {
-      const itemReads = itemReferenceReadCount();
-      let appendRef = readDestination();
+      const runtime = itemReferenceRuntime();
+      let appendRef = runtime === null ? readDestination() : runtime.read(readDestination);
+      const follows = runtime !== null && runtime.readItem;
       let teardown = renderInto(appendRef);
       registerDestructor(ctx, () => teardown(false));
-      if (itemReferenceReadCount() === itemReads) return;
-      itemReferenceRuntime()?.followInElement(ctx, readDestination, (next) => {
+      if (!follows) return;
+      runtime!.followInElement(ctx, readDestination, (next) => {
         if (next === appendRef) return;
         teardown(true);
         appendRef = next;
@@ -2197,22 +2198,8 @@ export function isItemSlotParam(param: unknown): boolean {
 }
 
 // Whether the params of the slot `createSlot` built last read a list row's
-// item reference (`itemReferenceReadCount`).
+// item reference (the item reference runtime's `read`).
 let slotParamsReadItem = false;
-
-// Under the Ember dialect, the item references the reads of a slot's params
-// added to the computation the slot is built in (`tracker`, which had `size`
-// cells before them).
-function paramItemReferences(tracker: Set<Cell>, size: number): Cell[] {
-  const runtime = itemReferenceRuntime();
-  const references: Cell[] = [];
-  if (runtime === null) return references;
-  let index = 0;
-  for (const cell of tracker) {
-    if (index++ >= size && runtime.isReference(cell)) references.push(cell);
-  }
-  return references;
-}
 
 function createSlot(
   value: Slots[string],
@@ -2236,12 +2223,13 @@ function createSlot(
   // what it read before the params.
   const tracker = WITH_EMBER_INTEGRATION ? getTracker() : null;
   const trackerSize = tracker !== null ? tracker.size : 0;
-  const itemReads = itemReferenceReadCount();
-  const initial = params();
   // A param read through a list row's item reference (a positional
   // `{{#each}}` or `{{#each-in}}` row, kept while another item comes to stand
-  // at it) can be replaced by another object.
-  const readsItem = itemReferenceReadCount() !== itemReads;
+  // at it) can be replaced by another object. Only the item reference runtime
+  // makes such references (it counts their reads).
+  const runtime = itemReferenceRuntime();
+  const initial = runtime === null ? params() : runtime.read(params);
+  const readsItem = runtime !== null && runtime.readItem;
   const paramsArray = initial.map((_, i) => {
     const read = () => params()[i];
     const v = WITH_EMBER_INTEGRATION
@@ -2274,7 +2262,7 @@ function createSlot(
   // an item reference the computation read before and one the block reads for
   // a reason of its own.
   const paramReferences =
-    tracker !== null && readsItem ? paramItemReferences(tracker, trackerSize) : null;
+    tracker !== null && readsItem ? runtime!.paramReferences(tracker, trackerSize) : null;
   if (formulasToDestroy.length > 0) {
     registerDestructor(slotContext, () => {
       for (const f of formulasToDestroy) {
@@ -2326,11 +2314,8 @@ function renderSlot(
   if (WITH_EMBER_INTEGRATION || !slotParamsReadItem) {
     return result;
   }
-  const runtime = itemReferenceRuntime();
-  if (runtime === null) {
-    return result;
-  }
-  return runtime.followSlot(
+  // Set only when the item reference runtime is installed.
+  return itemReferenceRuntime()!.followSlot(
     result as unknown as ComponentLike,
     () => createSlot(value, params, name, ctx) as unknown as ComponentLike,
     params,

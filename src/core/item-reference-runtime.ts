@@ -1,26 +1,57 @@
 /**
- * The seam between the core runtime and the item reference follow runtime
+ * The seam between the core runtime and the item reference runtime
  * (`@lifeart/gxt/item-references`, src/core/item-references.ts).
  *
- * A list keyed by position (`POSITIONAL_KEY`) or an `{{#each-in}}`
- * (`EACH_IN_KEY`) builds each row with a reference to its item, which another
- * item comes to stand in while the row stays (control-flow/list.ts). The core
- * runtime makes those references plain cells. The follow runtime makes them
- * `ItemReference`s, whose reads it counts, and makes what reads a value once —
- * a yielded block, an `{{#in-element}}` destination — follow such a
- * reference (dom.ts). It is not part of the main runtime: the compiler imports
- * it for a template that keys a list by position (`$_itemRefKey`), and the
- * runtime compiler (an Ember host's) installs it, so a build without either
- * does not carry it.
+ * A list keyed by position (`key="@index"`) or the rows of a native
+ * `{{#each-in}}` build each row with a reference to its item, which another
+ * item comes to stand in while the row stays (control-flow/list.ts): the
+ * compiler reads such a row's item through `.value`. The item reference
+ * runtime makes those references (`rows`), counts their reads (`read`), and
+ * makes what reads a value once — a yielded block, an `{{#in-element}}`
+ * destination — follow such a reference (dom.ts). None of it is part of the
+ * main runtime: the core only asks whether the runtime is installed. The
+ * compiler imports it for a standalone template that keys a list by position
+ * (`$_itemRefKey`); an Ember host installs it (`registerItemReferenceRuntime`),
+ * as its templates key lists by position, and its `{{#each-in}}` rows are
+ * built this way. A build without either does not carry it.
  */
-import type { Cell } from './reactive';
+import type { Cell, MergedCell } from './reactive';
 import type { ComponentLike } from './types';
 
+/** The item references of the rows of one list (see `ItemReferenceRuntime.rows`). */
+export interface RowReferences<T> {
+  /** The key of the row `item` stands at, at `index`. */
+  keyForItem(item: T, index: number): string;
+  /** What the new row of `key` is built with: a reference to `item`. */
+  build(key: string, item: T): T;
+  /** The kept row of `key` stands for `item` now (applied by `flush`). */
+  rebind(key: string, item: T): void;
+  /** The kept rows' references hold the items `rebind` gave them. */
+  flush(): void;
+  /** The row of `key` was destroyed: release its reference. */
+  forget(key: string): void;
+  /** Every row was destroyed. */
+  forgetAll(): void;
+  /**
+   * The `index` of a row built at `position` when the row's index is its key
+   * (a positional row never moves), else `null` (the list computes it).
+   */
+  index(position: number): MergedCell | null;
+}
+
 export interface ItemReferenceRuntime {
-  /** A row's reference to its item. */
-  createReference<T>(item: T, debugName?: string): Cell<T>;
+  /** The item references of a list keyed `key` (`@index` or `@each-in`). */
+  rows<T>(key: string): RowReferences<T>;
   /** Whether `cell` is a row's item reference. */
   isReference(cell: unknown): boolean;
+  /** `read()`; `readItem` tells whether it read an item reference. */
+  read<T>(read: () => T): T;
+  readItem: boolean;
+  /**
+   * Ember dialect: the item references a slot's params added to `tracker`
+   * (the computation the slot is built in, which had `size` cells before).
+   */
+  paramReferences(tracker: Set<Cell>, size: number): Cell[];
   /**
    * A standalone slot whose params read an item reference (`renderSlot`):
    * `initial`, rendered again in place (`render`) whenever an object param is
@@ -45,28 +76,13 @@ export interface ItemReferenceRuntime {
 }
 
 let runtime: ItemReferenceRuntime | null = null;
-let reads = 0;
 
-/** The installed follow runtime, `null` when none is. */
+/** The installed item reference runtime, `null` when none is. */
 export function itemReferenceRuntime(): ItemReferenceRuntime | null {
   return runtime;
 }
 
-/** Install the follow runtime (idempotent). */
+/** Install the item reference runtime (idempotent). */
 export function installItemReferenceRuntime(next: ItemReferenceRuntime): void {
   runtime = next;
-}
-
-/** Count a read of an item reference (`ItemReference`). */
-export function noteItemReferenceRead(): void {
-  reads++;
-}
-
-/**
- * The number of item reference reads so far: a construct compares it before
- * and after a read to tell whether the value came through an item reference.
- * It never changes while no follow runtime is installed.
- */
-export function itemReferenceReadCount(): number {
-  return reads;
 }
