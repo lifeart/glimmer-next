@@ -1156,17 +1156,6 @@ export function isReactiveArgThunk(node: JSExpression): boolean {
 }
 
 /**
- * `valueExpr`, a named argument the compiler built for an args object gxt's
- * `$_args` reads (a component invocation, a helper call, a loose-mode append,
- * a curried helper's named arguments), with its getter branded `$_argThunk`
- * when it is one (`isReactiveArgThunk`). Under the Ember dialect the args
- * object invokes only branded getters and hands any other function out as the
- * argument's value, so the getter must be told from a value where it is built
- * — here. Gated to the Ember dialect (WITH_EMBER_INTEGRATION +
- * IS_GLIMMER_COMPAT_MODE): standalone gxt keeps byte-identical codegen and its
- * invoke-every-getter semantics.
- */
-/**
  * Ember compat (IS_GLIMMER_COMPAT_MODE + WITH_EMBER_INTEGRATION, not
  * EMBER_NATIVE — the native build has no classic components): the getter of a
  * component argument, branded, with where a write of the argument goes when
@@ -1230,14 +1219,21 @@ function argSourceOf(
   if (expression.includes('[') || expression.includes('?')) return null;
   const tokens = expression.split('.');
   if (tokens.some((token) => token === '')) return null;
+  // `@x` (the expression reads it through the args alias, `$a.x`): the
+  // caller's reference, the args object's own argument, named with its `@`
+  // (the host follows it to where the caller's argument writes).
+  const argName =
+    tokens.length === 2 && tokens[0] === SYMBOLS.ARGS_ALIAS
+      ? tokens[1]!
+      : tokens.length === 1 && tokens[0]!.startsWith('@')
+        ? tokens[0]!.slice(1)
+        : null;
+  if (argName !== null) {
+    ctx.usedArgsAlias = true;
+    return { parent: B.id(SYMBOLS.ARGS_ALIAS), key: `@${argName}` };
+  }
   if (tokens.length === 1) {
     const name = tokens[0]!;
-    if (name.startsWith('@')) {
-      // The caller's reference: the args object's own argument, named with
-      // its `@` (the host follows it to where the caller's argument writes).
-      ctx.usedArgsAlias = true;
-      return { parent: B.id(SYMBOLS.ARGS_ALIAS), key: name };
-    }
     const binding = ctx.scopeTracker.resolve(name);
     if (binding?.kind === 'let-binding' && binding.letValue !== undefined) {
       return argSourceOf(ctx, binding.letValue, ctxName, depth + 1);
@@ -1249,6 +1245,17 @@ function argSourceOf(
   return { parent: buildPathExpression(ctx, parentPath, false, ctxName), key };
 }
 
+/**
+ * `valueExpr`, a named argument the compiler built for an args object gxt's
+ * `$_args` reads (a component invocation, a helper call, a loose-mode append,
+ * a curried helper's named arguments), with its getter branded `$_argThunk`
+ * when it is one (`isReactiveArgThunk`). Under the Ember dialect the args
+ * object invokes only branded getters and hands any other function out as the
+ * argument's value, so the getter must be told from a value where it is built
+ * — here. Gated to the Ember dialect (WITH_EMBER_INTEGRATION +
+ * IS_GLIMMER_COMPAT_MODE): standalone gxt keeps byte-identical codegen and its
+ * invoke-every-getter semantics.
+ */
 export function brandArgGetter(ctx: CompilerContext, valueExpr: JSExpression): JSExpression {
   if (
     ctx.flags.IS_GLIMMER_COMPAT_MODE &&
