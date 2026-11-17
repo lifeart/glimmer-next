@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 /**
  * The named arguments of a helper call and of a loose-mode append reach an
  * args object (`$_args`) with their getters branded (`$_argThunk`): under
