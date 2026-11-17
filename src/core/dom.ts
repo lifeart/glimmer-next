@@ -2280,12 +2280,22 @@ function sameSnapshotParams(a: unknown[], b: unknown[]): boolean {
   return true;
 }
 
+// The anchor a following slot's next rendering goes before. It is a marker the
+// host keeps (`registerListMarker`), as a list's markers are: a host that
+// strips the empty comments of a rendering (Ember's `removeGxtArtifacts`)
+// would otherwise detach it, and the next rendering would go nowhere.
+function slotAnchor(api: DOMApi, name: string): Comment {
+  const anchor = IS_DEV_MODE ? api.comment(`slot-{{${name}}}-anchor`) : api.comment();
+  HOST_HOOKS.registerListMarker?.(anchor);
+  return anchor;
+}
+
 /**
  * `createSlot`, rendered again in place whenever an object param is replaced
  * after one of `references` (list item references the params read) changed.
  * Laid out like a swapping `$_dc`: the content's nodes end with an anchor the
- * next rendering goes before, and the returned object stands for the current
- * content.
+ * next rendering goes before (`slotAnchor`), and the returned object stands
+ * for the current content.
  */
 function followingSlot(
   value: Slots[string],
@@ -2298,9 +2308,8 @@ function followingSlot(
   const api = initDOM(ctx);
   let rendered = snapshotParams(initial);
   let result = createSlot(value, params, name, ctx, initial) as unknown as ComponentLike;
-  result[RENDERED_NODES_PROPERTY].push(
-    IS_DEV_MODE ? api.comment(`slot-{{${name}}}-anchor`) : api.comment(),
-  );
+  let anchor = slotAnchor(api, name);
+  result[RENDERED_NODES_PROPERTY].push(anchor);
   const watch = formula(
     () => references.map((reference) => reference.value),
     IS_DEV_MODE ? `slot:${name}:items` : undefined,
@@ -2315,21 +2324,22 @@ function followingSlot(
     const nextSnapshot = snapshotParams(next);
     if (sameSnapshotParams(rendered, nextSnapshot)) return;
     rendered = nextSnapshot;
-    const anchor = result[RENDERED_NODES_PROPERTY].pop() as Node;
+    result[RENDERED_NODES_PROPERTY].pop();
     const parent = api.parent(anchor)!;
-    const nextAnchor = IS_DEV_MODE
-      ? api.comment(`slot-{{${name}}}-anchor`)
-      : api.comment();
+    const nextAnchor = slotAnchor(api, name);
     api.insert(parent, nextAnchor, anchor);
     unregisterFromParent(result);
     destroyElementSync(result, false, api);
+    HOST_HOOKS.unregisterListMarker?.(anchor);
     api.destroy(anchor);
+    anchor = nextAnchor;
     result = createSlot(value, params, name, ctx, next) as unknown as ComponentLike;
     result[RENDERED_NODES_PROPERTY].push(nextAnchor);
     renderElement(api, ctx, parent, result, nextAnchor);
   });
   registerDestructor(ctx, destructor, () => {
     watch.destroy();
+    HOST_HOOKS.unregisterListMarker?.(anchor);
   });
   return {
     get [RENDERING_CONTEXT_PROPERTY]() {

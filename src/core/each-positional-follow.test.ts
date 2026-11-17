@@ -18,6 +18,7 @@ import { Component } from './component';
 import { $template } from './shared';
 import { cellFor } from './reactive';
 import { template } from '../../plugins/runtime-compiler';
+import { HOST_HOOKS } from './host-hooks';
 
 function defineRoot(tpl: string, scope: Record<string, unknown> = {}) {
   class Root extends Component {
@@ -71,6 +72,52 @@ describe('a kept positional row follows its item where its body reads it once', 
     await settle();
     expect(texts()).toEqual(['c']);
     expect(lis()[0]).toBe(before[0]);
+  });
+
+  test('{{yield item}}: the yielded block follows the item under a host that strips the comments it does not keep', async () => {
+    // A host like Ember strips the (empty, in a production build) comments of
+    // what it rendered, except the markers gxt registers (`registerListMarker`).
+    const kept = new WeakSet<Comment>();
+    HOST_HOOKS.registerListMarker = (marker) => kept.add(marker);
+    HOST_HOOKS.unregisterListMarker = (marker) => kept.delete(marker);
+    try {
+      const List = template(
+        '<ul>{{#each @items key="@index" as |item|}}<li>{{yield item}}</li>{{/each}}</ul>',
+      );
+      const root = mountRoot(
+        fixture,
+        defineRoot('<List @items={{this.items}} as |x|><b>{{x.name}}</b></List>', { List }),
+      );
+      const a = { name: 'a' };
+      const b = { name: 'b' };
+      root._items = [a, b];
+      await settle();
+      const doc = fixture.container.ownerDocument;
+      const walker = doc.createTreeWalker(fixture.container, 128 /* SHOW_COMMENT */);
+      const stripped: Comment[] = [];
+      while (walker.nextNode()) {
+        const comment = walker.currentNode as Comment;
+        if (!kept.has(comment)) stripped.push(comment);
+      }
+      for (const comment of stripped) comment.remove();
+      const before = lis();
+      expect(texts()).toEqual(['a', 'b']);
+
+      root._items = [b, a];
+      await settle();
+      expect(texts()).toEqual(['b', 'a']);
+      expect(lis()).toEqual(before);
+
+      root._items = [b, a, { name: 'c' }];
+      await settle();
+      root._items = [{ name: 'd' }];
+      await settle();
+      expect(texts()).toEqual(['d']);
+      expect(lis()[0]).toBe(before[0]);
+    } finally {
+      delete HOST_HOOKS.registerListMarker;
+      delete HOST_HOOKS.unregisterListMarker;
+    }
   });
 
   test('<Item />: the row invokes the component now at it, in the same row', async () => {
