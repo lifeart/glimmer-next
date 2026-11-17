@@ -23,6 +23,7 @@ import { syncDom } from './runtime';
 import { setNativeContentBinding } from './native-content';
 import { HOST_HOOKS } from './host-hooks';
 import { compileTemplateSource } from '../../plugins/runtime-compiler';
+import { registerItemReferenceRuntime } from './item-references';
 
 const NATIVE_FLAGS = {
   WITH_EMBER_INTEGRATION: true,
@@ -63,6 +64,8 @@ describe('native {{#each-in}} keying, rendered (each-in key option)', () => {
     };
     runtime.EMBER_NATIVE = true;
     runtime.WITH_EMBER_INTEGRATION = true;
+    // an Ember host installs the item reference runtime ({{#each-in}} rows)
+    registerItemReferenceRuntime();
     fixture = createDOMFixture();
     setNativeContentBinding(bindNativeContent);
   });

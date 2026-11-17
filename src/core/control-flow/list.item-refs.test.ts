@@ -14,6 +14,7 @@ import { cleanupFastContext, provideContext, RENDERING_CONTEXT } from '../contex
 import { Root } from '../dom';
 import { SyncListComponent } from './list';
 import { cell, type Cell } from '../reactive';
+import { registerItemReferenceRuntime } from '../item-references';
 
 type Item = { id: number; name: string };
 
@@ -23,6 +24,8 @@ describe('item references of a positional list when building a row throws', () =
   let container: HTMLElement;
 
   beforeEach(() => {
+    // the rows of a positional list are built by the item reference runtime
+    registerItemReferenceRuntime();
     window = new Window();
     document = window.document as unknown as Document;
     cleanupFastContext();

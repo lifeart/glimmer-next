@@ -42,6 +42,7 @@ import {
   CONTENT_TEXT,
 } from './native-content';
 import { compileTemplateSource } from '../../plugins/runtime-compiler';
+import { registerItemReferenceRuntime } from './item-references';
 import { $_curry, CURRIED_COMPONENT, CURRIED_HELPER, CURRIED_MODIFIER } from './curried';
 
 const FLAGS = {
@@ -97,6 +98,8 @@ describe('Ember native runtime', () => {
   }
 
   beforeEach(() => {
+    // an Ember host installs the item reference runtime ({{#each-in}} rows)
+    registerItemReferenceRuntime();
     fixture = createDOMFixture();
     setNativeContentBinding(bindNativeContent);
     registerHostHooks({

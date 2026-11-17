@@ -67,4 +67,28 @@ describe('a slot built inside a tracked computation (Ember dialect)', () => {
     expect(frame.has(unrelated as Cell)).toBe(true);
     expect(frame.has(yielded as Cell)).toBe(false);
   });
+
+  test('keeps an item reference the computation read before the slot, also when the params read it', () => {
+    const parent = new Component({});
+    (parent as any)[RENDERED_NODES_PROPERTY] = [];
+    addToTree(fixture.root, parent as any);
+    const row = createItemReference({ name: 'row' });
+    const slots = {
+      default: (_ctx: unknown, p: unknown) => {
+        void $__bpv(p);
+        return [];
+      },
+    };
+    const frame: Set<Cell> = new Set();
+    const outer = getTracker();
+    setTracker(frame);
+    try {
+      // the computation reads the row's item itself, then yields it
+      void row.value;
+      $_slot('default', () => [row.value], slots as never, parent);
+    } finally {
+      setTracker(outer);
+    }
+    expect(frame.has(row as Cell)).toBe(true);
+  });
 });
