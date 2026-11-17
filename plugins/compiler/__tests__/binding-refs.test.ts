@@ -96,6 +96,19 @@ describe('replaceBindingRefs', () => {
     expect(code).toContain('return [item]');
   });
 
+  test('a function declaring the root of a replacement would capture it: the rewrite throws', () => {
+    const entry = new Map([['k', '$__entry_ctx0.value[0]']]);
+    const inner = B.arrow(['$__entry_ctx0', 'ctx1'], B.id('k'));
+    expect(() => replaceBindingRefs(B.call('f', [inner]), entry)).toThrow(
+      /declares `\$__entry_ctx0`, which the rewrite of `k`/,
+    );
+    // another entry name is no capture
+    const other = B.arrow(['$__entry_ctx1', 'ctx1'], B.id('k'));
+    expect(serializeJS(replaceBindingRefs(other, entry), { emitPure: false })).toBe(
+      '($__entry_ctx1, ctx1) => $__entry_ctx0.value[0]',
+    );
+  });
+
   test('nodes without a reference are returned as they are', () => {
     const node = B.call('$_tag', [B.string('div'), B.array([B.id('x')])]);
     expect(replaceBindingRefs(node, ITEM)).toBe(node);

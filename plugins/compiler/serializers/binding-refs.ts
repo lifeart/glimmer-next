@@ -21,6 +21,12 @@
  * a param of the same name (a nested `{{#each … as |item|}}`, a component's
  * block params) and a variable declared under that name (a `{{#let}}`) shadow
  * it for the code in their scope.
+ *
+ * The replacement must keep naming what it names where it lands: a function
+ * that declares the root identifier of a replacement (`$__entry_ctx0` of
+ * `$__entry_ctx0.value[0]`) would capture it. The callers give every row its
+ * own reference name, so that never happens; the rewrite throws if it does
+ * rather than emit a read of the wrong row.
  */
 import type { JSExpression, JSParam, JSStatement } from '../builder';
 
@@ -151,22 +157,36 @@ function rewriteStatements(
 }
 
 // `names` without those a parameter list declares (a param can be a
-// destructuring pattern, `[k, v]`).
+// destructuring pattern, `[k, v]`). Throws when the list declares the root
+// identifier of a replacement it keeps (see the module comment).
 function withoutDeclared(names: Replacements, params: readonly JSParam[]): Replacements {
   let reduced: Map<string, string> | null = null;
+  const declared: string[] = [];
   for (const param of params) {
     const text = typeof param === 'string' ? param : param.name;
     for (const token of identifierTokens(text)) {
+      declared.push(token);
       if (names.has(token)) {
         if (reduced === null) reduced = new Map(names);
         reduced.delete(token);
       }
     }
   }
-  return reduced ?? names;
+  const kept = reduced ?? names;
+  if (kept.size > 0) {
+    kept.forEach((replacement, name) => {
+      const root = identifierTokens(replacement)[0];
+      if (root !== undefined && root !== name && declared.includes(root)) {
+        throw new Error(
+          `gxt compiler: a function declares \`${root}\`, which the rewrite of \`${name}\` to \`${replacement}\` reads`,
+        );
+      }
+    });
+  }
+  return kept;
 }
 
-const IDENTIFIER_PART = /[\p{ID_Continue}$‌‍]/u;
+const IDENTIFIER_PART = /[\p{ID_Continue}$\u200c\u200d]/u;
 
 function isIdentifierPart(char: string | undefined): boolean {
   return char !== undefined && IDENTIFIER_PART.test(char);

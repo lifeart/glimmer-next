@@ -247,10 +247,13 @@ function buildEach(
   const conditionExpr = buildValue(ctx, control.condition, ctxName);
 
   // Ensure we have proper block params. `{{#each-in}}` (EMBER_NATIVE, G5):
-  // the row item is a `[key, value]` pair destructured into eachInParams.
+  // the row gets a reference to its `[key, value, rowKey]` entry, under a
+  // name of this block's own (`$__entry_ctxN`): the key and value params are
+  // read through it (`itemReferenceReads`), and a nested each-in's row must
+  // not declare the name an outer row's reads use.
   const eachInParams = control.eachInParams;
   const paramNames = eachInParams !== undefined
-    ? ['$__entry', '$index']
+    ? [`$__entry_${newCtxName}`, '$index']
     : normalizeEachParams(control.blockParams);
   const paramRanges = control.blockParamRanges ?? [];
 
@@ -384,7 +387,7 @@ function buildEach(
   // rename transparent. Non-reserved names pass through unchanged.
   const callbackParams = [
     ...paramNames.map((name, index) => {
-      // (An `{{#each-in}}` row gets the reference to its entry, `$__entry`.)
+      // (An `{{#each-in}}` row gets the reference to its entry, `$__entry_ctxN`.)
       const emitName = escapeBindingName(name);
       const range = paramRanges[index];
       return range ? B.id(emitName, range) : emitName;
@@ -479,8 +482,8 @@ function normalizeEachKey(
  * a reference to their item: how the body reads each block param through it,
  * as a map from the param's emitted name to the expression that reads it —
  * the positional item `item` as `item.value`, the `{{#each-in}}` key and
- * value as `$__entry.value[0]` / `$__entry.value[1]`. Null for any other
- * list, and when the body has no param to read.
+ * value as `$__entry_ctxN.value[0]` / `[1]`. Null for any other list, and
+ * when the body has no param to read.
  */
 function itemReferenceReads(
   eachKey: string | null,

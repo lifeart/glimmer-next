@@ -184,6 +184,51 @@ describe('native {{#each-in}} keying, rendered (each-in key option)', () => {
     expect(after[1]).toBe(before[1]);
   });
 
+  test("a nested each-in row reads the outer row's key and value, not its own", async () => {
+    const self = {
+      groups: { g1: { title: 'T1', a: 1 }, g2: { title: 'T2', b: 2 } } as unknown,
+    };
+    render(
+      withSelf(
+        compileNative(
+          '<ul>{{#each-in this.groups as |gName group|}}{{#each-in group as |field val|}}<li>{{gName}}.{{field}}={{val}}/{{group.title}}</li>{{/each-in}}{{/each-in}}</ul>',
+        ),
+        self,
+      ),
+    );
+    expect(texts()).toEqual(['g1.title=T1/T1', 'g1.a=1/T1', 'g2.title=T2/T2', 'g2.b=2/T2']);
+
+    await replace(self as Record<string, unknown>, 'groups', {
+      g2: { title: 'T2', b: 3 },
+      g1: { title: 'T1', a: 1 },
+    });
+    expect(texts()).toEqual(['g2.title=T2/T2', 'g2.b=3/T2', 'g1.title=T1/T1', 'g1.a=1/T1']);
+  });
+
+  test('a positional each in an each-in row, and an each-in in a positional row, each read their own items', async () => {
+    const self = {
+      lists: { x: ['a', 'b'] } as unknown,
+      rows: [{ p: 1 }, { q: 2 }] as unknown,
+    };
+    render(
+      withSelf(
+        compileNative(
+          '<p>{{#each-in this.lists as |name list|}}{{#each list key="@index" as |item|}}<i>{{name}}:{{item}}</i>{{/each}}{{/each-in}}</p>' +
+            '<ul>{{#each this.rows key="@index" as |row|}}{{#each-in row as |k v|}}<li>{{k}}={{v}}</li>{{/each-in}}{{/each}}</ul>',
+        ),
+        self,
+      ),
+    );
+    const is = () => Array.from(fixture.container.querySelectorAll('i')).map((i) => i.textContent);
+    expect(is()).toEqual(['x:a', 'x:b']);
+    expect(texts()).toEqual(['p=1', 'q=2']);
+
+    await replace(self as Record<string, unknown>, 'rows', [{ q: 2 }, { p: 1 }]);
+    expect(texts()).toEqual(['q=2', 'p=1']);
+    await replace(self as Record<string, unknown>, 'lists', { x: ['b', 'a'] });
+    expect(is()).toEqual(['x:b', 'x:a']);
+  });
+
   test('a kept row whose entry did not change is not re-rendered', async () => {
     let reads = 0;
     const counted = {
