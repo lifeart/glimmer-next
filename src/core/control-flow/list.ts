@@ -729,9 +729,9 @@ export class BasicListComponent<T extends { id: number }> {
    * Apply the reference updates `rebindReusedRow` queued: each re-renders the
    * bindings of its row that read the item, synchronously (the update runs
    * inside a DOM sync, whose own queue would drop a deferred cell write). Run
-   * once the update has built, kept and moved every row, so a nested block
-   * the rebinding re-renders (an `{{#each}}` over the item) builds with no
-   * row construction of this list in progress.
+   * once the update has built, kept and moved every row (`updateItems`), so a
+   * nested block the rebinding re-renders (an `{{#each}}` over the item)
+   * builds with no row construction of this list in progress.
    */
   protected flushItemRefs(): void {
     const pending = this._pendingItemRefs;
@@ -1568,6 +1568,18 @@ export class BasicListComponent<T extends { id: number }> {
   }
 
   updateItems(items: T[], amountOfKeys: number, removedCount: number) {
+    try {
+      this.applyItems(items, amountOfKeys, removedCount);
+    } finally {
+      // The kept rows' references follow the items `rebindReusedRow` bound the
+      // rows to — also when building a row threw: the rows are bound to those
+      // items now (`boundItemMap`), and a reference left behind would show the
+      // old item, and its queued write would land in a later update.
+      this.flushItemRefs();
+    }
+  }
+
+  private applyItems(items: T[], amountOfKeys: number, removedCount: number) {
     const {
       indexMap,
       keyMap,
@@ -1671,7 +1683,6 @@ export class BasicListComponent<T extends { id: number }> {
             api.insert(trueParent, parent, bottomMarker);
           }
         }
-        this.flushItemRefs();
         if (isFirstRender) {
           this.isFirstRender = false;
         }
@@ -1914,7 +1925,6 @@ export class BasicListComponent<T extends { id: number }> {
         anchor = marker;
       }
     }
-    this.flushItemRefs();
     if (isFirstRender) {
       this.isFirstRender = false;
     }
