@@ -1222,8 +1222,11 @@ function argSourceOf(
   ctxName: string,
   depth: number
 ): { parent: JSExpression; key: string } | null {
+  // A getter of a path (an attribute value) writes where the path does.
+  if (value.kind === 'getter') return argSourceOf(ctx, value.value, ctxName, depth + 1);
   if (value.kind !== 'path' || depth > 8) return null;
-  const expression = value.expression;
+  // The expression may carry optional chaining (`this.a?.b`) for deep paths.
+  const expression = value.expression.replace(/\?\./g, '.');
   if (expression.includes('[') || expression.includes('?')) return null;
   const tokens = expression.split('.');
   if (tokens.some((token) => token === '')) return null;

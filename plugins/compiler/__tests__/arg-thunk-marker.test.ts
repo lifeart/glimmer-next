@@ -33,7 +33,9 @@ function code(tpl: string, flags: Record<string, unknown>, bindings: string[] = 
 describe('arg-thunk marker emission ($_argThunk)', () => {
   test('a reactive path arg getter is branded', () => {
     const c = code('<Foo @a={{this.x}} />', COMPAT, ['Foo']);
-    expect(c).toContain('a: $_argThunk(() => this.x)');
+    // Ember compat also gives a path argument's getter where a write of it
+    // goes (`withArgSource`: `this`, "x").
+    expect(c).toContain('a: $_argThunk(() => this.x, () => this, "x")');
   });
 
   test('a literal arg is NOT branded (not a thunk)', () => {
