@@ -393,7 +393,7 @@ describe('Ember dialect: a yielded param is a reference, the block keeps its DOM
             [$_c(List, $_args({ items: $_argThunk(() => this._items) }, slots as never, $_edp as never), this)],
             this,
           );
-        };
+        } as any;
       }
       const root = mountRoot(fixture, Root as never) as unknown as { _items: unknown[] };
       const a = { name: 'a' };

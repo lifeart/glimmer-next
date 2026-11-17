@@ -144,11 +144,11 @@ describe('named argument getters of helper calls and loose-mode appends', () => 
     let seen: Record<string, unknown> = {};
     $_MANAGERS.component = {
       canHandle: () => true,
-      handle: (_definition: unknown, args: unknown) => {
+      handle: ((_definition: unknown, args: unknown) => {
         const named = args as Record<string, unknown>;
         seen = { title: named.title, size: named.size, onClose: named.onClose };
         return () => [];
-      },
+      }) as never,
     };
     const onClose = () => 'closed';
     $_looseAppend(
