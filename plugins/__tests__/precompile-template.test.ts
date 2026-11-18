@@ -122,6 +122,26 @@ describe('G10: precompileTemplate compiles at build time (EMBER_NATIVE)', () => 
     expect(precompileOnly(dynamic)).toContain("precompileTemplate('<Nope />', {");
   });
 
+  test('a TypeScript module goes to babel as it is (content-tag would drop `implements` commas)', () => {
+    const ts = `import { precompileTemplate } from '@ember/template-compilation';
+interface A<T> { a(x: T): T }
+interface B<T> { b(x: T): T }
+class Manager
+  implements
+    A<string>,
+    B<string>
+{
+  a(x: string): string { return x; }
+  b(x: string): string { return x; }
+}
+export const manager = new Manager();
+export const X = precompileTemplate('<p>{{this.x}}</p>', { strictMode: true });
+`;
+    const out = precompileOnly(ts, '/app/manager.ts');
+    expect(out).toMatch(/class Manager\s*\{/);
+    expect(out).toContain('precompileTemplate(() => $_tpl(function () {');
+  });
+
   test('a template compile error throws (never a silently skipped module)', () => {
     const broken = `import { precompileTemplate } from '@ember/template-compilation';\nexport const X = precompileTemplate('{{#if}}x');\n`;
     expect(() => precompileOnly(broken)).toThrow();

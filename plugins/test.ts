@@ -822,8 +822,13 @@ export function transform(
 
   // Use original GTS source for source maps if available, otherwise fall back to preprocessed source
   const sourceForMaps = originalGtsSource || rawTxt;
-  const preprocessed = p.process(rawTxt, { filename: fileName });
-  const intermediate = preprocessed.code;
+  // A `precompileTemplate`-only script module has no `<template>` to convert,
+  // and content-tag's reprint of a TypeScript module is not lossless (it drops
+  // the commas of a multi-line `implements A<…>, B<…>` list): the module goes
+  // to babel as it is.
+  const intermediate = precompileOnly
+    ? rawTxt
+    : p.process(rawTxt, { filename: fileName }).code;
   const shouldUseTypeCheckerHints = flags.WITH_TYPE_CHECKER_HINTS === true;
   const checkerTypeHints = shouldUseTypeCheckerHints && (fileName.endsWith('.gts') || fileName.endsWith('.gjs'))
     ? resolveTemplateTypeHintsWithChecker(intermediate, replacedFileName)
