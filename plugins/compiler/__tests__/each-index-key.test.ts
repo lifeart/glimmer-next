@@ -28,6 +28,61 @@ describe('{{#each key="@index"}} compiles to a positional key (no @identity rewr
     expect(result.code).toContain('"@identity"');
   });
 
+  test('@key is the iteration key of an {{#each}} item, its position: emitted as @index', () => {
+    const result = compile(
+      '{{#each this.items key="@key" as |item|}}<li>{{item.name}}</li>{{/each}}',
+    );
+    expect(result.errors).toHaveLength(0);
+    expect(result.code).toContain('"@index"');
+    expect(result.code).not.toContain('"@key"');
+  });
+
+  test('a positional row reads its item through the reference it is built with', () => {
+    const result = compile(
+      '{{#each this.items key="@index" as |item index|}}<li title={{item.title}}>{{item.name}} {{index}} {{item}}</li>{{/each}}',
+    );
+    expect(result.errors).toHaveLength(0);
+    expect(result.code).toContain('item.value.title');
+    expect(result.code).toContain('item.value.name');
+    expect(result.code).toContain('() => item.value');
+    expect(result.code).toContain('index.value');
+    expect(result.code).not.toMatch(/[^.\w$]item\.(title|name)/);
+    // no static-block fast path for a positional row (its values would read
+    // the reference)
+    expect(result.code).not.toContain('$_blk');
+  });
+
+  test('a nested block param of the same name shadows the positional item', () => {
+    const result = compile(
+      '{{#each this.rows key="@index" as |item|}}{{#each item.cells as |item|}}<b>{{item.v}}</b>{{/each}}{{/each}}',
+    );
+    expect(result.errors).toHaveLength(0);
+    // the outer item, read for the inner list's source
+    expect(result.code).toContain('item.value.cells');
+    // the inner item is the inner row's own item
+    expect(result.code).toContain('item.v');
+    expect(result.code).not.toContain('item.value.v');
+  });
+
+  test('a positional row invokes its item as a component through a getter ($_dc), others once ($_c)', () => {
+    const positional = compile(
+      '{{#each this.items key="@index" as |Item|}}<li><Item /></li>{{/each}}',
+    );
+    expect(positional.errors).toHaveLength(0);
+    expect(positional.code).toContain('$_dc(() => Item.value');
+    const keyed = compile('{{#each this.items as |Item|}}<li><Item /></li>{{/each}}');
+    expect(keyed.errors).toHaveLength(0);
+    expect(keyed.code).not.toContain('$_dc(');
+  });
+
+  test('other keys read the item itself', () => {
+    const result = compile(
+      '{{#each this.items key="id" as |item|}}<li>{{item.name}}</li>{{/each}}',
+    );
+    expect(result.errors).toHaveLength(0);
+    expect(result.code).not.toContain('item.value');
+  });
+
   test('a property-name key still passes through unchanged', () => {
     const result = compile(
       '{{#each this.items key="id" as |item|}}<li>{{item.id}}</li>{{/each}}',

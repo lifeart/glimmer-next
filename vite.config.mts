@@ -308,6 +308,9 @@ export default defineConfig(({ mode }) => ({
             // list-recycle.ts tree-shakes out of the `.` barrel / runtime
             // compiler chunk.
             path.join(currentPath, "src", "core", "recycle.ts"),
+            // The item reference follow runtime (a list keyed by position).
+            // Dedicated entry so it tree-shakes out of a build without one.
+            path.join(currentPath, "src", "core", "item-references.ts"),
           ],
           name: "gxt",
           formats: ["es"],
@@ -424,6 +427,12 @@ export default defineConfig(({ mode }) => ({
         "src",
         "core",
         "recycle.ts",
+      ),
+      "@lifeart/gxt/item-references": path.join(
+        currentPath,
+        "src",
+        "core",
+        "item-references.ts",
       ),
       "@lifeart/gxt": path.join(currentPath, "src", "core", "index.ts"),
     },

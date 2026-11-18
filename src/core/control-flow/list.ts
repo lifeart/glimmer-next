@@ -22,6 +22,17 @@ import {
   type AnyCell,
 } from '@/core/reactive';
 import { tagFor } from '@/core/tags';
+import {
+  createRowRefs,
+  isRowRef,
+  rowIndex,
+  rowKey,
+  rowRebind,
+  rowRef,
+  rowsFlush,
+  rowsForget,
+  type RowRefs,
+} from '@/core/item-reference-runtime';
 import { opcodeFor } from '@/core/vm';
 import {
   $_debug_args,
@@ -98,6 +109,61 @@ type RowContext = {
 };
 
 export type InverseFn = (ctx: Component<any>) => GenericReturnType | null;
+
+/**
+ * The keys of the lists whose rows are built with a REFERENCE to their item
+ * rather than the item: the row callback gets a cell, `ref.value` being the
+ * item the row stands for now, and the compiler reads the item param through
+ * `.value` in the row body (`plugins/compiler/serializers/control.ts`
+ * `buildEach`, which mirrors these strings). A kept row that now stands for
+ * another item is told so by updating its reference: the bindings that read
+ * the item re-render in place, whatever the item is — an object, an array, a
+ * primitive — as Glimmer updates the item reference of a kept row.
+ *
+ * - `POSITIONAL_KEY` (`key="@index"`; the compiler emits `key="@key"` of an
+ *   `{{#each}}` as `@index` too, an array's iteration key being the position):
+ *   a row is keyed by its position, so any item can come to stand at a kept
+ *   row.
+ * - `EACH_IN_KEY`: the rows of a native `{{#each-in}}`, over the
+ *   `[key, value, rowKey]` entries of `$__eachIn` (helpers/each-in.ts); a row
+ *   is keyed by `rowKey`, the key Glimmer gives the entry for the `key=`
+ *   option, and a kept row gets the entry's current key and value.
+ */
+export const POSITIONAL_KEY = '@index';
+export const EACH_IN_KEY = '@each-in';
+
+function hasItemRefs(key: string | null | undefined): boolean {
+  return key === POSITIONAL_KEY || key === EACH_IN_KEY;
+}
+
+/**
+ * Whether `cell` is the item reference of a list row (`POSITIONAL_KEY` /
+ * `EACH_IN_KEY`), which the item reference runtime makes
+ * (item-reference-runtime.ts): a value read through it can be replaced while
+ * the row stays.
+ */
+export function isItemReference(cell: unknown): boolean {
+  return isRowRef !== null && isRowRef(cell);
+}
+
+/**
+ * Forget the item a destroyed row of `key` was bound to (every row's, without
+ * `key`), and release its item reference. (A plain function: a minifier
+ * shortens its name.)
+ */
+function forgetRowItems(list: BasicListComponent<any>, key?: string): void {
+  const bound = list.boundItemMap;
+  if (bound !== null) {
+    if (key === undefined) bound.clear();
+    else bound.delete(key);
+  }
+  if (list.itemRefs !== null) rowsForget!(list.itemRefs, key);
+}
+
+/** A positional row's fixed `index` (the runtime's `rowIndex`), else `null`. */
+function fixedRowIndex(list: BasicListComponent<any>, index: number): MergedCell | null {
+  return list.hasIndex && list.itemRefs !== null ? rowIndex!(list.itemRefs, index) : null;
+}
 
 type ListComponentArgs<T> = {
   tag: Cell<T[]> | MergedCell;
@@ -376,6 +442,10 @@ export class BasicListComponent<T extends { id: number }> {
   // the host so the row's block-param re-binds to the new object WITHOUT
   // recreating the row. Lazily allocated.
   boundItemMap: Map<string, T> | null = null;
+  // Item-reference lists (`hasItemRefs`): the references of the rows, made by
+  // the item reference runtime — null for every other list. A kept row's new
+  // item is applied once the update has placed every row (`updateItems`).
+  itemRefs: RowRefs | null = null;
   // Per-row destructor-owner context.
   //
   // The compiled each-body (`ItemComponent`) registers its per-element binding
@@ -631,11 +701,19 @@ export class BasicListComponent<T extends { id: number }> {
     if (boundItemMap === null) return;
     const boundItem = boundItemMap.get(key);
     if (boundItem !== item) {
-      const rebind =
-        HOST_HOOKS.rebindEachItem ??
-        (globalThis as any).__gxtRebindEachItem;
-      if (typeof rebind === 'function') {
-        rebind(boundItem, item);
+      const itemRefs = this.itemRefs;
+      if (itemRefs !== null) {
+        // The row reads its item through its reference: queue the update for
+        // `rowsFlush`. The host hook is not for these rows — a row's
+        // reference is the only thing that names its item.
+        rowRebind!(itemRefs, key, item);
+      } else {
+        const rebind =
+          HOST_HOOKS.rebindEachItem ??
+          (globalThis as any).__gxtRebindEachItem;
+        if (typeof rebind === 'function') {
+          rebind(boundItem, item);
+        }
       }
       boundItemMap.set(key, item);
     }
@@ -700,6 +778,13 @@ export class BasicListComponent<T extends { id: number }> {
     outlet: RenderTarget,
     topMarker: Comment,
   ) {
+    // A list keyed by position (or each-in rows) builds its rows with
+    // references to their items, which the item reference runtime makes: a
+    // template that needs it imports it (`$_itemRefKey`), or its host installs
+    // it. Checked before the list joins the component tree.
+    if (hasItemRefs(key) && createRowRefs === null) {
+      throw new Error(`gxt: key="${key}" needs registerItemReferenceRuntime()`);
+    }
     this.api = initDOM(ctx);
     if (inverseFn) {
       this.inverseFn = inverseFn;
@@ -748,10 +833,14 @@ export class BasicListComponent<T extends { id: number }> {
     // state-object thunks whose value expressions differ — it keeps the
     // compiled-callback path. (Belt-and-braces: the compiler also never
     // emits a block for key="@recycle".)
+    // Nor for the rows built with a reference to their item (`hasItemRefs`):
+    // the block's values read the item itself (the compiler emits no block
+    // for them).
     if (
       block !== undefined &&
       blockValues !== undefined &&
-      this.recycleImpl === undefined
+      this.recycleImpl === undefined &&
+      !hasItemRefs(key)
     ) {
       this.block = block;
       this.blockValues = blockValues;
@@ -934,6 +1023,10 @@ export class BasicListComponent<T extends { id: number }> {
     const marker = this.itemMarkers.get(key);
     if (!marker) return;
     this.itemMarkers.delete(key);
+    this.removeMarkerNode(marker);
+  }
+  /** Remove a row's marker (no longer, or never, the marker of a key). */
+  protected removeMarkerNode(marker: Comment) {
     this.markerSet.delete(marker);
     // Unregister from the consumer-provided registry (if any) so the WeakSet
     // entry can be released and the marker can be GC'd promptly.
@@ -1096,15 +1189,20 @@ export class BasicListComponent<T extends { id: number }> {
         }
         return baseKey;
       };
-    } else if (this.key === '@index') {
+    } else if (hasItemRefs(this.key)) {
       // Positional key (emberjs/ember.js#21340: the `@index`-key Updating test
       // and native "@key keys items by position"): the row at position `i` is
       // keyed by `i`, so a reorder leaves every key in place — the diff keeps
-      // (never moves) the row node and `rebindReusedRow` updates its bound item,
-      // and `@index` yields the stable position. A position is unique, so no
-      // duplicate-key qualification is needed.
-      this.keyForItem = (_item: T, i: number) =>
-        String(i) as unknown as string;
+      // (never moves) the row node, `rebindReusedRow` points its item
+      // reference at the item now at its position, and `@index` yields the
+      // stable position. `{{#each-in}}` entries carry the key of their row
+      // (`$__eachIn`), made unique within the entries. The item reference
+      // runtime keys these rows and makes their references; a template that
+      // needs it imports it (`$_itemRefKey`), or its host installs it.
+      // (The constructor checked that it is installed.)
+      const rows = createRowRefs!(this.key);
+      this.itemRefs = rows;
+      this.keyForItem = (item: T, i: number) => rowKey!(rows, item, i);
     } else {
       const resolveRawKey = (item: T, i: number): string => {
         // Null/undefined/primitive items cannot be keyed by an arbitrary
@@ -1328,7 +1426,9 @@ export class BasicListComponent<T extends { id: number }> {
     const self = this as unknown as ComponentLike;
     let marker = itemMarkers.get(key);
     if (!marker) {
-      marker = IS_DEV_MODE ? api.comment(`list item ${key}`) : api.comment();
+      marker = IS_DEV_MODE
+        ? api.comment(`list item ${String(key)}`)
+        : api.comment();
       itemMarkers.set(key, marker);
       markerSet.add(marker);
       // Reuse the hook hoisted by updateItems (this method is only called from
@@ -1342,7 +1442,14 @@ export class BasicListComponent<T extends { id: number }> {
       if (_reg) _reg(marker);
     }
     let idx: number | MergedCell = index;
-    if (this.hasIndex) {
+    // A positional row's index is its fixed position (see the same branch in
+    // updateItems).
+    const fixedIndex = fixedRowIndex(this, index);
+    if (fixedIndex !== null) {
+      idx = fixedIndex;
+      if (!this.indexFormulaMap) this.indexFormulaMap = new Map();
+      this.indexFormulaMap.set(key, fixedIndex);
+    } else if (this.hasIndex) {
       const indexFormula = formula(
         () => {
           if (isPrimitive(item) && !this.primitiveByValue) {
@@ -1386,7 +1493,11 @@ export class BasicListComponent<T extends { id: number }> {
     // Per-row destructor-owner ctx. Owns the row body's direct element binding
     // opcodes so they unsubscribe on teardown.
     const bodyCtx = this.rowBodyCtx(key);
-    const row = this.buildRow(item, idx, bodyCtx);
+    const row = this.buildRow(
+      this.itemRefs === null ? item : (rowRef!(this.itemRefs, key, item) as T),
+      idx,
+      bodyCtx,
+    );
 
     keyMap.set(key, row);
     indexMap.set(key, index);
@@ -1408,6 +1519,18 @@ export class BasicListComponent<T extends { id: number }> {
   }
 
   updateItems(items: T[], amountOfKeys: number, removedCount: number) {
+    try {
+      this.applyItems(items, amountOfKeys, removedCount);
+    } finally {
+      // The kept rows' references follow the items `rebindReusedRow` bound the
+      // rows to — also when building a row threw: the rows are bound to those
+      // items now (`boundItemMap`), and a reference left behind would show the
+      // old item, and its queued write would land in a later update.
+      if (this.itemRefs !== null) rowsFlush!(this.itemRefs);
+    }
+  }
+
+  private applyItems(items: T[], amountOfKeys: number, removedCount: number) {
     const {
       indexMap,
       keyMap,
@@ -1542,7 +1665,7 @@ export class BasicListComponent<T extends { id: number }> {
         let marker = itemMarkers.get(key);
         if (!marker) {
           marker = IS_DEV_MODE
-            ? api.comment(`list item ${key}`)
+            ? api.comment(`list item ${String(key)}`)
             : api.comment();
           itemMarkers.set(key, marker);
           markerSet.add(marker);
@@ -1562,19 +1685,16 @@ export class BasicListComponent<T extends { id: number }> {
         // down — causes every existing row's index cell to recompute on
         // the next render pass.
         let idx: number | MergedCell = index;
-        if (this.hasIndex && this.key === '@index') {
-          // Positional key: the index IS the row's fixed position (its key), not
-          // the bound item's current position — the row never moves and its item
-          // is rebound in place, so a const formula keeps `index.value` equal to
-          // the build position across reorders.
-          const pos = index;
-          const indexFormula = formula(
-            () => pos,
-            IS_DEV_MODE ? `each.index[@index:${pos}]` : undefined,
-          );
-          idx = indexFormula;
+        // Positional key: the index IS the row's fixed position (its key), not
+        // the bound item's current position — the row never moves and its item
+        // is rebound in place, so a const formula keeps `index.value` equal to
+        // the build position across reorders (the item reference runtime's
+        // `index`).
+        const fixedIndex = fixedRowIndex(this, index);
+        if (fixedIndex !== null) {
+          idx = fixedIndex;
           if (!this.indexFormulaMap) this.indexFormulaMap = new Map();
-          this.indexFormulaMap.set(key, indexFormula);
+          this.indexFormulaMap.set(key, fixedIndex);
         } else if (this.hasIndex) {
           const indexFormula = formula(
             () => {
@@ -1624,7 +1744,11 @@ export class BasicListComponent<T extends { id: number }> {
         // Per-row destructor-owner ctx. Owns the row body's direct element
         // binding opcodes so they unsubscribe on teardown.
         const bodyCtx = this.rowBodyCtx(key);
-        const row = this.buildRow(item, idx, bodyCtx);
+        const row = this.buildRow(
+          this.itemRefs === null ? item : (rowRef!(this.itemRefs, key, item) as T),
+          idx,
+          bodyCtx,
+        );
 
         keyMap.set(key, row);
         indexMap.set(key, index);
@@ -1925,7 +2049,7 @@ export class SyncListComponent<
       }
       keyMap.clear();
       indexMap.clear();
-      if (this.boundItemMap !== null) this.boundItemMap.clear();
+      forgetRowItems(this);
       this.itemMarkers.clear();
       this.markerSet.clear();
       if (firstError !== undefined) reportDestructionError(firstError);
@@ -1990,11 +2114,12 @@ export class SyncListComponent<
       // exhibit the bug (their sources aren't `$__cellFor`-tapped block params).
       if (
         this.key !== '@identity' &&
-        // `@index` is positional, not a property-name key: a row's bound item
-        // has no `item['@index']`, so this property-drift eviction must not run
-        // (it would read `undefined`, see it differ from the position key, and
-        // wrongly destroy every reused row on reorder).
-        this.key !== '@index' &&
+        // `@index` (positional) and `@each-in` (the entry's row key) are not
+        // property-name keys: a row's bound item has no `item['@index']`, so
+        // this property-drift eviction must not run (it would read
+        // `undefined`, see it differ from the row's key, and wrongly destroy
+        // every kept row).
+        !hasItemRefs(this.key) &&
         !this.key.includes('.') &&
         this.boundItemMap !== null &&
         this.boundItemMap.size > 0
@@ -2097,7 +2222,7 @@ export class SyncListComponent<
     const { keyMap, indexMap, indexFormulaMap } = this;
     keyMap.delete(key);
     indexMap.delete(key);
-    if (this.boundItemMap !== null) this.boundItemMap.delete(key);
+    forgetRowItems(this, key);
     // Tear down this row's per-row destructor-owner ctx so its element binding
     // opcodes UNSUBSCRIBE from shared cells.
     this.destroyRowCtx(key);
@@ -2312,6 +2437,7 @@ export class AsyncListComponent<
         }
         keyMap.clear();
         indexMap.clear();
+        forgetRowItems(this);
         this.itemMarkers.clear();
         this.markerSet.clear();
         // Run ROW destructors fire-and-forget (DOM already gone → skipDom=true).
@@ -2379,6 +2505,7 @@ export class AsyncListComponent<
       }
       keyMap.clear();
       indexMap.clear();
+      forgetRowItems(this);
       this.itemMarkers.clear();
       this.markerSet.clear();
       return true;
@@ -2567,6 +2694,13 @@ export class AsyncListComponent<
     const { keyMap, indexMap, indexFormulaMap } = this;
     keyMap.delete(key);
     indexMap.delete(key);
+    forgetRowItems(this, key);
+    // The row's marker leaves the key now, and goes once the row's async
+    // teardown below is done: a row built for the same key meanwhile (the key
+    // of an item added back, a position a list that shrank grows into again)
+    // gets a marker of its own, which that late removal must not take.
+    const marker = this.itemMarkers.get(key);
+    if (marker !== undefined) this.itemMarkers.delete(key);
     // Clean up reactive index formula if it exists
     if (indexFormulaMap) {
       const formula = indexFormulaMap.get(key);
@@ -2600,6 +2734,6 @@ export class AsyncListComponent<
     if (!isDestroyed(row as object)) {
       await destroyElement(row as ComponentLike, false, this.api);
     }
-    this.removeMarker(key);
+    if (marker !== undefined) this.removeMarkerNode(marker);
   }
 }

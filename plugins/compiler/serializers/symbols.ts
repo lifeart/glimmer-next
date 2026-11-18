@@ -39,6 +39,15 @@ export const SYMBOLS = {
   // heuristic. Identity at runtime (side effect: marking) — absent from
   // PURE_FUNCTIONS below.
   ARG_THUNK: '$_argThunk',
+  // Ember dialect (IS_GLIMMER_COMPAT_MODE + WITH_EMBER_INTEGRATION): the read
+  // of a slot's block param, which the runtime may pass as a reference to the
+  // yielded value (src/core/dom.ts `$__bpv`, serializers/element.ts
+  // buildSlots).
+  BLOCK_PARAM_VALUE: '$__bpv',
+  // The key of a list keyed by position in a standalone template:
+  // `$_itemRefKey("@index")` installs the item reference follow runtime
+  // (src/core/item-references.ts, imported from '@lifeart/gxt/item-references').
+  ITEM_REF_KEY: '$_itemRefKey',
 
   // Control flow
   IF: '$_if',

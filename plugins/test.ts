@@ -13,7 +13,14 @@ import { processTemplate, type ResolvedHBS } from './babel';
 import { compile, formatErrorForDisplay, generateSourceMap, type MappingTreeNode, type SourceMapV3 } from './compiler/index';
 import { resolveTemplateTypeHintsWithChecker, mergeTypeHints } from './type-checker-hints';
 
-import { SYMBOLS, RECYCLE_IMPORT, RECYCLE_SYMBOLS, MAIN_IMPORT } from './symbols';
+import {
+  SYMBOLS,
+  RECYCLE_IMPORT,
+  RECYCLE_SYMBOLS,
+  MAIN_IMPORT,
+  ITEM_REFS_IMPORT,
+  ITEM_REFS_SYMBOLS,
+} from './symbols';
 import {
   buildPrecompileTemplateMaker,
   buildTemplateTagFunction,
@@ -50,6 +57,20 @@ function withRecycleImport(moduleCode: string, usedRecycle: boolean): string {
   if (!usedRecycle) return moduleCode;
   if (RECYCLE_IMPORT_FROM_RE.test(moduleCode)) return moduleCode;
   return `${RECYCLE_IMPORT_STATEMENT}\n${moduleCode}`;
+}
+
+// The item reference follow runtime ('@lifeart/gxt/item-references'), the
+// same way: imported only when a template of the module keys a list by
+// position (CompileResult.usedItemRefs).
+const ITEM_REFS_IMPORT_STATEMENT = `import { ${ITEM_REFS_SYMBOLS.join(', ')} } from '${ITEM_REFS_IMPORT}';`;
+const ITEM_REFS_IMPORT_FROM_RE = new RegExp(
+  `from\\s*['"]${ITEM_REFS_IMPORT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"]`,
+);
+
+function withItemRefsImport(moduleCode: string, usedItemRefs: boolean): string {
+  if (!usedItemRefs) return moduleCode;
+  if (ITEM_REFS_IMPORT_FROM_RE.test(moduleCode)) return moduleCode;
+  return `${ITEM_REFS_IMPORT_STATEMENT}\n${moduleCode}`;
 }
 
 // EMBER_NATIVE / EMBER_OUTLET: the native-layer symbols ($_tpl brand, $__tag
@@ -125,6 +146,8 @@ interface ProcessedTemplate {
    * Drives the post-compile `@lifeart/gxt/recycle` import injection.
    */
   usedRecycle: boolean;
+  /** Ground truth from the compiler: a list keyed by position (CompileResult.usedItemRefs). */
+  usedItemRefs: boolean;
   /**
    * Ground-truth preamble flags from the compiler (CompileResult). Each marks
    * that the compiled body actually references the corresponding wrapper local,
@@ -406,6 +429,7 @@ function processTransformedFiles(
       originalLoc: content.loc,
       flags: templateFlags,
       usedRecycle: result.usedRecycle,
+      usedItemRefs: result.usedItemRefs,
       usedArgsAlias: result.usedArgsAlias,
       usedSlots: result.usedSlots,
       usedFw: result.usedFw,
@@ -481,9 +505,13 @@ function processTransformedFiles(
   // Done before placeholder substitution / source-map generation below so the
   // prepended line is reflected consistently in the generated offsets.
   const anyRecycle = processedTemplates.some((template) => template.usedRecycle);
+  const anyItemRefs = processedTemplates.some((template) => template.usedItemRefs);
 
   // Build final code by replacing $placeholder markers
-  let src = withNativeImport(withRecycleImport(txt ?? '', anyRecycle), globalFlags);
+  let src = withNativeImport(
+    withItemRefsImport(withRecycleImport(txt ?? '', anyRecycle), anyItemRefs),
+    globalFlags,
+  );
   const templateInsertPositions: { start: number; end: number; templateIndex: number }[] = [];
 
   programResults.forEach((result, index) => {

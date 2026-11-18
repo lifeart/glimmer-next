@@ -102,14 +102,17 @@ describe('{{#let}} self-shadowing bindings are renamed', () => {
     expect(names[0]).toBe('h');
     expect(names[1]).toMatch(/^h\$\d+$/);
     // the inner initializer reads the outer getter, the body the inner one
-    expect(out).toMatch(/let h\$\d+ = \(\) => \$_maybeHelper\(hash, \[\], \{\s*b: \(\) => h\(\)/);
+    expect(out).toMatch(
+      /let h\$\d+ = \(\) => \$_maybeHelper\(hash, \[\], \{\s*b: \$_argThunk\(\(\) => h\(\)\)/,
+    );
   });
 
   test('a renamed component binding is invoked under its declared name', () => {
     const out = code('{{#let (component Foo) as |Foo|}}<Foo />{{/let}}', NATIVE, ['Foo']);
     const [name] = declaredNames(out);
     expect(name).toMatch(/^Foo\$\d+$/);
-    expect(out).toContain(`$_c(${name}()`);
+    // A `{{#let}}` binding used as a component is invoked through a getter.
+    expect(out).toContain(`$_dc(() => ${name}()`);
   });
 
   test('runtime: the renamed getter evaluates the outer helper once (no recursion)', () => {

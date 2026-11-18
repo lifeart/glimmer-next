@@ -2301,6 +2301,134 @@ describe('AsyncListComponent markers', () => {
   });
 });
 
+// A keyed list keeps the item each row was built for (`boundItemMap`), to
+// re-bind a reused row when a new object comes with its key. That reference is
+// strong, so a row that goes must take its item out with it. Otherwise the
+// list holds the item of every row it ever built, and a list given new keys on
+// each update (a table reloaded with fresh ids) grows for as long as it lives.
+describe('a keyed list releases the items of its removed rows', () => {
+  type Item = { id: number };
+
+  let window: Window;
+  let document: Document;
+  let api: DOMApi;
+  let root: Root;
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    window = new Window();
+    document = window.document as unknown as Document;
+    api = new HTMLBrowserDOMApi(document);
+    cleanupFastContext();
+    root = new Root(document);
+    provideContext(root, RENDERING_CONTEXT, api);
+    container = document.createElement('div');
+    document.body.appendChild(container);
+  });
+
+  afterEach(() => {
+    cleanupFastContext();
+    TREE.clear();
+    PARENT.clear();
+    CHILD.clear();
+    window.close();
+  });
+
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 10));
+
+  // The list owns `container` (its markers are its first and last children),
+  // so emptying it takes the bulk-clear path.
+  async function createList(kind: 'sync' | 'async', items: Item[]) {
+    const { SyncListComponent, AsyncListComponent } = await import('./list');
+    const { cell } = await import('../reactive');
+
+    const parentComponent = new Component({});
+    parentComponent[RENDERED_NODES_PROPERTY] = [];
+    addToTree(root, parentComponent);
+
+    const itemsCell = cell(items);
+    const args = {
+      tag: itemsCell,
+      key: 'id',
+      ctx: parentComponent,
+      ItemComponent: (item: Item) => {
+        const div = document.createElement('div');
+        div.textContent = String(item.id);
+        return [div];
+      },
+    };
+    const topMarker = document.createComment('list top');
+    const list =
+      kind === 'sync'
+        ? new SyncListComponent<Item>(args, container, topMarker)
+        : new AsyncListComponent<Item>(args, container, topMarker);
+    await settle();
+    return { list, itemsCell, parentComponent };
+  }
+
+  // The items the list still holds for its rows.
+  const heldItems = (list: { boundItemMap: Map<string, Item> | null }) =>
+    list.boundItemMap === null ? [] : Array.from(list.boundItemMap.values());
+
+  for (const kind of ['sync', 'async'] as const) {
+    describe(`${kind} list`, () => {
+      test('a removed row no longer holds its item', async () => {
+        const [a, b, c] = [{ id: 1 }, { id: 2 }, { id: 3 }];
+        const { list, itemsCell } = await createList(kind, [a, b, c]);
+        expect(heldItems(list)).toEqual([a, b, c]);
+
+        itemsCell.update([a, c]);
+        await settle();
+
+        expect(heldItems(list)).not.toContain(b);
+        expect(heldItems(list)).toEqual([a, c]);
+      });
+
+      test('emptying the list releases every item', async () => {
+        const [a, b, c] = [{ id: 1 }, { id: 2 }, { id: 3 }];
+        const { list, itemsCell } = await createList(kind, [a, b, c]);
+        expect(heldItems(list)).toEqual([a, b, c]);
+
+        itemsCell.update([]);
+        await settle();
+
+        expect(heldItems(list)).toEqual([]);
+      });
+
+      test('replacing every row holds only the current items', async () => {
+        const { list, itemsCell } = await createList(kind, [
+          { id: 1 },
+          { id: 2 },
+        ]);
+
+        // New keys each time: every old row goes and a new one is built.
+        let current: Item[] = [];
+        for (let round = 1; round <= 3; round++) {
+          current = [{ id: round * 10 + 1 }, { id: round * 10 + 2 }];
+          itemsCell.update(current);
+          await settle();
+        }
+
+        expect(heldItems(list)).toHaveLength(2);
+        expect(heldItems(list)[0]).toBe(current[0]);
+        expect(heldItems(list)[1]).toBe(current[1]);
+      });
+
+      test('destroying the list releases every item', async () => {
+        const { destroyElement } = await import('../component');
+        const [a, b, c] = [{ id: 1 }, { id: 2 }, { id: 3 }];
+        const { list, parentComponent } = await createList(kind, [a, b, c]);
+        expect(heldItems(list)).toEqual([a, b, c]);
+
+        await destroyElement(parentComponent, false, api);
+        await settle();
+
+        expect(heldItems(list)).toEqual([]);
+      });
+    });
+  }
+});
+
 describe('longestIncreasingSubsequence', () => {
   test('empty array', () => {
     expect(longestIncreasingSubsequence([])).toEqual(new Set());

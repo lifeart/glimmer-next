@@ -6,10 +6,16 @@
  */
 
 import type { CompilerContext } from '../context';
-import type { HBSControlExpression, HBSChild, HBSNode, SerializedValue } from '../types';
+import type {
+  HBSControlExpression,
+  HBSChild,
+  HBSNode,
+  LetWriteSource,
+  SerializedValue,
+} from '../types';
 import { isHBSControlExpression, isHBSNode, isSerializedValue } from '../types';
 import { SYMBOLS } from './symbols';
-import { buildValue, buildPathExpression } from './value';
+import { buildValue, buildPathExpression, letWriteSourceOf } from './value';
 import {
   extractStaticBlock,
   buildStaticBlockDefExpr,
@@ -17,12 +23,23 @@ import {
 } from './static-block';
 import { B, serializeJS, type JSExpression, type JSStatement } from '../builder';
 import { escapeBindingName } from '../utils/js-utils';
+import { replaceBindingRefs } from './binding-refs';
 
 // Sentinel each-key that opts a block into row recycling. Mirrors RECYCLE_KEY
 // in src/core/control-flow/list-recycle.ts (no cross-boundary import: plugins
 // must not pull runtime modules). Detected at compile time so the recycle
 // runtime stays tree-shakable — see buildEach.
 const RECYCLE_KEY = '@recycle';
+
+// The each keys whose rows are built with a REFERENCE to their item (the row
+// callback gets a cell, `.value` being the item the row stands for now) —
+// mirror POSITIONAL_KEY / EACH_IN_KEY in src/core/control-flow/list.ts. A
+// positional row (`key="@index"`, and `key="@key"`: an array's iteration key
+// is the position) keeps its place while the items move, and an `{{#each-in}}`
+// row (native) gets its entry's current key and value; the body reads the item
+// through the reference (see `itemReferenceReads`).
+const POSITIONAL_KEY = '@index';
+const EACH_IN_KEY = '@each-in';
 
 // Forward declarations - set from index.ts to avoid circular dependency
 let buildChildrenExprs: (ctx: CompilerContext, children: readonly HBSChild[], ctxName: string) => JSExpression[];
@@ -236,15 +253,21 @@ function buildEach(
   const conditionExpr = buildValue(ctx, control.condition, ctxName);
 
   // Ensure we have proper block params. `{{#each-in}}` (EMBER_NATIVE, G5):
-  // the row item is a `[key, value]` pair destructured into eachInParams.
+  // the row gets a reference to its `[key, value, rowKey]` entry, under a
+  // name of this block's own (`$__entry_ctxN`): the key and value params are
+  // read through it (`itemReferenceReads`), and a nested each-in's row must
+  // not declare the name an outer row's reads use.
   const eachInParams = control.eachInParams;
   const paramNames = eachInParams !== undefined
-    ? ['$__entry', '$index']
+    ? [`$__entry_${newCtxName}`, '$index']
     : normalizeEachParams(control.blockParams);
   const paramRanges = control.blockParamRanges ?? [];
 
   // Validate and normalize key
   const eachKey = normalizeEachKey(ctx, control);
+  // How the body reads the block params of a row built with a reference to
+  // its item, or null for a row built with the item.
+  const itemReads = itemReferenceReads(eachKey, paramNames, eachInParams);
 
   // Choose sync or async each.
   // PR https://github.com/lifeart/glimmer-next/pull/212: previously this
@@ -317,7 +340,7 @@ function buildEach(
 
   // Build the callback body with index replacement
   // Pass all param names so they can be tracked as known bindings during serialization
-  const bodyExpr = buildEachBody(ctx, control.children, newCtxName, paramNames, hasStable, isRecycled, eachInParams);
+  const bodyExpr = buildEachBody(ctx, control.children, newCtxName, paramNames, hasStable, isRecycled, eachInParams, itemReads);
 
   // Static-block fast path (RESEARCH_LIST_TRACKING_OPTIMIZATION.md §2.A1/§4):
   // when the body is a single qualifying inline element, ALSO emit a
@@ -328,7 +351,12 @@ function buildEach(
   // code byte-identical to not having the fast path. `key="@recycle"` rows
   // render against per-row state objects, not raw items — keep them on the
   // compiled-callback path.
-  const staticBlockParts = isRecycled || eachInParams !== undefined ? null : extractStaticBlock(control);
+  // Nor positional rows, which are built with a reference to their item (the
+  // runtime builds them with the compiled callback).
+  const staticBlockParts =
+    isRecycled || eachInParams !== undefined || eachKey === POSITIONAL_KEY
+      ? null
+      : extractStaticBlock(control);
   let blockDefExpr: JSExpression | null = null;
   let blockValuesExpr: JSExpression | null = null;
   if (staticBlockParts !== null) {
@@ -365,10 +393,7 @@ function buildEach(
   // rename transparent. Non-reserved names pass through unchanged.
   const callbackParams = [
     ...paramNames.map((name, index) => {
-      if (index === 0 && eachInParams !== undefined && eachInParams.length > 0) {
-        // `{{#each-in}}`: destructure the `[key, value]` pair.
-        return `[${eachInParams.map((param) => escapeBindingName(param)).join(', ')}]`;
-      }
+      // (An `{{#each-in}}` row gets the reference to its entry, `$__entry_ctxN`.)
       const emitName = escapeBindingName(name);
       const range = paramRanges[index];
       return range ? B.id(emitName, range) : emitName;
@@ -378,7 +403,20 @@ function buildEach(
   const callback = B.arrow(callbackParams, bodyExpr);
 
   // Build key argument
-  const keyArg = eachKey !== null ? B.string(eachKey) : B.nil();
+  // A standalone template that keys a list by position passes the key through
+  // `$_itemRefKey`, which installs the item reference follow runtime (imported
+  // from '@lifeart/gxt/item-references', `usedItemRefs`): its rows' yielded
+  // blocks and in-elements follow the item now at the row. The Ember dialect
+  // passes the key as it is — its host's runtime compiler installs the
+  // runtime — and a build whose templates key no list by position does not
+  // carry it.
+  const followsItems = eachKey === POSITIONAL_KEY && ctx.flags.WITH_EMBER_INTEGRATION !== true;
+  if (followsItems) ctx.usedItemRefs = true;
+  const keyArg = eachKey === null
+    ? B.nil()
+    : followsItems
+      ? B.call(B.id(SYMBOLS.ITEM_REF_KEY), [B.string(eachKey)])
+      : B.string(eachKey);
 
   // Build inverse (else) branch if present
   // In compat mode, always use `this` as the component context (4th arg)
@@ -443,13 +481,48 @@ function normalizeEachKey(
   control: HBSControlExpression
 ): string | null {
   // `@index` is a POSITIONAL key: the runtime (control-flow/list.ts) keys each
-  // row by its position so a reorder keeps the row node in place and updates its
-  // bound item, and `@index` yields the stable position
-  // (emberjs/ember.js#21340: the `@index`-key Updating test and native "@key
-  // keys items by position"). It is no longer rewritten to `@identity` (which
-  // keyed by value and moved/re-created rows). An explicit `@key` / path key
-  // passes through unchanged.
+  // row by its position so a reorder keeps the row node in place and points
+  // the row's item reference at the item now at its position, and `@index`
+  // yields the stable position (emberjs/ember.js#21340: the `@index`-key
+  // Updating test and native "@key keys items by position"). `@key` keys a
+  // row by the iteration key of its item, which for an `{{#each}}` (an array,
+  // an iterable) is its position: the same key. A path key passes through
+  // unchanged.
+  //
+  // A native `{{#each-in}}` is keyed by the row keys `$__eachIn` gives its
+  // entries.
+  if (control.eachInParams !== undefined) return EACH_IN_KEY;
+  if (control.key === '@key') return POSITIONAL_KEY;
   return control.key;
+}
+
+/**
+ * The rows of a list keyed by `POSITIONAL_KEY` or `EACH_IN_KEY` are built with
+ * a reference to their item: how the body reads each block param through it,
+ * as a map from the param's emitted name to the expression that reads it —
+ * the positional item `item` as `item.value`, the `{{#each-in}}` key and
+ * value as `$__entry_ctxN.value[0]` / `[1]`. Null for any other list, and
+ * when the body has no param to read.
+ */
+function itemReferenceReads(
+  eachKey: string | null,
+  paramNames: readonly string[],
+  eachInParams: readonly string[] | undefined
+): ReadonlyMap<string, string> | null {
+  const reads = new Map<string, string>();
+  if (eachInParams !== undefined && eachKey === EACH_IN_KEY) {
+    const entry = escapeBindingName(paramNames[0]!);
+    eachInParams.forEach((param, i) => {
+      reads.set(escapeBindingName(param), `${entry}.value[${i}]`);
+    });
+  } else if (eachInParams === undefined && eachKey === POSITIONAL_KEY) {
+    const item = paramNames[0]!;
+    if (item !== '$noop') {
+      const name = escapeBindingName(item);
+      reads.set(name, `${name}.value`);
+    }
+  }
+  return reads.size > 0 ? reads : null;
 }
 
 /**
@@ -462,7 +535,8 @@ function buildEachBody(
   paramNames: string[],
   hasStable: boolean,
   isRecycled = false,
-  eachInParams?: readonly string[]
+  eachInParams?: readonly string[],
+  itemReads: ReadonlyMap<string, string> | null = null
 ): JSExpression {
   const indexParam = paramNames[1] ?? '$index';
   const usesIndex = childrenUseIndex(children, indexParam);
@@ -470,9 +544,13 @@ function buildEachBody(
   // Add block params in a dedicated scope frame so nested each/if blocks with
   // matching block-param names shadow rather than clobber outer bindings.
   ctx.scopeTracker.enterScope('control-block');
-  // `{{#each-in}}` key / value params: plain values destructured from the pair.
+  // `{{#each-in}}` key / value params, read through the row's entry.
   for (const param of eachInParams ?? []) {
-    ctx.scopeTracker.addBinding(param, { kind: 'block-param', name: param });
+    ctx.scopeTracker.addBinding(param, {
+      kind: 'block-param',
+      name: param,
+      itemReference: itemReads !== null && itemReads.has(escapeBindingName(param)),
+    });
   }
   paramNames.forEach((param, i) => {
     ctx.scopeTracker.addBinding(param, {
@@ -485,6 +563,8 @@ function buildEachBody(
       // props are forwarding accessors over a re-pointable holder; a cellFor
       // tap would clobber that channel, so recycled params are never tapped.
       recycledRow: isRecycled,
+      // A positional row's item, read through the row's item reference.
+      itemReference: itemReads !== null && itemReads.has(escapeBindingName(param)),
     });
   });
 
@@ -494,9 +574,13 @@ function buildEachBody(
   // Exit scope, restoring outer bindings.
   ctx.scopeTracker.exitScope();
 
-  const rewrittenExprs = usesIndex
+  const indexedExprs = usesIndex
     ? childExprs.map((expr) => replaceIndexRefsInExpr(expr, escapeBindingName(indexParam)))
     : childExprs;
+  // A row built with a reference to its item reads its params through it.
+  const rewrittenExprs = itemReads !== null
+    ? indexedExprs.map((expr) => replaceBindingRefs(expr, itemReads))
+    : indexedExprs;
 
   const childArrayExpr = ctx.formatter.options.enabled && rewrittenExprs.length > 0
     ? B.formattedArray(rewrittenExprs, true)
@@ -928,16 +1012,28 @@ function buildLet(
     }
   });
 
+  // Ember compat: where a write of a binding of a path goes, found here, in
+  // the let's scope (`withArgSource`). A component argument that is the
+  // binding writes through a getter of the object the let declares
+  // (`parentVar`, set when an argument uses it), so a block param of the same
+  // name as one of the path's names, inside the let, does not capture it.
+  const letSources = bindings.map((binding) =>
+    compatReferences && ctx.flags.IS_GLIMMER_COMPAT_MODE
+      ? letWriteSourceOf(ctx, binding.value, ctxName)
+      : undefined,
+  );
+
   // Add let bindings in a fresh scope frame so nested `{{#let}}` blocks
   // shadow rather than clobber the outer binding.
   ctx.scopeTracker.enterScope('let');
   bindings.forEach((binding, index) => {
     const emitName = emitNames[index]!;
+    const letSource = letSources[index]?.source;
     ctx.scopeTracker.addBinding(
       binding.name,
       emitName === escapeBindingName(binding.name)
-        ? { kind: 'let-binding', name: binding.name }
-        : { kind: 'let-binding', name: binding.name, emitName },
+        ? { kind: 'let-binding', name: binding.name, letSource }
+        : { kind: 'let-binding', name: binding.name, emitName, letSource },
     );
   });
 
@@ -957,10 +1053,22 @@ function buildLet(
     ? B.formattedArray(rewrittenExprs, true)
     : B.array(rewrittenExprs);
 
+  // The getters of the objects the arguments that are a binding write to (a
+  // binding of an outer binding shares that let's).
+  const sourceDecls: JSStatement[] = [];
+  for (const found of letSources) {
+    if (found === undefined || found.shared) continue;
+    const source: LetWriteSource = found.source;
+    if (source.parentVar !== null) {
+      sourceDecls.push(B.varDecl('let', source.parentVar, B.arrow([], source.parent)));
+    }
+  }
+
   // Build arrow-function IIFE: ...(() => { declarations; return [children]; })()
   // Arrow function preserves this from the enclosing scope.
   const body: JSStatement[] = [
     ...varDecls,
+    ...sourceDecls,
     B.ret(childArrayExpr),
   ];
 

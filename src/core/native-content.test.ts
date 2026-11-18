@@ -11,7 +11,7 @@
  *   - `{{#in-element}}` resolves its destination at MOUNT (document order);
  *     a nullish destination is a host assertion;
  *   - `{{#each}}` keys primitive rows by value (Glimmer `@identity`);
- *   - `{{#each-in}}` (G5) iterates stable `[key, value]` pairs.
+ *   - `{{#each-in}}` (G5) iterates `[key, value, rowKey]` entries.
  */
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import * as main from './index';
@@ -42,6 +42,7 @@ import {
   CONTENT_TEXT,
 } from './native-content';
 import { compileTemplateSource } from '../../plugins/runtime-compiler';
+import { registerItemReferenceRuntime } from './item-references';
 import { $_curry, CURRIED_COMPONENT, CURRIED_HELPER, CURRIED_MODIFIER } from './curried';
 
 const FLAGS = {
@@ -97,6 +98,8 @@ describe('Ember native runtime', () => {
   }
 
   beforeEach(() => {
+    // an Ember host installs the item reference runtime ({{#each-in}} rows)
+    registerItemReferenceRuntime();
     fixture = createDOMFixture();
     setNativeContentBinding(bindNativeContent);
     registerHostHooks({
@@ -494,19 +497,17 @@ describe('Ember native runtime', () => {
   });
 
   describe('{{#each-in}} (G5)', () => {
-    test('pairs are stable per (key, value)', () => {
+    test('entries are [key, value, row key], the row key following the value', () => {
       const obj: Record<string, unknown> = { a: 1, b: 2 };
       const first = $__eachIn(obj);
       expect(first).toEqual([
-        ['a', 1],
-        ['b', 2],
+        ['a', 1, 'number:1#0'],
+        ['b', 2, 'number:2#0'],
       ]);
-      const second = $__eachIn(obj);
-      expect(second[0]).toBe(first[0]);
       obj.b = 3;
-      const third = $__eachIn(obj);
-      expect(third[0]).toBe(first[0]);
-      expect(third[1]).not.toBe(first[1]);
+      const second = $__eachIn(obj);
+      expect(second[0]![2]).toBe(first[0]![2]);
+      expect(second[1]![2]).not.toBe(first[1]![2]);
       expect($__eachIn(null)).toEqual([]);
       expect($__eachIn('str')).toEqual([]);
     });

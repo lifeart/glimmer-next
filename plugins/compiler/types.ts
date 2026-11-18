@@ -7,6 +7,7 @@
 // callers can supply standard `@glimmer/syntax` AST plugins/visitors. This is
 // erased at build time and adds no runtime dependency.
 import type { ASTPluginBuilder, NodeVisitor } from '@glimmer/syntax';
+import type { JSExpression } from './builder/types';
 
 // ============================================================================
 // Source Range & Mapping Types
@@ -235,6 +236,15 @@ export type BindingKind =
 /**
  * Information about a binding in a scope.
  */
+/** See `BindingInfo.letSource`. */
+export interface LetWriteSource {
+  /** The let's built expression of the object written to. */
+  readonly parent: JSExpression;
+  readonly key: string;
+  /** The getter of `parent` the let declares, once an argument uses it. */
+  parentVar: string | null;
+}
+
 export interface BindingInfo {
   readonly kind: BindingKind;
   readonly name: string;
@@ -253,6 +263,25 @@ export interface BindingInfo {
    * swap channel, so recycled-row params are excluded from the row-item tap.
    */
   readonly recycledRow?: boolean;
+  /**
+   * True for a block param read through a reference: the item of a positional
+   * `{{#each}}` row or the key or value of an `{{#each-in}}` row, read through
+   * the row's item reference (serializers/control.ts `itemReferenceReads`),
+   * and under the Ember dialect a slot's block param, read through `$__bpv`
+   * (serializers/element.ts buildSlots). Its value can change while the block
+   * stays, so a construct that would read it once — a component invocation
+   * `<Item />` — reads it through a getter instead.
+   */
+  readonly itemReference?: boolean;
+  /**
+   * Ember compat: where a write of a `{{#let}}` binding of a path goes, found
+   * at the let — in its scope, where the path's names mean what they mean
+   * there: the object (`parent`, the let's built expression of it) and the
+   * property. A component argument that is the binding writes there
+   * (serializers/value.ts `withArgSource`), through a getter of `parent` the
+   * let declares (`parentVar`) when an argument uses it.
+   */
+  readonly letSource?: LetWriteSource;
   /**
    * The JS identifier a `{{#let}}` binding is DECLARED and REFERENCED under,
    * when it differs from its (reserved-word-escaped) template name. Set only
@@ -612,6 +641,12 @@ export interface CompileResult {
    * emitted.
    */
   readonly usedRecycle: boolean;
+  /**
+   * Ground truth: `true` when this standalone template keys a list by
+   * position (`$_itemRefKey`): the module assembler imports the item
+   * reference follow runtime from '@lifeart/gxt/item-references'.
+   */
+  readonly usedItemRefs: boolean;
   /**
    * Ground-truth preamble flags (see CompilerContext): `true` when the
    * compiled output actually references the corresponding wrapper-injected

@@ -88,6 +88,7 @@ import {
   $_nt,
   $_nbt,
   $_argThunk,
+  $__bpv,
   $_blk,
   $_fin,
   $_html,
@@ -109,6 +110,13 @@ import { cellFor, formula, cell, tagsToRevalidate, cellsMap } from '../src/core/
 // (from '@lifeart/gxt/recycle') to install $_eachRecycled / $_eachSyncRecycled
 // on globalThis the same way setupGlobalScope() installs GXT_RUNTIME_SYMBOLS.
 import { effect } from '../src/core/vm';
+// The item reference follow runtime: `setupGlobalScope` installs it, as an
+// Ember-dialect template — the runtime compiler's default — keys a list by
+// position without `$_itemRefKey`.
+import {
+  $_itemRefKey,
+  registerItemReferenceRuntime,
+} from '../src/core/item-references';
 import { syncDom } from '../src/core/runtime';
 import { ensureReactiveCollectionsPatched } from '../src/core/reactive-collections';
 
@@ -161,6 +169,7 @@ export const GXT_RUNTIME_SYMBOLS = {
   $_nt,
   $_nbt,
   $_argThunk,
+  $__bpv,
   $_blk,
   $_fin,
   $_html,
@@ -180,6 +189,7 @@ export const GXT_RUNTIME_SYMBOLS = {
   $__cellFor,
   $_qStr,
   $_uid,
+  $_itemRefKey,
   $_HTMLProvider,
   $_SVGProvider,
   $_MathMLProvider,
@@ -220,6 +230,10 @@ export function setupGlobalScope(): void {
   // effect — initializing the global scope is the explicit signal that
   // the host wants GXT semantics.
   ensureReactiveCollectionsPatched();
+
+  // A list keyed by position (`key="@index"`) or an `{{#each-in}}` follows the
+  // item now at a kept row (`@lifeart/gxt/item-references`).
+  registerItemReferenceRuntime();
 
   // Mark that global scope is set up
   g.__GXT_RUNTIME_INITIALIZED__ = true;

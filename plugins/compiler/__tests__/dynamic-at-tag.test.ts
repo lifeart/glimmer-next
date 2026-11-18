@@ -52,7 +52,7 @@ describe('Ember compat: `<@comp>` is a dynamic component', () => {
   test('block params bind to the yielded values', () => {
     const { code } = compile('<@comp class="r" as |v|>[{{v}}]</@comp>', EMBER_COMPAT);
     expect(code).toContain('$_dc(() => $a.comp');
-    expect(code).toMatch(/default: \(ctx0, v\) => \["\[", \(\) => v, "\]"\]/);
+    expect(code).toMatch(/default: \(ctx0, v\) => \["\[", \(\) => \$__bpv\(v\), "\]"\]/);
     expect(code).not.toContain("$_tag('@comp'");
     expect(code).not.toContain('this.v');
   });
@@ -71,9 +71,19 @@ describe('Ember compat: `<@comp>` is a dynamic component', () => {
     const native = {
       flags: { IS_GLIMMER_COMPAT_MODE: true, WITH_EMBER_INTEGRATION: true, EMBER_NATIVE: true },
     } as const;
-    for (const tpl of ['<@comp as |v|>{{v}}</@comp>', '<@comp @a={{this.x}} title="t" />']) {
-      expect(compile(tpl, EMBER_COMPAT).code).toBe(compile(tpl, native).code);
-    }
+    expect(compile('<@comp as |v|>{{v}}</@comp>', EMBER_COMPAT).code).toBe(
+      compile('<@comp as |v|>{{v}}</@comp>', native).code
+    );
+    // Compat also gives a path argument's getter where a write of it goes (a
+    // classic component's two-way binding); the native build has no classic
+    // components.
+    const tpl = '<@comp @a={{this.x}} title="t" />';
+    expect(compile(tpl, EMBER_COMPAT).code).toBe(
+      compile(tpl, native).code.replace(
+        'a: $_argThunk(() => this.x)',
+        'a: $_argThunk(() => this.x, () => this, "x")'
+      )
+    );
   });
 
   test('standalone gxt is unchanged', () => {

@@ -237,6 +237,12 @@ export interface CompilerContext {
   /** Counter for generating unique let block variable names */
   letBlockCounter: number;
 
+  /**
+   * Ember compat: the counter of the getters a `{{#let}}` declares for where a
+   * write of a binding goes (`$__letSrcN`, serializers/value.ts argSourceOf).
+   */
+  letSourceCounter: number;
+
   /** Counter for unbound helper cache IDs (IS_GLIMMER_COMPAT_MODE) */
   unboundCounter: number;
 
@@ -267,6 +273,13 @@ export interface CompilerContext {
    * replacing the old source-string regex heuristic in babel.ts.
    */
   usedRecycle: boolean;
+
+  /**
+   * Ground truth: set by the `{{#each}}` serializer when a standalone template
+   * keys a list by position (`$_itemRefKey`), so the module assembler imports
+   * the item reference follow runtime from '@lifeart/gxt/item-references'.
+   */
+  usedItemRefs: boolean;
 
   /**
    * Ground-truth preamble flags. Each is set to `true` by the exact
@@ -406,10 +419,12 @@ export function createContext(
     },
     contextCounter: 0,
     letBlockCounter: 0,
+    letSourceCounter: 0,
     unboundCounter: 0,
     uniqueIdCounter: 0,
     helperSiteCounter: 0,
     usedRecycle: false,
+    usedItemRefs: false,
     usedArgsAlias: false,
     usedSlots: false,
     usedFw: false,

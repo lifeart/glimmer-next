@@ -36,6 +36,7 @@ import {
   tagsFromRange,
   materializeAbsentPathCell,
   registerLeafOwnersForFormula,
+  getTracker,
 } from '@/core/reactive';
 import { opcodeFor, opcodeForCreatedContent, checkOpcode, bindOpcode } from '@/core/vm';
 import {
@@ -55,6 +56,13 @@ import {
   registerDestructorBatch,
 } from './glimmer/destroyable';
 import { HTMLBrowserDOMApi } from '@/core/dom-api';
+import { $_argThunk, isArgThunk, argSource } from '@/core/helpers/-private';
+import {
+  followInElement,
+  followSlot,
+  itemReads,
+  paramRefs,
+} from '@/core/item-reference-runtime';
 import {
   isFn,
   isPrimitive,
@@ -163,6 +171,10 @@ import {
 import { splatLocalPlan } from './splat-local';
 export { $_MANAGERS };
 
+// The brand of a compiler-emitted argument getter, and where a write of the
+// argument goes (helpers/-private.ts).
+export { $_argThunk, isArgThunk, argSource };
+
 export function $_TO_VALUE(reference: unknown) {
   if (isFn(reference)) {
     return resolveRenderable(reference as Function);
@@ -174,10 +186,27 @@ export function $_TO_VALUE(reference: unknown) {
 /**
  * Unwrap a helper argument - if it's a getter function, call it to get the actual value.
  * If it's a Tag (reactive cell), get its .value property.
+ *
+ * Under the Ember dialect (WITH_EMBER_INTEGRATION) the getter is one the
+ * compiler branded (`$_argThunk`, serializers/value.ts `brandArgGetter`): any
+ * other function — an action, a `(fn)` result — is the argument's value and
+ * is passed as it is. A standalone build reads every function without a
+ * prototype as a getter (`$__fn` returns a function with one, so a `(fn)`
+ * result passed as an argument is not called).
  */
 export function $_unwrapHelperArg(value: unknown): unknown {
-  if (typeof value === 'function' && !value.prototype) {
-    value = value();
+  return readArgument(
+    value,
+    typeof value === 'function' &&
+      (WITH_EMBER_INTEGRATION ? isArgThunk(value) : !value.prototype),
+  );
+}
+
+// An argument's value: what `value` returns when it is a getter, else `value`;
+// a tag's current value.
+function readArgument(value: unknown, isGetter: boolean): unknown {
+  if (isGetter) {
+    value = (value as () => unknown)();
   }
   if (value !== null && value !== undefined && isTagLike(value)) {
     return (value as { value: unknown }).value;
@@ -236,7 +265,7 @@ export function $_modifierHelper(params: any[], hash: Record<string, unknown>, c
     // modifier manager when `$_maybeModifier` installs it.
     return $_curry(CURRIED_MODIFIER, params, hash, ctx) as never;
   }
-  const modifierFn = $_unwrapHelperArg(params[0]) as Function;
+  const modifierFn = unwrapModifierArg(params[0]) as Function;
   const boundParams = params.slice(1);
 
   // @ts-expect-error EmberFunctionalModifiers global
@@ -253,7 +282,7 @@ export function $_modifierHelper(params: any[], hash: Record<string, unknown>, c
   }
 
   return function wrappedModifier(node: HTMLElement, _params: any[], _hash: Record<string, unknown>) {
-    const allParams = $_unwrapArgs([...boundParams, ..._params]);
+    const allParams = unwrapModifierArgs([...boundParams, ..._params]);
     const mergedHash = { ...hash, ..._hash };
     return modifierFn(node, allParams, mergedHash);
   };
@@ -1402,23 +1431,41 @@ export function $_inElement(
     ctx,
   );
 
-  function renderInElementBody() {
-      let appendRef!: HTMLElement;
+  function readDestination(): HTMLElement {
       if (isFn(elementRef)) {
         let result = elementRef();
         if (isFn(result)) {
           result = result();
         }
         if (result !== null && result !== undefined && isTagLike(result)) {
-          appendRef = result.value;
-        } else {
-          appendRef = result;
+          return result.value;
         }
+        return result;
       } else if (elementRef !== null && elementRef !== undefined && isTagLike(elementRef)) {
-        appendRef = elementRef.value;
-      } else {
-        appendRef = elementRef;
+        return elementRef.value;
       }
+      return elementRef;
+  }
+
+  // The destination is read once. When it is read through a list row's item
+  // reference (`{{#in-element item.target}}` in a positional or each-in row
+  // that is kept for another item), the item reference runtime moves the
+  // block — renders it again — to the destination of the item now at the row,
+  // as Glimmer's in-element follows its destination reference.
+  function renderInElementBody() {
+      const reads = itemReads;
+      const appendRef = readDestination();
+      const remove = renderInto(appendRef);
+      registerDestructor(ctx, () => remove(false));
+      if (itemReads !== reads) {
+        followInElement!(ctx, readDestination, appendRef, remove, renderInto);
+      }
+  }
+
+  // Render the block into `appendRef`; returns what removes it again — and
+  // destroys what it rendered, when the block moves to another destination
+  // (else the render context's teardown destroys it).
+  function renderInto(appendRef: HTMLElement): (destroyContent: boolean) => void {
       if (!appendRef) {
         if (deferToMount) {
           // Glimmer / Ember: a nullish destination is an assertion (a host
@@ -1426,13 +1473,13 @@ export function $_inElement(
           const message = 'You cannot pass a null or undefined destination element to in-element';
           if (HOST_HOOKS.assert !== undefined) HOST_HOOKS.assert(message);
           else hostAssertFailed(message);
-          return;
+          return noTeardown;
         }
         if (IS_DEV_MODE) {
           const errMsg = `in-element: target element is null or undefined. isFn: ${isFn(elementRef)}, isTagLike: ${isTagLike(elementRef)}, fnResult: ${isFn(elementRef) ? String(elementRef()) : 'N/A'}`;
           console.error(errMsg);
         }
-        return;
+        return noTeardown;
       }
       // Clear/replace mode (Glimmer/Ember default): remove the target's
       // existing children before rendering our block body.
@@ -1449,8 +1496,14 @@ export function $_inElement(
         : null;
       const nodes = roots(ctx);
       renderElement(api, ctx, appendRef, nodes);
-      registerDestructor(ctx, () => {
+      let removed = false;
+      return (destroyContent: boolean) => {
+        if (removed) return;
+        removed = true;
         unregisterFromParent(nodes as ComponentLike[]);
+        if (destroyContent) {
+          destroyElementSync(nodes as unknown as ComponentLike, false, api);
+        }
         if (preExisting !== null) {
           const current = Array.from(appendRef.childNodes);
           for (let i = 0; i < current.length; i++) {
@@ -1462,9 +1515,11 @@ export function $_inElement(
         } else {
           appendRef.innerHTML = '';
         }
-      });
+      };
   }
 }
+
+function noTeardown(): void {}
 
 export function $_ucw(
   roots: (context: Component<any>) => (Node | ComponentReturnType)[],
@@ -1641,31 +1696,6 @@ export function getNamedBlockName(fn: unknown): string | null {
 // survives minification verbatim and the `$_`-prefix will not collide with host
 // data. Identity at runtime; a no-op on non-functions so wrapping a folded
 // literal/eager value is harmless.
-const ARG_THUNK_FLAG = '$_isArgThunk';
-
-/**
- * Mark `fn` as a compiler-emitted reactive ARG thunk and return it (identity).
- * Emitted by the compiler around the reactive getters in a component's args
- * object (`buildArgsObject`). A no-op on non-functions.
- */
-export function $_argThunk<T>(fn: T): T {
-  if (typeof fn === 'function') {
-    (fn as any)[ARG_THUNK_FLAG] = true;
-  }
-  return fn;
-}
-
-/**
- * True when `fn` is a thunk the compiler marked as a reactive arg getter (via
- * `$_argThunk`). The arg-access layer invokes only these; every other function
- * value (a forwarded action, a `{{fn}}`/helper bound result) passes through.
- * Hosts (the Ember bridge) call this instead of shape heuristics
- * (`fn.length`/`fn.prototype`), which it retires — it is minification-proof.
- */
-export function isArgThunk(fn: unknown): boolean {
-  return typeof fn === 'function' && (fn as any)[ARG_THUNK_FLAG] === true;
-}
-
 if (IS_DEV_MODE) {
   function buildGraph(
     obj: Record<string, unknown>,
@@ -1882,9 +1912,28 @@ export const $_maybeHelper = (
   return value;
 };
 
+// A modifier's argument in gxt's own modifier paths (a curried modifier, a
+// modifier no host manager claims): read by shape — every function without a
+// prototype is a getter — in every build. (A host manager reads the arguments
+// of the modifiers it claims itself.)
+// Without the Ember dialect that is the helper argument rule itself.
+function unwrapModifierArg(value: unknown): unknown {
+  return WITH_EMBER_INTEGRATION
+    ? readArgument(value, typeof value === 'function' && !value.prototype)
+    : $_unwrapHelperArg(value);
+}
+
+function unwrapModifierArgs(args: any[]): any[] {
+  return unwrapEach(args, unwrapModifierArg);
+}
+
 export function $_unwrapArgs(args: any[]): any[] {
+  return unwrapEach(args, $_unwrapHelperArg);
+}
+
+function unwrapEach(args: any[], unwrap: (value: unknown) => unknown): any[] {
   for (let i = 0; i < args.length; i++) {
-    args[i] = $_unwrapHelperArg(args[i]);
+    args[i] = unwrap(args[i]);
   }
   return args;
 }
@@ -2109,6 +2158,52 @@ function _component(
   return instance;
 }
 
+/**
+ * Ember dialect (WITH_EMBER_INTEGRATION): a param `createSlot` hands a block as
+ * a reference — the formula of a param that can change. The compiler reads
+ * every block param of an Ember-dialect slot through `$__bpv`, which reads
+ * such a reference and passes any other value as it is. `followsItem`: its
+ * value was read through a list row's item reference (`isItemSlotParam`).
+ */
+class SlotParamReference extends MergedCell {
+  followsItem: boolean;
+  constructor(fn: () => unknown, followsItem: boolean, debugName?: string) {
+    super(fn, debugName);
+    this.followsItem = followsItem;
+  }
+}
+
+/**
+ * The value of a block param `param` an Ember-dialect slot function received:
+ * the current value of a param reference `createSlot` passed (its read is
+ * tracked, so a binding that reads the param follows it), else `param`. As in
+ * Glimmer, where a block param is a reference, the block keeps its DOM and
+ * component instances when the yielded value changes; only what reads it
+ * updates. Without the Ember dialect there are no references: `param` itself.
+ */
+export function $__bpv(param: unknown): unknown {
+  return WITH_EMBER_INTEGRATION && param instanceof SlotParamReference
+    ? param.value
+    : param;
+}
+
+/**
+ * Whether `param` is a param reference `createSlot` passed for a value read
+ * through a list row's item reference: another item's value can come to stand
+ * in it while the block stays. The components the block renders follow it
+ * through their arguments; a host that creates a component of the block
+ * inside a tracked renderable (Ember compat renders a by-name component of a
+ * block as such a thunk) creates it untracked, so that the renderable — and
+ * the component — does not depend on what the component read.
+ */
+export function isItemSlotParam(param: unknown): boolean {
+  return WITH_EMBER_INTEGRATION && param instanceof SlotParamReference && param.followsItem;
+}
+
+// Whether the params of the slot `createSlot` built last read a list row's
+// item reference (`itemReads`).
+let slotParamsReadItem = false;
+
 function createSlot(
   value: Slots[string],
   params: () => unknown[],
@@ -2127,17 +2222,50 @@ function createSlot(
   // @ts-expect-error slot return type
   addToTree(ctx, slotContext);
   const formulasToDestroy: MergedCell[] = [];
-  const paramsArray = params().map((_, i) => {
-    const v = formula(() => params()[i], `slot:param:${i}`);
+  // A computation the slot is built in (a host binding that renders it) and
+  // what it read before the params.
+  const tracker = WITH_EMBER_INTEGRATION ? getTracker() : null;
+  const trackerSize = tracker !== null ? tracker.size : 0;
+  // A param read through a list row's item reference (a positional
+  // `{{#each}}` or `{{#each-in}}` row, kept while another item comes to stand
+  // at it) can be replaced by another object. Only the item reference runtime
+  // makes such references; their reads are counted (`itemReads`).
+  const reads = itemReads;
+  const initial = params();
+  const readsItem = itemReads !== reads;
+  const paramsArray = initial.map((_, i) => {
+    const read = () => params()[i];
+    const v = WITH_EMBER_INTEGRATION
+      ? new SlotParamReference(read, readsItem, IS_DEV_MODE ? `slot:param:${i}` : undefined)
+      : formula(read, `slot:param:${i}`);
     const value = v.value;
-    if (v.isConst || typeof value === 'object') {
+    if (v.isConst) {
       v.destroy();
       return value;
-    } else {
-      formulasToDestroy.push(v);
-      return v;
     }
+    if (typeof value === 'object' && !(WITH_EMBER_INTEGRATION && readsItem)) {
+      // An object is passed as the value it has now: the block's reads of its
+      // members stay reactive. (A standalone block that reads an item
+      // reference is rendered again for another object: the follow runtime's
+      // `followSlot`.)
+      v.destroy();
+      return value;
+    }
+    // A primitive is passed as its formula, which the block reads where it
+    // renders it; under the Ember dialect, an object read through an item
+    // reference too, which the block reads through `$__bpv`.
+    formulasToDestroy.push(v);
+    return v;
   });
+  // The item references the params read: the computation the slot is built in
+  // does not depend on them, nor on the block's reads of the params (the
+  // block follows them through its param references), or another item coming
+  // to stand at the row would render the block again — with new component
+  // instances, where Glimmer only updates the param. Every other read stays,
+  // an item reference the computation read before and one the block reads for
+  // a reason of its own.
+  const paramReferences =
+    tracker !== null && readsItem ? paramRefs!(tracker, trackerSize) : null;
   if (formulasToDestroy.length > 0) {
     registerDestructor(slotContext, () => {
       for (const f of formulasToDestroy) {
@@ -2146,6 +2274,11 @@ function createSlot(
     });
   }
   const elements = value ? value(...[slotContext, ...paramsArray]) : [];
+  if (paramReferences !== null) {
+    for (const reference of paramReferences) tracker!.delete(reference);
+  }
+  // Set after the block rendered (which may build slots of its own).
+  slotParamsReadItem = readsItem;
   if (IS_DEV_MODE) {
     $DEBUG_REACTIVE_CONTEXTS.pop();
     // @ts-expect-error
@@ -2160,6 +2293,37 @@ function createSlot(
 
   // @ts-expect-error slot return type
   return $_fin(elements, slotContext);
+}
+
+/**
+ * Render the block `value` with the yielded `params` (`createSlot`).
+ *
+ * Under the Ember dialect a param that can change reaches the block as a
+ * reference, so the block follows it in place. A standalone block gets an
+ * object param as the value it has when it renders; when the params are read
+ * through a list row's item reference, the row can be kept for another item,
+ * and the item reference follow runtime (`@lifeart/gxt/item-references`, a
+ * build has it when a template keys a list by position) renders the block
+ * again, in place, whenever an object param is replaced or a param turns from
+ * a primitive into an object or back.
+ */
+function renderSlot(
+  value: Slots[string],
+  params: () => unknown[],
+  name: string,
+  ctx: any,
+) {
+  const result = createSlot(value, params, name, ctx);
+  // (Set only when the item reference runtime is installed.)
+  return WITH_EMBER_INTEGRATION || !slotParamsReadItem
+    ? result
+    : followSlot!(
+        result as unknown as ComponentLike,
+        () => createSlot(value, params, name, ctx) as unknown as ComponentLike,
+        params,
+        name,
+        ctx,
+      );
 }
 
 function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
@@ -2181,7 +2345,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
         }
         slotValue = value;
 
-        const slotRoots = createSlot(slotValue, params, name, ctx);
+        const slotRoots = renderSlot(slotValue, params, name, ctx);
         renderElement(
           api,
           ctx,
@@ -2200,7 +2364,7 @@ function slot(name: string, params: () => unknown[], $slot: Slots, ctx: any) {
     });
     return slotPlaceholder;
   }
-  return createSlot($slot[name], params, name, ctx);
+  return renderSlot($slot[name], params, name, ctx);
 }
 
 function getRenderTargets(api: DOMApi, debugName: string) {
@@ -2351,10 +2515,31 @@ export function $_each<T extends { id: number }>(
   return toNodeReturnType(outlet, instance);
 }
 
+// Ember dialect: the key under which an args object `$_args` built gives the
+// record it reads — the arguments as the compiler passed them (`argumentOf`).
+const ARGS_RECORD = Symbol('args-record');
+
+/**
+ * Ember dialect (WITH_EMBER_INTEGRATION): the argument `key` of the args
+ * object `args` as the compiler passed it to `$_args` — its getter, branded
+ * (`$_argThunk`) with where a write of the argument goes (`argSource`), or its
+ * value; `undefined` when `args` is not an args object `$_args` built. A host
+ * that writes a two-way bound argument through the args object of a
+ * component's caller (Glimmer's `@x` is the caller's reference) finds the
+ * caller's own argument's source here.
+ */
+export function argumentOf(args: object, key: string): unknown {
+  if (!WITH_EMBER_INTEGRATION) return undefined;
+  const record: unknown = (args as { [ARGS_RECORD]?: unknown })[ARGS_RECORD];
+  return typeof record === 'object' && record !== null
+    ? (record as Record<string, unknown>)[key]
+    : undefined;
+}
+
 const ArgProxyHandler: ProxyHandler<{}> = {
-  get(target: Record<string, () => unknown>, prop: string) {
+  get(target: Record<string, () => unknown>, prop: string | symbol) {
     if (prop in target) {
-      const value = target[prop];
+      const value = target[prop as string];
       if (!isFn(value)) {
         return value;
       }
@@ -2370,7 +2555,7 @@ const ArgProxyHandler: ProxyHandler<{}> = {
       }
       return value();
     }
-    return undefined;
+    return WITH_EMBER_INTEGRATION && prop === ARGS_RECORD ? target : undefined;
   },
   set() {
     if (IS_DEV_MODE) {
@@ -2428,6 +2613,9 @@ export function $_args(
         [$SLOTS_SYMBOL]: slots ?? {},
         [$PROPS_SYMBOL]: props ?? {},
       };
+      if (WITH_EMBER_INTEGRATION) {
+        Object.defineProperty(newArgs, ARGS_RECORD, { value: args });
+      }
       Object.keys(args).forEach((key) => {
         try {
           Object.defineProperty(newArgs, key, {
@@ -2732,11 +2920,9 @@ export function $_dc(
       api.insert(parent, newTarget, target);
       unregisterFromParent(result);
       destroyElementSync(result, false, api);
-      if (EMBER_NATIVE) {
-        // The outgoing placeholder was popped off the destroyed result, so its
-        // teardown left it in the DOM — one stray anchor per swap. Remove it.
-        api.destroy(target!);
-      }
+      // The outgoing placeholder was popped off the destroyed result, so its
+      // teardown left it in the DOM — one stray anchor per swap. Remove it.
+      api.destroy(target!);
       result = component(value, args, ctx);
       result![RENDERED_NODES_PROPERTY].push(newTarget!);
       renderElement(api, ctx, parent, result, newTarget!);
@@ -2807,7 +2993,7 @@ export const $_maybeModifier = (
     return () => {
       requestAnimationFrame(() => {
         const f = formula(() => {
-          const unwrappedProps = $_unwrapArgs([...props]);
+          const unwrappedProps = unwrapModifierArgs([...props]);
           instance.modify(element, unwrappedProps, hashArgs());
         }, 'class-based modifier');
         destructors.push(
@@ -2837,24 +3023,24 @@ export const $_maybeModifier = (
         Object.defineProperty(newArgs, key, {
           enumerable: true,
           get() {
-            return $_unwrapHelperArg(args[key]);
+            return unwrapModifierArg(args[key]);
           },
         });
       }
-      const unwrappedProps = $_unwrapArgs([...props]);
+      const unwrappedProps = unwrapModifierArgs([...props]);
       return modifier(element, unwrappedProps, newArgs);
     };
   }
 
   if (typeof modifier === 'function') {
     return (el: HTMLElement) => {
-      const unwrappedProps = $_unwrapArgs([...props]);
+      const unwrappedProps = unwrapModifierArgs([...props]);
       const hash = hashArgs();
       const unwrappedHash: Record<string, unknown> = {};
       const keys = Object.keys(hash);
       for (let i = 0; i < keys.length; i++) {
         const key = keys[i];
-        unwrappedHash[key] = $_unwrapHelperArg(hash[key]);
+        unwrappedHash[key] = unwrapModifierArg(hash[key]);
       }
       return modifier(el, unwrappedProps, unwrappedHash);
     };

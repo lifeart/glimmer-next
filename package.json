@@ -94,6 +94,10 @@
       "import": "./dist/gxt.recycle.es.js",
       "types": "./dist/recycle.d.ts"
     },
+    "./item-references": {
+      "import": "./dist/gxt.item-references.es.js",
+      "types": "./dist/item-references.d.ts"
+    },
     "./glint": {
       "types": "./dist/glint.d.ts"
     }

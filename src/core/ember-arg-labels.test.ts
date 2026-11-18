@@ -54,7 +54,7 @@ describe('EMBER_ARG_LABELS: compat emission', () => {
 
   test('a helper binding: this-paths and an argument', () => {
     expect(code('{{fn this.myFunc this.arg1 @a}}', flags, ['fn'])).toContain(
-      `$_maybeHelper(fn, [() => this.myFunc, () => this.arg1, () => $a.a], {}, undefined, undefined, { positional: ["this.myFunc", "this.arg1", "@a"] })`,
+      `$_maybeHelper(fn, [$_argThunk(() => this.myFunc), $_argThunk(() => this.arg1), $_argThunk(() => $a.a)], {}, undefined, undefined, { positional: ["this.myFunc", "this.arg1", "@a"] })`,
     );
   });
 
@@ -66,7 +66,7 @@ describe('EMBER_ARG_LABELS: compat emission', () => {
 
   test('a helper by name keeps its context, before the labels', () => {
     expect(code('{{my-helper this.a b=this.b}}', flags)).toContain(
-      `$_maybeHelper("my-helper", [() => this.a], { b: () => this.b }, this, undefined, { positional: ["this.a"], named: { b: "this.b" } })`,
+      `$_maybeHelper("my-helper", [$_argThunk(() => this.a)], { b: $_argThunk(() => this.b) }, this, undefined, { positional: ["this.a"], named: { b: "this.b" } })`,
     );
   });
 
@@ -82,7 +82,7 @@ describe('EMBER_ARG_LABELS: compat emission', () => {
 
   test('flag off: no labels (guard)', () => {
     expect(code('{{fn this.myFunc @a}}', COMPAT, ['fn'])).toContain(
-      '$_maybeHelper(fn, [() => this.myFunc, () => $a.a], {})]',
+      '$_maybeHelper(fn, [$_argThunk(() => this.myFunc), $_argThunk(() => $a.a)], {})]',
     );
     expect(code(`<button {{on-ext 'click' this.foo}}>x</button>`, COMPAT)).toContain(
       '$_maybeModifier("on-ext", $n, ["click", this.foo], {})]',

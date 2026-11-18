@@ -1,5 +1,6 @@
 import type Babel from '@babel/core';
 import {
+  ITEM_REFS_SYMBOLS,
   MAIN_IMPORT,
   RECYCLE_SYMBOLS,
   SYMBOLS,
@@ -1317,7 +1318,9 @@ export function processTemplate(
           // recycled entry point — so apps that never recycle never pull
           // list-recycle.ts in, and a stray `@recycle` string can no longer
           // trigger a spurious import.
-          const recycleSymbolSet = new Set<string>(RECYCLE_SYMBOLS);
+          // The item reference key ($_itemRefKey) likewise lives in its own
+          // entry, '@lifeart/gxt/item-references' (CompileResult.usedItemRefs).
+          const recycleSymbolSet = new Set<string>([...RECYCLE_SYMBOLS, ...ITEM_REFS_SYMBOLS]);
 
           const PUBLIC_API = Object.values(SYMBOLS);
           const IMPORTS = PUBLIC_API

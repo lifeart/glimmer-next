@@ -678,10 +678,15 @@ function serializeHelperCall(value: SerializedValue & { kind: 'helper' }, ctx?: 
   // Special handling for hash helper - wrap values in getters for lazy evaluation
   // This prevents $__hash from auto-calling function values
   if (symbolName === SYMBOLS.HASH) {
+    // Ember dialect: each getter is branded, as the JSExpression serializer
+    // brands it (`brandArgGetter`): `$__hash` there reads only branded getters.
+    const brandHash =
+      ctx?.flags.IS_GLIMMER_COMPAT_MODE === true && ctx.flags.WITH_EMBER_INTEGRATION === true;
     const namedPairs: string[] = [];
     for (const [key, val] of value.named) {
       // Wrap each value in a getter
-      namedPairs.push(`${quoteKey(key)}: () => ${serializeValueToString(val, ctx)}`);
+      const getter = `() => ${serializeValueToString(val, ctx)}`;
+      namedPairs.push(`${quoteKey(key)}: ${brandHash ? `${SYMBOLS.ARG_THUNK}(${getter})` : getter}`);
     }
     return `${symbolName}({ ${namedPairs.join(', ')} })`;
   }
@@ -736,12 +741,19 @@ function serializeHelperCall(value: SerializedValue & { kind: 'helper' }, ctx?: 
     // $_componentHelper unwraps each value through $_unwrapHelperArg (which calls
     // function values), so this is snapshot-equivalent for standalone; we still
     // gate on compat mode to byte-match the JSExpression path, which only wraps
-    // when IS_GLIMMER_COMPAT_MODE is set.
+    // when IS_GLIMMER_COMPAT_MODE is set. Under the Ember dialect the getter is
+    // branded `$_argThunk`, as buildNamedArgsObject brands it (`brandArgGetter`):
+    // the args object reads only a branded getter, and passes any other
+    // function on as the argument's value.
     const wrapNamed = ctx?.flags.IS_GLIMMER_COMPAT_MODE === true;
+    const brandNamed = wrapNamed && ctx?.flags.WITH_EMBER_INTEGRATION === true;
     const namedPairs: string[] = [];
     for (const [key, val] of value.named) {
       const serialized = serializeValueToString(val, ctx);
-      const emitted = wrapNamed && val.kind === 'path' ? `() => ${serialized}` : serialized;
+      const getter = `() => ${serialized}`;
+      const emitted = wrapNamed && val.kind === 'path'
+        ? (brandNamed ? `${SYMBOLS.ARG_THUNK}(${getter})` : getter)
+        : serialized;
       namedPairs.push(`${quoteKey(key)}: ${emitted}`);
     }
     const namedObj = namedPairs.length > 0 ? `{ ${namedPairs.join(', ')} }` : '{}';

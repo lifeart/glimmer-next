@@ -17,7 +17,12 @@ import { isTag, isGetter } from './-private';
  * - Unlike `unwrap()` which unwraps both getters AND Cells, this only unwraps getters
  */
 export function $__fn(fn: Function, ...args: unknown[]) {
-  return (...tail: unknown[]) => {
+  // A regular function, not an arrow: the bound function is a value. A reader
+  // that takes a function without a prototype for a compiler getter (the
+  // standalone `$_unwrapHelperArg`, this helper's own argument unwrapping)
+  // passes it on instead of calling it, so `{{helper (fn this.save 1)}}` and
+  // `(fn this.save (fn this.other 1))` hand the bound function over.
+  return function fnHelperResult(...tail: unknown[]) {
     // Unwrap the function itself if it's a compiler-generated getter (e.g., () => this.myAction)
     // Compiler getters are zero-arg arrow functions that return functions.
     // We check: is it a getter? If so, call it — if the result is a function, use it.

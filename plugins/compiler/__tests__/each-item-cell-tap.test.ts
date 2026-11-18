@@ -102,8 +102,10 @@ describe('{{#each}} row-item cell tap (WITH_EMBER_INTEGRATION)', () => {
       flags: { IS_GLIMMER_COMPAT_MODE: true, WITH_EMBER_INTEGRATION: true },
       bindings: new Set(['Comp']),
     }).code;
-    expect(code).toContain(`${SYMBOLS.CELL_FOR}(a, "text")`);
-    expect(code).toContain(`${SYMBOLS.CELL_FOR}(b, "label")`);
+    // A slot's block param is read through `$__bpv` (a yielded param can be
+    // a reference under the Ember dialect).
+    expect(code).toContain(`${SYMBOLS.CELL_FOR}($__bpv(a), "text")`);
+    expect(code).toContain(`${SYMBOLS.CELL_FOR}($__bpv(b), "label")`);
   });
 
   test('{{#let}} bindings are NOT tapped (they are thunks, not raw values)', () => {

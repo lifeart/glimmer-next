@@ -7,7 +7,7 @@
 
 import type { CompilerContext } from '../context';
 import { addError, recordLooseBuiltin } from '../context';
-import type { SerializedValue, SourceRange, PathValue } from '../types';
+import type { LetWriteSource, SerializedValue, SourceRange, PathValue } from '../types';
 import { path } from '../types';
 import { SYMBOLS, INTERNAL_HELPERS, getBuiltInHelperSymbol } from './symbols';
 import {
@@ -871,9 +871,13 @@ function buildHelper(
     const looseName = nameValue && nameValue.kind === 'literal' ? String(nameValue.value) : '';
     const optional = optionalValue !== undefined && optionalValue.kind === 'literal' && optionalValue.value === true;
     const posArgs = args.map(arg => buildNativeArg(ctx, arg, ctxName));
+    // The named arguments become a component's args object (`$_args`) or a
+    // helper's: their getters branded.
     const namedProps = [];
     for (const [key, val] of named) {
-      namedProps.push(B.prop(key, buildNativeArg(ctx, val, ctxName), false, val.sourceRange));
+      namedProps.push(
+        B.prop(key, brandArgGetter(ctx, buildNativeArg(ctx, val, ctxName)), false, val.sourceRange)
+      );
     }
     return B.call(SYMBOLS.LOOSE_APPEND, [
       B.string(looseName, pathRange),
@@ -1082,7 +1086,9 @@ function buildSpecialHelper(
     return buildNativeCurryCall(ctx, callee, positional, named, ctxName, sourceRange);
   }
 
-  const posArgs = positional.map(arg => buildValue(ctx, arg, ctxName));
+  // Ember dialect: the getters among the arguments are branded
+  // (`brandArgGetter`): the curried value reads only branded getters.
+  const posArgs = positional.map(arg => brandArgGetter(ctx, buildValue(ctx, arg, ctxName)));
 
   // In compat mode, wrap $_componentHelper hash values in getter functions
   // for reactivity. This preserves reactivity so curried component args
@@ -1124,6 +1130,181 @@ function buildNativeCurryCall(
 }
 
 /**
+ * A compiler-emitted REACTIVE ARG THUNK: a zero-arg getter the arg-access layer
+ * (`ArgProxyHandler` / the DEV `$_args` getter) must INVOKE on read to yield the
+ * live value. These are exactly the function-valued shapes `buildValue` emits
+ * for a reactive named arg in compat mode:
+ *   • `reactiveGetter` / zero-arg `arrow` — `() => this.x`
+ *   • `$__cached(() => …)` — the identity-memoized (hash)/(array) getter
+ *     (buildMaybeMemoizedGetter; returns a getter FUNCTION) used under
+ *     WITH_EMBER_INTEGRATION
+ * A literal, a path member read, or an EAGER helper call (`$_maybeHelper(…)`,
+ * `$__fn(…)`) is a VALUE — possibly a bound function the consumer must receive
+ * as-is — and is NOT a thunk, so it is left unbranded and passes through.
+ */
+export function isReactiveArgThunk(node: JSExpression): boolean {
+  if (node.type === 'reactiveGetter') return true;
+  if (node.type === 'arrow' && node.params.length === 0) return true;
+  if (
+    node.type === 'call' &&
+    node.callee.type === 'identifier' &&
+    node.callee.name === SYMBOLS.CACHED
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Ember compat (IS_GLIMMER_COMPAT_MODE + WITH_EMBER_INTEGRATION, not
+ * EMBER_NATIVE — the native build has no classic components): the getter of a
+ * component argument, branded, with where a write of the argument goes when
+ * the argument is a path (`$_argThunk(getter, parent, key)`). A classic
+ * component that sets the property of a two-way bound argument writes there,
+ * as Glimmer's curly component manager updates the argument's reference:
+ *   - `this.x` → `set(this, "x")`; `this.a.b` → `set(this.a, "b")`, `this.a`
+ *     read when the write happens; a block param's path `item.name` →
+ *     `set(item, "name")`;
+ *   - `@x` → the caller's reference: `$a` and `"@x"`, which the host follows
+ *     through the args object to where its own caller's argument writes
+ *     (nothing when that is a literal or a helper's result);
+ *   - a `{{#let}}` binding of a path → where that path writes;
+ *   - anything else — a literal, a helper's result, a block param itself (an
+ *     `{{#each}}` row's own reference) — is not writable: `$_argThunk(getter,
+ *     null)`.
+ * `valueExpr` is the argument as built (a getter, branded or not, or a value);
+ * a value is returned as it is.
+ */
+export function withArgSource(
+  ctx: CompilerContext,
+  value: SerializedValue,
+  valueExpr: JSExpression,
+  ctxName: string
+): JSExpression {
+  if (
+    !ctx.flags.IS_GLIMMER_COMPAT_MODE ||
+    !ctx.flags.WITH_EMBER_INTEGRATION ||
+    ctx.flags.EMBER_NATIVE
+  ) {
+    return valueExpr;
+  }
+  let getterExpr = valueExpr;
+  if (
+    valueExpr.type === 'call' &&
+    valueExpr.callee.type === 'identifier' &&
+    valueExpr.callee.name === SYMBOLS.ARG_THUNK
+  ) {
+    getterExpr = valueExpr.arguments[0]!;
+  }
+  if (!isReactiveArgThunk(getterExpr)) return valueExpr;
+  const source = argSourceOf(ctx, value, ctxName, 0);
+  // `null`: not writable (the host writes nothing upstream).
+  const brandArgs: JSExpression[] = source === null
+    ? [getterExpr, B.nil()]
+    : [getterExpr, B.arrow([], source.parent), B.string(source.key)];
+  return B.call(B.id(SYMBOLS.ARG_THUNK), brandArgs, getterExpr.sourceRange);
+}
+
+/**
+ * Ember compat: where a write of a `{{#let}}` binding of `value` goes, found
+ * at the let (serializers/control.ts buildLet), in its scope: the object (an
+ * expression of it built there) and the property; `undefined` when the
+ * binding is not writable. A binding of an outer binding writes where that one
+ * does: its source is the outer one (`shared`), whose let declares its getter.
+ */
+export function letWriteSourceOf(
+  ctx: CompilerContext,
+  value: SerializedValue,
+  ctxName: string
+): { source: LetWriteSource; shared: boolean } | undefined {
+  let inner = value;
+  while (inner.kind === 'getter') inner = inner.value;
+  if (inner.kind === 'path') {
+    const name = inner.expression;
+    if (/^[^.?[@]+$/.test(name) && name !== SYMBOLS.ARGS_ALIAS) {
+      const binding = ctx.scopeTracker.resolve(name);
+      const outer = binding?.kind === 'let-binding' ? binding.letSource : undefined;
+      return outer === undefined ? undefined : { source: outer, shared: true };
+    }
+  }
+  const found = argSourceOf(ctx, value, ctxName, 0);
+  return found === null
+    ? undefined
+    : { source: { parent: found.parent, key: found.key, parentVar: null }, shared: false };
+}
+
+// The object a write of the path argument `value` sets a property of, and the
+// property (`withArgSource`); null when the argument is not writable.
+function argSourceOf(
+  ctx: CompilerContext,
+  value: SerializedValue,
+  ctxName: string,
+  depth: number
+): { parent: JSExpression; key: string } | null {
+  // A getter of a path (an attribute value) writes where the path does.
+  if (value.kind === 'getter') return argSourceOf(ctx, value.value, ctxName, depth + 1);
+  if (value.kind !== 'path' || depth > 8) return null;
+  // The expression may carry optional chaining (`this.a?.b`) for deep paths.
+  const expression = value.expression.replace(/\?\./g, '.');
+  if (expression.includes('[') || expression.includes('?')) return null;
+  const tokens = expression.split('.');
+  if (tokens.some((token) => token === '')) return null;
+  // `@x` (the expression reads it through the args alias, `$a.x`): the
+  // caller's reference, the args object's own argument, named with its `@`
+  // (the host follows it to where the caller's argument writes).
+  const argName =
+    tokens.length === 2 && tokens[0] === SYMBOLS.ARGS_ALIAS
+      ? tokens[1]!
+      : tokens.length === 1 && tokens[0]!.startsWith('@')
+        ? tokens[0]!.slice(1)
+        : null;
+  if (argName !== null) {
+    ctx.usedArgsAlias = true;
+    return { parent: B.id(SYMBOLS.ARGS_ALIAS), key: `@${argName}` };
+  }
+  if (tokens.length === 1) {
+    const name = tokens[0]!;
+    const binding = ctx.scopeTracker.resolve(name);
+    const letSource = binding?.kind === 'let-binding' ? binding.letSource : undefined;
+    if (letSource !== undefined) {
+      // Read through the getter the let declares in its own scope: an inner
+      // block param of the same name as a name of the let's path does not
+      // capture it.
+      if (letSource.parentVar === null) {
+        letSource.parentVar = `$__letSrc${++ctx.letSourceCounter}`;
+      }
+      return { parent: B.call(B.id(letSource.parentVar), []), key: letSource.key };
+    }
+    return null;
+  }
+  const key = tokens[tokens.length - 1]!;
+  const parentPath = path(tokens.slice(0, -1).join('.'), value.isArg, value.sourceRange);
+  return { parent: buildPathExpression(ctx, parentPath, false, ctxName), key };
+}
+
+/**
+ * `valueExpr`, a named argument the compiler built for an args object gxt's
+ * `$_args` reads (a component invocation, a helper call, a loose-mode append,
+ * a curried helper's named arguments), with its getter branded `$_argThunk`
+ * when it is one (`isReactiveArgThunk`). Under the Ember dialect the args
+ * object invokes only branded getters and hands any other function out as the
+ * argument's value, so the getter must be told from a value where it is built
+ * — here. Gated to the Ember dialect (WITH_EMBER_INTEGRATION +
+ * IS_GLIMMER_COMPAT_MODE): standalone gxt keeps byte-identical codegen and its
+ * invoke-every-getter semantics.
+ */
+export function brandArgGetter(ctx: CompilerContext, valueExpr: JSExpression): JSExpression {
+  if (
+    ctx.flags.IS_GLIMMER_COMPAT_MODE &&
+    ctx.flags.WITH_EMBER_INTEGRATION &&
+    isReactiveArgThunk(valueExpr)
+  ) {
+    return B.call(B.id(SYMBOLS.ARG_THUNK), [valueExpr], valueExpr.sourceRange);
+  }
+  return valueExpr;
+}
+
+/**
  * Build a maybe helper call.
  * For unknown helpers: passes the name as a string and adds scope key for resolution.
  * For known helpers (WITH_HELPER_MANAGER): passes the function reference directly.
@@ -1144,12 +1325,20 @@ function buildMaybeHelper(
   // Ember native layer (G4): literal-or-thunk arguments (buildNativeArg).
   const native = ctx.flags.EMBER_NATIVE === true;
   const buildArg = native ? buildNativeArg : buildValue;
-  const posArgs = positional.map(arg => buildArg(ctx, arg, ctxName));
+  // The getters among the positional arguments are branded under the Ember
+  // dialect (`brandArgGetter`): gxt reads only a branded getter of a helper's
+  // argument (`$_unwrapHelperArg`) and passes any other function as the
+  // argument's value.
+  const posArgs = positional.map(arg => brandArgGetter(ctx, buildArg(ctx, arg, ctxName)));
 
-  // Build named args
+  // Build named args: the getters among them branded, as gxt reads a helper's
+  // named arguments through an args object (`$_args`) where a host does not
+  // claim the helper.
   const namedProps = [];
   for (const [key, val] of named) {
-    namedProps.push(B.prop(key, buildArg(ctx, val, ctxName), false, val.sourceRange));
+    namedProps.push(
+      B.prop(key, brandArgGetter(ctx, buildArg(ctx, val, ctxName)), false, val.sourceRange)
+    );
   }
 
   // For unknown bindings, context is passed directly as last arg
@@ -1254,9 +1443,11 @@ function buildNamedArgsObject(
 ): JSExpression {
   if (named.size === 0) return B.emptyObject();
 
+  // A curried helper's named arguments reach the helper merged with the
+  // call's (`$_helperHelper`): their getters branded, as the call's are.
   const props = [];
   for (const [key, val] of named) {
-    props.push(B.prop(key, buildValue(ctx, val, ctxName), false, val.sourceRange));
+    props.push(B.prop(key, brandArgGetter(ctx, buildValue(ctx, val, ctxName)), false, val.sourceRange));
   }
   return B.object(props);
 }
@@ -1277,7 +1468,7 @@ function buildComponentHelperNamedArgs(
   for (const [key, val] of named) {
     const builtVal = buildValue(ctx, val, ctxName);
     // Wrap in getter for reactivity, but don't double-wrap if already a function
-    const wrappedVal = B.getter(builtVal, val.sourceRange);
+    const wrappedVal = brandArgGetter(ctx, B.getter(builtVal, val.sourceRange));
     props.push(B.prop(key, wrappedVal, false, val.sourceRange));
   }
   return B.object(props);
@@ -1468,7 +1659,10 @@ function buildBuiltInHelper(
       // Use B.getter() to preserve AST structure for sourcemaps. A nested
       // (hash)/(array) prop is memoized through $__cached so reading
       // `outerHash.nested` returns an identity-stable reference too.
-      hashProps.push(B.prop(key, buildMaybeMemoizedGetter(ctx, val, builtVal, val.sourceRange), false, val.sourceRange));
+      // Ember dialect: the getter is branded (`brandArgGetter`), as `$__hash`
+      // there reads only branded getters and keeps any other function as the
+      // member's value.
+      hashProps.push(B.prop(key, brandArgGetter(ctx, buildMaybeMemoizedGetter(ctx, val, builtVal, val.sourceRange)), false, val.sourceRange));
     }
     return B.call(helperId, [B.object(hashProps)], sourceRange);
   }
@@ -1541,7 +1735,7 @@ function buildBuiltInHelper(
     if (ctx.flags.EMBER_NATIVE) {
       return buildNativeCurryCall(ctx, helperId, positional, named, ctxName, sourceRange);
     }
-    const posArgs = positional.map(arg => buildValue(ctx, arg, ctxName));
+    const posArgs = positional.map(arg => brandArgGetter(ctx, buildValue(ctx, arg, ctxName)));
     const namedObj = buildNamedArgsObject(ctx, named, ctxName);
     return B.call(helperId, [B.array(posArgs), namedObj], sourceRange);
   }

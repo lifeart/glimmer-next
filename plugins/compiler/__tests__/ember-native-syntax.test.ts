@@ -7,7 +7,8 @@
  *   - G15: a dynamic `{{value}}` child of an element stays a child (dynamic
  *     content), it is not folded into a `textContent` binding;
  *   - G5: `{{#each-in obj as |k v|}}` lowers to an `each` over `$__eachIn(obj)`
- *     with a destructuring row callback.
+ *     keyed by the entries' row keys (`@each-in`), whose row reads the key and
+ *     value through the reference to its entry.
  * Flag off: gxt's historic output.
  */
 import { describe, test, expect } from 'vitest';
@@ -90,20 +91,45 @@ describe('G15: dynamic element children are content', () => {
 });
 
 describe('G5: {{#each-in}}', () => {
-  test('lowers to an each over $__eachIn with a destructuring row', () => {
+  test('lowers to an each over $__eachIn whose row reads its entry through a reference', () => {
     const out = code('{{#each-in this.obj as |k v|}}[{{k}}:{{v}}]{{else}}none{{/each-in}}');
-    expect(out).toContain('$_eachSync(() => $__eachIn($__tag($s, "obj")), ([k, v], $index, ctx0) =>');
-    expect(out).toContain('"@identity"');
+    expect(out).toContain('$_eachSync(() => $__eachIn($__tag($s, "obj")), ($__entry_ctx0, $index, ctx0) =>');
+    expect(out).toContain('() => $__entry_ctx0.value[0]');
+    expect(out).toContain('() => $__entry_ctx0.value[1]');
+    expect(out).not.toMatch(/\(\) => [kv]\b/);
+    expect(out).toContain('"@each-in"');
+    expect(out).not.toContain('"@identity"');
     expect(out).toContain('["none"]');
   });
 
   test('one block param, reserved-word params, a key', () => {
-    expect(code('{{#each-in o as |key|}}{{key}}{{/each-in}}', NATIVE, ['o'])).toContain(
-      '$_eachSync(() => $__eachIn(o), ([key], $index, ctx0) =>',
-    );
+    const one = code('{{#each-in o as |key|}}{{key}}{{/each-in}}', NATIVE, ['o']);
+    expect(one).toContain('$_eachSync(() => $__eachIn(o), ($__entry_ctx0, $index, ctx0) =>');
+    expect(one).toContain('$__entry_ctx0.value[0]');
     const out = code('{{#each-in o key="@identity" as |if v|}}{{if}}{{v.x}}{{/each-in}}', NATIVE, ['o']);
-    expect(out).toContain('([__bp_if, v], $index, ctx0)');
-    expect(out).toContain('$__tag(v, "x")');
+    expect(out).toContain('($__entry_ctx0, $index, ctx0)');
+    expect(out).not.toContain('__bp_if');
+    expect(out).toContain('$__tag($__entry_ctx0.value[1], "x")');
+  });
+
+  test('a nested each-in row reads an outer param through the outer row\'s own entry', () => {
+    const out = code(
+      '{{#each-in o as |gName group|}}{{#each-in group as |field val|}}<li>{{gName}}.{{field}}{{group.title}}{{val}}</li>{{/each-in}}{{/each-in}}',
+      NATIVE,
+      ['o'],
+    );
+    const names = [...out.matchAll(/\((\$__entry_ctx\d+), \$index, ctx\d+\) =>/g)].map((m) => m[1]);
+    expect(names).toHaveLength(2);
+    const [outer, inner] = names as [string, string];
+    expect(outer).not.toBe(inner);
+    // the inner each-in iterates the outer row's value
+    expect(out).toContain(`$__eachIn(${outer}.value[1])`);
+    // the outer key and value inside the inner row: the outer row's entry
+    expect(out).toContain(`() => ${outer}.value[0]`);
+    expect(out).toContain(`$__tag(${outer}.value[1], "title")`);
+    // the inner key and value: the inner row's entry
+    expect(out).toContain(`() => ${inner}.value[0]`);
+    expect(out).toContain(`() => ${inner}.value[1]`);
   });
 
   test('a sub-expression source is evaluated inside the each source getter', () => {

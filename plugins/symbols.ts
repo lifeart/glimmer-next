@@ -11,6 +11,10 @@ export const SYMBOLS = {
   // of EACH/EACH_SYNC so the recycle runtime stays tree-shakable.
   EACH_RECYCLED: '$_eachRecycled',
   EACH_SYNC_RECYCLED: '$_eachSyncRecycled',
+  // The key of a list keyed by position in a standalone template — imported
+  // from ITEM_REFS_IMPORT, not the main barrel, so the item reference follow
+  // runtime tree-shakes out of a build without one.
+  ITEM_REF_KEY: '$_itemRefKey',
   SLOT: '$_slot',
   EMPTY_DOM_PROPS: '$_edp',
   ARGS: '$_args',
@@ -56,6 +60,12 @@ export const SYMBOLS = {
   // too or AOT modules throw `$_argThunk is not defined`. Resolved from
   // @lifeart/gxt via src/core/index.ts → `export * from '@/core/dom'`.
   ARG_THUNK: '$_argThunk',
+  // Block-param read ($__bpv) — the same AOT auto-import requirement: the
+  // Ember dialect reads every block param of a slot through it
+  // (serializers/element.ts buildSlots), so it MUST be in this registry or AOT
+  // modules throw `$__bpv is not defined`. Resolved from @lifeart/gxt via
+  // src/core/index.ts → `export * from '@/core/dom'`.
+  BLOCK_PARAM_VALUE: '$__bpv',
   $_blk: '$_blk',
   $__if: '$__if',
   $__eq: '$__eq',
@@ -114,6 +124,12 @@ export const MAIN_IMPORT = '@lifeart/gxt';
 // tree-shakes out of apps that never use the sentinel key. AOT output imports
 // the recycle symbols from this entry, and only when a template uses them.
 export const RECYCLE_IMPORT = '@lifeart/gxt/recycle';
+
+// Dedicated entry for the item reference follow runtime (a list keyed by
+// position): imported only by a module whose templates key a list by position
+// (CompileResult.usedItemRefs).
+export const ITEM_REFS_IMPORT = '@lifeart/gxt/item-references';
+export const ITEM_REFS_SYMBOLS: readonly string[] = ['$_itemRefKey'];
 
 // The compiler-emitted recycle entry points. Auto-imported from RECYCLE_IMPORT
 // (not MAIN_IMPORT) and gated on actual key="@recycle" usage in the module.

@@ -40,14 +40,14 @@ describe('EMBER_NATIVE: helper call sites (G4)', () => {
   test('known helper: thunked path args, literal args, named object, ctx + site', () => {
     const c = code('<span>{{fmt this.a 2 currency="USD" other=this.b}}</span>', NATIVE, ['fmt']);
     expect(c).toContain(
-      '$_maybeHelper(fmt, [() => this.a, 2], { currency: "USD", other: () => this.b }, this, 0)'
+      '$_maybeHelper(fmt, [$_argThunk(() => this.a), 2], { currency: "USD", other: $_argThunk(() => this.b) }, this, 0)'
     );
   });
 
   test('nested sub-expressions are thunks, not eager calls', () => {
     const c = code('{{fmt (concat "a" this.b)}}', NATIVE, ['fmt', 'concat']);
     expect(c).toContain(
-      '$_maybeHelper(fmt, [() => $_maybeHelper(concat, ["a", () => this.b], {}, this, 0)], {}, this, 1)'
+      '$_maybeHelper(fmt, [$_argThunk(() => $_maybeHelper(concat, ["a", $_argThunk(() => this.b)], {}, this, 0))], {}, this, 1)'
     );
   });
 
@@ -59,18 +59,18 @@ describe('EMBER_NATIVE: helper call sites (G4)', () => {
     );
     expect(c).toContain('$_maybeHelper(fmt, [1], {}, this, 0)');
     expect(c).toMatch(/\$_maybeHelper\(fmt, \[2\], \{\}, ctx\d+, 1\)/);
-    expect(c).toMatch(/\$_maybeHelper\(fmt, \[\(\) => it\], \{\}, ctx\d+, 2\)/);
+    expect(c).toMatch(/\$_maybeHelper\(fmt, \[\$_argThunk\(\(\) => it\)\], \{\}, ctx\d+, 2\)/);
   });
 
   test('an unknown (unbound) helper name uses the same 5-argument shape', () => {
     const c = code('{{neq this.a this.b}}', NATIVE);
-    expect(c).toContain('$_maybeHelper("neq", [() => this.a, () => this.b], {}, this, 0)');
+    expect(c).toContain('$_maybeHelper("neq", [$_argThunk(() => this.a), $_argThunk(() => this.b)], {}, this, 0)');
   });
 
   test('yield params: helper calls go through $_maybeHelper with the block ctx', () => {
     const c = code('{{#each this.items as |it|}}{{yield it.y (fmt this.a)}}{{/each}}', NATIVE, ['fmt']);
     expect(c).toMatch(/\$_slot\("default", \(\) => \[[\s\S]*\$__tag\(it, "y"\)/);
-    expect(c).toMatch(/\$_maybeHelper\(fmt, \[\(\) => this\.a\], \{\}, ctx\d+, 0\)/);
+    expect(c).toMatch(/\$_maybeHelper\(fmt, \[\$_argThunk\(\(\) => this\.a\)\], \{\}, ctx\d+, 0\)/);
     expect(c).not.toContain('fmt(this.a)');
   });
 });
@@ -98,7 +98,7 @@ describe('EMBER_NATIVE: modifier call sites', () => {
   test('a nested (fn …) in modifier args is a thunk', () => {
     const c = code('<button {{on "click" (fn this.go 1)}}></button>', NATIVE, ['on', 'fn']);
     expect(c).toContain(
-      '$_maybeModifier(on, $n, ["click", () => $_maybeHelper(fn, [() => this.go, 1], {}, this, 0)], {}, this)'
+      '$_maybeModifier(on, $n, ["click", () => $_maybeHelper(fn, [$_argThunk(() => this.go), 1], {}, this, 0)], {}, this)'
     );
   });
 
@@ -125,7 +125,7 @@ describe('EMBER_NATIVE: curry sites (G9) and dynamic components', () => {
     );
     expect(c).toContain('$_helperHelper([() => fmt, () => this.a], {}, this)');
     expect(c).toMatch(
-      /\$_modifierHelper\(\[\(\) => tagIt, \(\) => \$_maybeHelper\(concat, \["a", \(\) => this\.b\], \{\}, this, \d+\)\], \{\}, this\)/
+      /\$_modifierHelper\(\[\(\) => tagIt, \(\) => \$_maybeHelper\(concat, \["a", \$_argThunk\(\(\) => this\.b\)\], \{\}, this, \d+\)\], \{\}, this\)/
     );
     // the curried helper's invocation is itself a helper call site
     expect(c).toMatch(/\$_maybeHelper\(H\(\), \[3\], \{\}, this, \d+\)/);
@@ -190,7 +190,7 @@ describe('EMBER_NATIVE off: historic output', () => {
       '$_maybeModifier(tagIt, $n, [this.a], {})'
     );
     expect(code('{{fmt (concat "a" this.b)}}', COMPAT, ['fmt', 'concat'])).toContain(
-      '$_maybeHelper(fmt, [$_maybeHelper(concat, ["a", () => this.b], {})], {})'
+      '$_maybeHelper(fmt, [$_maybeHelper(concat, ["a", $_argThunk(() => this.b)], {})], {})'
     );
     // `<@comp />` is a dynamic component in Ember compat too (dynamic-at-tag.test.ts);
     // standalone gxt keeps the historic element form.

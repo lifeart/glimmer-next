@@ -1,0 +1,413 @@
+/**
+ * A positional `{{#each key="@index"}}` row stays while another item comes to
+ * stand at it, and reads its item through a reference. The constructs that
+ * read a value once, when they render, follow the reference too, as they
+ * follow theirs in Glimmer — with the row's own DOM kept:
+ *   - `{{yield item}}`: the yielded block is rendered again for an object that
+ *     replaces the yielded one (dom.ts `renderSlot`);
+ *   - `<Item />` with the item a component: the invocation swaps components
+ *     (a dynamic `$_dc` invocation);
+ *   - `{{#in-element item.target}}`: the block moves to the new destination.
+ * Component arguments, `{{#let}}` and `(hash)` read the item through getters
+ * and follow it in place.
+ */
+import { describe, test, expect, beforeEach, afterEach } from 'vitest';
+import { createDOMFixture, type DOMFixture } from './__test-utils__';
+import { settle, mountRoot, setupRuntimeTemplateGlobals } from './__test-utils__/list-harness';
+import { Component } from './component';
+import { $template } from './shared';
+import { cellFor } from './reactive';
+import { template } from '../../plugins/runtime-compiler';
+import { HOST_HOOKS } from './host-hooks';
+import { registerDestructor } from './glimmer/destroyable';
+import { getTracker, setTracker, type Cell } from './reactive';
+import { isItemReference } from './control-flow/list';
+import {
+  $_c,
+  $_args,
+  $_edp,
+  $_fin,
+  $_GET_ARGS,
+  $_argThunk,
+  $__bpv,
+  isItemSlotParam,
+} from './dom';
+
+type RuntimeConstants = { WITH_EMBER_INTEGRATION: boolean };
+const runtime = globalThis as unknown as RuntimeConstants;
+// A standalone build's template: no Ember dialect.
+const STANDALONE = { WITH_EMBER_INTEGRATION: false };
+
+function defineRoot(
+  tpl: string,
+  scope: Record<string, unknown> = {},
+  flags: Record<string, boolean> = {},
+) {
+  class Root extends Component {
+    _items: unknown[] = [];
+    constructor(args: any) {
+      super(args);
+      cellFor(this as any, '_items');
+    }
+    get items() {
+      return this._items;
+    }
+    [$template] = template(tpl, { scope, flags });
+  }
+  return Root as unknown as new (args: any) => Component<any> & { _items: unknown[] };
+}
+
+describe('a kept positional row follows its item where its body reads it once', () => {
+  let fixture: DOMFixture;
+  beforeEach(() => {
+    fixture = createDOMFixture();
+    setupRuntimeTemplateGlobals();
+  });
+  afterEach(() => {
+    fixture.cleanup();
+  });
+
+  const lis = () => Array.from(fixture.container.querySelectorAll('li'));
+  const texts = () => lis().map((li) => li.textContent);
+
+  test('{{yield item}}: the yielded block shows the item now at the row, in the same row', async () => {
+    const List = template(
+      '<ul>{{#each @items key="@index" as |item|}}<li>{{yield item}}</li>{{/each}}</ul>',
+    );
+    const root = mountRoot(
+      fixture,
+      defineRoot('<List @items={{this.items}} as |x|><b>{{x.name}}</b></List>', { List }),
+    );
+    const a = { name: 'a' };
+    const b = { name: 'b' };
+    root._items = [a, b];
+    await settle();
+    const before = lis();
+    expect(texts()).toEqual(['a', 'b']);
+
+    root._items = [b, a];
+    await settle();
+    expect(texts()).toEqual(['b', 'a']);
+    expect(lis()).toEqual(before);
+
+    root._items = [{ name: 'c' }];
+    await settle();
+    expect(texts()).toEqual(['c']);
+    expect(lis()[0]).toBe(before[0]);
+  });
+
+  test('{{yield item}}: the yielded block follows the item under a host that strips the comments it does not keep', async () => {
+    // A host like Ember strips the (empty, in a production build) comments of
+    // what it rendered, except the markers gxt registers (`registerListMarker`).
+    const kept = new WeakSet<Comment>();
+    HOST_HOOKS.registerListMarker = (marker) => kept.add(marker);
+    HOST_HOOKS.unregisterListMarker = (marker) => kept.delete(marker);
+    try {
+      const List = template(
+        '<ul>{{#each @items key="@index" as |item|}}<li>{{yield item}}</li>{{/each}}</ul>',
+      );
+      const root = mountRoot(
+        fixture,
+        defineRoot('<List @items={{this.items}} as |x|><b>{{x.name}}</b></List>', { List }),
+      );
+      const a = { name: 'a' };
+      const b = { name: 'b' };
+      root._items = [a, b];
+      await settle();
+      const doc = fixture.container.ownerDocument;
+      const walker = doc.createTreeWalker(fixture.container, 128 /* SHOW_COMMENT */);
+      const stripped: Comment[] = [];
+      while (walker.nextNode()) {
+        const comment = walker.currentNode as Comment;
+        if (!kept.has(comment)) stripped.push(comment);
+      }
+      for (const comment of stripped) comment.remove();
+      const before = lis();
+      expect(texts()).toEqual(['a', 'b']);
+
+      root._items = [b, a];
+      await settle();
+      expect(texts()).toEqual(['b', 'a']);
+      expect(lis()).toEqual(before);
+
+      root._items = [b, a, { name: 'c' }];
+      await settle();
+      root._items = [{ name: 'd' }];
+      await settle();
+      expect(texts()).toEqual(['d']);
+      expect(lis()[0]).toBe(before[0]);
+    } finally {
+      delete HOST_HOOKS.registerListMarker;
+      delete HOST_HOOKS.unregisterListMarker;
+    }
+  });
+
+  test('<Item />: the row invokes the component now at it, in the same row', async () => {
+    const A = template('<i>A</i>');
+    const B = template('<i>B</i>');
+    const root = mountRoot(
+      fixture,
+      defineRoot('<ul>{{#each this.items key="@index" as |Item|}}<li><Item /></li>{{/each}}</ul>'),
+    );
+    root._items = [A, B];
+    await settle();
+    const before = lis();
+    expect(texts()).toEqual(['A', 'B']);
+
+    root._items = [B, A];
+    await settle();
+    expect(texts()).toEqual(['B', 'A']);
+    expect(lis()).toEqual(before);
+
+    root._items = [B];
+    await settle();
+    expect(texts()).toEqual(['B']);
+    expect(lis()[0]).toBe(before[0]);
+  });
+
+  test('component arguments, {{#let}} and (hash) follow the item in place', async () => {
+    const Show = template('<b>{{@value.name}}</b>');
+    const root = mountRoot(
+      fixture,
+      defineRoot(
+        '<ul>{{#each this.items key="@index" as |item|}}<li><Show @value={{item}} />|{{#let item as |x|}}{{x.name}}{{/let}}|{{#let (hash v=item) as |h|}}{{h.v.name}}{{/let}}</li>{{/each}}</ul>',
+        { Show },
+      ),
+    );
+    const a = { name: 'a' };
+    const b = { name: 'b' };
+    root._items = [a, b];
+    await settle();
+    const before = lis();
+    expect(texts()).toEqual(['a|a|a', 'b|b|b']);
+
+    root._items = [b, a];
+    await settle();
+    expect(texts()).toEqual(['b|b|b', 'a|a|a']);
+    expect(lis()).toEqual(before);
+  });
+
+  test('{{#in-element item.target}}: the block moves to the destination of the item now at the row', async () => {
+    const doc = fixture.container.ownerDocument;
+    const one = doc.createElement('div');
+    const two = doc.createElement('div');
+    fixture.container.append(one, two);
+    const root = mountRoot(
+      fixture,
+      defineRoot(
+        '{{#each this.items key="@index" as |item|}}{{#in-element item.target}}<i>{{item.name}}</i>{{/in-element}}{{/each}}',
+      ),
+    );
+    root._items = [{ target: one, name: 'a' }];
+    await settle();
+    expect(one.textContent).toBe('a');
+    expect(two.textContent).toBe('');
+
+    root._items = [{ target: two, name: 'b' }];
+    await settle();
+    expect(one.textContent).toBe('');
+    expect(two.textContent).toBe('b');
+
+    root._items = [];
+    await settle();
+    expect(two.textContent).toBe('');
+  });
+});
+
+describe('a yielded param that turns from a primitive into an object or back is followed', () => {
+  let fixture: DOMFixture;
+  beforeEach(() => {
+    fixture = createDOMFixture();
+    setupRuntimeTemplateGlobals();
+  });
+  afterEach(() => {
+    fixture.cleanup();
+  });
+
+  const text = (selector: string) =>
+    Array.from(fixture.container.querySelectorAll(selector)).map((node) => node.textContent);
+
+  // The Ember dialect (its compile flags and runtime) reads the param through a
+  // reference; a standalone build renders the block again when the param
+  // turns from a primitive into an object or back.
+  for (const [mode, flags, emberRuntime] of [
+    ['Ember dialect', {}, true],
+    ['standalone', STANDALONE, false],
+  ] as const) {
+    test(`${mode}: primitive -> object -> primitive`, async () => {
+      const saved = runtime.WITH_EMBER_INTEGRATION;
+      runtime.WITH_EMBER_INTEGRATION = emberRuntime;
+      try {
+        const List = template(
+          '<ul>{{#each @items key="@index" as |item|}}<li>{{yield item}}</li>{{/each}}</ul>',
+          { flags },
+        );
+        const root = mountRoot(
+          fixture,
+          defineRoot(
+            '<List @items={{this.items}} as |x|><i>{{x.name}}</i><s>{{x}}</s></List>',
+            { List },
+            flags,
+          ),
+        );
+        root._items = ['loading'];
+        await settle();
+        expect(text('i')).toEqual(['']);
+        expect(text('s')).toEqual(['loading']);
+
+        root._items = [{ name: 'x' }];
+        await settle();
+        expect(text('i')).toEqual(['x']);
+
+        root._items = ['done'];
+        await settle();
+        expect(text('i')).toEqual(['']);
+        expect(text('s')).toEqual(['done']);
+      } finally {
+        runtime.WITH_EMBER_INTEGRATION = saved;
+      }
+    });
+  }
+});
+
+describe('Ember dialect: a yielded param is a reference, the block keeps its DOM and components', () => {
+  let fixture: DOMFixture;
+  let saved: RuntimeConstants;
+  beforeEach(() => {
+    saved = { WITH_EMBER_INTEGRATION: runtime.WITH_EMBER_INTEGRATION };
+    runtime.WITH_EMBER_INTEGRATION = true;
+    fixture = createDOMFixture();
+    setupRuntimeTemplateGlobals();
+  });
+  afterEach(() => {
+    fixture.cleanup();
+    runtime.WITH_EMBER_INTEGRATION = saved.WITH_EMBER_INTEGRATION;
+  });
+
+  test('{{yield item}} under key="@index": the rows keep their component instances and show the items now at them', async () => {
+    let created = 0;
+    let destroyed = 0;
+    class Counter extends Component<any> {
+      constructor(args: any) {
+        super(args);
+        created++;
+        registerDestructor(this, () => {
+          destroyed++;
+        });
+      }
+      [$template] = template('<b>{{@item.name}}</b>');
+    }
+    const List = template(
+      '<ul>{{#each @items key="@index" as |item|}}<li>{{yield item}}</li>{{/each}}</ul>',
+    );
+    const root = mountRoot(
+      fixture,
+      defineRoot('<List @items={{this.items}} as |x|><Counter @item={{x}} /></List>', {
+        List,
+        Counter,
+      }),
+    );
+    const a = { name: 'a' };
+    const b = { name: 'b' };
+    root._items = [a, b];
+    await settle();
+    const bs = () => Array.from(fixture.container.querySelectorAll('b'));
+    const before = bs();
+    expect(texts()).toEqual(['a', 'b']);
+    expect(created).toBe(2);
+
+    root._items = [b, a];
+    await settle();
+    expect(texts()).toEqual(['b', 'a']);
+    expect(bs()).toEqual(before);
+    expect(created).toBe(2);
+    expect(destroyed).toBe(0);
+
+    root._items = [{ name: 'c' }];
+    await settle();
+    expect(texts()).toEqual(['c']);
+    expect(bs()[0]).toBe(before[0]);
+    expect(created).toBe(2);
+    expect(destroyed).toBe(1);
+  });
+
+  test('a slot built inside a tracked computation does not make it depend on the row\'s item', async () => {
+    const List = template(
+      '<ul>{{#each @items key="@index" as |item|}}<li>{{yield item}}</li>{{/each}}</ul>',
+    );
+    const a = { name: 'a' };
+    const b = { name: 'b' };
+    class Root extends Component<any> {
+      _items: unknown[] = [a, b];
+      constructor(args: any) {
+        super(args);
+        cellFor(this as any, '_items');
+      }
+      get items() {
+        return this._items;
+      }
+      [$template] = template('<List @items={{this.items}} as |x|><b>{{x.name}}</b></List>', {
+        scope: { List },
+      });
+    }
+    // As a host binding that renders the slot (Ember compat's content
+    // bindings) tracks what the rendering reads.
+    const outer = getTracker();
+    const frame: Set<Cell> = new Set();
+    setTracker(frame);
+    try {
+      mountRoot(fixture, Root as never);
+    } finally {
+      setTracker(outer);
+    }
+    expect(texts()).toEqual(['a', 'b']);
+    expect([...frame].some((cell) => isItemReference(cell))).toBe(false);
+  });
+
+  test('the block gets a param following the row\'s item as a reference it reads through $__bpv', async () => {
+    for (const [key, follows] of [
+      ['@index', true],
+      ['@identity', false],
+    ] as const) {
+      const captured: unknown[] = [];
+      const List = template(
+        `<ul>{{#each @items key="${key}" as |item|}}<li>{{yield item}}</li>{{/each}}</ul>`,
+      );
+      class Root extends Component<any> {
+        _items: unknown[] = [];
+        constructor(args: any) {
+          super(args);
+          cellFor(this as any, '_items');
+        }
+        [$template] = function (this: any) {
+          // eslint-disable-next-line prefer-rest-params
+          $_GET_ARGS(this, arguments);
+          const slots = {
+            default_: true,
+            default: (_ctx: unknown, param: unknown) => {
+              captured.push(param);
+              return [];
+            },
+          };
+          return $_fin(
+            [$_c(List, $_args({ items: $_argThunk(() => this._items) }, slots as never, $_edp as never), this)],
+            this,
+          );
+        } as any;
+      }
+      const root = mountRoot(fixture, Root as never) as unknown as { _items: unknown[] };
+      const a = { name: 'a' };
+      root._items = [a];
+      await settle();
+      expect(captured.length).toBe(1);
+      expect(isItemSlotParam(captured[0])).toBe(follows);
+      expect($__bpv(captured[0])).toBe(a);
+      fixture.cleanup();
+      fixture = createDOMFixture();
+    }
+  });
+
+  const lis = () => Array.from(fixture.container.querySelectorAll('li'));
+  const texts = () => lis().map((li) => li.textContent);
+});
+

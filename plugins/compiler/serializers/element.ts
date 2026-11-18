@@ -19,9 +19,10 @@ import type {
 } from '../types';
 import { isSerializedValue, isRuntimeTag, path } from '../types';
 import { SYMBOLS, EVENT_TYPE, INTERNAL_HELPERS } from './symbols';
-import { buildValue, buildPathExpression, buildNativeArg, buildArgLabels, selfHeadedName, emittedRootName, emittedPathName } from './value';
+import { buildValue, buildPathExpression, buildNativeArg, buildArgLabels, selfHeadedName, emittedRootName, emittedPathName, brandArgGetter, withArgSource } from './value';
 import { B, serializeJS, type JSExpression, type JSProperty } from '../builder';
 import { escapeBindingName } from '../utils/js-utils';
+import { replaceBindingRefs } from './binding-refs';
 
 // Forward declarations - set from index.ts to avoid circular dependency
 let buildChildrenExprs: (ctx: CompilerContext, children: readonly HBSChild[], ctxName: string) => JSExpression[];
@@ -407,11 +408,17 @@ function buildTupleArray(
   const items = tuples.map((tuple) => {
     const [name, value, range, nameRange] = tuple;
     // Use buildValue directly to preserve AST structure for better code generation
-    const valueExpr = buildValue(ctx, value, ctxName);
+    // Ember compat: a component argument (`@name`, the host reads it as one)
+    // is branded, and carries where a write of it goes when it is a path
+    // (`withArgSource`).
+    const builtExpr = buildValue(ctx, value, ctxName);
+    const valueExpr = name.startsWith('@') && !name.startsWith('@__')
+      ? withArgSource(ctx, value, builtExpr, ctxName)
+      : builtExpr;
     // Ground-truth: a string-form $_maybeHelper landing in a `["@name", …]`
     // tuple is the named-arg resolved-helper shape the Ember DEBUG guard
     // rewrites. The position is known here (the tuple is built with the key).
-    if (name.startsWith('@') && isStringFormMaybeHelperCall(valueExpr)) {
+    if (name.startsWith('@') && isStringFormMaybeHelperCall(builtExpr)) {
       ctx.emissionReport.maybeHelperInNamedArgPosition = true;
     }
     // Use nameRange for attribute names when available (AttributeTuple has 4 elements)
@@ -797,32 +804,6 @@ function buildComponentArgsExpr(
 }
 
 /**
- * A compiler-emitted REACTIVE ARG THUNK: a zero-arg getter the arg-access layer
- * (`ArgProxyHandler` / the DEV `$_args` getter) must INVOKE on read to yield the
- * live value. These are exactly the function-valued shapes `buildValue` emits
- * for a reactive named arg in compat mode:
- *   • `reactiveGetter` / zero-arg `arrow` — `() => this.x`
- *   • `$__cached(() => …)` — the identity-memoized (hash)/(array) getter
- *     (buildMaybeMemoizedGetter; returns a getter FUNCTION) used under
- *     WITH_EMBER_INTEGRATION
- * A literal, a path member read, or an EAGER helper call (`$_maybeHelper(…)`,
- * `$__fn(…)`) is a VALUE — possibly a bound function the consumer must receive
- * as-is — and is NOT a thunk, so it is left unbranded and passes through.
- */
-function isReactiveArgThunk(node: JSExpression): boolean {
-  if (node.type === 'reactiveGetter') return true;
-  if (node.type === 'arrow' && node.params.length === 0) return true;
-  if (
-    node.type === 'call' &&
-    node.callee.type === 'identifier' &&
-    node.callee.name === SYMBOLS.CACHED
-  ) {
-    return true;
-  }
-  return false;
-}
-
-/**
  * Build @args as an object.
  * Uses buildValue directly to preserve AST structure.
  */
@@ -839,23 +820,19 @@ function buildArgsObject(
     // Remove @ prefix from arg name
     const argName = name.slice(1);
     // Use buildValue directly to preserve AST structure for better code generation
-    let valueExpr = buildValue(ctx, value, ctxName);
     // Ember dialect: the arg-access layer invokes only BRANDED reactive thunks,
     // so mark the getters we emit here (emberjs/ember.js#21340: contextual
     // components, "renders with dot path and updates attributes"). A plain
     // function VALUE — a host-forwarded action, a `{{fn}}`/helper result —
-    // stays unbranded and is passed through un-invoked. Gated to the Ember
-    // dialect (WITH_EMBER_INTEGRATION + IS_GLIMMER_COMPAT_MODE): this is the
-    // only layer that forwards bare function values into gxt args. Standalone
-    // gxt keeps byte-identical codegen and its invoke-every-getter arg
-    // semantics.
-    if (
-      ctx.flags.IS_GLIMMER_COMPAT_MODE &&
-      ctx.flags.WITH_EMBER_INTEGRATION &&
-      isReactiveArgThunk(valueExpr)
-    ) {
-      valueExpr = B.call(B.id(SYMBOLS.ARG_THUNK), [valueExpr], valueExpr.sourceRange);
-    }
+    // stays unbranded and is passed through un-invoked (`brandArgGetter`).
+    // Ember compat: a path argument's getter also carries where a write of
+    // the argument goes (`withArgSource`).
+    const valueExpr = withArgSource(
+      ctx,
+      value,
+      brandArgGetter(ctx, buildValue(ctx, value, ctxName)),
+      ctxName,
+    );
     // Use the arg name as-is; the serializer handles quoting non-identifier keys
     return B.prop(argName, valueExpr, false, range, nameRange);
   });
@@ -910,15 +887,39 @@ function buildSlots(
       ? slot.blockParamRanges ?? []
       : [];
 
+    // Ember dialect: a block param is a reference to the yielded value, as in
+    // Glimmer. The runtime passes a param that can change as a reference
+    // (src/core/dom.ts `createSlot`), and the block reads every param through
+    // `$__bpv`, which reads such a reference and passes any other value as it
+    // is: what reads the param follows it, and the block keeps its DOM and
+    // component instances. A component invoked as the param (`<Item />`) is
+    // invoked through a getter (`buildComponentCall`).
+    const referenceParams =
+      ctx.flags.IS_GLIMMER_COMPAT_MODE === true && ctx.flags.WITH_EMBER_INTEGRATION === true;
+
     // Add block params in a dedicated scope frame so nested slots with
     // matching block-param names shadow rather than clobber outer bindings.
     ctx.scopeTracker.enterScope('slot');
     for (const param of blockParams) {
-      ctx.scopeTracker.addBinding(param, { kind: 'block-param', name: param });
+      ctx.scopeTracker.addBinding(param, {
+        kind: 'block-param',
+        name: param,
+        itemReference: referenceParams,
+      });
     }
 
     // Build slot children as JSExpression array (proper tree for correct indentation)
-    const slotChildExprs = buildChildrenExprs(ctx, children, sContext);
+    const builtChildExprs = buildChildrenExprs(ctx, children, sContext);
+    const paramReads = new Map<string, string>();
+    if (referenceParams) {
+      for (const param of blockParams) {
+        const name = escapeBindingName(param);
+        paramReads.set(name, `${SYMBOLS.BLOCK_PARAM_VALUE}(${name})`);
+      }
+    }
+    const slotChildExprs = paramReads.size > 0
+      ? builtChildExprs.map((expr) => replaceBindingRefs(expr, paramReads))
+      : builtChildExprs;
     const slotArrayExpr = fmt.options.enabled && slotChildExprs.length > 0
       ? B.formattedArray(slotChildExprs, true)
       : B.array(slotChildExprs);
@@ -983,8 +984,20 @@ function buildComponentCall(
 
   // Check for dynamic component (dotted path like context.V or this.Component)
   // Ember: an `@`-headed tag (`<@comp />`) is a dynamic component too
-  // (isComponentTag routes it here).
-  const isDynamic = tag.includes('.') || isArgComponentTag(ctx, tag);
+  // (isComponentTag routes it here). So is a binding whose value can change:
+  // a list row's item read through its item reference
+  // (`{{#each this.comps key="@index" as |Item|}}<Item />`, the row stays while
+  // another component comes to stand at it), an Ember-dialect slot's block
+  // param (a reference to the yielded value), and a `{{#let}}` binding (a
+  // getter of its value): the invocation follows the value, as Glimmer's
+  // invocation of a local reference does. A value that never changes renders
+  // once (`$_dc` drops a constant formula).
+  const tagBinding = ctx.scopeTracker.resolve(tag);
+  const isDynamic =
+    tag.includes('.') ||
+    isArgComponentTag(ctx, tag) ||
+    tagBinding?.itemReference === true ||
+    tagBinding?.kind === 'let-binding';
 
   if (isDynamic) {
     // Wrap in reactive getter for dynamic component paths

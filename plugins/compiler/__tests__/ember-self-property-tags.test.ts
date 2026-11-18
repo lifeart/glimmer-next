@@ -47,7 +47,7 @@ describe('G6 EMBER_SELF: `this` heads read the template self', () => {
     // no compat `globalThis.__gxtGetCellOrFormula` condition probe under EMBER_NATIVE
     expect(c).toContain('$_if(() => $s.c, ');
     expect(c).not.toContain('__gxtGetCellOrFormula');
-    expect(c).toContain('$_maybeHelper(fmt, [() => $s.v], {}, ctx1, 0)');
+    expect(c).toContain('$_maybeHelper(fmt, [$_argThunk(() => $s.v)], {}, ctx1, 0)');
     expect(c).toMatch(/\$_tag\('div', [^]*, this, /);
   });
 
@@ -110,7 +110,7 @@ describe('G8 EMBER_PROPERTY_TAGS: member segments are property-tag taps', () => 
 
   test('helper / modifier arguments and yield params are tapped thunks', () => {
     const c = code('{{fmt this.a.b}}<i {{on "click" this.go}}></i>{{yield this.v}}', TAGS, ['fmt']);
-    expect(c).toContain('[() => $__tag($__tag(this, "a"), "b")]');
+    expect(c).toContain('[$_argThunk(() => $__tag($__tag(this, "a"), "b"))]');
     expect(c).toContain('["click", () => $__tag(this, "go")]');
     expect(c).toContain('() => [$__tag(this, "v")]');
   });

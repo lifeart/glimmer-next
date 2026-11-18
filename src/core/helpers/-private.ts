@@ -47,3 +47,52 @@ export function unwrap(value: unknown): unknown {
   }
   return value;
 }
+
+const ARG_THUNK_FLAG = '$_isArgThunk';
+const ARG_SOURCE = '$_argSource';
+
+/**
+ * Mark `fn` as a compiler-emitted reactive ARG thunk and return it (identity).
+ * Emitted by the compiler around the reactive getters of the arguments it
+ * builds (`brandArgGetter`). A no-op on non-functions.
+ *
+ * Ember compat: the getter of a component argument that is a path also
+ * carries where a write of the argument goes, as Glimmer's reference for the
+ * path writes (serializers/value.ts `withArgSource`): `parent` reads the object
+ * the path's last segment `key` is a property of (`this.a.b` → `this.a`,
+ * `"b"`; `@x` → the args object, `"@x"`). See `argSource`.
+ */
+export function $_argThunk<T>(fn: T, parent?: (() => unknown) | null, key?: string): T {
+  if (typeof fn === 'function') {
+    (fn as any)[ARG_THUNK_FLAG] = true;
+    if (parent !== undefined) {
+      (fn as any)[ARG_SOURCE] = parent === null ? null : [parent, key];
+    }
+  }
+  return fn;
+}
+
+/**
+ * Where a write of the argument a compiler-emitted getter reads goes:
+ * `[parent, key]` (see `$_argThunk`); `null` when the compiler says the
+ * argument is not writable (a literal, a helper's result, a block param
+ * itself); `undefined` when the compiler said nothing (another getter, or
+ * not a getter).
+ */
+export function argSource(
+  fn: unknown,
+): readonly [() => unknown, string] | null | undefined {
+  if (typeof fn !== 'function') return undefined;
+  return (fn as any)[ARG_SOURCE];
+}
+
+/**
+ * True when `fn` is a thunk the compiler marked as a reactive arg getter (via
+ * `$_argThunk`). The arg-access layer invokes only these; every other function
+ * value (a forwarded action, a `{{fn}}`/helper bound result) passes through.
+ * Hosts (the Ember bridge) call this instead of shape heuristics
+ * (`fn.length`/`fn.prototype`), which it retires — it is minification-proof.
+ */
+export function isArgThunk(fn: unknown): boolean {
+  return typeof fn === 'function' && (fn as any)[ARG_THUNK_FLAG] === true;
+}
