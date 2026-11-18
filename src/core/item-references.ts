@@ -11,12 +11,15 @@
  * (`followInElement`). It is kept out of the main runtime
  * (item-reference-runtime.ts), like `@lifeart/gxt/recycle`:
  *   - AOT (plugins/test.ts) imports `$_itemRefKey` from this entry for a
- *     standalone template that keys a list by position (the compiler's
+ *     template that keys a list by position or renders a native
+ *     `{{#each-in}}`, in every dialect (the compiler's
  *     `CompileResult.usedItemRefs`); calling it installs the runtime.
- *   - An Ember host installs it (`registerItemReferenceRuntime`, also exported
- *     by `@lifeart/gxt/glimmer-compatibility`; the runtime compiler's
- *     `setupGlobalScope` calls it): its templates key lists without
- *     `$_itemRefKey`, and `{{#each-in}}` rows are Ember's.
+ *   - A template compiled at runtime binds `$_itemRefKey` from the main entry
+ *     (`templateScopeNames`), or from the globals the runtime compiler's
+ *     `setupGlobalScope` installs (it also calls `registerItemReferenceRuntime`).
+ *   - A host whose rows reach a list without `$_itemRefKey` installs it itself
+ *     (`registerItemReferenceRuntime`, also exported by
+ *     `@lifeart/gxt/glimmer-compatibility`).
  * A list keyed by position without it throws (list.ts).
  */
 import { Cell, formula, applyCellUpdateSync, DEBUG_CELLS } from './reactive';
