@@ -735,9 +735,15 @@ export function resolveDecoratorRuntime(
 
 export interface TransformOptions {
   /**
-   * G10 (EMBER_NATIVE): the module is a plain script whose only gxt work is
-   * its Ember `precompileTemplate(…)` calls. The babel pass then ONLY rewrites
-   * those calls (and imports the runtime symbols): no decorator lowering, no
+   * G10: compile Ember `precompileTemplate(…)` call sites at build time, under
+   * the transform's flags. Default: on under EMBER_NATIVE, off otherwise (the
+   * vite plugin's `precompileTemplate` option).
+   */
+  precompileTemplate?: boolean;
+  /**
+   * G10: the module is a plain script whose only gxt work is its Ember
+   * `precompileTemplate(…)` calls. The babel pass then ONLY rewrites those
+   * calls (and imports the runtime symbols): no decorator lowering, no
    * TypeScript stripping of `.js` files, none of the gxt `template()` / `hbs` /
    * class-body conventions — the host's own pipeline still owns the rest.
    */
@@ -767,8 +773,8 @@ export function transform(
   const babelDeps = resolveGxtBabelDeps();
   const plugins: PluginItem[] = [
     processTemplate(hbsToProcess, mode, {
-      // G10 is Ember-native-layer behaviour: off unless EMBER_NATIVE.
-      precompileTemplate: flags.EMBER_NATIVE === true,
+      // G10: on under EMBER_NATIVE, or when the host asks for it.
+      precompileTemplate: options.precompileTemplate ?? flags.EMBER_NATIVE === true,
       precompileOnly,
       classBodyTemplateBrand: flags.WITH_EMBER_INTEGRATION === true,
     }),
