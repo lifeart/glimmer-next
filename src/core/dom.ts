@@ -2075,6 +2075,20 @@ function _component(
     }
   }
   if (IS_GLIMMER_COMPAT_MODE) {
+    // A component the Ember compat manager rendered on the spot (its
+    // template-only components): handle() returns the DOM, a node or an array
+    // of nodes, which is the component's output. Constructing it would throw.
+    // (The native layer's managers never return DOM; a statement of its own,
+    // so that it folds away without WITH_EMBER_INTEGRATION and under
+    // EMBER_NATIVE.)
+    if (
+      WITH_EMBER_INTEGRATION &&
+      !EMBER_NATIVE &&
+      comp !== _comp &&
+      (Array.isArray(comp) || typeof (comp as { nodeType?: unknown }).nodeType === 'number')
+    ) {
+      return comp;
+    }
     // The compat manager's handle() returns a rendering closure for string
     // component names (e.g., $_c('FooBar', ...)). This closure returns DOM
     // nodes directly — it's NOT a constructible class. Detect this case and
