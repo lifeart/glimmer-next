@@ -196,6 +196,60 @@ describe('captureRenderTree — Ember-shaped render tree from GXT TREE', () => {
     expect(node!.args.named).toEqual({ async: true });
   });
 
+  // A list's rows come from its `keyMap`, read structurally: the capture does
+  // not import the list classes (an `instanceof` kept both the sync and the
+  // async list in every build that captures a render tree, the async list
+  // included in a build whose templates only make sync lists).
+  function listRowsFixture(debugName: string) {
+    const rowA = makeComponent(11, { debugName: 'Row', args: { item: 'a' } });
+    const rowB = makeComponent(12, { debugName: 'Row', args: { item: 'b' } });
+    const rowC = makeComponent(13, { debugName: 'Row', args: { item: 'c' } });
+    const marker = document.createComment('row');
+    const list = makeComponent(4, {
+      debugName,
+      args: { list: { value: ['a', 'b', 'c'] } },
+    }) as unknown as Record<string, unknown>;
+    // Row entries: a single component, an array of components, and an array
+    // holding a DOM node next to a component (the node is skipped).
+    list.keyMap = new Map<string, unknown>([
+      ['a', rowA],
+      ['b', [rowB]],
+      ['c', [marker, rowC]],
+    ]);
+    return list as unknown as ComponentLike;
+  }
+
+  test('{{#each}} sync list: its keyMap rows are the node\'s children', () => {
+    const [node] = captureRenderTree([listRowsFixture('ListComponent-1')]);
+    expect(node!.name).toBe('each');
+    expect(node!.args.positional).toEqual([['a', 'b', 'c']]);
+    expect(node!.args.named).toEqual({});
+    expect(node!.children.map((c) => c.name)).toEqual(['Row', 'Row', 'Row']);
+    expect(node!.children.map((c) => c.args.named)).toEqual([
+      { item: 'a' },
+      { item: 'b' },
+      { item: 'c' },
+    ]);
+  });
+
+  test('{{#each}} async list: the same rows, with the async flag', () => {
+    const [node] = captureRenderTree([listRowsFixture('AsyncListComponent-1')]);
+    expect(node!.name).toBe('each');
+    expect(node!.args.named).toEqual({ async: true });
+    expect(node!.children.map((c) => c.name)).toEqual(['Row', 'Row', 'Row']);
+  });
+
+  test('a list-named component without a keyMap Map has no rows', () => {
+    const list = makeComponent(4, {
+      debugName: 'ListComponent-1',
+      args: { list: { value: [] } },
+    }) as unknown as Record<string, unknown>;
+    list.keyMap = { a: 1 }; // not a Map: not a list's rows
+    const [node] = captureRenderTree([list as unknown as ComponentLike]);
+    expect(node!.name).toBe('each');
+    expect(node!.children).toEqual([]);
+  });
+
   test('explicit roots argument bypasses findRoots()', () => {
     const solo = makeComponent(9, { debugName: 'Solo', args: { x: 1 } });
     // Not wired into PARENT, so findRoots() would not see it.

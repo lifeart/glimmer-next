@@ -311,6 +311,10 @@ export default defineConfig(({ mode }) => ({
             // The item reference follow runtime (a list keyed by position).
             // Dedicated entry so it tree-shakes out of a build without one.
             path.join(currentPath, "src", "core", "item-references.ts"),
+            // The runtime compiler's symbol table and setupGlobalScope, without
+            // the compiler: a host that installs the globals for compiled
+            // templates imports them from here.
+            path.join(currentPath, "src", "core", "runtime-scope.ts"),
           ],
           name: "gxt",
           formats: ["es"],
@@ -433,6 +437,12 @@ export default defineConfig(({ mode }) => ({
         "src",
         "core",
         "item-references.ts",
+      ),
+      "@lifeart/gxt/runtime-scope": path.join(
+        currentPath,
+        "src",
+        "core",
+        "runtime-scope.ts",
       ),
       "@lifeart/gxt": path.join(currentPath, "src", "core", "index.ts"),
     },

@@ -18,7 +18,6 @@ import {
   OUTLET_SYMBOLS,
   PROPERTY_TAG_SYMBOLS,
   RECYCLE_SYMBOLS,
-  ITEM_REFS_SYMBOLS,
   SELF_SYMBOLS,
 } from './symbols';
 import type { Flags } from './flags';
@@ -158,16 +157,18 @@ export function nativeTemplateSymbols(flags: Partial<Flags>): string[] {
 
 /**
  * Every free runtime identifier a template body (plus its wrapper) compiled
- * under `flags` may reference from the MAIN `@lifeart/gxt` entry — exactly the
- * AOT import list: the always-on barrel (`Object.values(SYMBOLS)` minus the
- * recycle entry points, which live in `@lifeart/gxt/recycle` and are imported
- * only by modules that use `key="@recycle"`, plugins/babel.ts, and minus the
- * item reference key, which lives in `@lifeart/gxt/item-references` and only
- * a standalone template emits) plus the Ember-native symbols. A runtime host
- * binds each name to the export of the same name from the main entry.
+ * under `flags` may reference from the MAIN `@lifeart/gxt` entry: the always-on
+ * barrel (`Object.values(SYMBOLS)` minus the recycle entry points, which live
+ * in `@lifeart/gxt/recycle` and are imported only by modules that use
+ * `key="@recycle"`, plugins/babel.ts) plus the Ember-native symbols. The item
+ * reference key (`$_itemRefKey`, which a list keyed by position or an each-in
+ * passes its key through) is among them: AOT imports it from
+ * `@lifeart/gxt/item-references` (its own chunk), the main entry re-exports it
+ * for a runtime host, which binds each name to the export of the same name
+ * from the main entry.
  */
 export function templateScopeNames(flags: Partial<Flags>): string[] {
-  const recycle = new Set<string>([...RECYCLE_SYMBOLS, ...ITEM_REFS_SYMBOLS]);
+  const recycle = new Set<string>(RECYCLE_SYMBOLS);
   const barrel = Object.values(SYMBOLS).filter((name) => !recycle.has(name));
   return Array.from(new Set([...barrel, ...nativeTemplateSymbols(flags)]));
 }

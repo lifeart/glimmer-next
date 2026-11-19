@@ -36,7 +36,6 @@ import {
   type ComponentLike,
 } from '../shared';
 import { IfCondition } from '../control-flow/if';
-import { AsyncListComponent, SyncListComponent } from '../control-flow/list';
 import { HOST_HOOKS } from '../host-hooks';
 import { isNativeRuntime } from '../native-content';
 
@@ -151,6 +150,15 @@ function edgeDomNode(items: ReadonlyArray<unknown>, fromStart: boolean): Node | 
     }
   }
   return null;
+}
+
+// A list component's rows, by key (control-flow/list.ts `keyMap`). Read
+// structurally: importing the list classes for an `instanceof` would keep both
+// of them in every build that captures a render tree, the async list included
+// in a build whose templates only ever make sync lists (FORCE_SYNC_LIST).
+function listRows(component: ComponentLike): Map<string, any> | null {
+  const rows = (component as { keyMap?: unknown }).keyMap;
+  return rows instanceof Map ? rows : null;
 }
 
 /**
@@ -300,15 +308,17 @@ export function componentToRenderTree(
     argsToAdd.push(['async', true]);
     argsToHide.push('list');
     positional.push(allArgs()['list']?.value);
-    if (component instanceof AsyncListComponent) {
-      pushListRows(component.keyMap, children, visited);
+    const rows = listRows(component);
+    if (rows !== null) {
+      pushListRows(rows, children, visited);
     }
   } else if (componentName.startsWith('ListComponent')) {
     componentName = 'each';
     argsToHide.push('list');
     positional.push(allArgs()['list']?.value);
-    if (component instanceof SyncListComponent) {
-      pushListRows(component.keyMap, children, visited);
+    const rows = listRows(component);
+    if (rows !== null) {
+      pushListRows(rows, children, visited);
     }
   }
 

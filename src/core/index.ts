@@ -60,6 +60,12 @@ export { effect } from '@/core/vm';
 export * from '@/core/dom';
 
 export { Root, createRoot } from '@/core/root';
+// The key of a list keyed by position, which installs the item reference
+// runtime (`@lifeart/gxt/item-references`). A compiled template imports it from
+// that entry (plugins/babel.ts keeps it out of the main-entry import); a
+// runtime host binding `templateScopeNames` reads it from here. Unused, the
+// re-export tree-shakes with the entry it names.
+export { $_itemRefKey } from '@/core/item-references';
 
 // Render-root isolation (synchronous, opt-in) for SSR drivers.
 export {

@@ -43,10 +43,10 @@ export function hasHbsTaggedTemplate(code: string): boolean {
 }
 
 /**
- * G10 pre-filter (EMBER_NATIVE): a script module that MAY call Ember's
- * `precompileTemplate` (imports `@ember/template-compilation` and mentions the
- * name). Only gates whether the module is parsed — the babel pass then
- * identifies the calls through the import binding (plugins/babel.ts).
+ * G10 pre-filter: a script module that MAY call Ember's `precompileTemplate`
+ * (imports `@ember/template-compilation` and mentions the name). Only gates
+ * whether the module is parsed — the babel pass then identifies the calls
+ * through the import binding (plugins/babel.ts).
  */
 export function mayCallPrecompileTemplate(code: string): boolean {
   return code.includes('@ember/template-compilation') && code.includes('precompileTemplate');
@@ -78,7 +78,22 @@ type Options = {
    * else `'globals'`.
    */
   decoratorRuntime?: DecoratorRuntime;
+  /**
+   * G10: compile Ember `precompileTemplate(…)` call sites (`precompileTemplate`
+   * imported from `@ember/template-compilation`, a static template string and
+   * static options) at build time, under this plugin's flags: the template
+   * string becomes a template maker that the host's runtime
+   * `precompileTemplate` receives instead. Default: on under EMBER_NATIVE, off
+   * otherwise. A host that compiles its own templates under another dialect
+   * (the Ember compat build) turns it on here; `false` turns it off.
+   */
+  precompileTemplate?: boolean;
 };
+
+/** Whether G10 compiles `precompileTemplate` call sites under `flags`. */
+function precompileTemplateEnabled(flags: Partial<Flags>, options: Options): boolean {
+  return options.precompileTemplate ?? flags.EMBER_NATIVE === true;
+}
 
 /**
  * Defaults an Ember consumer (WITH_EMBER_INTEGRATION) gets without setting
@@ -94,7 +109,7 @@ function emberDefaultFlags(flags: Partial<Flags> | undefined): Partial<Flags> {
 export function compiler(mode: string, options: Options = {}): Plugin {
   let isLibBuild = false;
   let flags = defaultFlags();
-  const transformOptions =
+  const baseTransformOptions =
     options.decoratorRuntime === undefined ? {} : { decoratorRuntime: options.decoratorRuntime };
   return {
     enforce: 'pre',
@@ -136,6 +151,10 @@ export function compiler(mode: string, options: Options = {}): Plugin {
       };
     },
     transform(code: string, file: string) {
+      const transformOptions = {
+        ...baseTransformOptions,
+        precompileTemplate: precompileTemplateEnabled(flags, options),
+      };
       if (templateFileRegex.test(file)) {
         const result = p.process(code, {
           filename: file,
@@ -171,10 +190,10 @@ export function compiler(mode: string, options: Options = {}): Plugin {
       // Files that merely import from @lifeart/gxt don't need the babel transform
       // (which injects symbol imports that may conflict with existing declarations).
       const hasHbsTemplate = hasHbsTaggedTemplate(code);
-      // G10 (EMBER_NATIVE): Ember `precompileTemplate(…)` calls compile at
-      // build time too.
+      // G10: Ember `precompileTemplate(…)` calls compile at build time too
+      // (under EMBER_NATIVE, or with the `precompileTemplate` option).
       const hasPrecompileTemplate =
-        flags.EMBER_NATIVE === true && mayCallPrecompileTemplate(code);
+        transformOptions.precompileTemplate && mayCallPrecompileTemplate(code);
       if (!hasHbsTemplate && !hasPrecompileTemplate) {
         return;
       }

@@ -98,6 +98,10 @@
       "import": "./dist/gxt.item-references.es.js",
       "types": "./dist/item-references.d.ts"
     },
+    "./runtime-scope": {
+      "import": "./dist/gxt.runtime-scope.es.js",
+      "types": "./dist/runtime-scope.d.ts"
+    },
     "./glint": {
       "types": "./dist/glint.d.ts"
     }

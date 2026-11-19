@@ -12,10 +12,11 @@
  * (dom.ts). None of it is part of the main runtime: the core only calls what
  * the runtime installed here, plain functions (`null` until then), so that a
  * build without the runtime folds every such call away. The compiler imports
- * the runtime for a standalone template that keys a list by position
- * (`$_itemRefKey`); an Ember host installs it (`registerItemReferenceRuntime`),
- * as its templates key lists by position, and its `{{#each-in}}` rows are
- * built this way.
+ * the runtime for a template that keys a list by position or renders a native
+ * `{{#each-in}}`, in every dialect (`$_itemRefKey`); a template compiled at
+ * runtime gets it from the runtime compiler (`setupGlobalScope`) or binds
+ * `$_itemRefKey` from the main entry, and a host can install it itself
+ * (`registerItemReferenceRuntime`).
  */
 import type { Cell, MergedCell } from './reactive';
 import type { ComponentLike } from './types';
